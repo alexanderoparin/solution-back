@@ -32,3 +32,5 @@ logs/
 application-local.properties
 application-dev.properties
 
+/src/main/resources/sql/
+/src/main/resources/application.properties
