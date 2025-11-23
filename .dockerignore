@@ -1,0 +1,34 @@
+# Maven
+target/
+.mvn/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Application configs (используются переменные окружения)
+application-local.properties
+application-dev.properties
+
+# Test files
+src/test/
+
+# Documentation
+README.md
+*.md
+
