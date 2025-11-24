@@ -1,6 +1,7 @@
 package ru.oparin.solution.security;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -20,6 +21,7 @@ import java.util.Collections;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CustomUserDetailsService implements UserDetailsService {
 
     private final UserRepository userRepository;
@@ -34,7 +36,10 @@ public class CustomUserDetailsService implements UserDetailsService {
     @Override
     public UserDetails loadUserByUsername(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UserException("Пользователь не найден: " + email, HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> {
+                    log.warn("Пользователь не найден: {}", email);
+                    return new UserException("Пользователь не найден: " + email, HttpStatus.NOT_FOUND);
+                });
 
         return new org.springframework.security.core.userdetails.User(
                 user.getEmail(),

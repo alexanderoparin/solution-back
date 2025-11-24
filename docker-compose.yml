@@ -38,19 +38,19 @@ services:
     networks:
       - solution-network
 
-  # Фронтенд (React + Nginx) - будет добавлен позже
-  # frontend:
-  #   build:
-  #     context: ../solution-front
-  #     dockerfile: Dockerfile
-  #   container_name: solution-front
-  #   restart: always
-  #   ports:
-  #     - "80:80"
-  #   depends_on:
-  #     - backend
-  #   networks:
-  #     - solution-network
+  # Фронтенд (React + Nginx)
+  frontend:
+    build:
+      context: ../solution-front
+      dockerfile: Dockerfile
+    container_name: solution-front
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - solution-network
 
 networks:
   solution-network:

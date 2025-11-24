@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 
 /**
  * Сервис для работы с WB API ключами.
+ * Связь 1:1 - у каждого SELLER'а только один ключ со всеми правами.
  */
 @Service
 @RequiredArgsConstructor
@@ -24,8 +25,9 @@ public class WbApiKeyService {
 
     /**
      * Поиск API ключа по ID пользователя.
+     * Возвращает единственный ключ пользователя (связь 1:1).
      *
-     * @param userId ID пользователя
+     * @param userId ID пользователя (SELLER)
      * @return найденный API ключ
      * @throws UserException если API ключ не найден
      */
@@ -36,8 +38,9 @@ public class WbApiKeyService {
 
     /**
      * Валидация WB API ключа пользователя.
+     * Проверяет единственный ключ пользователя (связь 1:1).
      *
-     * @param userId ID пользователя
+     * @param userId ID пользователя (SELLER)
      */
     @Transactional
     public void validateApiKey(Long userId) {

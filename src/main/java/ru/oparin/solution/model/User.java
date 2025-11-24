@@ -66,6 +66,13 @@ public class User {
     private Boolean isActive = true;
 
     /**
+     * Флаг временного пароля (требует смены при первом входе).
+     */
+    @Column(name = "is_temporary_password", nullable = false)
+    @Builder.Default
+    private Boolean isTemporaryPassword = false;
+
+    /**
      * Дата создания записи.
      */
     @CreatedDate

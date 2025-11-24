@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import ru.oparin.solution.dto.ChangePasswordRequest;
 import ru.oparin.solution.dto.MessageResponse;
 import ru.oparin.solution.dto.UpdateApiKeyRequest;
 import ru.oparin.solution.dto.UserProfileResponse;
@@ -79,6 +80,27 @@ public class UserController {
         }
         
         return ResponseEntity.ok(profileBuilder.build());
+    }
+
+    /**
+     * Смена пароля пользователя.
+     *
+     * @param request данные для смены пароля
+     * @param authentication данные аутентификации
+     * @return сообщение об успешной смене пароля или ошибка
+     */
+    @PutMapping("/password")
+    public ResponseEntity<MessageResponse> changePassword(
+            @Valid @RequestBody ChangePasswordRequest request,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        userService.changePassword(user.getId(), request.getCurrentPassword(), request.getNewPassword());
+
+        MessageResponse response = MessageResponse.builder()
+                .message("Пароль успешно изменен")
+                .build();
+        return ResponseEntity.ok(response);
     }
 }
 

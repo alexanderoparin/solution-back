@@ -1,7 +1,9 @@
 package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -16,6 +18,7 @@ import ru.oparin.solution.security.JwtTokenProvider;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
 
     private final AuthenticationManager authenticationManager;
@@ -29,28 +32,39 @@ public class AuthService {
      * @return ответ с JWT токеном и информацией о пользователе
      */
     public AuthResponse login(LoginRequest request) {
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        request.getEmail(),
-                        request.getPassword()
-                )
-        );
+        try {
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(
+                            request.getEmail(),
+                            request.getPassword()
+                    )
+            );
+            
+            log.info("Аутентификация успешна: email={}", request.getEmail());
 
-        SecurityContextHolder.getContext().setAuthentication(authentication);
+            SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        User user = userService.findByEmail(request.getEmail());
-        String token = tokenProvider.generateToken(
-                user.getEmail(),
-                user.getId(),
-                user.getRole().name()
-        );
+            User user = userService.findByEmail(request.getEmail());
+            String token = tokenProvider.generateToken(
+                    user.getEmail(),
+                    user.getId(),
+                    user.getRole().name()
+            );
 
-        return AuthResponse.builder()
-                .token(token)
-                .email(user.getEmail())
-                .role(user.getRole().name())
-                .userId(user.getId())
-                .build();
+            return AuthResponse.builder()
+                    .token(token)
+                    .email(user.getEmail())
+                    .role(user.getRole().name())
+                    .userId(user.getId())
+                    .isTemporaryPassword(user.getIsTemporaryPassword())
+                    .build();
+        } catch (BadCredentialsException e) {
+            log.error("Ошибка аутентификации: email={}", request.getEmail());
+            throw e;
+        } catch (Exception e) {
+            log.error("Ошибка при аутентификации пользователя {}: {}", request.getEmail(), e.getMessage(), e);
+            throw e;
+        }
     }
 }
 

@@ -34,5 +34,10 @@ public class AuthResponse {
      * ID пользователя.
      */
     private Long userId;
+
+    /**
+     * Флаг временного пароля (требует смены при первом входе).
+     */
+    private Boolean isTemporaryPassword;
 }
 

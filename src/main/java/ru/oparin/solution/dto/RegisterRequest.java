@@ -24,14 +24,7 @@ public class RegisterRequest {
      * Пароль пользователя.
      */
     @NotBlank(message = "Пароль обязателен")
-    @Size(min = 8, message = "Пароль должен содержать минимум 8 символов")
+    @Size(min = 6, message = "Пароль должен содержать минимум 6 символов")
     private String password;
-
-    /**
-     * WB API ключ продавца.
-     */
-    @NotBlank(message = "WB API ключ обязателен")
-    @Size(min = 10, message = "WB API ключ должен содержать минимум 10 символов")
-    private String wbApiKey;
 }
 

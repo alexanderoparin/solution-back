@@ -1,6 +1,7 @@
 package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +19,7 @@ import ru.oparin.solution.repository.WbApiKeyRepository;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserService {
 
     private final UserRepository userRepository;
@@ -38,23 +40,16 @@ public class UserService {
                     HttpStatus.CONFLICT);
         }
 
+        String encodedPassword = passwordEncoder.encode(request.getPassword());
+
         User user = User.builder()
                 .email(request.getEmail())
-                .password(passwordEncoder.encode(request.getPassword()))
+                .password(encodedPassword)
                 .role(Role.SELLER)
                 .isActive(true)
                 .build();
 
         user = userRepository.save(user);
-
-        WbApiKey apiKey = WbApiKey.builder()
-                .user(user)
-                .apiKey(request.getWbApiKey())
-                .isValid(null)
-                .build();
-
-        wbApiKeyRepository.save(apiKey);
-
         return user;
     }
 
@@ -72,9 +67,10 @@ public class UserService {
 
     /**
      * Обновление WB API ключа пользователя.
+     * Обновляет единственный ключ пользователя (связь 1:1).
      *
-     * @param userId ID пользователя
-     * @param newApiKey новый API ключ
+     * @param userId ID пользователя (SELLER)
+     * @param newApiKey новый API ключ со всеми правами
      * @throws UserException если API ключ не найден
      */
     @Transactional
@@ -88,6 +84,36 @@ public class UserService {
         apiKey.setLastValidatedAt(null);
 
         wbApiKeyRepository.save(apiKey);
+    }
+
+    /**
+     * Смена пароля пользователя.
+     *
+     * @param userId ID пользователя
+     * @param currentPassword текущий пароль
+     * @param newPassword новый пароль
+     * @throws UserException если текущий пароль неверен или пользователь не найден
+     */
+    @Transactional
+    public void changePassword(Long userId, String currentPassword, String newPassword) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserException("Пользователь не найден с ID: " + userId, HttpStatus.NOT_FOUND));
+
+        // Проверяем текущий пароль
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new UserException("Неверный текущий пароль", HttpStatus.BAD_REQUEST);
+        }
+
+        // Проверяем, что новый пароль отличается от текущего
+        if (passwordEncoder.matches(newPassword, user.getPassword())) {
+            throw new UserException("Новый пароль должен отличаться от текущего", HttpStatus.BAD_REQUEST);
+        }
+
+        // Устанавливаем новый пароль и снимаем флаг временного пароля
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setIsTemporaryPassword(false);
+
+        userRepository.save(user);
     }
 }
 

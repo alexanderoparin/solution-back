@@ -14,6 +14,8 @@ import java.time.LocalDateTime;
 
 /**
  * Сущность WB API ключа пользователя.
+ * Связь 1:1 с User - у каждого SELLER'а только один WB API ключ со всеми правами.
+ * Через этот ключ ночью подтягиваются данные из Wildberries API.
  */
 @Entity
 @Table(name = "wb_api_keys", schema = "solution")
@@ -26,21 +28,24 @@ import java.time.LocalDateTime;
 public class WbApiKey {
 
     /**
-     * Уникальный идентификатор ключа.
+     * ID пользователя (SELLER) - первичный ключ таблицы.
+     * Связь 1:1 - у каждого пользователя только один WB API ключ со всеми правами.
      */
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "user_id")
+    private Long userId;
 
     /**
-     * Пользователь, которому принадлежит ключ.
+     * Пользователь (SELLER), которому принадлежит ключ.
+     * Связь 1:1 - у каждого пользователя только один WB API ключ со всеми правами.
      */
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false, unique = true)
+    @JoinColumn(name = "user_id", nullable = false, insertable = false, updatable = false)
     private User user;
 
     /**
-     * Сам WB API ключ.
+     * WB API ключ Wildberries со всеми правами доступа.
+     * Используется для ночной загрузки данных из WB API.
      */
     @Column(name = "api_key", nullable = false, length = 500)
     private String apiKey;
