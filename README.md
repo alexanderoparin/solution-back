@@ -15,24 +15,70 @@ Backend приложение для управления рекламными к
 ## Структура проекта
 
 ```
-src/
-├── main/
-│   ├── java/ru/oparin/solution/
-│   │   ├── config/          # Конфигурации (SecurityConfig)
-│   │   ├── controller/      # REST контроллеры
-│   │   ├── dto/             # Data Transfer Objects
-│   │   ├── exception/       # Обработка исключений
-│   │   ├── model/           # JPA сущности
-│   │   ├── repository/      # Репозитории JPA
-│   │   ├── security/        # JWT и Security компоненты
-│   │   └── service/         # Бизнес-логика
-│   └── resources/
-│       ├── sql/             # SQL скрипты для создания таблиц
-│       └── application.properties
-└── test/
+solution_back/
+├── Dockerfile              # Образ для Docker
+├── docker-compose.yml      # Конфигурация Docker Compose (включает фронтенд)
+├── .env.example            # Шаблон переменных окружения
+├── pom.xml
+└── src/
+    ├── main/
+    │   ├── java/ru/oparin/solution/
+    │   │   ├── config/          # Конфигурации (SecurityConfig)
+    │   │   ├── controller/      # REST контроллеры
+    │   │   ├── dto/             # Data Transfer Objects
+    │   │   ├── exception/       # Обработка исключений
+    │   │   ├── model/           # JPA сущности
+    │   │   ├── repository/      # Репозитории JPA
+    │   │   ├── security/        # JWT и Security компоненты
+    │   │   └── service/         # Бизнес-логика
+    │   └── resources/
+    │       ├── sql/             # SQL скрипты для создания таблиц
+    │       └── application.yaml
+    └── test/
 ```
 
+**Примечание:** `docker-compose.yml` находится в этом репозитории и управляет как бэкендом, так и фронтендом (когда он будет создан). Фронтенд должен быть клонирован в соседнюю директорию `../solution-front`.
+
 ## Настройка
+
+### Вариант 1: Запуск через Docker (рекомендуется)
+
+1. **Убедитесь, что у вас установлены:**
+   - Docker и Docker Compose
+   - PostgreSQL на отдельном сервере
+
+2. **Создайте схему в БД:**
+   ```sql
+   CREATE SCHEMA IF NOT EXISTS solution;
+   ```
+
+3. **Выполните SQL скрипты:**
+   - `src/main/resources/sql/001_create_users_table.sql`
+   - `src/main/resources/sql/002_create_wb_api_keys_table.sql`
+
+4. **Скопируйте файл с переменными окружения:**
+   ```bash
+   cp .env.example .env
+   ```
+
+5. **Отредактируйте `.env` файл:**
+   - Укажите данные для подключения к PostgreSQL
+   - Установите JWT_SECRET (обязательно измените в продакшене!)
+
+6. **Запустите приложение:**
+   ```bash
+   docker-compose up -d --build
+   ```
+
+7. **Проверьте статус:**
+   ```bash
+   docker-compose ps
+   docker-compose logs -f backend
+   ```
+
+8. **Приложение будет доступно по адресу:** `http://localhost:8080/api`
+
+### Вариант 2: Запуск без Docker
 
 1. **Убедитесь, что у вас установлены:**
    - Java 21 или выше
@@ -48,24 +94,14 @@ src/
    - `src/main/resources/sql/001_create_users_table.sql`
    - `src/main/resources/sql/002_create_wb_api_keys_table.sql`
 
-4. **Настройте подключение к БД в `src/main/resources/application.properties`:**
-   ```properties
-   spring.datasource.url=jdbc:postgresql://your_host:5432/your_database?currentSchema=solution
-   spring.datasource.username=your_username
-   spring.datasource.password=your_password
-   ```
+4. **Настройте подключение к БД через переменные окружения или `application.properties`**
 
-5. **Настройте JWT секрет (обязательно измените в продакшене!):**
-   ```properties
-   jwt.secret=your-secret-key-change-in-production-min-256-bits
-   ```
-
-6. **Запуск приложения:**
+5. **Запуск приложения:**
    ```bash
    mvn spring-boot:run
    ```
 
-7. **Приложение будет доступно по адресу:** `http://localhost:8080/api`
+6. **Приложение будет доступно по адресу:** `http://localhost:8080/api`
 
 ## API Endpoints
 
@@ -140,5 +176,54 @@ public class DataScheduler {
         // Логика загрузки данных
     }
 }
+```
+
+## Деплой на сервер
+
+### Структура на сервере:
+```
+/opt/
+├── solution-back/      # git clone solution-back
+│   ├── docker-compose.yml
+│   └── ...
+└── solution-front/     # git clone solution-front (когда будет создан)
+    └── ...
+```
+
+### Обновление:
+```bash
+# Обновить только бэкенд
+cd /opt/solution-back
+git pull
+docker-compose up -d --build backend
+
+# Обновить только фронтенд (когда будет создан)
+cd /opt/solution-front
+git pull
+cd /opt/solution-back
+docker-compose up -d --build frontend
+
+# Обновить все
+cd /opt/solution-back
+git pull
+cd /opt/solution-front
+git pull
+cd /opt/solution-back
+docker-compose up -d --build
+```
+
+## Логирование
+
+Логи сохраняются в:
+- Контейнер: `/app/logs/application.log`
+- Хост: `./logs/application.log`
+
+Просмотр логов:
+```bash
+# Логи из контейнера
+docker-compose logs -f backend
+
+# Логи из файла на хосте
+tail -f logs/application.log
 ```
 
