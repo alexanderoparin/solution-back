@@ -25,12 +25,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, String>> handleValidationExceptions(MethodArgumentNotValidException ex) {
-        Map<String, String> errors = new HashMap<>();
-        ex.getBindingResult().getAllErrors().forEach((error) -> {
-            String fieldName = ((FieldError) error).getField();
-            String errorMessage = error.getDefaultMessage();
-            errors.put(fieldName, errorMessage);
-        });
+        Map<String, String> errors = extractValidationErrors(ex);
         return ResponseEntity.badRequest().body(errors);
     }
 
@@ -42,9 +37,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(UserException.class)
     public ResponseEntity<ErrorResponse> handleUserException(UserException ex) {
-        ErrorResponse error = ErrorResponse.builder()
-                .error(ex.getMessage())
-                .build();
+        ErrorResponse error = createErrorResponse(ex.getMessage());
         return ResponseEntity.status(ex.getHttpStatus()).body(error);
     }
 
@@ -57,9 +50,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuthenticationException(
             org.springframework.security.core.AuthenticationException ex) {
-        ErrorResponse error = ErrorResponse.builder()
-                .error("Неверный email или пароль")
-                .build();
+        ErrorResponse error = createErrorResponse("Неверный email или пароль");
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
     }
 
@@ -71,10 +62,29 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception ex) {
-        ErrorResponse error = ErrorResponse.builder()
-                .error("Внутренняя ошибка сервера")
-                .build();
+        ErrorResponse error = createErrorResponse("Внутренняя ошибка сервера");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
     }
-}
 
+    /**
+     * Извлекает ошибки валидации из исключения.
+     */
+    private Map<String, String> extractValidationErrors(MethodArgumentNotValidException ex) {
+        Map<String, String> errors = new HashMap<>();
+        ex.getBindingResult().getAllErrors().forEach(error -> {
+            String fieldName = ((FieldError) error).getField();
+            String errorMessage = error.getDefaultMessage();
+            errors.put(fieldName, errorMessage);
+        });
+        return errors;
+    }
+
+    /**
+     * Создает ответ с ошибкой.
+     */
+    private ErrorResponse createErrorResponse(String message) {
+        return ErrorResponse.builder()
+                .error(message)
+                .build();
+    }
+}

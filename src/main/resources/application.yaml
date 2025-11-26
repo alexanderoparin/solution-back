@@ -33,6 +33,7 @@ jwt:
 wb:
   api:
     base-url: https://statistics-api.wildberries.ru
+    content-base-url: https://content-api.wildberries.ru
     timeout: 30000
 
 logging:

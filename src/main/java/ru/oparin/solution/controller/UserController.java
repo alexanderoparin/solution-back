@@ -39,18 +39,12 @@ public class UserController {
             @Valid @RequestBody UpdateApiKeyRequest request,
             Authentication authentication
     ) {
-        User user = userService.findByEmail(authentication.getName());
-        
-        if (user.getRole() != Role.SELLER) {
-            throw new UserException("Только SELLER может обновлять API ключ");
-        }
+        User user = getCurrentUser(authentication);
+        validateSellerRole(user);
 
         userService.updateApiKey(user.getId(), request.getWbApiKey());
-        
-        MessageResponse response = MessageResponse.builder()
-                .message("API ключ успешно обновлен. Валидация будет выполнена при первом использовании.")
-                .build();
-        return ResponseEntity.ok(response);
+
+        return ResponseEntity.ok(createSuccessMessage("API ключ успешно обновлен. Валидация будет выполнена при первом использовании."));
     }
 
     /**
@@ -61,25 +55,10 @@ public class UserController {
      */
     @GetMapping("/profile")
     public ResponseEntity<UserProfileResponse> getProfile(Authentication authentication) {
-        User user = userService.findByEmail(authentication.getName());
-        
-        UserProfileResponse.UserProfileResponseBuilder profileBuilder = UserProfileResponse.builder()
-                .id(user.getId())
-                .email(user.getEmail())
-                .role(user.getRole())
-                .isActive(user.getIsActive());
-        
-        if (user.getRole() == Role.SELLER) {
-            WbApiKey apiKey = wbApiKeyService.findByUserId(user.getId());
-            UserProfileResponse.ApiKeyInfo apiKeyInfo = UserProfileResponse.ApiKeyInfo.builder()
-                    .isValid(apiKey.getIsValid())
-                    .lastValidatedAt(apiKey.getLastValidatedAt())
-                    .validationError(apiKey.getValidationError())
-                    .build();
-            profileBuilder.apiKey(apiKeyInfo);
-        }
-        
-        return ResponseEntity.ok(profileBuilder.build());
+        User user = getCurrentUser(authentication);
+        UserProfileResponse profile = buildUserProfile(user);
+
+        return ResponseEntity.ok(profile);
     }
 
     /**
@@ -94,13 +73,63 @@ public class UserController {
             @Valid @RequestBody ChangePasswordRequest request,
             Authentication authentication
     ) {
-        User user = userService.findByEmail(authentication.getName());
+        User user = getCurrentUser(authentication);
         userService.changePassword(user.getId(), request.getCurrentPassword(), request.getNewPassword());
 
-        MessageResponse response = MessageResponse.builder()
-                .message("Пароль успешно изменен")
+        return ResponseEntity.ok(createSuccessMessage("Пароль успешно изменен"));
+    }
+
+    /**
+     * Получает текущего пользователя из аутентификации.
+     */
+    private User getCurrentUser(Authentication authentication) {
+        return userService.findByEmail(authentication.getName());
+    }
+
+    /**
+     * Проверяет, что пользователь имеет роль SELLER.
+     */
+    private void validateSellerRole(User user) {
+        if (user.getRole() != Role.SELLER) {
+            throw new UserException("Только SELLER может обновлять API ключ");
+        }
+    }
+
+    /**
+     * Создает сообщение об успехе.
+     */
+    private MessageResponse createSuccessMessage(String message) {
+        return MessageResponse.builder()
+                .message(message)
                 .build();
-        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Строит профиль пользователя.
+     */
+    private UserProfileResponse buildUserProfile(User user) {
+        UserProfileResponse.UserProfileResponseBuilder builder = UserProfileResponse.builder()
+                .id(user.getId())
+                .email(user.getEmail())
+                .role(user.getRole())
+                .isActive(user.getIsActive());
+
+        if (user.getRole() == Role.SELLER) {
+            builder.apiKey(buildApiKeyInfo(user.getId()));
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Строит информацию об API ключе для профиля.
+     */
+    private UserProfileResponse.ApiKeyInfo buildApiKeyInfo(Long userId) {
+        WbApiKey apiKey = wbApiKeyService.findByUserId(userId);
+        return UserProfileResponse.ApiKeyInfo.builder()
+                .isValid(apiKey.getIsValid())
+                .lastValidatedAt(apiKey.getLastValidatedAt())
+                .validationError(apiKey.getValidationError())
+                .build();
     }
 }
-

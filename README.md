@@ -159,6 +159,11 @@ solution_back/
 - JWT токены для аутентификации
 - CORS настроен для работы с фронтендом на localhost:5173
 
+## Документация Wildberries API
+
+- **Документация WB API**: https://dev.wildberries.ru/
+- **Базовый URL API**: `https://statistics-api.wildberries.ru`
+
 ## Планировщик
 
 Планировщик задач включен (`@EnableScheduling`). Для реализации ночной загрузки данных создайте компонент с `@Scheduled` аннотацией.

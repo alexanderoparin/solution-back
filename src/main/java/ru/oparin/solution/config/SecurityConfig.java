@@ -10,6 +10,7 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.annotation.web.configurers.AuthorizeHttpRequestsConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -34,9 +35,16 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    private static final String ADMIN = Role.ADMIN.name();
-    private static final String SELLER = Role.SELLER.name();
-    private static final String WORKER = Role.WORKER.name();
+    private static final int BCRYPT_STRENGTH = 12;
+    private static final String FRONTEND_URL = "http://localhost:5173";
+    private static final String AUTH_ENDPOINTS = "/auth/**";
+    private static final String HEALTH_ENDPOINT = "/health";
+    private static final String ADMIN_ENDPOINTS = "/admin/**";
+    private static final String SELLER_ENDPOINTS = "/seller/**";
+    private static final String WORKER_ENDPOINTS = "/worker/**";
+    public static final String ADMIN = Role.ADMIN.name();
+    public static final String SELLER = Role.SELLER.name();
+    public static final String WORKER = Role.WORKER.name();
 
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -48,7 +56,7 @@ public class SecurityConfig {
      */
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
+        return new BCryptPasswordEncoder(BCRYPT_STRENGTH);
     }
 
     /**
@@ -87,13 +95,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/**", "/health").permitAll()
-                        .requestMatchers("/admin/**").hasRole(ADMIN)
-                        .requestMatchers("/seller/**").hasAnyRole(ADMIN, SELLER)
-                        .requestMatchers("/worker/**").hasAnyRole(ADMIN, SELLER, WORKER)
-                        .anyRequest().authenticated()
-                )
+                .authorizeHttpRequests(auth -> configureAuthorization(auth))
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -107,14 +109,35 @@ public class SecurityConfig {
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:5173"));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setAllowCredentials(true);
+        CorsConfiguration configuration = createCorsConfiguration();
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
-}
 
+    /**
+     * Настраивает правила авторизации для различных эндпоинтов.
+     */
+    private void configureAuthorization(
+            AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry auth
+    ) {
+        auth
+                .requestMatchers(AUTH_ENDPOINTS, HEALTH_ENDPOINT).permitAll()
+                .requestMatchers(ADMIN_ENDPOINTS).hasRole(ADMIN)
+                .requestMatchers(SELLER_ENDPOINTS).hasAnyRole(ADMIN, SELLER)
+                .requestMatchers(WORKER_ENDPOINTS).hasAnyRole(ADMIN, SELLER, WORKER)
+                .anyRequest().authenticated();
+    }
+
+    /**
+     * Создает конфигурацию CORS.
+     */
+    private CorsConfiguration createCorsConfiguration() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(List.of(FRONTEND_URL));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setAllowCredentials(true);
+        return configuration;
+    }
+}

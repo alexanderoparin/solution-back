@@ -23,6 +23,9 @@ import java.util.Collections;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    private static final String BEARER_PREFIX = "Bearer ";
+    private static final String ROLE_PREFIX = "ROLE_";
+
     private final JwtTokenProvider tokenProvider;
 
     /**
@@ -36,19 +39,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         try {
-            String jwt = getJwtFromRequest(request);
-
-            if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt, tokenProvider.getEmailFromToken(jwt))) {
-                String email = tokenProvider.getEmailFromToken(jwt);
-                String role = tokenProvider.getRoleFromToken(jwt);
-
-                UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                        email,
-                        null,
-                        Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role))
-                );
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+            String jwt = extractJwtFromRequest(request);
+            
+            if (isValidJwtToken(jwt)) {
+                setAuthenticationInContext(request, jwt);
             }
         } catch (Exception ex) {
             logger.error("Не удалось установить аутентификацию пользователя в контексте безопасности", ex);
@@ -58,17 +52,52 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Извлечение JWT токена из заголовка Authorization.
-     *
-     * @param request HTTP запрос
-     * @return JWT токен или null
+     * Извлекает JWT токен из заголовка Authorization.
      */
-    private String getJwtFromRequest(HttpServletRequest request) {
+    private String extractJwtFromRequest(HttpServletRequest request) {
         String bearerToken = request.getHeader("Authorization");
-        if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
-            return bearerToken.substring(7);
+        if (StringUtils.hasText(bearerToken) && bearerToken.startsWith(BEARER_PREFIX)) {
+            return bearerToken.substring(BEARER_PREFIX.length());
         }
         return null;
     }
-}
 
+    /**
+     * Проверяет валидность JWT токена.
+     */
+    private boolean isValidJwtToken(String jwt) {
+        if (!StringUtils.hasText(jwt)) {
+            return false;
+        }
+        String email = tokenProvider.getEmailFromToken(jwt);
+        return tokenProvider.validateToken(jwt, email);
+    }
+
+    /**
+     * Устанавливает аутентификацию в контексте Spring Security.
+     */
+    private void setAuthenticationInContext(HttpServletRequest request, String jwt) {
+        String email = tokenProvider.getEmailFromToken(jwt);
+        String role = tokenProvider.getRoleFromToken(jwt);
+        
+        UsernamePasswordAuthenticationToken authentication = createAuthenticationToken(email, role, request);
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+    }
+
+    /**
+     * Создает токен аутентификации для Spring Security.
+     */
+    private UsernamePasswordAuthenticationToken createAuthenticationToken(
+            String email, 
+            String role, 
+            HttpServletRequest request
+    ) {
+        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                email,
+                null,
+                Collections.singletonList(new SimpleGrantedAuthority(ROLE_PREFIX + role))
+        );
+        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+        return authentication;
+    }
+}

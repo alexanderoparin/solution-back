@@ -17,15 +17,14 @@ import java.util.function.Function;
 @Component
 public class JwtTokenProvider {
 
+    private static final String USER_ID_CLAIM = "userId";
+    private static final String ROLE_CLAIM = "role";
+
     @Value("${jwt.secret}")
     private String jwtSecret;
 
     @Value("${jwt.expiration}")
     private Long jwtExpiration;
-
-    private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-    }
 
     /**
      * Генерация JWT токена.
@@ -37,12 +36,12 @@ public class JwtTokenProvider {
      */
     public String generateToken(String email, Long userId, String role) {
         Date now = new Date();
-        Date expiryDate = new Date(now.getTime() + jwtExpiration);
+        Date expiryDate = calculateExpiryDate(now);
 
         return Jwts.builder()
                 .subject(email)
-                .claim("userId", userId)
-                .claim("role", role)
+                .claim(USER_ID_CLAIM, userId)
+                .claim(ROLE_CLAIM, role)
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
@@ -66,7 +65,7 @@ public class JwtTokenProvider {
      * @return ID пользователя
      */
     public Long getUserIdFromToken(String token) {
-        return getClaimFromToken(token, claims -> claims.get("userId", Long.class));
+        return getClaimFromToken(token, claims -> claims.get(USER_ID_CLAIM, Long.class));
     }
 
     /**
@@ -76,7 +75,7 @@ public class JwtTokenProvider {
      * @return роль пользователя
      */
     public String getRoleFromToken(String token) {
-        return getClaimFromToken(token, claims -> claims.get("role", String.class));
+        return getClaimFromToken(token, claims -> claims.get(ROLE_CLAIM, String.class));
     }
 
     /**
@@ -103,20 +102,6 @@ public class JwtTokenProvider {
     }
 
     /**
-     * Получение всех claims из токена.
-     *
-     * @param token JWT токен
-     * @return все claims
-     */
-    private Claims getAllClaimsFromToken(String token) {
-        return Jwts.parser()
-                .verifyWith(getSigningKey())
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
-    }
-
-    /**
      * Проверка истечения токена.
      *
      * @param token JWT токен
@@ -136,7 +121,34 @@ public class JwtTokenProvider {
      */
     public Boolean validateToken(String token, String email) {
         final String tokenEmail = getEmailFromToken(token);
-        return (tokenEmail.equals(email) && !isTokenExpired(token));
+        return tokenEmail.equals(email) && !isTokenExpired(token);
+    }
+
+    /**
+     * Получает ключ для подписи токена.
+     */
+    private SecretKey getSigningKey() {
+        return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Вычисляет дату истечения токена.
+     */
+    private Date calculateExpiryDate(Date now) {
+        return new Date(now.getTime() + jwtExpiration);
+    }
+
+    /**
+     * Получение всех claims из токена.
+     *
+     * @param token JWT токен
+     * @return все claims
+     */
+    private Claims getAllClaimsFromToken(String token) {
+        return Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
     }
 }
-

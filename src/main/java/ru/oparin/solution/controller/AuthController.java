@@ -35,10 +35,10 @@ public class AuthController {
     public ResponseEntity<MessageResponse> register(@Valid @RequestBody RegisterRequest request) {
         log.info("Регистрация пользователя с email = '{}'", request.getEmail());
         userService.registerSeller(request);
-        MessageResponse response = MessageResponse.builder()
-                .message("Регистрация успешна. Теперь вы можете войти в систему.")
-                .build();
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(createSuccessMessage("Регистрация успешна. Теперь вы можете войти в систему."));
     }
 
     /**
@@ -51,7 +51,16 @@ public class AuthController {
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         log.info("Авторизация пользователя с email = '{}'", request.getEmail());
         AuthResponse response = authService.login(request);
+        
         return ResponseEntity.ok(response);
     }
-}
 
+    /**
+     * Создает сообщение об успехе.
+     */
+    private MessageResponse createSuccessMessage(String message) {
+        return MessageResponse.builder()
+                .message(message)
+                .build();
+    }
+}

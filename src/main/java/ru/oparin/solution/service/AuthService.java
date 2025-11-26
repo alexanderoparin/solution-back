@@ -30,34 +30,19 @@ public class AuthService {
      *
      * @param request данные для входа
      * @return ответ с JWT токеном и информацией о пользователе
+     * @throws BadCredentialsException если учетные данные неверны
      */
     public AuthResponse login(LoginRequest request) {
         try {
-            Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(
-                            request.getEmail(),
-                            request.getPassword()
-                    )
-            );
+            Authentication authentication = authenticateUser(request);
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            
+            User user = userService.findByEmail(request.getEmail());
+            String token = generateTokenForUser(user);
             
             log.info("Аутентификация успешна: email={}", request.getEmail());
-
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-
-            User user = userService.findByEmail(request.getEmail());
-            String token = tokenProvider.generateToken(
-                    user.getEmail(),
-                    user.getId(),
-                    user.getRole().name()
-            );
-
-            return AuthResponse.builder()
-                    .token(token)
-                    .email(user.getEmail())
-                    .role(user.getRole().name())
-                    .userId(user.getId())
-                    .isTemporaryPassword(user.getIsTemporaryPassword())
-                    .build();
+            return buildAuthResponse(user, token);
+            
         } catch (BadCredentialsException e) {
             log.error("Ошибка аутентификации: email={}", request.getEmail());
             throw e;
@@ -66,5 +51,40 @@ public class AuthService {
             throw e;
         }
     }
-}
 
+    /**
+     * Аутентифицирует пользователя по email и паролю.
+     */
+    private Authentication authenticateUser(LoginRequest request) {
+        return authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(
+                        request.getEmail(),
+                        request.getPassword()
+                )
+        );
+    }
+
+    /**
+     * Генерирует JWT токен для пользователя.
+     */
+    private String generateTokenForUser(User user) {
+        return tokenProvider.generateToken(
+                user.getEmail(),
+                user.getId(),
+                user.getRole().name()
+        );
+    }
+
+    /**
+     * Создает ответ с данными аутентификации.
+     */
+    private AuthResponse buildAuthResponse(User user, String token) {
+        return AuthResponse.builder()
+                .token(token)
+                .email(user.getEmail())
+                .role(user.getRole().name())
+                .userId(user.getId())
+                .isTemporaryPassword(user.getIsTemporaryPassword())
+                .build();
+    }
+}
