@@ -13,6 +13,7 @@ import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.model.WbApiKey;
+import ru.oparin.solution.service.ProductCardService;
 import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.WbApiClient;
 import ru.oparin.solution.service.WbApiKeyService;
@@ -30,6 +31,7 @@ public class WbApiController {
     private final WbApiClient wbApiClient;
     private final WbApiKeyService wbApiKeyService;
     private final UserService userService;
+    private final ProductCardService productCardService;
 
     /**
      * Получение списка карточек товаров селлера.
@@ -46,6 +48,8 @@ public class WbApiController {
         SellerContext context = createSellerContext(authentication);
         CardsListRequest requestWithDefaults = buildRequestWithDefaults(request);
         CardsListResponse response = wbApiClient.getCardsList(context.getApiKey(), requestWithDefaults);
+        
+        productCardService.saveOrUpdateCards(response, context.getUser());
         
         return ResponseEntity.ok(response);
     }
@@ -184,10 +188,16 @@ public class WbApiController {
      * Внутренний класс для хранения контекста продавца.
      */
     private static class SellerContext {
+        private final User user;
         private final String apiKey;
 
         public SellerContext(User user, String apiKey) {
+            this.user = user;
             this.apiKey = apiKey;
+        }
+
+        public User getUser() {
+            return user;
         }
 
         public String getApiKey() {

@@ -8,22 +8,6 @@ import lombok.Setter;
 
 /**
  * DTO для запроса списка карточек товаров WB API.
- * 
- * Документация: https://dev.wildberries.ru/openapi/work-with-products#tag/Kartochki-tovarov/paths/~1content~1v2~1get~1cards~1list/post
- * 
- * Структура запроса согласно документации:
- * {
- *   "settings": {
- *     "cursor": {
- *       "limit": 100,
- *       "nmID": 0,        // для пагинации (из предыдущего ответа)
- *       "updatedAt": ""   // для пагинации (из предыдущего ответа)
- *     },
- *     "filter": {
- *       "withPhoto": -1  // -1 (все), 0 (без фото), 1 (с фото)
- *     }
- *   }
- * }
  */
 @Getter
 @Setter
@@ -33,7 +17,7 @@ import lombok.Setter;
 public class CardsListRequest {
     
     /**
-     * Настройки запроса (cursor и filter).
+     * Настройки запроса.
      */
     private Settings settings;
     
@@ -49,12 +33,12 @@ public class CardsListRequest {
         private Cursor cursor;
         
         /**
-         * Фильтры (опционально).
+         * Фильтры.
          */
         private Filter filter;
         
         /**
-         * Сортировка (опционально).
+         * Сортировка.
          */
         private Sort sort;
     }
@@ -66,17 +50,17 @@ public class CardsListRequest {
     @AllArgsConstructor
     public static class Cursor {
         /**
-         * Количество элементов на странице (по умолчанию 100, максимум 1000).
+         * Количество элементов на странице.
          */
         private Integer limit;
         
         /**
-         * ID последнего элемента для пагинации (из предыдущего ответа).
+         * ID последнего элемента для пагинации.
          */
         private Long nmID;
         
         /**
-         * Дата обновления последнего элемента для пагинации (из предыдущего ответа).
+         * Дата обновления последнего элемента для пагинации.
          */
         private String updatedAt;
     }
@@ -88,7 +72,7 @@ public class CardsListRequest {
     @AllArgsConstructor
     public static class Filter {
         /**
-         * Поиск по тексту (артикул, баркод, название).
+         * Поиск по тексту.
          */
         private String textSearch;
         
@@ -98,7 +82,7 @@ public class CardsListRequest {
         private Boolean allowedCategoriesOnly;
         
         /**
-         * Массив ID ярлыков (тегов).
+         * Массив ID ярлыков.
          */
         private java.util.List<Integer> tagIDs;
         
@@ -113,7 +97,7 @@ public class CardsListRequest {
         private java.util.List<String> brands;
         
         /**
-         * ID карточки товара (imtID).
+         * ID карточки товара.
          */
         private Long imtID;
         
@@ -130,7 +114,7 @@ public class CardsListRequest {
     @AllArgsConstructor
     public static class Sort {
         /**
-         * Направление сортировки: true (по возрастанию), false (по убыванию).
+         * Направление сортировки.
          */
         private Boolean ascending;
     }
