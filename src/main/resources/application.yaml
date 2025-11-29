@@ -28,12 +28,13 @@ spring:
 
 jwt:
   secret: ${JWT_SECRET:your-secret-key-change-in-production-min-256-bits}
-  expiration: ${JWT_EXPIRATION:86400000}
+  expiration: ${JWT_EXPIRATION:1209600000}
 
 wb:
   api:
     base-url: https://statistics-api.wildberries.ru
     content-base-url: https://content-api.wildberries.ru
+    analytics-base-url: https://seller-analytics-api.wildberries.ru
     timeout: 30000
 
 logging:
@@ -49,10 +50,12 @@ logging:
     org.hibernate.type.descriptor.sql.BasicBinder: INFO
   file:
     name: /app/logs/application.log
-    max-size: 10MB
-    max-history: 30
-    total-size-cap: 300MB
   pattern:
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  logback:
+    rollingpolicy:
+      max-history: 30
+      total-size-cap: 300MB
+      max-file-size: 10MB
 

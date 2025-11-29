@@ -1,0 +1,36 @@
+package ru.oparin.solution.repository;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+import ru.oparin.solution.model.ProductCardAnalytics;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Репозиторий для работы с аналитикой карточек товаров.
+ */
+@Repository
+public interface ProductCardAnalyticsRepository extends JpaRepository<ProductCardAnalytics, Long> {
+
+    /**
+     * Находит аналитику по nmID и дате.
+     */
+    Optional<ProductCardAnalytics> findByProductCardNmIdAndDate(Long nmId, LocalDate date);
+
+    /**
+     * Находит всю аналитику по nmID.
+     */
+    List<ProductCardAnalytics> findByProductCardNmId(Long nmId);
+
+    /**
+     * Находит аналитику по nmID за период.
+     */
+    List<ProductCardAnalytics> findByProductCardNmIdAndDateBetween(
+            Long nmId, 
+            LocalDate dateFrom, 
+            LocalDate dateTo
+    );
+}
+

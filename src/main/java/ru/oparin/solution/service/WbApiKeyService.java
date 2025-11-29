@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.WbApiKey;
 import ru.oparin.solution.repository.WbApiKeyRepository;
+import ru.oparin.solution.service.wb.WbCommonApiClient;
 
 import java.time.LocalDateTime;
 
@@ -21,7 +22,7 @@ import java.time.LocalDateTime;
 public class WbApiKeyService {
 
     private final WbApiKeyRepository wbApiKeyRepository;
-    private final WbApiClient wbApiClient;
+    private final WbCommonApiClient commonApiClient;
 
     /**
      * Поиск API ключа по ID пользователя.
@@ -33,7 +34,7 @@ public class WbApiKeyService {
     public WbApiKey findByUserId(Long userId) {
         return wbApiKeyRepository.findByUserId(userId)
                 .orElseThrow(() -> new UserException(
-                        "API ключ не найден для пользователя с ID: " + userId, 
+                        "API ключ не найден для пользователя с ID: " + userId,
                         HttpStatus.NOT_FOUND
                 ));
     }
@@ -46,27 +47,29 @@ public class WbApiKeyService {
     @Transactional
     public void validateApiKey(Long userId) {
         WbApiKey apiKey = findByUserId(userId);
-        
+
         try {
-            boolean isValid = wbApiClient.validateApiKey(apiKey.getApiKey());
+            boolean isValid = commonApiClient.validateApiKey(apiKey.getApiKey());
             updateValidationStatus(apiKey, isValid, null);
-            
+
             if (!isValid) {
                 log.warn("WB API ключ для пользователя {} невалиден", userId);
             }
         } catch (Exception e) {
-            updateValidationStatus(apiKey, false, "Ошибка при валидации: " + e.getMessage());
+            String errorMessage = "Ошибка при валидации: " + e.getMessage();
+            updateValidationStatus(apiKey, false, errorMessage);
             log.error("Ошибка при валидации WB API ключа для пользователя {}", userId, e);
         }
     }
 
-    /**
-     * Обновляет статус валидации API ключа.
-     */
     private void updateValidationStatus(WbApiKey apiKey, boolean isValid, String errorMessage) {
         apiKey.setIsValid(isValid);
         apiKey.setLastValidatedAt(LocalDateTime.now());
-        apiKey.setValidationError(isValid ? null : (errorMessage != null ? errorMessage : "Ключ не прошел валидацию"));
+        apiKey.setValidationError(isValid ? null : getErrorMessage(errorMessage));
         wbApiKeyRepository.save(apiKey);
+    }
+
+    private String getErrorMessage(String errorMessage) {
+        return errorMessage != null ? errorMessage : "Ключ не прошел валидацию";
     }
 }

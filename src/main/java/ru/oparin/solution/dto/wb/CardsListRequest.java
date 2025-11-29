@@ -6,6 +6,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.List;
+
 /**
  * DTO для запроса списка карточек товаров WB API.
  */
@@ -84,17 +86,17 @@ public class CardsListRequest {
         /**
          * Массив ID ярлыков.
          */
-        private java.util.List<Integer> tagIDs;
+        private List<Integer> tagIDs;
         
         /**
          * Массив ID предметов.
          */
-        private java.util.List<Integer> objectIDs;
+        private List<Integer> objectIDs;
         
         /**
          * Массив названий брендов.
          */
-        private java.util.List<String> brands;
+        private List<String> brands;
         
         /**
          * ID карточки товара.

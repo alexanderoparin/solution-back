@@ -10,6 +10,9 @@ import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.ProductCardRepository;
 
+import java.util.List;
+import java.util.Optional;
+
 /**
  * Сервис для работы с карточками товаров.
  */
@@ -22,53 +25,99 @@ public class ProductCardService {
 
     /**
      * Сохраняет или обновляет карточки товаров из ответа WB API.
-     *
-     * @param response ответ от WB API со списком карточек
-     * @param seller продавец, владелец карточек
      */
     @Transactional
     public void saveOrUpdateCards(CardsListResponse response, User seller) {
-        if (response == null || response.getCards() == null || response.getCards().isEmpty()) {
+        if (isEmptyResponse(response)) {
             return;
         }
 
+        ProcessingResult result = processCards(response.getCards(), seller);
+        
+        log.info("Обработано карточек: создано {}, обновлено {}", 
+                result.savedCount(), result.updatedCount());
+    }
+
+    private boolean isEmptyResponse(CardsListResponse response) {
+        return response == null 
+                || response.getCards() == null 
+                || response.getCards().isEmpty();
+    }
+
+    private ProcessingResult processCards(List<CardDto> cards, User seller) {
         int savedCount = 0;
         int updatedCount = 0;
 
-        for (CardDto cardDto : response.getCards()) {
-            if (cardDto == null || cardDto.getNmId() == null) {
+        for (CardDto cardDto : cards) {
+            if (!isValidCard(cardDto)) {
                 continue;
             }
 
-            ProductCard card = mapToProductCard(cardDto, seller);
-            if (card == null) {
-                continue;
-            }
-
-            Long nmId = card.getNmId();
-            ProductCard existingCard = productCardRepository.findByNmId(nmId)
-                    .orElse(null);
-
-            if (existingCard != null) {
-                if (!existingCard.getSeller().getId().equals(seller.getId())) {
-                    log.warn("Карточка с nmID {} принадлежит другому продавцу, пропускаем", nmId);
-                    continue;
+            Optional<SaveResult> result = processCard(cardDto, seller);
+            if (result.isPresent()) {
+                if (result.get().isNew()) {
+                    savedCount++;
+                } else {
+                    updatedCount++;
                 }
-                updateCard(existingCard, card);
-                productCardRepository.save(existingCard);
-                updatedCount++;
-            } else {
-                productCardRepository.save(card);
-                savedCount++;
             }
         }
 
-        log.info("Обработано карточек: создано {}, обновлено {}", savedCount, updatedCount);
+        return new ProcessingResult(savedCount, updatedCount);
     }
 
-    /**
-     * Преобразует DTO карточки в сущность ProductCard.
-     */
+    private boolean isValidCard(CardDto cardDto) {
+        return cardDto != null && cardDto.getNmId() != null;
+    }
+
+    private Optional<SaveResult> processCard(CardDto cardDto, User seller) {
+        try {
+            ProductCard card = mapToProductCard(cardDto, seller);
+            if (card == null) {
+                return Optional.empty();
+            }
+
+            Optional<ProductCard> existingCard = productCardRepository.findByNmId(card.getNmId());
+
+            if (existingCard.isPresent()) {
+                return handleExistingCard(existingCard.get(), card, seller);
+            } else {
+                return handleNewCard(card);
+            }
+
+        } catch (Exception e) {
+            log.error("Ошибка при обработке карточки nmID {}: {}", 
+                    cardDto.getNmId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private Optional<SaveResult> handleExistingCard(
+            ProductCard existingCard, 
+            ProductCard updatedCard, 
+            User seller
+    ) {
+        if (!isCardBelongsToSeller(existingCard, seller)) {
+            log.warn("Карточка с nmID {} принадлежит другому продавцу, пропускаем", 
+                    existingCard.getNmId());
+            return Optional.empty();
+        }
+
+        updateCardFields(existingCard, updatedCard);
+        productCardRepository.save(existingCard);
+        
+        return Optional.of(new SaveResult(false));
+    }
+
+    private boolean isCardBelongsToSeller(ProductCard card, User seller) {
+        return card.getSeller().getId().equals(seller.getId());
+    }
+
+    private Optional<SaveResult> handleNewCard(ProductCard card) {
+        productCardRepository.save(card);
+        return Optional.of(new SaveResult(true));
+    }
+
     private ProductCard mapToProductCard(CardDto cardDto, User seller) {
         String photoTm = extractPhotoTm(cardDto);
 
@@ -84,9 +133,6 @@ public class ProductCardService {
                 .build();
     }
 
-    /**
-     * Извлекает URL миниатюры из массива photos.
-     */
     private String extractPhotoTm(CardDto cardDto) {
         if (cardDto.getPhotos() == null || cardDto.getPhotos().isEmpty()) {
             return null;
@@ -96,10 +142,7 @@ public class ProductCardService {
         return firstPhoto != null ? firstPhoto.getTm() : null;
     }
 
-    /**
-     * Обновляет существующую карточку данными из новой карточки.
-     */
-    private void updateCard(ProductCard existing, ProductCard updated) {
+    private void updateCardFields(ProductCard existing, ProductCard updated) {
         existing.setImtId(updated.getImtId());
         existing.setTitle(updated.getTitle());
         existing.setSubjectName(updated.getSubjectName());
@@ -107,5 +150,10 @@ public class ProductCardService {
         existing.setVendorCode(updated.getVendorCode());
         existing.setPhotoTm(updated.getPhotoTm());
     }
-}
 
+    private record ProcessingResult(int savedCount, int updatedCount) {
+    }
+
+    private record SaveResult(boolean isNew) {
+    }
+}
