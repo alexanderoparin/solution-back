@@ -33,6 +33,8 @@ public class WbCommonApiClient extends AbstractWbApiClient {
             HttpEntity<String> entity = new HttpEntity<>(headers);
             String url = baseUrl + VALIDATION_ENDPOINT;
             
+            log.info("Запрос валидации API ключа: {}", url);
+            
             ResponseEntity<String> response = restTemplate.exchange(
                     url,
                     HttpMethod.GET,
@@ -54,6 +56,8 @@ public class WbCommonApiClient extends AbstractWbApiClient {
     public SellerInfoResponse getSellerInfo(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
+        
+        log.info("Запрос информации о продавце: {}", SELLER_INFO_URL);
         
         ResponseEntity<SellerInfoResponse> response = restTemplate.exchange(
                 SELLER_INFO_URL,

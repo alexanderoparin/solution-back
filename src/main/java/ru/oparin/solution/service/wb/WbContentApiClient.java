@@ -39,6 +39,8 @@ public class WbContentApiClient extends AbstractWbApiClient {
         HttpEntity<CardsListRequest> entity = new HttpEntity<>(requestBody, headers);
         String url = contentBaseUrl + CARDS_LIST_ENDPOINT;
         
+        log.info("Запрос списка карточек товаров: {}", url);
+        
         ResponseEntity<String> response = executePostRequest(url, entity);
         return parseCardsListResponse(response);
     }
@@ -52,6 +54,8 @@ public class WbContentApiClient extends AbstractWbApiClient {
         CardsListRequest requestBody = buildTrashRequestBody(request);
         HttpEntity<CardsListRequest> entity = new HttpEntity<>(requestBody, headers);
         String url = contentBaseUrl + CARDS_TRASH_ENDPOINT;
+        
+        log.info("Запрос списка карточек из корзины: {}", url);
         
         ResponseEntity<CardsListResponse> response = restTemplate.exchange(
                 url,
@@ -74,6 +78,8 @@ public class WbContentApiClient extends AbstractWbApiClient {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
         String url = contentBaseUrl + PING_ENDPOINT;
+        
+        log.info("Запрос проверки подключения: {}", url);
         
         ResponseEntity<PingResponse> response = restTemplate.exchange(
                 url,

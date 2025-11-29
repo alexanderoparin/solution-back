@@ -37,6 +37,8 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
     public SaleFunnelResponse getSaleFunnelProduct(String apiKey, Long nmId, String dateFrom, String dateTo) {
         String fullUrl = analyticsBaseUrl + SALE_FUNNEL_PRODUCT_HISTORY_ENDPOINT;
         
+        log.info("Запрос аналитики воронки продаж: {}", fullUrl);
+        
         LocalDate validatedFromDate = validateAndAdjustDateFrom(dateFrom);
         LocalDate validatedToDate = validateAndAdjustDateTo(dateTo);
         
