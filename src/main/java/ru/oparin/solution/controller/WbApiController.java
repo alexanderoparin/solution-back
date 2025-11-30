@@ -10,14 +10,18 @@ import ru.oparin.solution.dto.wb.CardsListRequest;
 import ru.oparin.solution.dto.wb.CardsListResponse;
 import ru.oparin.solution.dto.wb.PingResponse;
 import ru.oparin.solution.dto.wb.SellerInfoResponse;
+import ru.oparin.solution.dto.wb.WbWarehouseResponse;
 import ru.oparin.solution.service.CardsListRequestBuilder;
 import ru.oparin.solution.service.ProductCardAnalyticsService;
 import ru.oparin.solution.service.ProductCardService;
 import ru.oparin.solution.service.SellerContextService;
+import ru.oparin.solution.service.WbWarehouseService;
 import ru.oparin.solution.service.wb.WbCommonApiClient;
 import ru.oparin.solution.service.wb.WbContentApiClient;
+import ru.oparin.solution.service.wb.WbWarehousesApiClient;
 import ru.oparin.solution.validation.AnalyticsPeriodValidator;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -33,6 +37,8 @@ public class WbApiController {
     private final SellerContextService sellerContextService;
     private final ProductCardService productCardService;
     private final ProductCardAnalyticsService analyticsService;
+    private final WbWarehousesApiClient warehousesApiClient;
+    private final WbWarehouseService warehouseService;
 
     @PostMapping("/cards/list")
     public ResponseEntity<CardsListResponse> getCardsList(
@@ -105,5 +111,15 @@ public class WbApiController {
         );
         
         return ResponseEntity.ok(Map.of("message", "Обновление карточек и загрузка аналитики запущено"));
+    }
+
+    @GetMapping("/warehouses/update")
+    public ResponseEntity<Map<String, String>> updateWbWarehouses(Authentication authentication) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
+        
+        List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(context.apiKey());
+        warehouseService.saveOrUpdateWarehouses(warehouses);
+        
+        return ResponseEntity.ok(Map.of("message", "Обновление складов WB завершено"));
     }
 }

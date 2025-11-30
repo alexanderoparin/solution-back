@@ -10,6 +10,9 @@ import ru.oparin.solution.model.WbApiKey;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.service.ProductCardAnalyticsService;
 import ru.oparin.solution.service.WbApiKeyService;
+import ru.oparin.solution.dto.wb.WbWarehouseResponse;
+import ru.oparin.solution.service.WbWarehouseService;
+import ru.oparin.solution.service.wb.WbWarehousesApiClient;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -25,6 +28,8 @@ public class AnalyticsScheduler {
     private final UserRepository userRepository;
     private final WbApiKeyService wbApiKeyService;
     private final ProductCardAnalyticsService analyticsService;
+    private final WbWarehousesApiClient warehousesApiClient;
+    private final WbWarehouseService warehouseService;
 
     /**
      * Автоматическая загрузка аналитики для всех активных продавцов.
@@ -62,6 +67,38 @@ public class AnalyticsScheduler {
 
         log.info("Завершена автоматическая загрузка аналитики: успешно {}, ошибок {}", 
                 successCount, errorCount);
+    }
+
+    /**
+     * Автоматическое обновление списка складов WB.
+     * Запускается каждый день в 4:00 утра.
+     */
+    @Scheduled(cron = "0 0 4 * * ?")
+    public void updateWbWarehouses() {
+        log.info("Запуск автоматического обновления складов WB");
+
+        try {
+            // Берем API ключ первого активного продавца для запроса
+            List<User> activeSellers = findActiveSellers();
+            if (activeSellers.isEmpty()) {
+                log.warn("Не найдено активных продавцов для обновления складов WB");
+                return;
+            }
+
+            User firstSeller = activeSellers.get(0);
+            WbApiKey apiKey = wbApiKeyService.findByUserId(firstSeller.getId());
+
+            log.info("Обновление складов WB с использованием API ключа продавца (ID: {}, email: {})",
+                    firstSeller.getId(), firstSeller.getEmail());
+
+            List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(apiKey.getApiKey());
+            warehouseService.saveOrUpdateWarehouses(warehouses);
+
+            log.info("Завершено автоматическое обновление складов WB");
+
+        } catch (Exception e) {
+            log.error("Ошибка при автоматическом обновлении складов WB: {}", e.getMessage(), e);
+        }
     }
 
     private List<User> findActiveSellers() {
