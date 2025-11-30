@@ -42,6 +42,7 @@ public class SecurityConfig {
     private static final String ADMIN_ENDPOINTS = "/admin/**";
     private static final String SELLER_ENDPOINTS = "/seller/**";
     private static final String WORKER_ENDPOINTS = "/worker/**";
+    private static final String ANALYTICS_ENDPOINTS = "/analytics/**";
     public static final String ADMIN = Role.ADMIN.name();
     public static final String SELLER = Role.SELLER.name();
     public static final String WORKER = Role.WORKER.name();
@@ -126,6 +127,7 @@ public class SecurityConfig {
                 .requestMatchers(ADMIN_ENDPOINTS).hasRole(ADMIN)
                 .requestMatchers(SELLER_ENDPOINTS).hasAnyRole(ADMIN, SELLER)
                 .requestMatchers(WORKER_ENDPOINTS).hasAnyRole(ADMIN, SELLER, WORKER)
+                .requestMatchers(ANALYTICS_ENDPOINTS).hasAnyRole(ADMIN, SELLER)
                 .anyRequest().authenticated();
     }
 

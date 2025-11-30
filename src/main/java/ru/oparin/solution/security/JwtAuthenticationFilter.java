@@ -43,6 +43,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             
             if (isValidJwtToken(jwt)) {
                 setAuthenticationInContext(request, jwt);
+            } else {
+                logger.debug("JWT токен не найден или невалиден для запроса: " + request.getMethod() + " " + request.getRequestURI());
             }
         } catch (Exception ex) {
             logger.error("Не удалось установить аутентификацию пользователя в контексте безопасности", ex);

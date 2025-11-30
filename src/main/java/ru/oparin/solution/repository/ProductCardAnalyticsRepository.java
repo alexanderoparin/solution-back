@@ -32,5 +32,14 @@ public interface ProductCardAnalyticsRepository extends JpaRepository<ProductCar
             LocalDate dateFrom, 
             LocalDate dateTo
     );
+
+    /**
+     * Находит аналитику по списку nmID за период.
+     */
+    List<ProductCardAnalytics> findByProductCardNmIdInAndDateBetween(
+            List<Long> nmIds,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    );
 }
 
