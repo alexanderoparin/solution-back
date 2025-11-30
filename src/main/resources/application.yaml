@@ -36,6 +36,7 @@ wb:
     content-base-url: https://content-api.wildberries.ru
     analytics-base-url: https://seller-analytics-api.wildberries.ru
     promotion-base-url: https://advert-api.wildberries.ru
+    discounts-prices-base-url: https://discounts-prices-api.wildberries.ru
     timeout: 30000
 
 logging:

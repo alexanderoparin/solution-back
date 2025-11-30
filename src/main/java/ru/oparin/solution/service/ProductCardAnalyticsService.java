@@ -15,6 +15,7 @@ import ru.oparin.solution.dto.wb.SaleFunnelResponse;
 import ru.oparin.solution.model.CampaignStatus;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.ProductCardAnalytics;
+import ru.oparin.solution.model.ProductPriceHistory;
 import ru.oparin.solution.model.PromotionCampaign;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
@@ -23,10 +24,14 @@ import ru.oparin.solution.repository.PromotionCampaignRepository;
 import ru.oparin.solution.service.wb.WbAnalyticsApiClient;
 import ru.oparin.solution.service.wb.WbContentApiClient;
 import ru.oparin.solution.service.wb.WbPromotionApiClient;
+import ru.oparin.solution.service.wb.WbProductsApiClient;
+import ru.oparin.solution.dto.wb.ProductPricesRequest;
+import ru.oparin.solution.dto.wb.ProductPricesResponse;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -44,6 +49,8 @@ public class ProductCardAnalyticsService {
     private static final int API_CALL_DELAY_MS = 20000; // 20 секунд для карточек и кампаний
     private static final int STATISTICS_API_CALL_DELAY_MS = 20000; // 20 секунд для статистики (лимит: 3 запроса в минуту)
     private static final int CARDS_PAGE_LIMIT = 100;
+    private static final int PRICES_API_CALL_DELAY_MS = 600; // 600 мс между запросами цен (лимит: 10 запросов за 6 секунд)
+    private static final int PRICES_BATCH_SIZE = 1000; // Максимум товаров за один запрос
 
     private final ProductCardRepository productCardRepository;
     private final ProductCardAnalyticsRepository analyticsRepository;
@@ -54,6 +61,8 @@ public class ProductCardAnalyticsService {
     private final PromotionCampaignService promotionCampaignService;
     private final PromotionCampaignStatisticsService campaignStatisticsService;
     private final PromotionCampaignRepository campaignRepository;
+    private final WbProductsApiClient productsApiClient;
+    private final ProductPriceService productPriceService;
 
     /**
      * Обновляет все карточки и загружает аналитику за указанный период.
@@ -69,14 +78,17 @@ public class ProductCardAnalyticsService {
         CardsListResponse cardsResponse = fetchAllCards(apiKey);
         productCardService.saveOrUpdateCards(cardsResponse, seller);
 
+        // Загрузка цен товаров за вчерашнюю дату
+        updateProductPrices(seller, apiKey);
+
         // Обновление рекламных кампаний
         List<Long> campaignIds = updatePromotionCampaigns(seller, apiKey);
 
         // Загрузка статистики по кампаниям (исключая завершенные)
         if (!campaignIds.isEmpty()) {
-            List<Long> activeCampaignIds = filterActiveCampaigns(seller.getId(), campaignIds);
-            if (!activeCampaignIds.isEmpty()) {
-                updatePromotionCampaignStatistics(seller, apiKey, activeCampaignIds, dateFrom, dateTo);
+            List<Long> nonFinishedCampaignIds = filterNonFinishedCampaigns(seller.getId(), campaignIds);
+            if (!nonFinishedCampaignIds.isEmpty()) {
+                updatePromotionCampaignStatistics(seller, apiKey, nonFinishedCampaignIds, dateFrom, dateTo);
             }
         }
 
@@ -305,25 +317,26 @@ public class ProductCardAnalyticsService {
     }
 
     /**
-     * Фильтрует список ID кампаний, оставляя только активные (не завершенные).
+     * Фильтрует список ID кампаний, исключая завершенные.
+     * Оставляет активные, на паузе и готовые к запуску кампании.
      *
      * @param sellerId ID продавца
      * @param campaignIds список ID всех кампаний
-     * @return список ID активных кампаний
+     * @return список ID незавершенных кампаний
      */
-    private List<Long> filterActiveCampaigns(Long sellerId, List<Long> campaignIds) {
+    private List<Long> filterNonFinishedCampaigns(Long sellerId, List<Long> campaignIds) {
         List<PromotionCampaign> campaigns = campaignRepository.findBySellerId(sellerId);
         
         Set<Long> finishedCampaignIds = extractFinishedCampaignIds(campaigns);
-        List<Long> activeCampaignIds = filterOutFinishedCampaigns(campaignIds, finishedCampaignIds);
+        List<Long> nonFinishedCampaignIds = filterOutFinishedCampaigns(campaignIds, finishedCampaignIds);
         
-        int filteredCount = campaignIds.size() - activeCampaignIds.size();
+        int filteredCount = campaignIds.size() - nonFinishedCampaignIds.size();
         if (filteredCount > 0) {
-            log.info("Исключено {} завершенных кампаний из запроса статистики. Активных кампаний: {}",
-                    filteredCount, activeCampaignIds.size());
+            log.info("Исключено {} завершенных кампаний из запроса статистики. Незавершенных кампаний: {}",
+                    filteredCount, nonFinishedCampaignIds.size());
         }
         
-        return activeCampaignIds;
+        return nonFinishedCampaignIds;
     }
 
     private Set<Long> extractFinishedCampaignIds(List<PromotionCampaign> campaigns) {
@@ -759,5 +772,112 @@ public class ProductCardAnalyticsService {
     }
 
     private record DateRange(LocalDate from, LocalDate to) {
+    }
+
+    /**
+     * Обновляет цены товаров за вчерашнюю дату.
+     */
+    private void updateProductPrices(User seller, String apiKey) {
+        try {
+            LocalDate yesterdayDate = LocalDate.now().minusDays(1);
+            log.info("Начало загрузки цен товаров за дату {} для продавца (ID: {}, email: {})", 
+                    yesterdayDate, seller.getId(), seller.getEmail());
+
+            // Получаем список всех карточек продавца
+            List<ProductCard> productCards = productCardRepository.findBySellerId(seller.getId());
+            
+            if (productCards.isEmpty()) {
+                log.info("У продавца (ID: {}, email: {}) нет карточек товаров для загрузки цен", 
+                        seller.getId(), seller.getEmail());
+                return;
+            }
+
+            // Собираем список nmId
+            List<Long> nmIds = productCards.stream()
+                    .map(ProductCard::getNmId)
+                    .filter(nmId -> nmId != null)
+                    .distinct()
+                    .collect(Collectors.toList());
+
+            if (nmIds.isEmpty()) {
+                log.warn("Не найдено валидных nmId для загрузки цен у продавца (ID: {}, email: {})", 
+                        seller.getId(), seller.getEmail());
+                return;
+            }
+
+            // Проверяем, есть ли уже цены за вчерашнюю дату для всех товаров
+            List<ProductPriceHistory> existingPrices = productPriceService.getPricesByNmIdsAndDate(nmIds, yesterdayDate);
+            Set<Long> existingNmIds = existingPrices.stream()
+                    .map(ProductPriceHistory::getNmId)
+                    .collect(Collectors.toSet());
+
+            if (existingNmIds.size() == nmIds.size()) {
+                log.info("Цены за дату {} уже загружены для всех {} товаров продавца (ID: {}, email: {}). Пропускаем загрузку.", 
+                        yesterdayDate, nmIds.size(), seller.getId(), seller.getEmail());
+                return;
+            }
+
+            // Фильтруем товары, для которых еще нет цен
+            List<Long> nmIdsToLoad = nmIds.stream()
+                    .filter(nmId -> !existingNmIds.contains(nmId))
+                    .collect(Collectors.toList());
+
+            if (nmIdsToLoad.isEmpty()) {
+                log.info("Цены за дату {} уже загружены для всех товаров продавца (ID: {}, email: {}). Пропускаем загрузку.", 
+                        yesterdayDate, seller.getId(), seller.getEmail());
+                return;
+            }
+
+            log.info("Найдено {} товаров для загрузки цен у продавца (ID: {}, email: {}). Уже загружено: {}, требуется загрузить: {}", 
+                    nmIds.size(), seller.getId(), seller.getEmail(), existingNmIds.size(), nmIdsToLoad.size());
+
+            // Разбиваем на батчи по 1000 товаров
+            List<List<Long>> batches = partitionList(nmIdsToLoad, PRICES_BATCH_SIZE);
+            log.info("Разбито на {} батчей для загрузки цен", batches.size());
+
+            // Загружаем цены батчами
+            for (int i = 0; i < batches.size(); i++) {
+                List<Long> batch = batches.get(i);
+                log.info("Загрузка цен для батча {}/{} ({} товаров)", i + 1, batches.size(), batch.size());
+
+                try {
+                    ProductPricesRequest request = ProductPricesRequest.builder()
+                            .nmList(batch)
+                            .build();
+
+                    ProductPricesResponse response = productsApiClient.getProductPrices(apiKey, request);
+                    productPriceService.savePrices(response, yesterdayDate);
+
+                    // Задержка между запросами (кроме последнего)
+                    if (i < batches.size() - 1) {
+                        Thread.sleep(PRICES_API_CALL_DELAY_MS);
+                    }
+                } catch (Exception e) {
+                    log.error("Ошибка при загрузке цен для батча {}/{}: {}", 
+                            i + 1, batches.size(), e.getMessage(), e);
+                    // Продолжаем загрузку остальных батчей
+                }
+            }
+
+            log.info("Завершена загрузка цен товаров за дату {} для продавца (ID: {}, email: {})", 
+                    yesterdayDate, seller.getId(), seller.getEmail());
+
+        } catch (Exception e) {
+            log.error("Ошибка при загрузке цен товаров для продавца (ID: {}, email: {}): {}", 
+                    seller.getId(), seller.getEmail(), e.getMessage(), e);
+            // Не прерываем выполнение, продолжаем загрузку аналитики
+        }
+    }
+
+    /**
+     * Разбивает список на части указанного размера.
+     */
+    private <T> List<List<T>> partitionList(List<T> list, int batchSize) {
+        List<List<T>> batches = new ArrayList<>();
+        for (int i = 0; i < list.size(); i += batchSize) {
+            int end = Math.min(i + batchSize, list.size());
+            batches.add(new ArrayList<>(list.subList(i, end)));
+        }
+        return batches;
     }
 }
