@@ -6,12 +6,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.wb.CardDto;
 import ru.oparin.solution.dto.wb.CardsListResponse;
+import ru.oparin.solution.model.ProductBarcode;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.repository.ProductBarcodeRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Сервис для работы с карточками товаров.
@@ -22,6 +26,7 @@ import java.util.Optional;
 public class ProductCardService {
 
     private final ProductCardRepository productCardRepository;
+    private final ProductBarcodeRepository barcodeRepository;
 
     /**
      * Сохраняет или обновляет карточки товаров из ответа WB API.
@@ -80,9 +85,9 @@ public class ProductCardService {
             Optional<ProductCard> existingCard = productCardRepository.findByNmId(card.getNmId());
 
             if (existingCard.isPresent()) {
-                return handleExistingCard(existingCard.get(), card, seller);
+                return handleExistingCard(existingCard.get(), card, seller, cardDto);
             } else {
-                return handleNewCard(card);
+                return handleNewCard(card, cardDto);
             }
 
         } catch (Exception e) {
@@ -95,7 +100,8 @@ public class ProductCardService {
     private Optional<SaveResult> handleExistingCard(
             ProductCard existingCard, 
             ProductCard updatedCard, 
-            User seller
+            User seller,
+            CardDto cardDto
     ) {
         if (!isCardBelongsToSeller(existingCard, seller)) {
             log.warn("Карточка с nmID {} принадлежит другому продавцу, пропускаем", 
@@ -106,15 +112,80 @@ public class ProductCardService {
         updateCardFields(existingCard, updatedCard);
         productCardRepository.save(existingCard);
         
+        // Обновляем баркоды
+        saveBarcodes(cardDto);
+        
         return Optional.of(new SaveResult(false));
+    }
+
+    /**
+     * Сохраняет баркоды товара из карточки.
+     */
+    private void saveBarcodes(CardDto cardDto) {
+        if (cardDto.getSizes() == null || cardDto.getSizes().isEmpty()) {
+            return;
+        }
+
+        // Удаляем старые баркоды для этого товара
+        barcodeRepository.deleteByNmId(cardDto.getNmId());
+
+        // Используем Set для отслеживания уже обработанных SKU в рамках одного товара
+        // (на случай, если один и тот же SKU встречается несколько раз в разных размерах)
+        Set<String> processedSkus = new HashSet<>();
+
+        // Сохраняем новые баркоды
+        for (CardDto.Size size : cardDto.getSizes()) {
+            if (size.getSkus() == null || size.getSkus().isEmpty()) {
+                continue;
+            }
+
+            for (String sku : size.getSkus()) {
+                if (sku == null || sku.isEmpty()) {
+                    continue;
+                }
+
+                // Пропускаем дубликаты SKU в рамках одного товара
+                if (processedSkus.contains(sku)) {
+                    log.debug("Пропущен дубликат SKU {} для товара nmID {}", sku, cardDto.getNmId());
+                    continue;
+                }
+
+                processedSkus.add(sku);
+
+                // Проверяем, существует ли уже такой баркод (на случай проблем с транзакцией)
+                Optional<ProductBarcode> existingBarcode = barcodeRepository
+                        .findByNmIdAndSku(cardDto.getNmId(), sku);
+
+                if (existingBarcode.isPresent()) {
+                    // Обновляем существующий баркод
+                    ProductBarcode barcode = existingBarcode.get();
+                    barcode.setChrtId(size.getChrtId());
+                    barcode.setTechSize(size.getTechSize());
+                    barcodeRepository.save(barcode);
+                } else {
+                    // Создаем новый баркод
+                    ProductBarcode barcode = ProductBarcode.builder()
+                            .nmId(cardDto.getNmId())
+                            .chrtId(size.getChrtId())
+                            .sku(sku)
+                            .techSize(size.getTechSize())
+                            .build();
+                    barcodeRepository.save(barcode);
+                }
+            }
+        }
     }
 
     private boolean isCardBelongsToSeller(ProductCard card, User seller) {
         return card.getSeller().getId().equals(seller.getId());
     }
 
-    private Optional<SaveResult> handleNewCard(ProductCard card) {
+    private Optional<SaveResult> handleNewCard(ProductCard card, CardDto cardDto) {
         productCardRepository.save(card);
+        
+        // Сохраняем баркоды
+        saveBarcodes(cardDto);
+        
         return Optional.of(new SaveResult(true));
     }
 

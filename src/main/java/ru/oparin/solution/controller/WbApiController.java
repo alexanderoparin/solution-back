@@ -5,15 +5,18 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import ru.oparin.solution.dto.StocksRequest;
 import ru.oparin.solution.dto.wb.AnalyticsRequest;
 import ru.oparin.solution.dto.wb.CardsListRequest;
 import ru.oparin.solution.dto.wb.CardsListResponse;
 import ru.oparin.solution.dto.wb.PingResponse;
+import ru.oparin.solution.dto.wb.ProductStocksResponse;
 import ru.oparin.solution.dto.wb.SellerInfoResponse;
 import ru.oparin.solution.dto.wb.WbWarehouseResponse;
 import ru.oparin.solution.service.CardsListRequestBuilder;
 import ru.oparin.solution.service.ProductCardAnalyticsService;
 import ru.oparin.solution.service.ProductCardService;
+import ru.oparin.solution.service.ProductStocksService;
 import ru.oparin.solution.service.SellerContextService;
 import ru.oparin.solution.service.WbWarehouseService;
 import ru.oparin.solution.service.wb.WbCommonApiClient;
@@ -39,6 +42,7 @@ public class WbApiController {
     private final ProductCardAnalyticsService analyticsService;
     private final WbWarehousesApiClient warehousesApiClient;
     private final WbWarehouseService warehouseService;
+    private final ProductStocksService stocksService;
 
     @PostMapping("/cards/list")
     public ResponseEntity<CardsListResponse> getCardsList(
@@ -121,5 +125,21 @@ public class WbApiController {
         warehouseService.saveOrUpdateWarehouses(warehouses);
         
         return ResponseEntity.ok(Map.of("message", "Обновление складов WB завершено"));
+    }
+
+    @PostMapping("/stocks")
+    public ResponseEntity<ProductStocksResponse> getStocks(
+            @Valid @RequestBody StocksRequest request,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
+        
+        ProductStocksResponse response = stocksService.getStocks(
+                context.apiKey(),
+                request.getWarehouseId(),
+                request.getNmIds()
+        );
+        
+        return ResponseEntity.ok(response);
     }
 }

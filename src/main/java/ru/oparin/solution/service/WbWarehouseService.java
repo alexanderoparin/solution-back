@@ -8,7 +8,6 @@ import ru.oparin.solution.dto.wb.WbWarehouseResponse;
 import ru.oparin.solution.model.WbWarehouse;
 import ru.oparin.solution.repository.WbWarehouseRepository;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
