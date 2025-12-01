@@ -8,11 +8,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.math.BigDecimal;
-import java.util.List;
-
 /**
- * DTO для ответа со списком складов WB от /api/v3/offices.
+ * DTO для ответа со списком складов WB от /api/v1/warehouses.
  */
 @Getter
 @Setter
@@ -22,34 +19,51 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class WbWarehouseResponse {
 
-    @JsonProperty("id")
+    /**
+     * ID склада.
+     */
+    @JsonProperty("ID")
     private Integer id;
 
-    @JsonProperty("address")
-    private String address;
-
+    /**
+     * Название склада.
+     */
     @JsonProperty("name")
     private String name;
 
-    @JsonProperty("city")
-    private String city;
+    /**
+     * Адрес склада.
+     */
+    @JsonProperty("address")
+    private String address;
 
-    @JsonProperty("longitude")
-    private BigDecimal longitude;
+    /**
+     * Режим работы склада.
+     */
+    @JsonProperty("workTime")
+    private String workTime;
 
-    @JsonProperty("latitude")
-    private BigDecimal latitude;
+    /**
+     * Принимает ли склад QR-поставки:
+     * true — да
+     * false — нет
+     */
+    @JsonProperty("acceptsQr")
+    private Boolean acceptsQr;
 
-    @JsonProperty("cargoType")
-    private Integer cargoType;
+    /**
+     * Доступен ли в качестве склада назначения:
+     * true — да
+     * false — нет
+     */
+    @JsonProperty("isActive")
+    private Boolean isActive;
 
-    @JsonProperty("deliveryType")
-    private Integer deliveryType;
-
-    @JsonProperty("federalDistrict")
-    private String federalDistrict;
-
-    @JsonProperty("selected")
-    private Boolean selected;
+    /**
+     * Доступен ли в качестве транзитного склада:
+     * true — да
+     * false — нет
+     */
+    @JsonProperty("isTransitActive")
+    private Boolean isTransitActive;
 }
-

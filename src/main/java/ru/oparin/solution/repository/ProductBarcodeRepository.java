@@ -11,12 +11,17 @@ import java.util.Optional;
  * Репозиторий для работы с баркодами товаров.
  */
 @Repository
-public interface ProductBarcodeRepository extends JpaRepository<ProductBarcode, Long> {
+public interface ProductBarcodeRepository extends JpaRepository<ProductBarcode, String> {
 
     /**
-     * Находит баркод по nmID и sku.
+     * Находит баркод по баркоду (уникальный ключ).
      */
-    Optional<ProductBarcode> findByNmIdAndSku(Long nmId, String sku);
+    Optional<ProductBarcode> findByBarcode(String barcode);
+
+    /**
+     * Находит баркод по nmID и баркоду.
+     */
+    Optional<ProductBarcode> findByNmIdAndBarcode(Long nmId, String barcode);
 
     /**
      * Находит все баркоды для товара.

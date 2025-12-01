@@ -12,10 +12,8 @@ import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.ProductBarcodeRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 /**
  * Сервис для работы с карточками товаров.
@@ -120,55 +118,51 @@ public class ProductCardService {
 
     /**
      * Сохраняет баркоды товара из карточки.
+     * Баркоды сохраняются из CardDto.Size.skus, каждый баркод - отдельная запись.
+     * Баркод является уникальным ключом.
      */
     private void saveBarcodes(CardDto cardDto) {
         if (cardDto.getSizes() == null || cardDto.getSizes().isEmpty()) {
             return;
         }
 
-        // Удаляем старые баркоды для этого товара
-        barcodeRepository.deleteByNmId(cardDto.getNmId());
-
-        // Используем Set для отслеживания уже обработанных SKU в рамках одного товара
-        // (на случай, если один и тот же SKU встречается несколько раз в разных размерах)
-        Set<String> processedSkus = new HashSet<>();
-
-        // Сохраняем новые баркоды
+        // Сохраняем баркоды из каждого размера
         for (CardDto.Size size : cardDto.getSizes()) {
             if (size.getSkus() == null || size.getSkus().isEmpty()) {
                 continue;
             }
 
-            for (String sku : size.getSkus()) {
-                if (sku == null || sku.isEmpty()) {
+            // Проверяем обязательные поля размера
+            if (size.getChrtId() == null) {
+                log.warn("Размер для товара nmID {} не имеет chrtID, пропускаем", cardDto.getNmId());
+                continue;
+            }
+
+            // Сохраняем каждый баркод из массива skus
+            for (String barcodeValue : size.getSkus()) {
+                if (barcodeValue == null || barcodeValue.isEmpty()) {
                     continue;
                 }
 
-                // Пропускаем дубликаты SKU в рамках одного товара
-                if (processedSkus.contains(sku)) {
-                    log.debug("Пропущен дубликат SKU {} для товара nmID {}", sku, cardDto.getNmId());
-                    continue;
-                }
-
-                processedSkus.add(sku);
-
-                // Проверяем, существует ли уже такой баркод (на случай проблем с транзакцией)
-                Optional<ProductBarcode> existingBarcode = barcodeRepository
-                        .findByNmIdAndSku(cardDto.getNmId(), sku);
+                // Проверяем, существует ли уже такой баркод (баркод - уникальный ключ)
+                Optional<ProductBarcode> existingBarcode = barcodeRepository.findByBarcode(barcodeValue);
 
                 if (existingBarcode.isPresent()) {
-                    // Обновляем существующий баркод
+                    // Обновляем существующий баркод (может измениться nmId, chrtId, techSize, wbSize)
                     ProductBarcode barcode = existingBarcode.get();
+                    barcode.setNmId(cardDto.getNmId());
                     barcode.setChrtId(size.getChrtId());
                     barcode.setTechSize(size.getTechSize());
+                    barcode.setWbSize(size.getWbSize());
                     barcodeRepository.save(barcode);
                 } else {
                     // Создаем новый баркод
                     ProductBarcode barcode = ProductBarcode.builder()
                             .nmId(cardDto.getNmId())
                             .chrtId(size.getChrtId())
-                            .sku(sku)
+                            .barcode(barcodeValue)
                             .techSize(size.getTechSize())
+                            .wbSize(size.getWbSize())
                             .build();
                     barcodeRepository.save(barcode);
                 }

@@ -38,6 +38,7 @@ wb:
     promotion-base-url: https://advert-api.wildberries.ru
     discounts-prices-base-url: https://discounts-prices-api.wildberries.ru
     marketplace-base-url: https://marketplace-api.wildberries.ru
+    supplies-base-url: https://supplies-api.wildberries.ru
     timeout: 30000
 
 logging:

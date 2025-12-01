@@ -4,7 +4,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.ProductStock;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -15,35 +14,40 @@ import java.util.Optional;
 public interface ProductStockRepository extends JpaRepository<ProductStock, Long> {
 
     /**
-     * Находит остаток по nmID, warehouseId, sku и дате.
+     * Находит остаток по nmID, warehouseId и баркоду.
      */
-    Optional<ProductStock> findByNmIdAndWarehouseIdAndSkuAndDate(
-            Long nmId, Long warehouseId, String sku, LocalDate date
+    Optional<ProductStock> findByNmIdAndWarehouseIdAndBarcode(
+            Long nmId, Long warehouseId, String barcode
     );
 
     /**
-     * Находит все остатки для товара на складе за указанную дату.
+     * Находит все остатки для товара на складе.
      */
-    List<ProductStock> findByNmIdAndWarehouseIdAndDate(Long nmId, Long warehouseId, LocalDate date);
+    List<ProductStock> findByNmIdAndWarehouseId(Long nmId, Long warehouseId);
 
     /**
-     * Находит все остатки для товара за указанную дату (на всех складах).
+     * Находит все остатки для товара (на всех складах).
      */
-    List<ProductStock> findByNmIdAndDate(Long nmId, LocalDate date);
+    List<ProductStock> findByNmId(Long nmId);
 
     /**
-     * Находит все остатки для списка товаров за указанную дату.
+     * Находит все остатки для списка товаров.
      */
-    List<ProductStock> findByNmIdInAndDate(List<Long> nmIds, LocalDate date);
+    List<ProductStock> findByNmIdIn(List<Long> nmIds);
 
     /**
-     * Находит все остатки на складе за указанную дату.
+     * Находит все остатки на складе.
      */
-    List<ProductStock> findByWarehouseIdAndDate(Long warehouseId, LocalDate date);
+    List<ProductStock> findByWarehouseId(Long warehouseId);
 
     /**
-     * Удаляет все остатки для товара на складе за указанную дату.
+     * Удаляет все остатки для товара на складе.
      */
-    void deleteByNmIdAndWarehouseIdAndDate(Long nmId, Long warehouseId, LocalDate date);
+    void deleteByNmIdAndWarehouseId(Long nmId, Long warehouseId);
+
+    /**
+     * Удаляет все остатки для товара.
+     */
+    void deleteByNmId(Long nmId);
 }
 

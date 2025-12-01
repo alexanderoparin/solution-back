@@ -5,13 +5,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import ru.oparin.solution.dto.StocksRequest;
 import ru.oparin.solution.dto.wb.AnalyticsRequest;
 import ru.oparin.solution.dto.wb.CardsListRequest;
 import ru.oparin.solution.dto.wb.CardsListResponse;
 import ru.oparin.solution.dto.wb.PingResponse;
-import ru.oparin.solution.dto.wb.ProductStocksResponse;
 import ru.oparin.solution.dto.wb.SellerInfoResponse;
+import ru.oparin.solution.dto.wb.WbStocksSizesResponse;
 import ru.oparin.solution.dto.wb.WbWarehouseResponse;
 import ru.oparin.solution.service.CardsListRequestBuilder;
 import ru.oparin.solution.service.ProductCardAnalyticsService;
@@ -127,17 +126,16 @@ public class WbApiController {
         return ResponseEntity.ok(Map.of("message", "Обновление складов WB завершено"));
     }
 
-    @PostMapping("/stocks")
-    public ResponseEntity<ProductStocksResponse> getStocks(
-            @Valid @RequestBody StocksRequest request,
+    @PostMapping("/stocks/{nmId}")
+    public ResponseEntity<WbStocksSizesResponse> getStocksBySizes(
+            @PathVariable Long nmId,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
         
-        ProductStocksResponse response = stocksService.getStocks(
+        WbStocksSizesResponse response = stocksService.getWbStocksBySizes(
                 context.apiKey(),
-                request.getWarehouseId(),
-                request.getNmIds()
+                nmId
         );
         
         return ResponseEntity.ok(response);

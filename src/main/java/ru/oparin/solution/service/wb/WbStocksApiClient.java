@@ -9,73 +9,130 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
-import ru.oparin.solution.dto.wb.ProductStocksRequest;
-import ru.oparin.solution.dto.wb.ProductStocksResponse;
+import ru.oparin.solution.dto.wb.WbStocksSizesRequest;
+import ru.oparin.solution.dto.wb.WbStocksSizesResponse;
 
 /**
  * Клиент для работы с API остатков товаров.
- * Эндпоинты: получение остатков товаров на складах продавца.
+ * Эндпоинты: получение остатков товаров по размерам на складах WB.
  */
 @Service
 @Slf4j
 public class WbStocksApiClient extends AbstractWbApiClient {
 
-    private static final String STOCKS_ENDPOINT = "/api/v3/stocks/{warehouseId}";
+    private static final String STOCKS_SIZES_ENDPOINT = "/api/v2/stocks-report/products/sizes";
 
-    @Value("${wb.api.marketplace-base-url}")
-    private String marketplaceBaseUrl;
+    @Value("${wb.api.analytics-base-url}")
+    private String analyticsBaseUrl;
+
+    private static final int MAX_RETRIES_429 = 5;
+    private static final long RETRY_DELAY_MS_429 = 20000; // 20 секунд
 
     /**
-     * Получение остатков товаров на складе продавца.
+     * Получение остатков товаров по размерам на складах WB.
+     * При ошибке 429 (Too Many Requests) выполняет повторные попытки с задержкой.
+     *
+     * @param apiKey API ключ продавца (токен для категории "Аналитика")
+     * @param request запрос с артикулом и параметрами
+     * @return ответ с остатками товаров по размерам на складах WB
+     */
+    public WbStocksSizesResponse getWbStocksBySizes(String apiKey, WbStocksSizesRequest request) {
+        return getWbStocksBySizesWithRetry(apiKey, request, MAX_RETRIES_429);
+    }
+
+    /**
+     * Получение остатков товаров по размерам на складах WB с повторными попытками при 429.
      *
      * @param apiKey API ключ продавца
-     * @param warehouseId ID склада продавца
-     * @param request запрос с баркодами
-     * @return ответ с остатками товаров
+     * @param request запрос с артикулом и параметрами
+     * @param maxRetries максимальное количество попыток
+     * @return ответ с остатками товаров по размерам на складах WB
      */
-    public ProductStocksResponse getStocks(String apiKey, Long warehouseId, ProductStocksRequest request) {
+    private WbStocksSizesResponse getWbStocksBySizesWithRetry(String apiKey, WbStocksSizesRequest request, int maxRetries) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<ProductStocksRequest> entity = new HttpEntity<>(request, headers);
-        String url = marketplaceBaseUrl + STOCKS_ENDPOINT.replace("{warehouseId}", String.valueOf(warehouseId));
+        HttpEntity<WbStocksSizesRequest> entity = new HttpEntity<>(request, headers);
+        String url = analyticsBaseUrl + STOCKS_SIZES_ENDPOINT;
 
-        try {
-            String requestBody = objectMapper.writeValueAsString(request);
-            log.info("Запрос остатков товаров: {} {} (warehouseId: {}, {} баркодов, заголовки: Authorization={}, Content-Type={})", 
-                    HttpMethod.POST, url, warehouseId, 
-                    request.getSkus() != null ? request.getSkus().size() : 0,
-                    headers.getFirst("Authorization") != null ? "установлен" : "отсутствует",
-                    headers.getContentType());
-            log.info("Тело запроса остатков товаров: {}", requestBody);
-        } catch (Exception e) {
-            log.warn("Не удалось сериализовать тело запроса для логирования: {}", e.getMessage());
+        log.debug("Запрос остатков по размерам на складах WB для nmID: {}", request.getNmID());
+
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                ResponseEntity<String> response = restTemplate.exchange(
+                        url,
+                        HttpMethod.POST,
+                        entity,
+                        String.class
+                );
+
+                // Проверяем на ошибку 429
+                if (response.getStatusCode().value() == 429) {
+                    if (attempt < maxRetries) {
+                        log.warn("Получен 429 Too Many Requests (попытка {}/{}). Ожидание {} мс перед повторной попыткой...", 
+                                attempt, maxRetries, RETRY_DELAY_MS_429);
+                        try {
+                            Thread.sleep(RETRY_DELAY_MS_429);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            throw new RestClientException("Прервано ожидание перед повторной попыткой", ie);
+                        }
+                        continue; // Повторяем попытку
+                    } else {
+                        log.error("Получен 429 Too Many Requests после {} попыток", maxRetries);
+                        throw new RestClientException("429 Too Many Requests: " + response.getBody());
+                    }
+                }
+
+                validateResponse(response);
+
+                WbStocksSizesResponse stocksResponse = objectMapper.readValue(
+                        response.getBody(),
+                        WbStocksSizesResponse.class
+                );
+
+                log.debug("Получено {} размеров с остатками для nmID: {}", 
+                        stocksResponse.getData() != null && stocksResponse.getData().getSizes() != null 
+                                ? stocksResponse.getData().getSizes().size() : 0, 
+                        request.getNmID());
+
+                return stocksResponse;
+
+            } catch (RestClientException e) {
+                // Если это 429 и есть еще попытки, продолжаем цикл
+                if (e.getMessage() != null && e.getMessage().contains("429") && attempt < maxRetries) {
+                    log.warn("Ошибка 429 при попытке {}/{}. Повтор через {} мс...", 
+                            attempt, maxRetries, RETRY_DELAY_MS_429);
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS_429);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RestClientException("Прервано ожидание перед повторной попыткой", ie);
+                    }
+                    continue;
+                }
+                
+                // Если это последняя попытка или другая ошибка, пробрасываем исключение
+                if (attempt == maxRetries) {
+                    log.error("Ошибка при получении остатков по размерам на складах WB после {} попыток: {}", 
+                            maxRetries, e.getMessage(), e);
+                }
+                throw e;
+            } catch (Exception e) {
+                log.error("Ошибка при получении остатков по размерам на складах WB (попытка {}/{}): {}", 
+                        attempt, maxRetries, e.getMessage(), e);
+                if (attempt == maxRetries) {
+                    throw new RestClientException("Ошибка при получении остатков по размерам на складах WB: " + e.getMessage(), e);
+                }
+                // Для других ошибок тоже делаем retry
+                try {
+                    Thread.sleep(RETRY_DELAY_MS_429);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RestClientException("Прервано ожидание перед повторной попыткой", ie);
+                }
+            }
         }
 
-        try {
-            ResponseEntity<String> response = restTemplate.exchange(
-                    url,
-                    HttpMethod.POST,
-                    entity,
-                    String.class
-            );
-
-            validateResponse(response);
-
-            ProductStocksResponse stocksResponse = objectMapper.readValue(
-                    response.getBody(),
-                    ProductStocksResponse.class
-            );
-
-            int stocksCount = stocksResponse.getStocks() != null ? stocksResponse.getStocks().size() : 0;
-            log.info("Получено остатков товаров: {}", stocksCount);
-
-            return stocksResponse;
-
-        } catch (Exception e) {
-            log.error("Ошибка при получении остатков товаров на складе {}: {}", 
-                    warehouseId, e.getMessage(), e);
-            throw new RestClientException("Ошибка при получении остатков товаров: " + e.getMessage(), e);
-        }
+        throw new RestClientException("Не удалось получить остатки по размерам после " + maxRetries + " попыток");
     }
 }
-

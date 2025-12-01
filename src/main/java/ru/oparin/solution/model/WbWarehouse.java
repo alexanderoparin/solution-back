@@ -10,7 +10,6 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -34,58 +33,16 @@ public class WbWarehouse {
     private Integer id;
 
     /**
-     * Адрес склада.
-     */
-    @Column(name = "address", length = 500)
-    private String address;
-
-    /**
      * Название склада.
      */
     @Column(name = "name", nullable = false, length = 255)
     private String name;
 
     /**
-     * Город.
+     * Адрес склада.
      */
-    @Column(name = "city", length = 255)
-    private String city;
-
-    /**
-     * Долгота.
-     */
-    @Column(name = "longitude", precision = 10, scale = 6)
-    private BigDecimal longitude;
-
-    /**
-     * Широта.
-     */
-    @Column(name = "latitude", precision = 10, scale = 6)
-    private BigDecimal latitude;
-
-    /**
-     * Тип груза.
-     */
-    @Column(name = "cargo_type")
-    private Integer cargoType;
-
-    /**
-     * Тип доставки.
-     */
-    @Column(name = "delivery_type")
-    private Integer deliveryType;
-
-    /**
-     * Федеральный округ.
-     */
-    @Column(name = "federal_district", length = 255)
-    private String federalDistrict;
-
-    /**
-     * Выбран ли склад.
-     */
-    @Column(name = "selected")
-    private Boolean selected;
+    @Column(name = "address", length = 500)
+    private String address;
 
     /**
      * Дата создания записи в БД.
@@ -101,4 +58,3 @@ public class WbWarehouse {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 }
-

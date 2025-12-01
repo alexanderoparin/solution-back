@@ -25,10 +25,8 @@ import ru.oparin.solution.service.wb.WbAnalyticsApiClient;
 import ru.oparin.solution.service.wb.WbContentApiClient;
 import ru.oparin.solution.service.wb.WbPromotionApiClient;
 import ru.oparin.solution.service.wb.WbProductsApiClient;
-import ru.oparin.solution.service.wb.WbWarehousesApiClient;
 import ru.oparin.solution.dto.wb.ProductPricesRequest;
 import ru.oparin.solution.dto.wb.ProductPricesResponse;
-import ru.oparin.solution.dto.wb.SellerWarehouseResponse;
 import ru.oparin.solution.service.ProductStocksService;
 
 import java.time.LocalDate;
@@ -66,9 +64,7 @@ public class ProductCardAnalyticsService {
     private final PromotionCampaignRepository campaignRepository;
     private final WbProductsApiClient productsApiClient;
     private final ProductPriceService productPriceService;
-    private final WbWarehousesApiClient warehousesApiClient;
     private final ProductStocksService stocksService;
-    private final SellerWarehouseService sellerWarehouseService;
 
     /**
      * Обновляет все карточки и загружает аналитику за указанный период.
@@ -891,39 +887,12 @@ public class ProductCardAnalyticsService {
     }
 
     /**
-     * Обновляет остатки товаров на всех складах продавца.
+     * Обновляет остатки товаров на складах WB (не на складах продавца).
      */
     private void updateProductStocks(User seller, String apiKey) {
         try {
-            log.info("Начало обновления остатков товаров для продавца (ID: {}, email: {})", 
+            log.info("Начало обновления остатков товаров на складах WB для продавца (ID: {}, email: {})", 
                     seller.getId(), seller.getEmail());
-
-            // Получаем список складов продавца
-            List<SellerWarehouseResponse> sellerWarehouses = warehousesApiClient.getSellerWarehouses(apiKey);
-            
-            // Сохраняем/обновляем склады продавца в БД
-            sellerWarehouseService.saveOrUpdateWarehouses(sellerWarehouses, seller);
-            
-            if (sellerWarehouses.isEmpty()) {
-                log.info("У продавца (ID: {}, email: {}) нет складов для обновления остатков", 
-                        seller.getId(), seller.getEmail());
-                return;
-            }
-
-            // Фильтруем только активные склады (не удаляемые и не обрабатываемые)
-            List<SellerWarehouseResponse> activeWarehouses = sellerWarehouses.stream()
-                    .filter(wh -> wh.getIsDeleting() == null || !wh.getIsDeleting())
-                    .filter(wh -> wh.getIsProcessing() == null || !wh.getIsProcessing())
-                    .collect(Collectors.toList());
-
-            if (activeWarehouses.isEmpty()) {
-                log.info("У продавца (ID: {}, email: {}) нет активных складов для обновления остатков", 
-                        seller.getId(), seller.getEmail());
-                return;
-            }
-
-            log.info("Найдено {} активных складов продавца (ID: {}, email: {})", 
-                    activeWarehouses.size(), seller.getId(), seller.getEmail());
 
             // Получаем список всех карточек продавца
             List<ProductCard> productCards = productCardRepository.findBySellerId(seller.getId());
@@ -947,39 +916,38 @@ public class ProductCardAnalyticsService {
                 return;
             }
 
-            log.info("Найдено {} товаров для обновления остатков у продавца (ID: {}, email: {})", 
+            log.info("Найдено {} товаров для обновления остатков на складах WB у продавца (ID: {}, email: {})", 
                     nmIds.size(), seller.getId(), seller.getEmail());
 
-            // Обновляем остатки для каждого склада
-            for (SellerWarehouseResponse warehouse : activeWarehouses) {
-                if (warehouse.getId() == null) {
-                    log.warn("Пропущен склад продавца с null ID: {} (officeId: {})", 
-                            warehouse.getName(), warehouse.getOfficeId());
-                    continue;
-                }
-
+            // Загружаем остатки по размерам для каждого товара
+            // Лимит: 3 запроса в минуту, интервал 20 секунд между запросами
+            int requestCount = 0;
+            for (Long nmId : nmIds) {
                 try {
-                    log.info("Обновление остатков на складе {} (ID: {}, officeId: {}) для продавца (ID: {}, email: {})", 
-                            warehouse.getName(), warehouse.getId(), warehouse.getOfficeId(), 
-                            seller.getId(), seller.getEmail());
-
-                    stocksService.getStocks(apiKey, warehouse.getId(), nmIds);
-
-                    log.info("Завершено обновление остатков на складе {} (ID: {}) для продавца (ID: {}, email: {})", 
-                            warehouse.getName(), warehouse.getId(), seller.getId(), seller.getEmail());
-
+                    stocksService.getWbStocksBySizes(apiKey, nmId);
+                    requestCount++;
+                    
+                    // Делаем паузу 20 секунд между запросами (кроме последнего)
+                    // Лимит API: 3 запроса в минуту, интервал 20 секунд
+                    if (requestCount < nmIds.size()) {
+                        log.info("Пауза 20 секунд перед следующим запросом остатков (лимит API: 3 запроса в минуту, интервал 20 секунд)");
+                        Thread.sleep(20000); // 20 секунд
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.error("Прервано ожидание перед запросом остатков для артикула {}: {}", nmId, e.getMessage());
+                    break;
                 } catch (Exception e) {
-                    log.error("Ошибка при обновлении остатков на складе {} (ID: {}) для продавца (ID: {}, email: {}): {}", 
-                            warehouse.getName(), warehouse.getId(), seller.getId(), seller.getEmail(), e.getMessage(), e);
-                    // Продолжаем обновление остатков на других складах
+                    log.error("Ошибка при обновлении остатков для артикула {}: {}", nmId, e.getMessage(), e);
+                    // Продолжаем обновление остатков для других товаров
                 }
             }
 
-            log.info("Завершено обновление остатков товаров для продавца (ID: {}, email: {})", 
+            log.info("Завершено обновление остатков товаров на складах WB для продавца (ID: {}, email: {})", 
                     seller.getId(), seller.getEmail());
 
         } catch (Exception e) {
-            log.error("Ошибка при обновлении остатков товаров для продавца (ID: {}, email: {}): {}", 
+            log.error("Ошибка при обновлении остатков товаров на складах WB для продавца (ID: {}, email: {}): {}", 
                     seller.getId(), seller.getEmail(), e.getMessage(), e);
             // Не прерываем выполнение, продолжаем загрузку аналитики
         }

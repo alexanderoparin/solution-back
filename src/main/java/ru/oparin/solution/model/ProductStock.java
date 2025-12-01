@@ -10,15 +10,15 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * Сущность остатков товаров на складах продавца.
+ * Сущность остатков товаров на складах WB.
+ * Данные перезаписываются каждый день, время записи фиксируется в created_at и updated_at.
  */
 @Entity
 @Table(name = "product_stocks", schema = "solution",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"nm_id", "warehouse_id", "sku", "date"}))
+        uniqueConstraints = @UniqueConstraint(columnNames = {"nm_id", "warehouse_id", "barcode"}))
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
@@ -39,16 +39,16 @@ public class ProductStock {
     private Long nmId;
 
     /**
-     * ID склада продавца.
+     * ID склада WB.
      */
     @Column(name = "warehouse_id", nullable = false)
     private Long warehouseId;
 
     /**
-     * Баркод товара (sku).
+     * Баркод товара (из product_barcodes).
      */
-    @Column(name = "sku", nullable = false, length = 255)
-    private String sku;
+    @Column(name = "barcode", nullable = false, length = 255)
+    private String barcode;
 
     /**
      * Количество товара на складе.
@@ -57,20 +57,14 @@ public class ProductStock {
     private Integer amount;
 
     /**
-     * Дата, за которую сохранены остатки (вчерашняя дата).
-     */
-    @Column(name = "date", nullable = false)
-    private LocalDate date;
-
-    /**
-     * Дата создания записи в БД.
+     * Дата создания записи в БД (фиксирует время первой записи).
      */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     /**
-     * Дата последнего обновления записи в БД.
+     * Дата последнего обновления записи в БД (фиксирует время последнего обновления).
      */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)

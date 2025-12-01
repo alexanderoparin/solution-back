@@ -89,28 +89,14 @@ public class WbWarehouseService {
     private WbWarehouse mapToWarehouse(WbWarehouseResponse dto) {
         return WbWarehouse.builder()
                 .id(dto.getId())
-                .address(dto.getAddress())
                 .name(dto.getName())
-                .city(dto.getCity())
-                .longitude(dto.getLongitude())
-                .latitude(dto.getLatitude())
-                .cargoType(dto.getCargoType())
-                .deliveryType(dto.getDeliveryType())
-                .federalDistrict(dto.getFederalDistrict())
-                .selected(dto.getSelected())
+                .address(dto.getAddress())
                 .build();
     }
 
     private void updateWarehouseFields(WbWarehouse warehouse, WbWarehouseResponse dto) {
-        warehouse.setAddress(dto.getAddress());
         warehouse.setName(dto.getName());
-        warehouse.setCity(dto.getCity());
-        warehouse.setLongitude(dto.getLongitude());
-        warehouse.setLatitude(dto.getLatitude());
-        warehouse.setCargoType(dto.getCargoType());
-        warehouse.setDeliveryType(dto.getDeliveryType());
-        warehouse.setFederalDistrict(dto.getFederalDistrict());
-        warehouse.setSelected(dto.getSelected());
+        warehouse.setAddress(dto.getAddress());
     }
 
     /**

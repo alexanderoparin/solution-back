@@ -9,7 +9,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
-import ru.oparin.solution.dto.wb.SellerWarehouseResponse;
 import ru.oparin.solution.dto.wb.WbWarehouseResponse;
 
 import java.util.List;
@@ -22,11 +21,10 @@ import java.util.List;
 @Slf4j
 public class WbWarehousesApiClient extends AbstractWbApiClient {
 
-    private static final String WB_OFFICES_ENDPOINT = "/api/v3/offices";
-    private static final String SELLER_WAREHOUSES_ENDPOINT = "/api/v3/warehouses";
+    private static final String WAREHOUSES_ENDPOINT = "/api/v1/warehouses";
 
-    @Value("${wb.api.marketplace-base-url}")
-    private String marketplaceBaseUrl;
+    @Value("${wb.api.supplies-base-url}")
+    private String suppliesBaseUrl;
 
     /**
      * Получение списка всех складов WB.
@@ -34,7 +32,7 @@ public class WbWarehousesApiClient extends AbstractWbApiClient {
     public List<WbWarehouseResponse> getWbOffices(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        String url = marketplaceBaseUrl + WB_OFFICES_ENDPOINT;
+        String url = suppliesBaseUrl + WAREHOUSES_ENDPOINT;
 
         log.info("Запрос списка складов WB: {}", url);
 
@@ -63,42 +61,5 @@ public class WbWarehousesApiClient extends AbstractWbApiClient {
         }
     }
 
-    /**
-     * Получение списка складов продавца.
-     */
-    public List<SellerWarehouseResponse> getSellerWarehouses(String apiKey) {
-        HttpHeaders headers = createAuthHeaders(apiKey);
-        HttpEntity<String> entity = new HttpEntity<>(headers);
-        String url = marketplaceBaseUrl + SELLER_WAREHOUSES_ENDPOINT;
-
-        log.info("Запрос списка складов продавца: {} {} (заголовки: Authorization={})", 
-                HttpMethod.GET, url, headers.getFirst("Authorization") != null ? "установлен" : "отсутствует");
-
-        try {
-            ResponseEntity<String> response = restTemplate.exchange(
-                    url,
-                    HttpMethod.GET,
-                    entity,
-                    String.class
-            );
-
-            validateResponse(response);
-
-            log.info("Сырой ответ от /api/v3/warehouses: {}", response.getBody());
-
-            List<SellerWarehouseResponse> warehouses = objectMapper.readValue(
-                    response.getBody(),
-                    new TypeReference<List<SellerWarehouseResponse>>() {}
-            );
-
-            log.info("Получено складов продавца: {}", warehouses != null ? warehouses.size() : 0);
-
-            return warehouses != null ? warehouses : List.of();
-
-        } catch (Exception e) {
-            log.error("Ошибка при получении списка складов продавца: {}", e.getMessage(), e);
-            throw new RestClientException("Ошибка при получении списка складов продавца: " + e.getMessage(), e);
-        }
-    }
 }
 

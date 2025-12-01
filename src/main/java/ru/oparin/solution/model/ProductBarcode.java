@@ -14,10 +14,11 @@ import java.time.LocalDateTime;
 
 /**
  * Сущность баркода товара.
+ * Сохраняется из информации о карточке товара (CardDto.Size).
+ * Баркод является уникальным ключом.
  */
 @Entity
-@Table(name = "product_barcodes", schema = "solution",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"nm_id", "sku"}))
+@Table(name = "product_barcodes", schema = "solution")
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
@@ -26,10 +27,13 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class ProductBarcode {
 
+    /**
+     * Баркод товара (из массива skus в CardDto.Size).
+     * Первичный ключ.
+     */
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id")
-    private Long id;
+    @Column(name = "barcode", nullable = false, length = 255)
+    private String barcode;
 
     /**
      * Артикул WB (nmID).
@@ -38,22 +42,22 @@ public class ProductBarcode {
     private Long nmId;
 
     /**
-     * ID размера (chrtID).
+     * ID характеристики размера (chrtID).
      */
-    @Column(name = "chrt_id")
+    @Column(name = "chrt_id", nullable = false)
     private Long chrtId;
 
     /**
-     * Баркод товара (sku).
-     */
-    @Column(name = "sku", nullable = false, length = 255)
-    private String sku;
-
-    /**
-     * Технический размер.
+     * Технический размер (techSize, например "L").
      */
     @Column(name = "tech_size", length = 50)
     private String techSize;
+
+    /**
+     * Российский размер (wbSize, например "48").
+     */
+    @Column(name = "wb_size", length = 50)
+    private String wbSize;
 
     /**
      * Дата создания записи в БД.
