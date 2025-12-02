@@ -6,7 +6,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -19,7 +18,6 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class SummaryResponseDto {
-    private GeneralInfoDto generalInfo;
     private List<PeriodDto> periods;
     private List<ArticleSummaryDto> articles;
     private Map<Integer, AggregatedMetricsDto> aggregatedMetrics; // ключ - periodId

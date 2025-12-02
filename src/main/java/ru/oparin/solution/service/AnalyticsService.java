@@ -54,7 +54,6 @@ public class AnalyticsService {
                 visibleCards, periods, seller.getId());
 
         return SummaryResponseDto.builder()
-                .generalInfo(buildGeneralInfo(visibleCards.size()))
                 .periods(periods)
                 .articles(mapToArticleSummaries(visibleCards))
                 .aggregatedMetrics(aggregatedMetrics)
@@ -298,16 +297,6 @@ public class AnalyticsService {
                 .rating(null) // TODO: получить из API или БД
                 .reviewsCount(null) // TODO: получить из API или БД
                 .productUrl("https://www.wildberries.ru/catalog/" + card.getNmId() + "/detail.aspx")
-                .build();
-    }
-
-    private GeneralInfoDto buildGeneralInfo(int articlesCount) {
-        // TODO: получить реальные даты из настроек или БД
-        return GeneralInfoDto.builder()
-                .startOfWork(LocalDate.of(2025, 5, 7))
-                .generalFunnelAvailableFrom(LocalDate.of(2025, 11, 8))
-                .advertisingFunnelAvailableFrom(LocalDate.of(2025, 10, 16))
-                .articlesInWork(articlesCount)
                 .build();
     }
 

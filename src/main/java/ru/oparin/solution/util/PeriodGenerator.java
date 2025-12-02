@@ -4,6 +4,7 @@ import ru.oparin.solution.dto.analytics.PeriodDto;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -38,6 +39,8 @@ public class PeriodGenerator {
             periods.add(period);
         }
 
+        // Возвращаем периоды в обратном порядке: самый старый первым, самый новый последним
+        Collections.reverse(periods);
         return periods;
     }
 
