@@ -10,7 +10,9 @@ import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
+import ru.oparin.solution.model.PromotionCampaign;
 import ru.oparin.solution.service.analytics.AdvertisingMetricsCalculator;
+import ru.oparin.solution.service.analytics.CampaignStatisticsAggregator;
 import ru.oparin.solution.service.analytics.FunnelMetricsCalculator;
 import ru.oparin.solution.service.analytics.MathUtils;
 import ru.oparin.solution.service.analytics.MetricNames;
@@ -40,6 +42,7 @@ public class AnalyticsService {
     private final FunnelMetricsCalculator funnelMetricsCalculator;
     private final AdvertisingMetricsCalculator advertisingMetricsCalculator;
     private final MetricValueCalculator metricValueCalculator;
+    private final CampaignStatisticsAggregator campaignStatisticsAggregator;
 
 
     /**
@@ -71,8 +74,18 @@ public class AnalyticsService {
             List<Long> excludedNmIds
     ) {
         List<ProductCard> visibleCards = getVisibleCards(seller.getId(), excludedNmIds);
+        
+        // Для рекламных метрик кэшируем статистику по периодам, чтобы не делать повторные запросы
+        final Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache;
+        if (isAdvertisingMetric(metricName)) {
+            advertisingStatsCache = preloadAdvertisingStats(seller.getId(), periods);
+        } else {
+            advertisingStatsCache = null;
+        }
+        
+        final Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> finalCache = advertisingStatsCache;
         List<ArticleMetricDto> articleMetrics = visibleCards.stream()
-                .map(card -> calculateArticleMetric(card, metricName, periods, seller.getId()))
+                .map(card -> calculateArticleMetric(card, metricName, periods, seller.getId(), finalCache))
                 .collect(Collectors.toList());
 
         return MetricGroupResponseDto.builder()
@@ -81,6 +94,34 @@ public class AnalyticsService {
                 .category(getMetricCategory(metricName))
                 .articles(articleMetrics)
                 .build();
+    }
+    
+    private boolean isAdvertisingMetric(String metricName) {
+        return metricName.equals(MetricNames.VIEWS) ||
+               metricName.equals(MetricNames.CLICKS) ||
+               metricName.equals(MetricNames.COSTS) ||
+               metricName.equals(MetricNames.CPC) ||
+               metricName.equals(MetricNames.CTR) ||
+               metricName.equals(MetricNames.CPO) ||
+               metricName.equals(MetricNames.DRR);
+    }
+    
+    private Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> preloadAdvertisingStats(
+            Long sellerId,
+            List<PeriodDto> periods
+    ) {
+        Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> cache = new HashMap<>();
+        List<Long> campaignIds = campaignRepository.findBySellerId(sellerId).stream()
+                .map(PromotionCampaign::getAdvertId)
+                .collect(Collectors.toList());
+        
+        for (PeriodDto period : periods) {
+            CampaignStatisticsAggregator.AdvertisingStats stats = 
+                    campaignStatisticsAggregator.aggregateStats(campaignIds, period);
+            cache.put(period, stats);
+        }
+        
+        return cache;
     }
 
     /**
@@ -131,10 +172,11 @@ public class AnalyticsService {
             ProductCard card,
             String metricName,
             List<PeriodDto> periods,
-            Long sellerId
+            Long sellerId,
+            Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
         List<PeriodMetricValueDto> periodValues = periods.stream()
-                .map(period -> calculatePeriodMetricValue(card, metricName, period, periods, sellerId))
+                .map(period -> calculatePeriodMetricValue(card, metricName, period, periods, sellerId, advertisingStatsCache))
                 .collect(Collectors.toList());
 
         return ArticleMetricDto.builder()
@@ -148,10 +190,11 @@ public class AnalyticsService {
             String metricName,
             PeriodDto period,
             List<PeriodDto> allPeriods,
-            Long sellerId
+            Long sellerId,
+            Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
-        Object value = metricValueCalculator.calculateValue(card, metricName, period, sellerId);
-        BigDecimal changePercent = calculateChangePercent(card, metricName, period, allPeriods, sellerId, value);
+        Object value = metricValueCalculator.calculateValue(card, metricName, period, sellerId, advertisingStatsCache);
+        BigDecimal changePercent = calculateChangePercent(card, metricName, period, allPeriods, sellerId, value, advertisingStatsCache);
 
         return PeriodMetricValueDto.builder()
                 .periodId(period.getId())
@@ -166,7 +209,8 @@ public class AnalyticsService {
             PeriodDto period,
             List<PeriodDto> allPeriods,
             Long sellerId,
-            Object currentValue
+            Object currentValue,
+            Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
         if (period.getId() == 1 || currentValue == null) {
             return null;
@@ -177,7 +221,7 @@ public class AnalyticsService {
             return null;
         }
 
-        Object previousValue = metricValueCalculator.calculateValue(card, metricName, previousPeriod, sellerId);
+        Object previousValue = metricValueCalculator.calculateValue(card, metricName, previousPeriod, sellerId, advertisingStatsCache);
         return calculatePercentageChange(currentValue, previousValue);
     }
 
@@ -208,14 +252,17 @@ public class AnalyticsService {
     }
 
     private List<MetricDto> calculateAllMetrics(ProductCard card, List<PeriodDto> periods, Long sellerId) {
+        // Для рекламных метрик кэшируем статистику по периодам
+        Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache = preloadAdvertisingStats(sellerId, periods);
+        
         List<MetricDto> metrics = new ArrayList<>();
 
         for (String metricName : MetricNames.getAllMetrics()) {
             List<PeriodMetricValueDto> periodValues = periods.stream()
                     .map(period -> {
-                        Object value = metricValueCalculator.calculateValue(card, metricName, period, sellerId);
+                        Object value = metricValueCalculator.calculateValue(card, metricName, period, sellerId, advertisingStatsCache);
                         BigDecimal changePercent = calculateChangePercent(
-                                card, metricName, period, periods, sellerId, value);
+                                card, metricName, period, periods, sellerId, value, advertisingStatsCache);
                         return PeriodMetricValueDto.builder()
                                 .periodId(period.getId())
                                 .value(value)

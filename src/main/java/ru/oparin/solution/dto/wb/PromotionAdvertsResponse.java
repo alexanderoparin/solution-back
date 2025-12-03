@@ -91,6 +91,12 @@ public class PromotionAdvertsResponse {
          */
         @JsonProperty("changeTime")
         private String changeTime;
+
+        /**
+         * Список артикулов (nmId), участвующих в кампании.
+         */
+        @JsonProperty("nmIds")
+        private List<Long> nmIds;
     }
 }
 

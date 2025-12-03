@@ -49,6 +49,7 @@ public class ProductCardAnalyticsService {
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final int API_CALL_DELAY_MS = 20000; // 20 секунд для карточек и кампаний
     private static final int STATISTICS_API_CALL_DELAY_MS = 20000; // 20 секунд для статистики (лимит: 3 запроса в минуту)
+    private static final int AUCTION_ADVERTS_DELAY_MS = 200; // 200 мс между запросами аукционных кампаний (лимит: 5 запросов в секунду)
     private static final int CARDS_PAGE_LIMIT = 100;
     private static final int PRICES_API_CALL_DELAY_MS = 600; // 600 мс между запросами цен (лимит: 10 запросов за 6 секунд)
     private static final int PRICES_BATCH_SIZE = 1000; // Максимум товаров за один запрос
@@ -120,25 +121,44 @@ public class ProductCardAnalyticsService {
             // Получаем список кампаний по типам и статусам
             PromotionCountResponse countResponse = promotionApiClient.getPromotionCount(apiKey);
             
-            // Собираем все ID кампаний из всех групп
-            List<Long> campaignIds = extractCampaignIds(countResponse);
+            // Разделяем кампании по типам (8 и 9)
+            CampaignIdsByType campaignsByType = separateCampaignsByType(countResponse);
             
-            if (campaignIds.isEmpty()) {
-                log.info("У продавца (ID: {}, email: {}) нет рекламных кампаний", 
+            List<Long> allCampaignIds = new java.util.ArrayList<>();
+            allCampaignIds.addAll(campaignsByType.type8Ids());
+            allCampaignIds.addAll(campaignsByType.type9Ids());
+            
+            if (allCampaignIds.isEmpty()) {
+                log.info("У продавца (ID: {}, email: {}) нет рекламных кампаний типов 8 и 9", 
                         seller.getId(), seller.getEmail());
-                return campaignIds;
+                return allCampaignIds;
             }
 
-            log.info("Найдено {} рекламных кампаний для продавца (ID: {}, email: {})", 
-                    campaignIds.size(), seller.getId(), seller.getEmail());
+            log.info("Найдено {} рекламных кампаний для продавца (ID: {}, email: {}): тип 8 - {}, тип 9 - {}", 
+                    allCampaignIds.size(), seller.getId(), seller.getEmail(), 
+                    campaignsByType.type8Ids().size(), campaignsByType.type9Ids().size());
 
-            // Получаем детальную информацию о кампаниях батчами (максимум 50 за запрос)
-            List<PromotionAdvertsResponse.Campaign> allCampaigns = fetchCampaignsInBatches(apiKey, campaignIds);
+            // Получаем детальную информацию о кампаниях типа 8 (Автоматическая РК)
+            List<PromotionAdvertsResponse.Campaign> type8Campaigns = new java.util.ArrayList<>();
+            if (!campaignsByType.type8Ids().isEmpty()) {
+                type8Campaigns = fetchCampaignsInBatches(apiKey, campaignsByType.type8Ids(), 8);
+            }
+
+            // Получаем детальную информацию о кампаниях типа 9 (Аукцион)
+            List<PromotionAdvertsResponse.Campaign> type9Campaigns = new java.util.ArrayList<>();
+            if (!campaignsByType.type9Ids().isEmpty()) {
+                type9Campaigns = fetchAuctionCampaignsInBatches(apiKey, campaignsByType.type9Ids());
+            }
+
+            // Объединяем все кампании
+            List<PromotionAdvertsResponse.Campaign> allCampaigns = new java.util.ArrayList<>();
+            allCampaigns.addAll(type8Campaigns);
+            allCampaigns.addAll(type9Campaigns);
 
             if (allCampaigns.isEmpty()) {
                 log.info("Не удалось получить детальную информацию о кампаниях для продавца (ID: {}, email: {})", 
                         seller.getId(), seller.getEmail());
-                return campaignIds;
+                return allCampaignIds;
             }
 
             // Создаем ответ со всеми кампаниями
@@ -146,13 +166,13 @@ public class ProductCardAnalyticsService {
                     .adverts(allCampaigns)
                     .build();
 
-            // Сохраняем кампании в БД
+            // Сохраняем кампании в БД вместе со связями артикулов
             promotionCampaignService.saveOrUpdateCampaigns(advertsResponse, seller);
 
             log.info("Завершено обновление рекламных кампаний для продавца (ID: {}, email: {})", 
                     seller.getId(), seller.getEmail());
 
-            return campaignIds;
+            return allCampaignIds;
 
         } catch (Exception e) {
             log.error("Ошибка при обновлении рекламных кампаний для продавца (ID: {}, email: {}): {}", 
@@ -404,6 +424,9 @@ public class ProductCardAnalyticsService {
     /**
      * Извлекает все ID кампаний из ответа со списком кампаний.
      */
+    /**
+     * Извлекает ID кампаний только типов 8 (Автоматическая РК) и 9 (Аукцион).
+     */
     private List<Long> extractCampaignIds(PromotionCountResponse countResponse) {
         List<Long> campaignIds = new java.util.ArrayList<>();
         
@@ -412,6 +435,12 @@ public class ProductCardAnalyticsService {
         }
 
         for (PromotionCountResponse.AdvertGroup advertGroup : countResponse.getAdverts()) {
+            // Фильтруем только типы 8 и 9
+            Integer type = advertGroup.getType();
+            if (type == null || (type != 8 && type != 9)) {
+                continue;
+            }
+            
             if (advertGroup.getAdvertList() == null) {
                 continue;
             }
@@ -424,6 +453,50 @@ public class ProductCardAnalyticsService {
 
         return campaignIds;
     }
+    
+    /**
+     * Разделяет кампании по типам: тип 8 и тип 9.
+     * Фильтрует только кампании со статусами 7 (Завершена), 9 (Активна), 11 (Пауза).
+     */
+    private CampaignIdsByType separateCampaignsByType(PromotionCountResponse countResponse) {
+        List<Long> type8Ids = new java.util.ArrayList<>();
+        List<Long> type9Ids = new java.util.ArrayList<>();
+        
+        if (countResponse == null || countResponse.getAdverts() == null) {
+            return new CampaignIdsByType(type8Ids, type9Ids);
+        }
+
+        for (PromotionCountResponse.AdvertGroup advertGroup : countResponse.getAdverts()) {
+            Integer type = advertGroup.getType();
+            if (type == null || (type != 8 && type != 9)) {
+                continue;
+            }
+            
+            // Фильтруем только статусы 7 (Завершена), 9 (Активна), 11 (Пауза)
+            Integer status = advertGroup.getStatus();
+            if (status == null || (status != 7 && status != 9 && status != 11)) {
+                continue;
+            }
+            
+            if (advertGroup.getAdvertList() == null) {
+                continue;
+            }
+            
+            List<Long> targetList = type == 8 ? type8Ids : type9Ids;
+            for (PromotionCountResponse.AdvertInfo advertInfo : advertGroup.getAdvertList()) {
+                if (advertInfo.getAdvertId() != null) {
+                    targetList.add(advertInfo.getAdvertId());
+                }
+            }
+        }
+
+        return new CampaignIdsByType(type8Ids, type9Ids);
+    }
+    
+    /**
+     * Класс для хранения ID кампаний по типам.
+     */
+    private record CampaignIdsByType(List<Long> type8Ids, List<Long> type9Ids) {}
 
     /**
      * Получает детальную информацию о кампаниях батчами (максимум 50 за запрос).
@@ -432,12 +505,42 @@ public class ProductCardAnalyticsService {
      * @param campaignIds список ID всех кампаний
      * @return список всех кампаний
      */
-    private List<PromotionAdvertsResponse.Campaign> fetchCampaignsInBatches(String apiKey, List<Long> campaignIds) {
+    private List<PromotionAdvertsResponse.Campaign> fetchCampaignsInBatches(String apiKey, List<Long> campaignIds, int campaignType) {
         List<PromotionAdvertsResponse.Campaign> allCampaigns = new java.util.ArrayList<>();
         int batchSize = 50;
         int totalBatches = (campaignIds.size() + batchSize - 1) / batchSize;
 
-        log.info("Загрузка детальной информации о {} кампаниях батчами по {} (всего батчей: {})", 
+        log.info("Загрузка детальной информации о {} кампаниях типа {} батчами по {} (всего батчей: {})", 
+                campaignIds.size(), campaignType, batchSize, totalBatches);
+
+        for (int i = 0; i < campaignIds.size(); i += batchSize) {
+            int endIndex = Math.min(i + batchSize, campaignIds.size());
+            List<Long> batch = campaignIds.subList(i, endIndex);
+            int currentBatch = (i / batchSize) + 1;
+
+            try {
+                log.info("Загрузка батча {}/{}: {} кампаний типа {}", currentBatch, totalBatches, batch.size(), campaignType);
+                PromotionAdvertsResponse batchResponse = promotionApiClient.getPromotionAdverts(apiKey, batch);
+
+                if (batchResponse != null && batchResponse.getAdverts() != null) {
+                    allCampaigns.addAll(batchResponse.getAdverts());
+                    log.info("Получено {} кампаний из батча {}/{}", batchResponse.getAdverts().size(), currentBatch, totalBatches);
+                }
+            } catch (Exception e) {
+                log.error("Ошибка при загрузке батча {}/{} кампаний типа {}: {}", currentBatch, totalBatches, campaignType, e.getMessage(), e);
+                // Продолжаем загрузку следующих батчей даже при ошибке
+            }
+        }
+
+        return allCampaigns;
+    }
+    
+    private List<PromotionAdvertsResponse.Campaign> fetchAuctionCampaignsInBatches(String apiKey, List<Long> campaignIds) {
+        List<PromotionAdvertsResponse.Campaign> allCampaigns = new java.util.ArrayList<>();
+        int batchSize = 50; // Максимум 50 ID за запрос согласно документации API
+        int totalBatches = (campaignIds.size() + batchSize - 1) / batchSize;
+
+        log.info("Загрузка детальной информации о {} аукционных кампаниях (тип 9) батчами по {} (всего батчей: {})", 
                 campaignIds.size(), batchSize, totalBatches);
 
         for (int i = 0; i < campaignIds.size(); i += batchSize) {
@@ -446,26 +549,35 @@ public class ProductCardAnalyticsService {
             int currentBatch = (i / batchSize) + 1;
 
             try {
-                log.info("Загрузка батча {}/{}: {} кампаний", currentBatch, totalBatches, batch.size());
-                PromotionAdvertsResponse batchResponse = promotionApiClient.getPromotionAdverts(apiKey, batch);
+                log.info("Загрузка батча {}/{}: {} аукционных кампаний", currentBatch, totalBatches, batch.size());
+                ru.oparin.solution.dto.wb.AuctionAdvertsResponse batchResponse = promotionApiClient.getAuctionAdverts(apiKey, batch);
 
                 if (batchResponse != null && batchResponse.getAdverts() != null) {
-                    allCampaigns.addAll(batchResponse.getAdverts());
-                    log.info("Получено {} кампаний из батча {}/{}", batchResponse.getAdverts().size(), currentBatch, totalBatches);
+                    // Конвертируем аукционные кампании в формат PromotionAdvertsResponse.Campaign
+                    for (ru.oparin.solution.dto.wb.AuctionAdvertsResponse.AuctionCampaign auctionCampaign : batchResponse.getAdverts()) {
+                        PromotionAdvertsResponse.Campaign campaign = promotionApiClient.convertAuctionToPromotionCampaign(auctionCampaign);
+                        if (campaign != null) {
+                            allCampaigns.add(campaign);
+                        }
+                    }
+                    log.info("Получено {} аукционных кампаний из батча {}/{}", batchResponse.getAdverts().size(), currentBatch, totalBatches);
                 }
-
-                // Задержка между батчами (кроме последнего)
-                if (endIndex < campaignIds.size()) {
-                    waitBeforeApiRequest();
+                
+                // Добавляем задержку между запросами (200 мс) для соблюдения лимита: 5 запросов в секунду
+                if (currentBatch < totalBatches) {
+                    try {
+                        Thread.sleep(AUCTION_ADVERTS_DELAY_MS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        log.warn("Прервано ожидание между запросами аукционных кампаний");
+                    }
                 }
-
             } catch (Exception e) {
-                log.error("Ошибка при загрузке батча {}/{}: {}", currentBatch, totalBatches, e.getMessage(), e);
+                log.error("Ошибка при загрузке батча {}/{} аукционных кампаний: {}", currentBatch, totalBatches, e.getMessage(), e);
                 // Продолжаем загрузку следующих батчей даже при ошибке
             }
         }
 
-        log.info("Загружено всего {} кампаний из {} запрошенных", allCampaigns.size(), campaignIds.size());
         return allCampaigns;
     }
 

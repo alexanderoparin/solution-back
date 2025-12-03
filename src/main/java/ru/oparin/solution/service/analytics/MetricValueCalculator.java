@@ -1,6 +1,7 @@
 package ru.oparin.solution.service.analytics;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.dto.analytics.PeriodDto;
 import ru.oparin.solution.model.ProductCard;
@@ -11,6 +12,7 @@ import ru.oparin.solution.repository.PromotionCampaignRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -19,6 +21,7 @@ import static ru.oparin.solution.service.analytics.MetricNames.*;
 /**
  * Калькулятор значений метрик для артикула.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class MetricValueCalculator {
@@ -34,7 +37,8 @@ public class MetricValueCalculator {
             ProductCard card,
             String metricName,
             PeriodDto period,
-            Long sellerId
+            Long sellerId,
+            Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
         return switch (metricName) {
             case TRANSITIONS -> sumField(card.getNmId(), period, ProductCardAnalytics::getOpenCard);
@@ -45,7 +49,7 @@ public class MetricValueCalculator {
             case ORDER_CONVERSION -> calculateOrderConversion(card.getNmId(), period);
             case VIEWS, CLICKS, COSTS, CPC,
                  CTR, CPO, DRR ->
-                    calculateAdvertisingMetric(metricName, period, sellerId);
+                    calculateAdvertisingMetric(metricName, period, sellerId, card.getNmId(), advertisingStatsCache);
             default -> null;
         };
     }
@@ -94,9 +98,22 @@ public class MetricValueCalculator {
         return MathUtils.calculatePercentage(orders, cart);
     }
 
-    private Object calculateAdvertisingMetric(String metricName, PeriodDto period, Long sellerId) {
-        List<Long> campaignIds = getCampaignIds(sellerId);
-        CampaignStatisticsAggregator.AdvertisingStats stats = statisticsAggregator.aggregateStats(campaignIds, period);
+    private Object calculateAdvertisingMetric(
+            String metricName, 
+            PeriodDto period, 
+            Long sellerId, 
+            Long nmId,
+            Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
+    ) {
+        // Используем кэшированную статистику, если она есть, иначе получаем заново
+        CampaignStatisticsAggregator.AdvertisingStats stats;
+        if (advertisingStatsCache != null && advertisingStatsCache.containsKey(period)) {
+            stats = advertisingStatsCache.get(period);
+        } else {
+            // Fallback: если кэш не передан, получаем статистику заново
+            List<Long> campaignIds = getCampaignIds(sellerId);
+            stats = statisticsAggregator.aggregateStats(campaignIds, period);
+        }
 
         return switch (metricName) {
             case VIEWS -> stats.views();

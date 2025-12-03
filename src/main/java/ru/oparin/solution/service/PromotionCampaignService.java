@@ -8,8 +8,12 @@ import ru.oparin.solution.dto.wb.PromotionAdvertsResponse;
 import ru.oparin.solution.model.BidType;
 import ru.oparin.solution.model.CampaignStatus;
 import ru.oparin.solution.model.CampaignType;
+import ru.oparin.solution.model.CampaignArticle;
+import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.PromotionCampaign;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.repository.CampaignArticleRepository;
+import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
 
 import java.time.LocalDateTime;
@@ -30,6 +34,8 @@ public class PromotionCampaignService {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
     private final PromotionCampaignRepository campaignRepository;
+    private final CampaignArticleRepository campaignArticleRepository;
+    private final ProductCardRepository productCardRepository;
 
     /**
      * Сохраняет или обновляет кампании из ответа WB API.
@@ -111,11 +117,76 @@ public class PromotionCampaignService {
             PromotionCampaign existing = existingCampaign.get();
             updateCampaign(existing, campaign);
             campaignRepository.save(existing);
+            // Обновляем связи с артикулами только для активных кампаний или на паузе
+            if (shouldUpdateCampaignArticles(campaign.getStatus())) {
+                updateCampaignArticles(campaignDto, existing.getAdvertId(), seller.getId());
+            } else {
+                // Для завершенных кампаний удаляем связи
+                campaignArticleRepository.deleteByCampaignId(existing.getAdvertId());
+            }
             return Optional.of(new SaveResult(false));
         } else {
             campaignRepository.save(campaign);
+            // Сохраняем связи с артикулами только для активных кампаний или на паузе
+            if (shouldUpdateCampaignArticles(campaign.getStatus())) {
+                saveCampaignArticles(campaignDto, campaign.getAdvertId(), seller.getId());
+            }
             return Optional.of(new SaveResult(true));
         }
+    }
+    
+    /**
+     * Сохраняет связи кампании с артикулами.
+     */
+    private void saveCampaignArticles(PromotionAdvertsResponse.Campaign campaignDto, Long campaignId, Long sellerId) {
+        if (campaignDto.getNmIds() == null || campaignDto.getNmIds().isEmpty()) {
+            return;
+        }
+        
+        // Удаляем старые связи
+        campaignArticleRepository.deleteByCampaignId(campaignId);
+        
+        // Создаем новые связи
+        for (Long nmId : campaignDto.getNmIds()) {
+            // Проверяем, что артикул принадлежит продавцу
+            ProductCard productCard = productCardRepository.findByNmId(nmId)
+                    .filter(card -> card.getSeller().getId().equals(sellerId))
+                    .orElse(null);
+            
+            if (productCard == null) {
+                log.warn("Артикул {} не найден или не принадлежит продавцу {}, пропускаем связь с кампанией {}", 
+                        nmId, sellerId, campaignId);
+                continue;
+            }
+            
+            CampaignArticle campaignArticle = new CampaignArticle();
+            campaignArticle.setCampaignId(campaignId);
+            campaignArticle.setNmId(nmId);
+            
+            campaignArticleRepository.save(campaignArticle);
+        }
+        
+        log.debug("Сохранено {} связей артикулов для кампании {}", campaignDto.getNmIds().size(), campaignId);
+    }
+    
+    /**
+     * Обновляет связи кампании с артикулами.
+     */
+    private void updateCampaignArticles(PromotionAdvertsResponse.Campaign campaignDto, Long campaignId, Long sellerId) {
+        saveCampaignArticles(campaignDto, campaignId, sellerId);
+    }
+    
+    /**
+     * Проверяет, нужно ли обновлять связи кампании с артикулами.
+     * Обновляем только для активных кампаний (9) и на паузе (11).
+     * Завершенные кампании (7) не обновляем.
+     */
+    private boolean shouldUpdateCampaignArticles(CampaignStatus status) {
+        if (status == null) {
+            return false;
+        }
+        // Обновляем только для активных и на паузе
+        return status == CampaignStatus.ACTIVE || status == CampaignStatus.PAUSED;
     }
 
     /**
@@ -149,8 +220,8 @@ public class PromotionCampaignService {
     private CampaignType resolveCampaignType(Integer typeCode) {
         CampaignType campaignType = CampaignType.fromCode(typeCode);
         if (campaignType == null) {
-            log.warn("Неизвестный тип кампании: {}. Используем UNIFIED по умолчанию.", typeCode);
-            return CampaignType.UNIFIED;
+            log.warn("Неизвестный тип кампании: {}. Используем AUCTION по умолчанию.", typeCode);
+            return CampaignType.AUCTION;
         }
         return campaignType;
     }

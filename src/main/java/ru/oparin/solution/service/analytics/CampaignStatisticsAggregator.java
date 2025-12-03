@@ -1,6 +1,7 @@
 package ru.oparin.solution.service.analytics;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.dto.analytics.PeriodDto;
 import ru.oparin.solution.model.PromotionCampaignStatistics;
@@ -11,6 +12,7 @@ import java.util.List;
 /**
  * Агрегатор статистики рекламных кампаний.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class CampaignStatisticsAggregator {
@@ -21,32 +23,14 @@ public class CampaignStatisticsAggregator {
      * Агрегирует статистику кампаний за период.
      */
     public AdvertisingStats aggregateStats(List<Long> campaignIds, PeriodDto period) {
-        int views = 0;
-        int clicks = 0;
-        long sumKopecks = 0;
-        int orders = 0;
-        long ordersSumKopecks = 0;
-
-        for (Long campaignId : campaignIds) {
-            List<PromotionCampaignStatistics> stats = getCampaignStatistics(campaignId, period);
-            AdvertisingStats campaignStats = aggregateCampaignStatistics(stats);
-            
-            views += campaignStats.views();
-            clicks += campaignStats.clicks();
-            sumKopecks += campaignStats.sumKopecks();
-            orders += campaignStats.orders();
-            ordersSumKopecks += campaignStats.ordersSumKopecks();
-        }
-
-        return new AdvertisingStats(views, clicks, sumKopecks, orders, ordersSumKopecks);
-    }
-
-    private List<PromotionCampaignStatistics> getCampaignStatistics(Long campaignId, PeriodDto period) {
-        return campaignStatisticsRepository.findByCampaignAdvertIdAndDateBetween(
-                campaignId,
+        // Оптимизированный запрос: получаем статистику для всех кампаний одним запросом
+        List<PromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
+                campaignIds,
                 period.getDateFrom(),
                 period.getDateTo()
         );
+        
+        return aggregateCampaignStatistics(allStats);
     }
 
     private AdvertisingStats aggregateCampaignStatistics(List<PromotionCampaignStatistics> stats) {

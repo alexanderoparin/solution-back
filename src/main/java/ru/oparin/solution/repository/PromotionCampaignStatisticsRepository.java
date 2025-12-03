@@ -1,6 +1,8 @@
 package ru.oparin.solution.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.PromotionCampaignStatistics;
 
@@ -49,6 +51,23 @@ public interface PromotionCampaignStatisticsRepository extends JpaRepository<Pro
             Long campaignId,
             LocalDate dateFrom,
             LocalDate dateTo
+    );
+
+    /**
+     * Поиск статистики для списка кампаний за период (оптимизированный запрос).
+     *
+     * @param campaignIds список ID кампаний
+     * @param dateFrom дата начала периода
+     * @param dateTo дата окончания периода
+     * @return список статистики
+     */
+    @Query("SELECT s FROM PromotionCampaignStatistics s " +
+           "WHERE s.campaign.advertId IN :campaignIds " +
+           "AND s.date BETWEEN :dateFrom AND :dateTo")
+    List<PromotionCampaignStatistics> findByCampaignAdvertIdInAndDateBetween(
+            @Param("campaignIds") List<Long> campaignIds,
+            @Param("dateFrom") LocalDate dateFrom,
+            @Param("dateTo") LocalDate dateTo
     );
 }
 
