@@ -20,6 +20,7 @@ public class MetricGroupResponseDto {
     private String metricName; // Английский ключ (например, "cart_conversion")
     private String metricNameRu; // Русское название для отображения
     private String category; // "funnel" или "advertising"
-    private List<ArticleMetricDto> articles;
+    private List<ArticleMetricDto> articles; // Для метрик воронки
+    private List<CampaignMetricDto> campaigns; // Для рекламных метрик
 }
 

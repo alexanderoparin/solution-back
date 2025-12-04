@@ -8,7 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.WbApiKey;
 import ru.oparin.solution.repository.WbApiKeyRepository;
-import ru.oparin.solution.service.wb.WbCommonApiClient;
+import ru.oparin.solution.service.wb.WbContentApiClient;
 
 import java.time.LocalDateTime;
 
@@ -22,7 +22,7 @@ import java.time.LocalDateTime;
 public class WbApiKeyService {
 
     private final WbApiKeyRepository wbApiKeyRepository;
-    private final WbCommonApiClient commonApiClient;
+    private final WbContentApiClient contentApiClient;
 
     /**
      * Поиск API ключа по ID пользователя.
@@ -49,12 +49,9 @@ public class WbApiKeyService {
         WbApiKey apiKey = findByUserId(userId);
 
         try {
-            boolean isValid = commonApiClient.validateApiKey(apiKey.getApiKey());
-            updateValidationStatus(apiKey, isValid, null);
-
-            if (!isValid) {
-                log.warn("WB API ключ для пользователя {} невалиден", userId);
-            }
+            contentApiClient.ping(apiKey.getApiKey());
+            updateValidationStatus(apiKey, true, null);
+            log.info("WB API ключ для пользователя {} валиден", userId);
         } catch (Exception e) {
             String errorMessage = "Ошибка при валидации: " + e.getMessage();
             updateValidationStatus(apiKey, false, errorMessage);

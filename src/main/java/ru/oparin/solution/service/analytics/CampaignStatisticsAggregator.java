@@ -33,6 +33,19 @@ public class CampaignStatisticsAggregator {
         return aggregateCampaignStatistics(allStats);
     }
 
+    /**
+     * Агрегирует статистику одной кампании за период.
+     */
+    public AdvertisingStats aggregateStatsForCampaign(Long campaignId, PeriodDto period) {
+        List<PromotionCampaignStatistics> stats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
+                List.of(campaignId),
+                period.getDateFrom(),
+                period.getDateTo()
+        );
+        
+        return aggregateCampaignStatistics(stats);
+    }
+
     private AdvertisingStats aggregateCampaignStatistics(List<PromotionCampaignStatistics> stats) {
         int views = 0;
         int clicks = 0;

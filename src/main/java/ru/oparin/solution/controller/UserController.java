@@ -48,6 +48,30 @@ public class UserController {
     }
 
     /**
+     * Проверка WB API ключа пользователя.
+     *
+     * @param authentication данные аутентификации
+     * @return сообщение о результате проверки или ошибка
+     */
+    @PostMapping("/api-key/validate")
+    public ResponseEntity<MessageResponse> validateApiKey(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        validateSellerRole(user);
+
+        wbApiKeyService.validateApiKey(user.getId());
+
+        WbApiKey apiKey = wbApiKeyService.findByUserId(user.getId());
+        if (apiKey.getIsValid()) {
+            return ResponseEntity.ok(createSuccessMessage("API ключ валиден"));
+        } else {
+            String errorMsg = apiKey.getValidationError() != null 
+                    ? "API ключ невалиден: " + apiKey.getValidationError()
+                    : "API ключ невалиден";
+            return ResponseEntity.ok(createSuccessMessage(errorMsg));
+        }
+    }
+
+    /**
      * Получение профиля текущего пользователя.
      *
      * @param authentication данные аутентификации
@@ -127,6 +151,7 @@ public class UserController {
     private UserProfileResponse.ApiKeyInfo buildApiKeyInfo(Long userId) {
         WbApiKey apiKey = wbApiKeyService.findByUserId(userId);
         return UserProfileResponse.ApiKeyInfo.builder()
+                .apiKey(apiKey.getApiKey())
                 .isValid(apiKey.getIsValid())
                 .lastValidatedAt(apiKey.getLastValidatedAt())
                 .validationError(apiKey.getValidationError())

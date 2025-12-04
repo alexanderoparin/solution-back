@@ -53,6 +53,11 @@ public class UserProfileResponse {
     @AllArgsConstructor
     public static class ApiKeyInfo {
         /**
+         * WB API ключ.
+         */
+        private String apiKey;
+
+        /**
          * Флаг валидности ключа.
          */
         private Boolean isValid;

@@ -45,39 +45,24 @@ public class PeriodGenerator {
     }
 
     /**
-     * Валидирует периоды на пересечение.
+     * Валидирует периоды - проверяет только корректность дат внутри каждого периода.
+     * Пересечения периодов разрешены.
      * 
      * @param periods список периодов для валидации
-     * @return true если периоды не пересекаются, false если есть пересечения
+     * @return true если все периоды корректны (дата начала не позже даты окончания), false иначе
      */
     public static boolean validatePeriods(List<PeriodDto> periods) {
-        if (periods == null || periods.size() < 2) {
-            return true;
+        if (periods == null || periods.isEmpty()) {
+            return false;
         }
 
-        for (int i = 0; i < periods.size(); i++) {
-            PeriodDto period1 = periods.get(i);
-            if (period1.getDateFrom() == null || period1.getDateTo() == null) {
+        for (PeriodDto period : periods) {
+            if (period.getDateFrom() == null || period.getDateTo() == null) {
                 return false;
             }
-            if (period1.getDateFrom().isAfter(period1.getDateTo())) {
+            // Проверяем, что дата начала не позже даты окончания
+            if (period.getDateFrom().isAfter(period.getDateTo())) {
                 return false;
-            }
-
-            for (int j = i + 1; j < periods.size(); j++) {
-                PeriodDto period2 = periods.get(j);
-                if (period2.getDateFrom() == null || period2.getDateTo() == null) {
-                    return false;
-                }
-
-                // Проверяем пересечение: период1 начинается до окончания период2
-                // и период1 заканчивается после начала период2
-                boolean overlaps = !period1.getDateTo().isBefore(period2.getDateFrom())
-                        && !period1.getDateFrom().isAfter(period2.getDateTo());
-
-                if (overlaps) {
-                    return false;
-                }
             }
         }
 

@@ -7,9 +7,11 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.analytics.*;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.repository.CampaignArticleRepository;
 import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
+import ru.oparin.solution.model.CampaignArticle;
 import ru.oparin.solution.model.PromotionCampaign;
 import ru.oparin.solution.service.analytics.AdvertisingMetricsCalculator;
 import ru.oparin.solution.service.analytics.CampaignStatisticsAggregator;
@@ -39,6 +41,7 @@ public class AnalyticsService {
     private final ProductCardRepository productCardRepository;
     private final ProductCardAnalyticsRepository analyticsRepository;
     private final PromotionCampaignRepository campaignRepository;
+    private final CampaignArticleRepository campaignArticleRepository;
     private final FunnelMetricsCalculator funnelMetricsCalculator;
     private final AdvertisingMetricsCalculator advertisingMetricsCalculator;
     private final MetricValueCalculator metricValueCalculator;
@@ -64,7 +67,7 @@ public class AnalyticsService {
     }
 
     /**
-     * Получает детальные метрики по группе для всех артикулов.
+     * Получает детальные метрики по группе для всех артикулов (воронка) или кампаний (реклама).
      */
     @Transactional(readOnly = true)
     public MetricGroupResponseDto getMetricGroup(
@@ -73,19 +76,25 @@ public class AnalyticsService {
             List<PeriodDto> periods,
             List<Long> excludedNmIds
     ) {
+        if (isAdvertisingMetric(metricName)) {
+            // Для рекламных метрик группируем по кампаниям
+            return getAdvertisingMetricGroup(seller, metricName, periods);
+        } else {
+            // Для метрик воронки группируем по артикулам
+            return getFunnelMetricGroup(seller, metricName, periods, excludedNmIds);
+        }
+    }
+
+    private MetricGroupResponseDto getFunnelMetricGroup(
+            User seller,
+            String metricName,
+            List<PeriodDto> periods,
+            List<Long> excludedNmIds
+    ) {
         List<ProductCard> visibleCards = getVisibleCards(seller.getId(), excludedNmIds);
         
-        // Для рекламных метрик кэшируем статистику по периодам, чтобы не делать повторные запросы
-        final Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache;
-        if (isAdvertisingMetric(metricName)) {
-            advertisingStatsCache = preloadAdvertisingStats(seller.getId(), periods);
-        } else {
-            advertisingStatsCache = null;
-        }
-        
-        final Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> finalCache = advertisingStatsCache;
         List<ArticleMetricDto> articleMetrics = visibleCards.stream()
-                .map(card -> calculateArticleMetric(card, metricName, periods, seller.getId(), finalCache))
+                .map(card -> calculateArticleMetric(card, metricName, periods, seller.getId(), null))
                 .collect(Collectors.toList());
 
         return MetricGroupResponseDto.builder()
@@ -94,6 +103,127 @@ public class AnalyticsService {
                 .category(getMetricCategory(metricName))
                 .articles(articleMetrics)
                 .build();
+    }
+
+    private MetricGroupResponseDto getAdvertisingMetricGroup(
+            User seller,
+            String metricName,
+            List<PeriodDto> periods
+    ) {
+        // Получаем все кампании продавца
+        List<PromotionCampaign> campaigns = campaignRepository.findBySellerId(seller.getId());
+        
+        List<CampaignMetricDto> campaignMetrics = new ArrayList<>();
+        
+        for (PromotionCampaign campaign : campaigns) {
+            // Получаем артикулы для кампании
+            List<CampaignArticle> campaignArticles = campaignArticleRepository.findByCampaignId(campaign.getAdvertId());
+            List<Long> articleIds = campaignArticles.stream()
+                    .map(CampaignArticle::getNmId)
+                    .collect(Collectors.toList());
+            
+            // Если нет артикулов, пропускаем кампанию
+            if (articleIds.isEmpty()) {
+                continue;
+            }
+            
+            // Рассчитываем метрику для каждого периода
+            List<PeriodMetricValueDto> periodValues = new ArrayList<>();
+            boolean hasAnyData = false;
+            
+            for (PeriodDto period : periods) {
+                CampaignStatisticsAggregator.AdvertisingStats stats = 
+                        campaignStatisticsAggregator.aggregateStatsForCampaign(campaign.getAdvertId(), period);
+                
+                Object value = calculateAdvertisingMetricValue(metricName, stats);
+                BigDecimal changePercent = calculateCampaignChangePercent(
+                        campaign.getAdvertId(), metricName, period, periods);
+                
+                // Проверяем, есть ли данные (не null и не 0)
+                if (value != null && !isZero(value)) {
+                    hasAnyData = true;
+                }
+                
+                periodValues.add(PeriodMetricValueDto.builder()
+                        .periodId(period.getId())
+                        .value(value)
+                        .changePercent(changePercent)
+                        .build());
+            }
+            
+            // Добавляем кампанию только если есть данные хотя бы по одному периоду
+            if (hasAnyData) {
+                campaignMetrics.add(CampaignMetricDto.builder()
+                        .campaignId(campaign.getAdvertId())
+                        .campaignName(campaign.getName())
+                        .articles(articleIds)
+                        .periods(periodValues)
+                        .build());
+            }
+        }
+
+        return MetricGroupResponseDto.builder()
+                .metricName(metricName)
+                .metricNameRu(MetricNames.getRussianName(metricName))
+                .category(getMetricCategory(metricName))
+                .campaigns(campaignMetrics)
+                .build();
+    }
+
+    private Object calculateAdvertisingMetricValue(String metricName, CampaignStatisticsAggregator.AdvertisingStats stats) {
+        return switch (metricName) {
+            case MetricNames.VIEWS -> stats.views();
+            case MetricNames.CLICKS -> stats.clicks();
+            case MetricNames.COSTS -> MathUtils.convertKopecksToRubles(stats.sumKopecks());
+            case MetricNames.CPC -> MathUtils.divideKopecksByValue(stats.sumKopecks(), stats.clicks());
+            case MetricNames.CTR -> MathUtils.calculatePercentage(stats.clicks(), stats.views());
+            case MetricNames.CPO -> MathUtils.divideKopecksByValue(stats.sumKopecks(), stats.orders());
+            case MetricNames.DRR -> {
+                if (stats.sumKopecks() == 0) {
+                    yield null;
+                }
+                BigDecimal ordersAmount = MathUtils.convertKopecksToRubles(stats.ordersSumKopecks());
+                BigDecimal costs = MathUtils.convertKopecksToRubles(stats.sumKopecks());
+                yield MathUtils.calculatePercentageChange(ordersAmount, costs);
+            }
+            default -> null;
+        };
+    }
+
+    private boolean isZero(Object value) {
+        if (value == null) {
+            return true;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue() == 0.0;
+        }
+        return false;
+    }
+
+    private BigDecimal calculateCampaignChangePercent(
+            Long campaignId,
+            String metricName,
+            PeriodDto period,
+            List<PeriodDto> allPeriods
+    ) {
+        if (period.getId() == 1) {
+            return null;
+        }
+
+        PeriodDto previousPeriod = findPreviousPeriod(period, allPeriods);
+        if (previousPeriod == null) {
+            return null;
+        }
+
+        CampaignStatisticsAggregator.AdvertisingStats currentStats = 
+                campaignStatisticsAggregator.aggregateStatsForCampaign(campaignId, period);
+        CampaignStatisticsAggregator.AdvertisingStats previousStats = 
+                campaignStatisticsAggregator.aggregateStatsForCampaign(campaignId, previousPeriod);
+
+        Object currentValue = calculateAdvertisingMetricValue(metricName, currentStats);
+        Object previousValue = calculateAdvertisingMetricValue(metricName, previousStats);
+
+        return calculatePercentageChange(currentValue, previousValue);
     }
     
     private boolean isAdvertisingMetric(String metricName) {
@@ -142,7 +272,7 @@ public class AnalyticsService {
 
     private void validatePeriods(List<PeriodDto> periods) {
         if (!PeriodGenerator.validatePeriods(periods)) {
-            throw new IllegalArgumentException("Периоды пересекаются или некорректны");
+            throw new IllegalArgumentException("Периоды некорректны: дата начала периода не может быть позже даты окончания");
         }
     }
 
