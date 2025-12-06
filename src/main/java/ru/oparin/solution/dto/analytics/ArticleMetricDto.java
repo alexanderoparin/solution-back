@@ -18,6 +18,7 @@ import java.util.List;
 @AllArgsConstructor
 public class ArticleMetricDto {
     private Long nmId;
+    private String photoTm; // URL миниатюры первой фотографии товара
     private List<PeriodMetricValueDto> periods;
 }
 

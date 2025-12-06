@@ -53,6 +53,7 @@ public class MathUtils {
 
     /**
      * Рассчитывает процент изменения между двумя значениями.
+     * Формула: ((current - previous) / previous) * 100
      */
     public static BigDecimal calculatePercentageChange(BigDecimal current, BigDecimal previous) {
         if (current == null || previous == null || previous.compareTo(BigDecimal.ZERO) == 0) {
@@ -61,6 +62,24 @@ public class MathUtils {
         return current.subtract(previous)
                 .divide(previous, PERCENTAGE_SCALE, RoundingMode.HALF_UP)
                 .multiply(PERCENT_MULTIPLIER)
+                .setScale(SCALE, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Рассчитывает разницу между двумя процентными значениями.
+     * Для метрик, измеряемых в процентах (например, конверсия, CTR, DRR),
+     * изменение показывается как разница, а не как процентное изменение.
+     * Формула: current - previous
+     *
+     * @param current текущее значение в процентах
+     * @param previous предыдущее значение в процентах
+     * @return разница в процентах или null, если одно из значений null
+     */
+    public static BigDecimal calculatePercentageDifference(BigDecimal current, BigDecimal previous) {
+        if (current == null || previous == null) {
+            return null;
+        }
+        return current.subtract(previous)
                 .setScale(SCALE, RoundingMode.HALF_UP);
     }
 

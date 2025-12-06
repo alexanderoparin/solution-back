@@ -108,6 +108,17 @@ public final class MetricNames {
     }
 
     /**
+     * Проверяет, является ли метрика процентной (измеряется в процентах).
+     * Для процентных метрик изменение вычисляется как разница, а не как процентное изменение.
+     */
+    public static boolean isPercentageMetric(String metricName) {
+        return CART_CONVERSION.equals(metricName)
+                || ORDER_CONVERSION.equals(metricName)
+                || CTR.equals(metricName)
+                || DRR.equals(metricName);
+    }
+
+    /**
      * Возвращает русское название метрики по английскому ключу.
      *
      * @param metricKey английский ключ метрики

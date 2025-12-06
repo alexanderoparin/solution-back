@@ -223,7 +223,12 @@ public class AnalyticsService {
         Object currentValue = calculateAdvertisingMetricValue(metricName, currentStats);
         Object previousValue = calculateAdvertisingMetricValue(metricName, previousStats);
 
-        return calculatePercentageChange(currentValue, previousValue);
+        // Для процентных метрик вычисляем разницу, для остальных - процентное изменение
+        if (MetricNames.isPercentageMetric(metricName)) {
+            return calculatePercentageDifference(currentValue, previousValue);
+        } else {
+            return calculatePercentageChange(currentValue, previousValue);
+        }
     }
     
     private boolean isAdvertisingMetric(String metricName) {
@@ -311,6 +316,7 @@ public class AnalyticsService {
 
         return ArticleMetricDto.builder()
                 .nmId(card.getNmId())
+                .photoTm(card.getPhotoTm())
                 .periods(periodValues)
                 .build();
     }
@@ -352,7 +358,13 @@ public class AnalyticsService {
         }
 
         Object previousValue = metricValueCalculator.calculateValue(card, metricName, previousPeriod, sellerId, advertisingStatsCache);
-        return calculatePercentageChange(currentValue, previousValue);
+        
+        // Для процентных метрик вычисляем разницу, для остальных - процентное изменение
+        if (MetricNames.isPercentageMetric(metricName)) {
+            return calculatePercentageDifference(currentValue, previousValue);
+        } else {
+            return calculatePercentageChange(currentValue, previousValue);
+        }
     }
 
     private PeriodDto findPreviousPeriod(PeriodDto currentPeriod, List<PeriodDto> allPeriods) {
@@ -366,6 +378,16 @@ public class AnalyticsService {
         BigDecimal currentDecimal = convertToBigDecimal(current);
         BigDecimal previousDecimal = convertToBigDecimal(previous);
         return MathUtils.calculatePercentageChange(currentDecimal, previousDecimal);
+    }
+
+    /**
+     * Вычисляет разницу между двумя процентными значениями.
+     * Используется для метрик, измеряемых в процентах (конверсия, CTR, DRR).
+     */
+    private BigDecimal calculatePercentageDifference(Object current, Object previous) {
+        BigDecimal currentDecimal = convertToBigDecimal(current);
+        BigDecimal previousDecimal = convertToBigDecimal(previous);
+        return MathUtils.calculatePercentageDifference(currentDecimal, previousDecimal);
     }
 
     private BigDecimal convertToBigDecimal(Object value) {
@@ -461,6 +483,7 @@ public class AnalyticsService {
                 .title(card.getTitle())
                 .brand(card.getBrand())
                 .subjectName(card.getSubjectName())
+                .photoTm(card.getPhotoTm())
                 .build();
     }
 
