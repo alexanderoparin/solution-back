@@ -12,6 +12,7 @@ import ru.oparin.solution.repository.PromotionCampaignRepository;
 import ru.oparin.solution.repository.PromotionCampaignStatisticsRepository;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -27,6 +28,9 @@ import java.util.stream.Collectors;
 public class PromotionCampaignStatisticsService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final int RUBLES_TO_KOPECKS_MULTIPLIER = 100;
+    private static final int CPA_SCALE = 2;
+    private static final int MIN_DATE_STRING_LENGTH = 10;
 
     private final PromotionCampaignStatisticsRepository statisticsRepository;
     private final PromotionCampaignRepository campaignRepository;
@@ -94,16 +98,10 @@ public class PromotionCampaignStatisticsService {
 
             for (PromotionFullStatsResponse.CampaignStats.DayStats dayStats : campaignStats.getDays()) {
                 try {
-                    Optional<SaveResult> result = processDayStats(campaignStats.getAdvertId(), dayStats, seller);
-                    if (result.isPresent()) {
-                        if (result.get().isNew()) {
-                            savedCount++;
-                        } else {
-                            updatedCount++;
-                        }
-                    } else {
-                        skippedCount++;
-                    }
+                    ProcessingCounters counters = processDayStats(campaignStats.getAdvertId(), dayStats, seller);
+                    savedCount += counters.saved();
+                    updatedCount += counters.updated();
+                    skippedCount += counters.skipped();
                 } catch (Exception e) {
                     log.error("Ошибка при обработке статистики для кампании advertId {} за дату {}: {}",
                             campaignStats.getAdvertId(), dayStats.getDate(), e.getMessage(), e);
@@ -115,6 +113,44 @@ public class PromotionCampaignStatisticsService {
         return new ProcessingResult(savedCount, updatedCount, skippedCount);
     }
 
+    /**
+     * Обрабатывает статистику за один день, извлекая данные по всем артикулам.
+     */
+    private ProcessingCounters processDayStats(
+            Long advertId,
+            PromotionFullStatsResponse.CampaignStats.DayStats dayStats,
+            User seller
+    ) {
+        int saved = 0;
+        int updated = 0;
+        int skipped = 0;
+
+        if (dayStats.getApps() == null || dayStats.getApps().isEmpty()) {
+            return new ProcessingCounters(saved, updated, skipped);
+        }
+
+        for (PromotionFullStatsResponse.CampaignStats.DayStats.AppStats appStats : dayStats.getApps()) {
+            if (appStats.getNms() == null || appStats.getNms().isEmpty()) {
+                continue;
+            }
+
+            for (PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats articleStats : appStats.getNms()) {
+                Optional<SaveResult> result = processArticleStats(advertId, dayStats, articleStats, seller);
+                if (result.isPresent()) {
+                    if (result.get().isNew()) {
+                        saved++;
+                    } else {
+                        updated++;
+                    }
+                } else {
+                    skipped++;
+                }
+            }
+        }
+
+        return new ProcessingCounters(saved, updated, skipped);
+    }
+
     private boolean isValidCampaignStats(PromotionFullStatsResponse.CampaignStats statsDto) {
         if (statsDto == null || statsDto.getAdvertId() == null) {
             log.warn("Получена некорректная DTO статистики кампании (null или advertId null), пропускаем.");
@@ -123,12 +159,18 @@ public class PromotionCampaignStatisticsService {
         return true;
     }
 
-    private Optional<SaveResult> processDayStats(
+    private Optional<SaveResult> processArticleStats(
             Long advertId,
             PromotionFullStatsResponse.CampaignStats.DayStats dayStats,
+            PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats articleStats,
             User seller
     ) {
         if (!isValidDayStats(dayStats)) {
+            return Optional.empty();
+        }
+
+        if (articleStats == null || articleStats.getNmId() == null) {
+            log.warn("Получена некорректная DTO статистики артикула (null или nmId null), пропускаем.");
             return Optional.empty();
         }
 
@@ -145,10 +187,10 @@ public class PromotionCampaignStatisticsService {
         }
 
         PromotionCampaign campaign = campaignOptional.get();
-        PromotionCampaignStatistics statistics = findOrCreateStatistics(campaign, date);
+        PromotionCampaignStatistics statistics = findOrCreateStatistics(campaign, articleStats.getNmId(), date);
         boolean isNew = statistics.getId() == null;
 
-        updateStatisticsFields(statistics, dayStats);
+        updateStatisticsFields(statistics, articleStats);
         statisticsRepository.save(statistics);
         statisticsRepository.flush();
 
@@ -177,9 +219,10 @@ public class PromotionCampaignStatisticsService {
         return campaignOptional;
     }
 
-    private PromotionCampaignStatistics findOrCreateStatistics(PromotionCampaign campaign, LocalDate date) {
-        Optional<PromotionCampaignStatistics> existingStats = statisticsRepository.findByCampaignAdvertIdAndDate(
+    private PromotionCampaignStatistics findOrCreateStatistics(PromotionCampaign campaign, Long nmId, LocalDate date) {
+        Optional<PromotionCampaignStatistics> existingStats = statisticsRepository.findByCampaignAdvertIdAndNmIdAndDate(
                 campaign.getAdvertId(),
+                nmId,
                 date
         );
 
@@ -189,60 +232,134 @@ public class PromotionCampaignStatisticsService {
 
         PromotionCampaignStatistics newStatistics = new PromotionCampaignStatistics();
         newStatistics.setCampaign(campaign);
+        newStatistics.setNmId(nmId);
         newStatistics.setDate(date);
         return newStatistics;
     }
 
     /**
      * Парсит дату из формата ISO 8601 (например, "2025-11-23T00:00:00Z") в LocalDate.
+     * Извлекает только дату (первые 10 символов) из строки формата ISO 8601.
+     *
+     * @param dateString строка с датой в формате ISO 8601
+     * @return LocalDate или null, если парсинг не удался
      */
     private LocalDate parseDate(String dateString) {
         if (dateString == null || dateString.isEmpty()) {
             return null;
         }
         try {
-            // Формат ISO 8601: "2025-11-23T00:00:00Z"
-            // Извлекаем только дату (первые 10 символов)
-            if (dateString.length() >= 10) {
-                return LocalDate.parse(dateString.substring(0, 10), DATE_FORMATTER);
-            }
-            return LocalDate.parse(dateString, DATE_FORMATTER);
+            String datePart = dateString.length() >= MIN_DATE_STRING_LENGTH
+                    ? dateString.substring(0, MIN_DATE_STRING_LENGTH)
+                    : dateString;
+            return LocalDate.parse(datePart, DATE_FORMATTER);
         } catch (Exception e) {
             log.warn("Не удалось распарсить дату '{}': {}", dateString, e.getMessage());
             return null;
         }
     }
 
+    /**
+     * Обновляет поля статистики из данных артикула.
+     */
     private void updateStatisticsFields(
             PromotionCampaignStatistics statistics,
-            PromotionFullStatsResponse.CampaignStats.DayStats dayStats
+            PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats articleStats
     ) {
-        statistics.setViews(dayStats.getViews());
-        statistics.setClicks(dayStats.getClicks());
-        statistics.setCtr(dayStats.getCtr());
-        // sum в API приходит в рублях (BigDecimal), конвертируем в копейки (Long)
-        statistics.setSum(convertRublesToKopecks(dayStats.getSum()));
-        statistics.setOrders(dayStats.getOrders());
-        statistics.setCr(dayStats.getCr());
-        // CPA вычисляем из данных или используем cpc
-        statistics.setCpa(dayStats.getCpc());
-        // sum_price в API приходит в рублях (BigDecimal), конвертируем в копейки (Long)
-        statistics.setOrdersSum(convertRublesToKopecks(dayStats.getSumPrice()));
+        setBasicMetrics(statistics, articleStats);
+        setFinancialMetrics(statistics, articleStats);
+        setConversionMetrics(statistics, articleStats);
+    }
+
+    /**
+     * Устанавливает базовые метрики (показы, клики, заказы и т.д.).
+     */
+    private void setBasicMetrics(
+            PromotionCampaignStatistics statistics,
+            PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats articleStats
+    ) {
+        statistics.setViews(articleStats.getViews());
+        statistics.setClicks(articleStats.getClicks());
+        statistics.setOrders(articleStats.getOrders());
+        statistics.setAtbs(articleStats.getAtbs());
+        statistics.setCanceled(articleStats.getCanceled());
+        statistics.setShks(articleStats.getShks());
+    }
+
+    /**
+     * Устанавливает финансовые метрики (расходы, суммы заказов).
+     */
+    private void setFinancialMetrics(
+            PromotionCampaignStatistics statistics,
+            PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats articleStats
+    ) {
+        Long sumKopecks = convertRublesToKopecks(articleStats.getSum());
+        statistics.setSum(sumKopecks);
+        
+        Long sumPriceKopecks = convertRublesToKopecks(articleStats.getSumPrice());
+        statistics.setSumPrice(sumPriceKopecks);
+        statistics.setOrdersSum(sumPriceKopecks); // Для совместимости
+    }
+
+    /**
+     * Устанавливает метрики конверсии (CTR, CR, CPC, CPA).
+     */
+    private void setConversionMetrics(
+            PromotionCampaignStatistics statistics,
+            PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats articleStats
+    ) {
+        statistics.setCtr(articleStats.getCtr());
+        statistics.setCr(articleStats.getCr());
+        statistics.setCpc(articleStats.getCpc());
+        statistics.setCpa(calculateCpa(articleStats));
+    }
+
+    /**
+     * Вычисляет CPA (Cost Per Action) = расходы / количество заказов.
+     *
+     * @param articleStats статистика артикула
+     * @return CPA в копейках или null, если заказов нет
+     */
+    private BigDecimal calculateCpa(PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats articleStats) {
+        Long sumKopecks = convertRublesToKopecks(articleStats.getSum());
+        Integer orders = articleStats.getOrders();
+
+        if (sumKopecks == null || orders == null || orders == 0) {
+            return null;
+        }
+
+        return BigDecimal.valueOf(sumKopecks)
+                .divide(BigDecimal.valueOf(orders), CPA_SCALE, RoundingMode.HALF_UP);
     }
 
     /**
      * Конвертирует рубли (BigDecimal) в копейки (Long).
+     *
+     * @param rubles сумма в рублях
+     * @return сумма в копейках или null, если входное значение null
      */
     private Long convertRublesToKopecks(BigDecimal rubles) {
         if (rubles == null) {
             return null;
         }
-        return rubles.multiply(BigDecimal.valueOf(100)).longValue();
+        return rubles.multiply(BigDecimal.valueOf(RUBLES_TO_KOPECKS_MULTIPLIER)).longValue();
     }
 
+    /**
+     * Результат обработки статистики за день.
+     */
+    private record ProcessingCounters(int saved, int updated, int skipped) {
+    }
+
+    /**
+     * Результат обработки всех статистик.
+     */
     private record ProcessingResult(int savedCount, int updatedCount, int skippedCount) {
     }
 
+    /**
+     * Результат сохранения одной записи статистики.
+     */
     private record SaveResult(boolean isNew) {
     }
 }

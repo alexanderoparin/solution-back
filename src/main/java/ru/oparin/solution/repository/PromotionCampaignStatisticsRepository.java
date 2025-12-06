@@ -26,6 +26,20 @@ public interface PromotionCampaignStatisticsRepository extends JpaRepository<Pro
     Optional<PromotionCampaignStatistics> findByCampaignAdvertIdAndDate(Long campaignId, LocalDate date);
 
     /**
+     * Поиск статистики по кампании, артикулу и дате.
+     *
+     * @param campaignId ID кампании
+     * @param nmId артикул товара
+     * @param date дата статистики
+     * @return статистика или пусто
+     */
+    Optional<PromotionCampaignStatistics> findByCampaignAdvertIdAndNmIdAndDate(
+            Long campaignId,
+            Long nmId,
+            LocalDate date
+    );
+
+    /**
      * Поиск статистики по кампании за период.
      *
      * @param campaignId ID кампании

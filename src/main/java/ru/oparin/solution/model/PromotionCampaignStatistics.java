@@ -15,11 +15,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * Сущность статистики рекламной кампании из WB API.
+ * Сущность статистики артикула внутри рекламной кампании из WB API.
+ * Хранит статистику по каждому артикулу (nmId) в каждой кампании по датам.
  */
 @Entity
 @Table(name = "promotion_campaign_statistics", schema = "solution",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"campaign_id", "date"}))
+        uniqueConstraints = @UniqueConstraint(columnNames = {"campaign_id", "nm_id", "date"}))
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
@@ -42,6 +43,12 @@ public class PromotionCampaignStatistics {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "campaign_id", nullable = false, referencedColumnName = "advert_id")
     private PromotionCampaign campaign;
+
+    /**
+     * Артикул товара (nmId).
+     */
+    @Column(name = "nm_id", nullable = false)
+    private Long nmId;
 
     /**
      * Дата статистики.
@@ -86,16 +93,46 @@ public class PromotionCampaignStatistics {
     private BigDecimal cr;
 
     /**
+     * CPC (Cost Per Click) - стоимость клика.
+     */
+    @Column(name = "cpc", precision = 10, scale = 4)
+    private BigDecimal cpc;
+
+    /**
      * CPA (Cost Per Action) - стоимость заказа (в копейках).
      */
     @Column(name = "cpa", precision = 10, scale = 2)
     private BigDecimal cpa;
 
     /**
+     * Добавлено в корзину.
+     */
+    @Column(name = "atbs")
+    private Integer atbs;
+
+    /**
+     * Отменено заказов.
+     */
+    @Column(name = "canceled")
+    private Integer canceled;
+
+    /**
+     * ШК (штрих-коды).
+     */
+    @Column(name = "shks")
+    private Integer shks;
+
+    /**
      * Сумма заказов (в копейках).
      */
     @Column(name = "orders_sum")
     private Long ordersSum;
+
+    /**
+     * Сумма заказов (в копейках) - альтернативное поле из API (sum_price).
+     */
+    @Column(name = "sum_price")
+    private Long sumPrice;
 
     /**
      * Дата создания записи в БД.

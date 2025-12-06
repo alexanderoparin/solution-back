@@ -104,13 +104,20 @@ public class PromotionFullStatsResponse {
             private String date;
 
             /**
-             * Показы.
+             * Статистика по приложениям (apps).
+             * Содержит статистику по артикулам в поле nms.
+             */
+            @JsonProperty("apps")
+            private List<AppStats> apps;
+
+            /**
+             * Показы (агрегированные за день).
              */
             @JsonProperty("views")
             private Integer views;
 
             /**
-             * Клики.
+             * Клики (агрегированные за день).
              */
             @JsonProperty("clicks")
             private Integer clicks;
@@ -128,7 +135,7 @@ public class PromotionFullStatsResponse {
             private BigDecimal sum;
 
             /**
-             * Заказы.
+             * Заказы (агрегированные за день).
              */
             @JsonProperty("orders")
             private Integer orders;
@@ -168,6 +175,184 @@ public class PromotionFullStatsResponse {
              */
             @JsonProperty("sum_price")
             private BigDecimal sumPrice;
+
+            /**
+             * Статистика по приложению.
+             */
+            @Getter
+            @Setter
+            @Builder
+            @NoArgsConstructor
+            @AllArgsConstructor
+            @JsonIgnoreProperties(ignoreUnknown = true)
+            public static class AppStats {
+                /**
+                 * Тип приложения (32, 64 и т.д.).
+                 */
+                @JsonProperty("appType")
+                private Integer appType;
+
+                /**
+                 * Статистика по артикулам (nms).
+                 */
+                @JsonProperty("nms")
+                private List<ArticleStats> nms;
+
+                /**
+                 * Показы (агрегированные по приложению).
+                 */
+                @JsonProperty("views")
+                private Integer views;
+
+                /**
+                 * Клики (агрегированные по приложению).
+                 */
+                @JsonProperty("clicks")
+                private Integer clicks;
+
+                /**
+                 * CTR (Click-Through Rate).
+                 */
+                @JsonProperty("ctr")
+                private BigDecimal ctr;
+
+                /**
+                 * Расходы (в рублях).
+                 */
+                @JsonProperty("sum")
+                private BigDecimal sum;
+
+                /**
+                 * Заказы (агрегированные по приложению).
+                 */
+                @JsonProperty("orders")
+                private Integer orders;
+
+                /**
+                 * CR (Conversion Rate).
+                 */
+                @JsonProperty("cr")
+                private BigDecimal cr;
+
+                /**
+                 * CPC (Cost Per Click).
+                 */
+                @JsonProperty("cpc")
+                private BigDecimal cpc;
+
+                /**
+                 * Добавлено в корзину.
+                 */
+                @JsonProperty("atbs")
+                private Integer atbs;
+
+                /**
+                 * Отменено заказов.
+                 */
+                @JsonProperty("canceled")
+                private Integer canceled;
+
+                /**
+                 * ШК (штрих-коды).
+                 */
+                @JsonProperty("shks")
+                private Integer shks;
+
+                /**
+                 * Сумма заказов (в рублях).
+                 */
+                @JsonProperty("sum_price")
+                private BigDecimal sumPrice;
+            }
+
+            /**
+             * Статистика по артикулу (nmId).
+             */
+            @Getter
+            @Setter
+            @Builder
+            @NoArgsConstructor
+            @AllArgsConstructor
+            @JsonIgnoreProperties(ignoreUnknown = true)
+            public static class ArticleStats {
+                /**
+                 * Артикул WB (nmId).
+                 */
+                @JsonProperty("nmId")
+                private Long nmId;
+
+                /**
+                 * Название товара.
+                 */
+                @JsonProperty("name")
+                private String name;
+
+                /**
+                 * Показы.
+                 */
+                @JsonProperty("views")
+                private Integer views;
+
+                /**
+                 * Клики.
+                 */
+                @JsonProperty("clicks")
+                private Integer clicks;
+
+                /**
+                 * CTR (Click-Through Rate).
+                 */
+                @JsonProperty("ctr")
+                private BigDecimal ctr;
+
+                /**
+                 * Расходы (в рублях).
+                 */
+                @JsonProperty("sum")
+                private BigDecimal sum;
+
+                /**
+                 * Заказы.
+                 */
+                @JsonProperty("orders")
+                private Integer orders;
+
+                /**
+                 * CR (Conversion Rate).
+                 */
+                @JsonProperty("cr")
+                private BigDecimal cr;
+
+                /**
+                 * CPC (Cost Per Click).
+                 */
+                @JsonProperty("cpc")
+                private BigDecimal cpc;
+
+                /**
+                 * Добавлено в корзину.
+                 */
+                @JsonProperty("atbs")
+                private Integer atbs;
+
+                /**
+                 * Отменено заказов.
+                 */
+                @JsonProperty("canceled")
+                private Integer canceled;
+
+                /**
+                 * ШК (штрих-коды).
+                 */
+                @JsonProperty("shks")
+                private Integer shks;
+
+                /**
+                 * Сумма заказов (в рублях).
+                 */
+                @JsonProperty("sum_price")
+                private BigDecimal sumPrice;
+            }
         }
     }
 }
