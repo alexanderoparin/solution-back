@@ -18,9 +18,34 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CampaignDto {
+    /**
+     * ID рекламной кампании (advert_id).
+     */
     private Long id;
+    
+    /**
+     * Название рекламной кампании.
+     */
     private String name;
-    private String type; // название типа кампании
+    
+    /**
+     * Название типа кампании.
+     */
+    private String type;
+    
+    /**
+     * Код статуса кампании (4, 7, 9, 11 и т.д.).
+     */
+    private Integer status;
+    
+    /**
+     * Название статуса кампании.
+     */
+    private String statusName;
+    
+    /**
+     * Дата создания кампании.
+     */
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdAt;
 }

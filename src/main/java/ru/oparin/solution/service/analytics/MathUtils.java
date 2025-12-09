@@ -9,7 +9,6 @@ import java.math.RoundingMode;
 public class MathUtils {
 
     private static final BigDecimal PERCENT_MULTIPLIER = BigDecimal.valueOf(100);
-    private static final BigDecimal KOPECKS_TO_RUBLES = BigDecimal.valueOf(100);
     private static final int SCALE = 2;
     private static final int PERCENTAGE_SCALE = 4;
 
@@ -33,22 +32,20 @@ public class MathUtils {
     }
 
     /**
-     * Конвертирует копейки в рубли.
+     * Рассчитывает процент от числа для BigDecimal значений.
+     * Формула: (numerator / denominator) * 100
+     *
+     * @param numerator числитель
+     * @param denominator знаменатель
+     * @return процент или null, если знаменатель равен нулю или одно из значений null
      */
-    public static BigDecimal convertKopecksToRubles(long kopecks) {
-        return BigDecimal.valueOf(kopecks)
-                .divide(KOPECKS_TO_RUBLES, SCALE, RoundingMode.HALF_UP);
-    }
-
-    /**
-     * Делит копейки на значение и возвращает результат в рублях.
-     */
-    public static BigDecimal divideKopecksByValue(long kopecks, int divisor) {
-        if (divisor == 0) {
+    public static BigDecimal calculatePercentage(BigDecimal numerator, BigDecimal denominator) {
+        if (numerator == null || denominator == null || denominator.compareTo(BigDecimal.ZERO) == 0) {
             return null;
         }
-        return convertKopecksToRubles(kopecks)
-                .divide(BigDecimal.valueOf(divisor), SCALE, RoundingMode.HALF_UP);
+        return numerator
+                .multiply(PERCENT_MULTIPLIER)
+                .divide(denominator, SCALE, RoundingMode.HALF_UP);
     }
 
     /**
@@ -102,6 +99,45 @@ public class MathUtils {
      */
     public static BigDecimal getValueOrZero(BigDecimal value) {
         return value != null ? value : BigDecimal.ZERO;
+    }
+
+    /**
+     * Безопасное деление BigDecimal с округлением.
+     * Возвращает null, если делитель равен нулю, чтобы избежать ArithmeticException.
+     *
+     * @param dividend делимое
+     * @param divisor делитель
+     * @return результат деления или null, если делитель равен нулю
+     */
+    public static BigDecimal divideSafely(BigDecimal dividend, BigDecimal divisor) {
+        if (dividend == null || divisor == null || divisor.compareTo(BigDecimal.ZERO) == 0) {
+            return null;
+        }
+        return dividend.divide(divisor, SCALE, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Безопасное деление BigDecimal на целое число с округлением.
+     *
+     * @param dividend делимое
+     * @param divisor делитель (целое число)
+     * @return результат деления или null, если делитель равен нулю
+     */
+    public static BigDecimal divideSafely(BigDecimal dividend, long divisor) {
+        if (dividend == null || divisor == 0) {
+            return null;
+        }
+        return dividend.divide(BigDecimal.valueOf(divisor), SCALE, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Проверяет, является ли значение положительным (больше нуля).
+     *
+     * @param value проверяемое значение
+     * @return true, если значение не null и больше нуля
+     */
+    public static boolean isPositive(BigDecimal value) {
+        return value != null && value.compareTo(BigDecimal.ZERO) > 0;
     }
 }
 

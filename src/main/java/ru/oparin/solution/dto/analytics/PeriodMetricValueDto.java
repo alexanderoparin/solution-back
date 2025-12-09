@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 
 /**
  * DTO для значения метрики по периоду.
+ * Содержит значение метрики за конкретный период и процент изменения относительно предыдущего периода.
  */
 @Getter
 @Setter
@@ -17,7 +18,18 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PeriodMetricValueDto {
+    /**
+     * Идентификатор периода.
+     */
     private Integer periodId;
-    private Object value; // Integer, BigDecimal или null
-    private BigDecimal changePercent; // Процент изменения (может быть null)
+    
+    /**
+     * Значение метрики. Может быть Integer, BigDecimal или null.
+     */
+    private Object value;
+    
+    /**
+     * Процент изменения значения относительно предыдущего периода. Может быть null, если нет данных для сравнения.
+     */
+    private BigDecimal changePercent;
 }

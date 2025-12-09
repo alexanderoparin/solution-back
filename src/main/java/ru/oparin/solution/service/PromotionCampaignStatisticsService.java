@@ -28,7 +28,6 @@ import java.util.stream.Collectors;
 public class PromotionCampaignStatisticsService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final int RUBLES_TO_KOPECKS_MULTIPLIER = 100;
     private static final int CPA_SCALE = 2;
     private static final int MIN_DATE_STRING_LENGTH = 10;
 
@@ -293,12 +292,9 @@ public class PromotionCampaignStatisticsService {
             PromotionCampaignStatistics statistics,
             PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats articleStats
     ) {
-        Long sumKopecks = convertRublesToKopecks(articleStats.getSum());
-        statistics.setSum(sumKopecks);
-        
-        Long sumPriceKopecks = convertRublesToKopecks(articleStats.getSumPrice());
-        statistics.setSumPrice(sumPriceKopecks);
-        statistics.setOrdersSum(sumPriceKopecks); // Для совместимости
+        statistics.setSum(articleStats.getSum());
+        statistics.setSumPrice(articleStats.getSumPrice());
+        statistics.setOrdersSum(articleStats.getSumPrice()); // Для совместимости
     }
 
     /**
@@ -318,31 +314,17 @@ public class PromotionCampaignStatisticsService {
      * Вычисляет CPA (Cost Per Action) = расходы / количество заказов.
      *
      * @param articleStats статистика артикула
-     * @return CPA в копейках или null, если заказов нет
+     * @return CPA в рублях или null, если заказов нет
      */
     private BigDecimal calculateCpa(PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats articleStats) {
-        Long sumKopecks = convertRublesToKopecks(articleStats.getSum());
+        BigDecimal sum = articleStats.getSum();
         Integer orders = articleStats.getOrders();
 
-        if (sumKopecks == null || orders == null || orders == 0) {
+        if (sum == null || orders == null || orders == 0) {
             return null;
         }
 
-        return BigDecimal.valueOf(sumKopecks)
-                .divide(BigDecimal.valueOf(orders), CPA_SCALE, RoundingMode.HALF_UP);
-    }
-
-    /**
-     * Конвертирует рубли (BigDecimal) в копейки (Long).
-     *
-     * @param rubles сумма в рублях
-     * @return сумма в копейках или null, если входное значение null
-     */
-    private Long convertRublesToKopecks(BigDecimal rubles) {
-        if (rubles == null) {
-            return null;
-        }
-        return rubles.multiply(BigDecimal.valueOf(RUBLES_TO_KOPECKS_MULTIPLIER)).longValue();
+        return sum.divide(BigDecimal.valueOf(orders), CPA_SCALE, RoundingMode.HALF_UP);
     }
 
     /**

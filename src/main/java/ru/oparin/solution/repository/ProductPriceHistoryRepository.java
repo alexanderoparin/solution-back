@@ -45,6 +45,11 @@ public interface ProductPriceHistoryRepository extends JpaRepository<ProductPric
     List<ProductPriceHistory> findByNmIdInAndDate(List<Long> nmIds, LocalDate date);
 
     /**
+     * Находит все записи цен для товара за период.
+     */
+    List<ProductPriceHistory> findByNmIdAndDateBetween(Long nmId, LocalDate dateFrom, LocalDate dateTo);
+
+    /**
      * Подсчитывает количество уникальных товаров с ценами за указанную дату.
      */
     long countDistinctNmIdByDate(LocalDate date);

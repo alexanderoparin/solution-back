@@ -45,18 +45,19 @@ public class User {
     private String password;
 
     /**
-     * Роль пользователя: ADMIN, SELLER, WORKER.
+     * Роль пользователя: ADMIN, MANAGER, SELLER, WORKER.
      */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private Role role;
 
     /**
-     * Ссылка на продавца для WORKER (null для ADMIN и SELLER).
+     * Ссылка на владельца/родителя пользователя.
+     * Для WORKER - SELLER, для SELLER - MANAGER, для MANAGER - ADMIN, для ADMIN - null.
      */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "seller_id")
-    private User seller;
+    @JoinColumn(name = "owner_id")
+    private User owner;
 
     /**
      * Флаг активности пользователя.

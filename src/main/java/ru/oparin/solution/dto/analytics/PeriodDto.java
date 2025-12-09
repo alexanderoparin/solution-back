@@ -11,6 +11,7 @@ import java.time.LocalDate;
 
 /**
  * DTO для периода аналитики.
+ * Определяет временной интервал для агрегации данных.
  */
 @Getter
 @Setter
@@ -18,12 +19,25 @@ import java.time.LocalDate;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PeriodDto {
+    /**
+     * Уникальный идентификатор периода.
+     */
     private Integer id;
+    
+    /**
+     * Название периода (например, "Период 1", "Период 2").
+     */
     private String name;
     
+    /**
+     * Дата начала периода (включительно).
+     */
     @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate dateFrom;
     
+    /**
+     * Дата окончания периода (включительно).
+     */
     @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate dateTo;
 }

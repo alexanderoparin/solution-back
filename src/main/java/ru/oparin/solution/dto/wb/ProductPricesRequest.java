@@ -13,6 +13,7 @@ import java.util.List;
 
 /**
  * DTO для запроса цен товаров через /api/v2/list/goods/filter.
+ * Используется для получения информации о ценах и скидках товаров по их артикулам.
  */
 @Getter
 @Setter
@@ -20,7 +21,10 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ProductPricesRequest {
-
+    /**
+     * Список артикулов WB (nmID) для получения цен.
+     * Должен содержать от 1 до 1000 элементов.
+     */
     @NotEmpty(message = "nmList не может быть пустым")
     @Size(min = 1, max = 1000, message = "nmList должен содержать от 1 до 1000 элементов")
     @JsonProperty("nmList")

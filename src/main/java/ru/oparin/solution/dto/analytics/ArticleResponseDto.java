@@ -10,6 +10,7 @@ import java.util.List;
 
 /**
  * DTO для ответа страницы артикула.
+ * Содержит всю информацию, необходимую для отображения страницы детального просмотра артикула.
  */
 @Getter
 @Setter
@@ -17,10 +18,29 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ArticleResponseDto {
+    /**
+     * Детальная информация об артикуле.
+     */
     private ArticleDetailDto article;
+    
+    /**
+     * Список периодов аналитики.
+     */
     private List<PeriodDto> periods;
-    private List<MetricDto> metrics; // все 13 метрик
+    
+    /**
+     * Список всех метрик (13 метрик: общая воронка, рекламная воронка, ценообразование).
+     */
+    private List<MetricDto> metrics;
+    
+    /**
+     * Ежедневные данные за последние 14 дней.
+     */
     private List<DailyDataDto> dailyData;
+    
+    /**
+     * Список рекламных кампаний, в которых участвует артикул.
+     */
     private List<CampaignDto> campaigns;
 }
 

@@ -70,9 +70,9 @@ public class ProductCardAnalyticsService {
     /**
      * Обновляет все карточки и загружает аналитику за указанный период.
      * Выполняется асинхронно с ограниченным параллелизмом (максимум 5 потоков).
+     * Каждая операция сохранения выполняется в отдельной транзакции для независимости обновлений.
      */
     @Async("taskExecutor")
-    @Transactional
     public void updateCardsAndLoadAnalytics(User seller, String apiKey, LocalDate dateFrom, LocalDate dateTo) {
         log.info("Начало обновления карточек, кампаний и загрузки аналитики для продавца (ID: {}, email: {}) за период {} - {}", 
                 seller.getId(), seller.getEmail(), dateFrom, dateTo);
@@ -422,39 +422,6 @@ public class ProductCardAnalyticsService {
     }
 
     /**
-     * Извлекает все ID кампаний из ответа со списком кампаний.
-     */
-    /**
-     * Извлекает ID кампаний только типов 8 (Автоматическая РК) и 9 (Аукцион).
-     */
-    private List<Long> extractCampaignIds(PromotionCountResponse countResponse) {
-        List<Long> campaignIds = new java.util.ArrayList<>();
-        
-        if (countResponse == null || countResponse.getAdverts() == null) {
-            return campaignIds;
-        }
-
-        for (PromotionCountResponse.AdvertGroup advertGroup : countResponse.getAdverts()) {
-            // Фильтруем только типы 8 и 9
-            Integer type = advertGroup.getType();
-            if (type == null || (type != 8 && type != 9)) {
-                continue;
-            }
-            
-            if (advertGroup.getAdvertList() == null) {
-                continue;
-            }
-            for (PromotionCountResponse.AdvertInfo advertInfo : advertGroup.getAdvertList()) {
-                if (advertInfo.getAdvertId() != null) {
-                    campaignIds.add(advertInfo.getAdvertId());
-                }
-            }
-        }
-
-        return campaignIds;
-    }
-    
-    /**
      * Разделяет кампании по типам: тип 8 и тип 9.
      * Фильтрует только кампании со статусами 7 (Завершена), 9 (Активна), 11 (Пауза).
      */
@@ -764,6 +731,9 @@ public class ProductCardAnalyticsService {
         int updatedCount = 0;
         int skippedCount = 0;
 
+        // Собираем данные для батчевого сохранения
+        List<AnalyticsSaveItem> itemsToSave = new ArrayList<>();
+
         for (SaleFunnelResponse.DailyData dailyData : analyticsResponse.getData()) {
             if (dailyData == null || dailyData.getDt() == null) {
                 continue;
@@ -785,22 +755,66 @@ public class ProductCardAnalyticsService {
                     continue;
                 }
 
-                SaveResult result = saveOrUpdateAnalytics(card, dailyData, date);
-                if (result.isNew()) {
-                    savedCount++;
-                } else {
-                    updatedCount++;
-                }
+                itemsToSave.add(new AnalyticsSaveItem(card, dailyData, date));
 
             } catch (Exception e) {
-                log.error("Ошибка при сохранении аналитики для карточки nmID {} за дату {}: {}", 
+                log.error("Ошибка при подготовке аналитики для карточки nmID {} за дату {}: {}", 
                         card.getNmId(), dailyData.getDt(), e.getMessage());
             }
+        }
+
+        // Сохраняем все данные в одной транзакции
+        if (!itemsToSave.isEmpty()) {
+            SaveBatchResult batchResult = saveAnalyticsBatch(itemsToSave);
+            savedCount = batchResult.savedCount();
+            updatedCount = batchResult.updatedCount();
         }
 
         log.info("Аналитика для карточки nmID {}: создано {}, обновлено {}, пропущено {}", 
                 card.getNmId(), savedCount, updatedCount, skippedCount);
     }
+
+    /**
+     * Сохраняет батч аналитики в отдельной транзакции.
+     */
+    @Transactional
+    private SaveBatchResult saveAnalyticsBatch(List<AnalyticsSaveItem> items) {
+        int savedCount = 0;
+        int updatedCount = 0;
+
+        for (AnalyticsSaveItem item : items) {
+            try {
+                SaveResult result = saveOrUpdateAnalytics(item.card(), item.dailyData(), item.date());
+                if (result.isNew()) {
+                    savedCount++;
+                } else {
+                    updatedCount++;
+                }
+            } catch (Exception e) {
+                log.error("Ошибка при сохранении аналитики для карточки nmID {} за дату {}: {}", 
+                        item.card().getNmId(), item.date(), e.getMessage());
+            }
+        }
+
+        return new SaveBatchResult(savedCount, updatedCount);
+    }
+
+    /**
+     * Запись для батчевого сохранения аналитики.
+     */
+    private record AnalyticsSaveItem(
+            ProductCard card,
+            SaleFunnelResponse.DailyData dailyData,
+            LocalDate date
+    ) {}
+
+    /**
+     * Результат батчевого сохранения.
+     */
+    private record SaveBatchResult(
+            int savedCount,
+            int updatedCount
+    ) {}
 
     private boolean isDateInRange(LocalDate date, LocalDate dateFrom, LocalDate dateTo) {
         return !date.isBefore(dateFrom) && !date.isAfter(dateTo);
@@ -823,7 +837,6 @@ public class ProductCardAnalyticsService {
 
         updateAnalyticsFields(analytics, dailyData);
         analyticsRepository.save(analytics);
-        analyticsRepository.flush();
 
         return new SaveResult(existing.isEmpty());
     }
@@ -833,8 +846,7 @@ public class ProductCardAnalyticsService {
         analytics.setAddToCart(dailyData.getAddToCartCount());
         analytics.setOrders(dailyData.getOrdersCount());
         analytics.setOrdersSum(dailyData.getOrdersSumRub());
-        analytics.setCartToOrder(dailyData.getCartToOrderConversion());
-        analytics.setOpenCardToCart(dailyData.getAddToCartConversion());
+        // Конверсии больше не сохраняем в БД, рассчитываем на лету
     }
 
     private List<LocalDate> getExistingAnalyticsDates(Long nmId, LocalDate dateFrom, LocalDate dateTo) {

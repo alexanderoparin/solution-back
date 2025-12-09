@@ -6,6 +6,8 @@ package ru.oparin.solution.model;
 public enum Role {
     /** Администратор системы */
     ADMIN,
+    /** Менеджер */
+    MANAGER,
     /** Продавец Wildberries */
     SELLER,
     /** Сотрудник продавца */

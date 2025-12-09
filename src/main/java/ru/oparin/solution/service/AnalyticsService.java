@@ -10,9 +10,15 @@ import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.CampaignArticleRepository;
 import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
+import ru.oparin.solution.repository.ProductPriceHistoryRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
+import ru.oparin.solution.repository.PromotionCampaignStatisticsRepository;
 import ru.oparin.solution.model.CampaignArticle;
+import ru.oparin.solution.model.CampaignStatus;
+import ru.oparin.solution.model.ProductCardAnalytics;
+import ru.oparin.solution.model.ProductPriceHistory;
 import ru.oparin.solution.model.PromotionCampaign;
+import ru.oparin.solution.model.PromotionCampaignStatistics;
 import ru.oparin.solution.service.analytics.AdvertisingMetricsCalculator;
 import ru.oparin.solution.service.analytics.CampaignStatisticsAggregator;
 import ru.oparin.solution.service.analytics.FunnelMetricsCalculator;
@@ -24,10 +30,7 @@ import ru.oparin.solution.util.PeriodGenerator;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -42,6 +45,8 @@ public class AnalyticsService {
     private final ProductCardAnalyticsRepository analyticsRepository;
     private final PromotionCampaignRepository campaignRepository;
     private final CampaignArticleRepository campaignArticleRepository;
+    private final PromotionCampaignStatisticsRepository campaignStatisticsRepository;
+    private final ProductPriceHistoryRepository priceHistoryRepository;
     private final FunnelMetricsCalculator funnelMetricsCalculator;
     private final AdvertisingMetricsCalculator advertisingMetricsCalculator;
     private final MetricValueCalculator metricValueCalculator;
@@ -174,17 +179,26 @@ public class AnalyticsService {
         return switch (metricName) {
             case MetricNames.VIEWS -> stats.views();
             case MetricNames.CLICKS -> stats.clicks();
-            case MetricNames.COSTS -> MathUtils.convertKopecksToRubles(stats.sumKopecks());
-            case MetricNames.CPC -> MathUtils.divideKopecksByValue(stats.sumKopecks(), stats.clicks());
-            case MetricNames.CTR -> MathUtils.calculatePercentage(stats.clicks(), stats.views());
-            case MetricNames.CPO -> MathUtils.divideKopecksByValue(stats.sumKopecks(), stats.orders());
-            case MetricNames.DRR -> {
-                if (stats.sumKopecks() == 0) {
+            case MetricNames.COSTS -> stats.sum();
+            case MetricNames.CPC -> {
+                if (stats.clicks() == 0) {
                     yield null;
                 }
-                BigDecimal ordersAmount = MathUtils.convertKopecksToRubles(stats.ordersSumKopecks());
-                BigDecimal costs = MathUtils.convertKopecksToRubles(stats.sumKopecks());
-                yield MathUtils.calculatePercentageChange(ordersAmount, costs);
+                yield stats.sum().divide(BigDecimal.valueOf(stats.clicks()), 2, java.math.RoundingMode.HALF_UP);
+            }
+            case MetricNames.CTR -> MathUtils.calculatePercentage(stats.clicks(), stats.views());
+            case MetricNames.CPO -> {
+                if (stats.orders() == 0) {
+                    yield null;
+                }
+                yield stats.sum().divide(BigDecimal.valueOf(stats.orders()), 2, java.math.RoundingMode.HALF_UP);
+            }
+            case MetricNames.DRR -> {
+                if (stats.sum().compareTo(BigDecimal.ZERO) == 0 || stats.ordersSum().compareTo(BigDecimal.ZERO) == 0) {
+                    yield null;
+                }
+                // ДРР (доля рекламных расходов) = (расходы / сумма заказов) * 100
+                yield MathUtils.calculatePercentage(stats.sum(), stats.ordersSum());
             }
             default -> null;
         };
@@ -271,7 +285,7 @@ public class AnalyticsService {
                 .periods(periods)
                 .metrics(calculateAllMetrics(card, periods, seller.getId()))
                 .dailyData(getDailyData(nmId))
-                .campaigns(getCampaigns(seller.getId()))
+                .campaigns(getCampaigns(nmId))
                 .build();
     }
 
@@ -438,23 +452,200 @@ public class AnalyticsService {
         LocalDate endDate = LocalDate.now().minusDays(1);
         LocalDate startDate = endDate.minusDays(13);
 
-        return analyticsRepository.findByProductCardNmIdAndDateBetween(nmId, startDate, endDate).stream()
-                .sorted((a1, a2) -> a2.getDate().compareTo(a1.getDate()))
-                .map(a -> DailyDataDto.builder()
-                        .date(a.getDate())
-                        .transitions(a.getOpenCard())
-                        .cart(a.getAddToCart())
-                        .orders(a.getOrders())
-                        .build())
+        // Получаем данные воронки
+        List<ProductCardAnalytics> funnelData = analyticsRepository.findByProductCardNmIdAndDateBetween(nmId, startDate, endDate);
+        
+        // Получаем рекламные данные
+        List<PromotionCampaignStatistics> advertisingData = campaignStatisticsRepository.findByNmIdAndDateBetween(nmId, startDate, endDate);
+        log.debug("Найдено {} записей рекламной статистики для nmId {} за период {} - {}",
+                advertisingData.size(), nmId, startDate, endDate);
+        
+        // Получаем данные ценообразования
+        List<ProductPriceHistory> priceData = priceHistoryRepository.findByNmIdAndDateBetween(nmId, startDate, endDate);
+        
+        // Группируем рекламные данные по датам
+        Map<LocalDate, AdvertisingDailyStats> advertisingByDate = advertisingData.stream()
+                .collect(Collectors.groupingBy(
+                        PromotionCampaignStatistics::getDate,
+                        Collectors.collectingAndThen(
+                                Collectors.toList(),
+                                stats -> aggregateAdvertisingStats(stats)
+                        )
+                ));
+        
+        // Группируем данные ценообразования по датам (берем запись без размера или первую)
+        Map<LocalDate, ProductPriceHistory> priceByDate = priceData.stream()
+                .collect(Collectors.groupingBy(
+                        ProductPriceHistory::getDate,
+                        Collectors.collectingAndThen(
+                                Collectors.toList(),
+                                prices -> {
+                                    // Сначала ищем запись без размера
+                                    Optional<ProductPriceHistory> withoutSize = prices.stream()
+                                            .filter(p -> p.getSizeId() == null)
+                                            .findFirst();
+                                    if (withoutSize.isPresent()) {
+                                        return withoutSize.get();
+                                    }
+                                    // Если нет, берем первую
+                                    return prices.get(0);
+                                }
+                        )
+                ));
+
+        // Создаем мапу для быстрого поиска данных воронки
+        Map<LocalDate, ProductCardAnalytics> funnelByDate = funnelData.stream()
+                .collect(Collectors.toMap(
+                        ProductCardAnalytics::getDate,
+                        a -> a,
+                        (a1, a2) -> a1 // Если есть дубликаты, берем первый
+                ));
+
+        // Создаем список всех дат
+        List<LocalDate> allDates = new ArrayList<>();
+        LocalDate currentDate = startDate;
+        while (!currentDate.isAfter(endDate)) {
+            allDates.add(currentDate);
+            currentDate = currentDate.plusDays(1);
+        }
+
+        // Собираем результат
+        return allDates.stream()
+                .map(date -> {
+                    ProductCardAnalytics funnel = funnelByDate.get(date);
+                    AdvertisingDailyStats advertising = advertisingByDate.get(date);
+                    
+                    DailyDataDto.DailyDataDtoBuilder builder = DailyDataDto.builder()
+                            .date(date);
+                    
+                    if (funnel != null) {
+                        builder.transitions(funnel.getOpenCard())
+                                .cart(funnel.getAddToCart())
+                                .orders(funnel.getOrders())
+                                .ordersAmount(funnel.getOrdersSum())
+                                .cartConversion(calculateCartConversion(funnel.getOpenCard(), funnel.getAddToCart()))
+                                .orderConversion(calculateOrderConversion(funnel.getAddToCart(), funnel.getOrders()));
+                    }
+                    
+                    if (advertising != null) {
+                        builder.views(advertising.views)
+                                .clicks(advertising.clicks)
+                                .costs(advertising.costs)
+                                .cpc(advertising.cpc)
+                                .ctr(advertising.ctr)
+                                .cpo(advertising.cpo)
+                                .drr(advertising.drr);
+                    }
+                    
+                    ProductPriceHistory price = priceByDate.get(date);
+                    if (price != null) {
+                        builder.priceBeforeDiscount(price.getPrice())
+                                .sellerDiscount(price.getDiscount())
+                                .priceWithDiscount(price.getDiscountedPrice())
+                                .wbClubDiscount(price.getClubDiscount())
+                                .priceWithWbClub(price.getClubDiscountedPrice());
+                        
+                        // Расчет СПП (Скидка постоянного покупателя)
+                        // СПП - это скидка, которую дает сам Wildberries постоянным покупателям
+                        if (price.getSppPrice() != null) {
+                            builder.priceWithSpp(price.getSppPrice());
+                            
+                            // СПП (руб) = Цена со скидкой WB Клуба - Цена с СПП
+                            if (price.getClubDiscountedPrice() != null && price.getSppPrice() != null) {
+                                BigDecimal sppAmount = price.getClubDiscountedPrice().subtract(price.getSppPrice());
+                                builder.sppAmount(sppAmount);
+                                
+                                // СПП (%) = (СПП руб / Цена со скидкой WB Клуба) * 100
+                                BigDecimal sppPercent = MathUtils.calculatePercentage(sppAmount, price.getClubDiscountedPrice());
+                                builder.sppPercent(sppPercent);
+                            }
+                        }
+                    }
+                    
+                    return builder.build();
+                })
                 .collect(Collectors.toList());
     }
 
-    private List<CampaignDto> getCampaigns(Long sellerId) {
-        return campaignRepository.findBySellerId(sellerId).stream()
+    /**
+     * Рассчитывает конверсию из переходов в корзину.
+     * Формула: (addToCart / openCard) * 100
+     *
+     * @param openCard количество переходов в карточку
+     * @param addToCart количество добавлений в корзину
+     * @return конверсия в процентах или null, если нет данных
+     */
+    private BigDecimal calculateCartConversion(Integer openCard, Integer addToCart) {
+        if (openCard == null || addToCart == null || openCard == 0) {
+            return null;
+        }
+        return MathUtils.calculatePercentage(addToCart, openCard);
+    }
+
+    /**
+     * Рассчитывает конверсию из корзины в заказ.
+     * Формула: (orders / addToCart) * 100
+     *
+     * @param addToCart количество добавлений в корзину
+     * @param orders количество заказов
+     * @return конверсия в процентах или null, если нет данных
+     */
+    private BigDecimal calculateOrderConversion(Integer addToCart, Integer orders) {
+        if (addToCart == null || orders == null || addToCart == 0) {
+            return null;
+        }
+        return MathUtils.calculatePercentage(orders, addToCart);
+    }
+
+    private AdvertisingDailyStats aggregateAdvertisingStats(List<PromotionCampaignStatistics> stats) {
+        int views = 0;
+        int clicks = 0;
+        BigDecimal sum = BigDecimal.ZERO;
+        int orders = 0;
+        BigDecimal ordersSum = BigDecimal.ZERO;
+        
+        for (PromotionCampaignStatistics stat : stats) {
+            if (stat.getViews() != null) views += stat.getViews();
+            if (stat.getClicks() != null) clicks += stat.getClicks();
+            if (stat.getSum() != null) sum = sum.add(stat.getSum());
+            if (stat.getOrders() != null) orders += stat.getOrders();
+            if (stat.getOrdersSum() != null) ordersSum = ordersSum.add(stat.getOrdersSum());
+        }
+        
+        BigDecimal costs = sum;
+        BigDecimal cpc = MathUtils.divideSafely(sum, BigDecimal.valueOf(clicks));
+        BigDecimal ctr = MathUtils.calculatePercentage(clicks, views);
+        BigDecimal cpo = MathUtils.divideSafely(sum, BigDecimal.valueOf(orders));
+        // ДРР (доля рекламных расходов) = (расходы / сумма заказов) * 100
+        BigDecimal drr = MathUtils.calculatePercentage(sum, ordersSum);
+        
+        return new AdvertisingDailyStats(views, clicks, costs, cpc, ctr, cpo, drr);
+    }
+
+    private record AdvertisingDailyStats(
+            Integer views,
+            Integer clicks,
+            BigDecimal costs,
+            BigDecimal cpc,
+            BigDecimal ctr,
+            BigDecimal cpo,
+            BigDecimal drr
+    ) {}
+
+    private List<CampaignDto> getCampaigns(Long nmId) {
+        // Находим все кампании, в которых участвует этот артикул
+        List<CampaignArticle> campaignArticles = campaignArticleRepository.findByNmId(nmId);
+        
+        return campaignArticles.stream()
+                .map(CampaignArticle::getCampaign)
+                .filter(Objects::nonNull)
+                .filter(campaign -> campaign.getStatus() != CampaignStatus.FINISHED) // Исключаем завершенные кампании
                 .map(c -> CampaignDto.builder()
                         .id(c.getAdvertId())
                         .name(c.getName())
                         .type(c.getType() != null ? c.getType().getDescription() : null)
+                        .status(c.getStatus() != null ? c.getStatus().getCode() : null)
+                        .statusName(c.getStatus() != null ? c.getStatus().getDescription() : null)
                         .createdAt(c.getCreateTime())
                         .build())
                 .collect(Collectors.toList());
@@ -490,13 +681,17 @@ public class AnalyticsService {
     private ArticleDetailDto mapToArticleDetail(ProductCard card) {
         return ArticleDetailDto.builder()
                 .nmId(card.getNmId())
+                .imtId(card.getImtId())
                 .title(card.getTitle())
                 .brand(card.getBrand())
                 .subjectName(card.getSubjectName())
                 .vendorCode(card.getVendorCode())
+                .photoTm(card.getPhotoTm())
                 .rating(null) // TODO: получить из API или БД
                 .reviewsCount(null) // TODO: получить из API или БД
                 .productUrl("https://www.wildberries.ru/catalog/" + card.getNmId() + "/detail.aspx")
+                .createdAt(card.getCreatedAt())
+                .updatedAt(card.getUpdatedAt())
                 .build();
     }
 

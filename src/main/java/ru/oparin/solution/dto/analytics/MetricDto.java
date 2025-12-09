@@ -10,6 +10,7 @@ import java.util.List;
 
 /**
  * DTO для метрики на странице артикула.
+ * Содержит информацию о метрике и её значения по периодам.
  */
 @Getter
 @Setter
@@ -17,9 +18,24 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class MetricDto {
-    private String metricName; // Английский ключ (например, "cart_conversion")
-    private String metricNameRu; // Русское название для отображения
-    private String category; // "funnel" или "advertising"
+    /**
+     * Английский ключ метрики (например, "cart_conversion", "cpc").
+     */
+    private String metricName;
+    
+    /**
+     * Русское название метрики для отображения на фронтенде.
+     */
+    private String metricNameRu;
+    
+    /**
+     * Категория метрики: "funnel" (общая воронка), "advertising" (рекламная воронка) или "pricing" (ценообразование).
+     */
+    private String category;
+    
+    /**
+     * Список значений метрики по периодам.
+     */
     private List<PeriodMetricValueDto> periods;
 }
 

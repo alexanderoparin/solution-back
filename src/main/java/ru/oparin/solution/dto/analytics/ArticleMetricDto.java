@@ -10,6 +10,7 @@ import java.util.List;
 
 /**
  * DTO для метрики конкретного артикула.
+ * Используется для отображения метрик по артикулу в разрезе периодов.
  */
 @Getter
 @Setter
@@ -17,8 +18,19 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ArticleMetricDto {
+    /**
+     * Артикул WB (nmID).
+     */
     private Long nmId;
-    private String photoTm; // URL миниатюры первой фотографии товара
+    
+    /**
+     * URL миниатюры первой фотографии товара.
+     */
+    private String photoTm;
+    
+    /**
+     * Список значений метрики по периодам.
+     */
     private List<PeriodMetricValueDto> periods;
 }
 

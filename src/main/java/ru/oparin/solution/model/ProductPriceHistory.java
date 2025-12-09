@@ -9,6 +9,7 @@ import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -38,12 +39,6 @@ public class ProductPriceHistory {
     private Long nmId;
 
     /**
-     * Артикул продавца.
-     */
-    @Column(name = "vendor_code")
-    private String vendorCode;
-
-    /**
      * Дата, за которую сохранена цена (вчерашняя дата).
      */
     @Column(name = "date", nullable = false)
@@ -62,22 +57,29 @@ public class ProductPriceHistory {
     private String techSizeName;
 
     /**
-     * Цена до скидки (в копейках).
+     * Цена до скидки (в рублях).
      */
-    @Column(name = "price", nullable = false)
-    private Long price;
+    @Column(name = "price", nullable = false, precision = 10, scale = 2)
+    private BigDecimal price;
 
     /**
-     * Цена со скидкой продавца (в копейках).
+     * Цена со скидкой продавца (в рублях).
      */
-    @Column(name = "discounted_price", nullable = false)
-    private Long discountedPrice;
+    @Column(name = "discounted_price", nullable = false, precision = 10, scale = 2)
+    private BigDecimal discountedPrice;
 
     /**
-     * Цена со скидкой WB Клуба (в копейках).
+     * Цена со скидкой WB Клуба (в рублях).
      */
-    @Column(name = "club_discounted_price", nullable = false)
-    private Long clubDiscountedPrice;
+    @Column(name = "club_discounted_price", nullable = false, precision = 10, scale = 2)
+    private BigDecimal clubDiscountedPrice;
+
+    /**
+     * Цена с СПП (Скидка постоянного покупателя) в рублях.
+     * СПП - это скидка, которую дает сам Wildberries постоянным покупателям.
+     */
+    @Column(name = "spp_price", precision = 10, scale = 2)
+    private BigDecimal sppPrice;
 
     /**
      * Скидка продавца (%).

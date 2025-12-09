@@ -7,6 +7,7 @@ import ru.oparin.solution.dto.analytics.PeriodDto;
 import ru.oparin.solution.model.PromotionCampaignStatistics;
 import ru.oparin.solution.repository.PromotionCampaignStatisticsRepository;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -49,19 +50,23 @@ public class CampaignStatisticsAggregator {
     private AdvertisingStats aggregateCampaignStatistics(List<PromotionCampaignStatistics> stats) {
         int views = 0;
         int clicks = 0;
-        long sumKopecks = 0;
+        BigDecimal sum = BigDecimal.ZERO;
         int orders = 0;
-        long ordersSumKopecks = 0;
+        BigDecimal ordersSum = BigDecimal.ZERO;
 
         for (PromotionCampaignStatistics stat : stats) {
             views += MathUtils.getValueOrZero(stat.getViews());
             clicks += MathUtils.getValueOrZero(stat.getClicks());
-            sumKopecks += MathUtils.getValueOrZero(stat.getSum());
+            if (stat.getSum() != null) {
+                sum = sum.add(stat.getSum());
+            }
             orders += MathUtils.getValueOrZero(stat.getOrders());
-            ordersSumKopecks += MathUtils.getValueOrZero(stat.getOrdersSum());
+            if (stat.getOrdersSum() != null) {
+                ordersSum = ordersSum.add(stat.getOrdersSum());
+            }
         }
 
-        return new AdvertisingStats(views, clicks, sumKopecks, orders, ordersSumKopecks);
+        return new AdvertisingStats(views, clicks, sum, orders, ordersSum);
     }
 
     /**
@@ -70,9 +75,9 @@ public class CampaignStatisticsAggregator {
     public record AdvertisingStats(
             int views,
             int clicks,
-            long sumKopecks,
+            BigDecimal sum,
             int orders,
-            long ordersSumKopecks
+            BigDecimal ordersSum
     ) {
     }
 }

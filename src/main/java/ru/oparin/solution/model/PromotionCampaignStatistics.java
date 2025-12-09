@@ -75,10 +75,10 @@ public class PromotionCampaignStatistics {
     private BigDecimal ctr;
 
     /**
-     * Расходы (в копейках).
+     * Расходы (в рублях).
      */
-    @Column(name = "sum")
-    private Long sum;
+    @Column(name = "sum", precision = 10, scale = 2)
+    private BigDecimal sum;
 
     /**
      * Заказы.
@@ -99,7 +99,7 @@ public class PromotionCampaignStatistics {
     private BigDecimal cpc;
 
     /**
-     * CPA (Cost Per Action) - стоимость заказа (в копейках).
+     * CPA (Cost Per Action) - стоимость заказа (в рублях).
      */
     @Column(name = "cpa", precision = 10, scale = 2)
     private BigDecimal cpa;
@@ -123,16 +123,16 @@ public class PromotionCampaignStatistics {
     private Integer shks;
 
     /**
-     * Сумма заказов (в копейках).
+     * Сумма заказов (в рублях).
      */
-    @Column(name = "orders_sum")
-    private Long ordersSum;
+    @Column(name = "orders_sum", precision = 10, scale = 2)
+    private BigDecimal ordersSum;
 
     /**
-     * Сумма заказов (в копейках) - альтернативное поле из API (sum_price).
+     * Сумма заказов (в рублях) - альтернативное поле из API (sum_price).
      */
-    @Column(name = "sum_price")
-    private Long sumPrice;
+    @Column(name = "sum_price", precision = 10, scale = 2)
+    private BigDecimal sumPrice;
 
     /**
      * Дата создания записи в БД.

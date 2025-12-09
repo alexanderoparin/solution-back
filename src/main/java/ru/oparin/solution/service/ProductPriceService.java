@@ -8,6 +8,7 @@ import ru.oparin.solution.dto.wb.ProductPricesResponse;
 import ru.oparin.solution.model.ProductPriceHistory;
 import ru.oparin.solution.repository.ProductPriceHistoryRepository;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -98,18 +99,28 @@ public class ProductPriceService {
             return false;
         }
 
-        Long firstPrice = firstSize.getPrice();
-        Long firstDiscountedPrice = firstSize.getDiscountedPrice();
-        Long firstClubDiscountedPrice = firstSize.getClubDiscountedPrice();
+        BigDecimal firstPrice = firstSize.getPrice();
+        BigDecimal firstDiscountedPrice = firstSize.getDiscountedPrice();
+        BigDecimal firstClubDiscountedPrice = firstSize.getClubDiscountedPrice();
 
         return sizes.stream().allMatch(size -> {
             if (!isValidSize(size)) {
                 return false;
             }
-            return firstPrice.equals(size.getPrice())
-                    && firstDiscountedPrice.equals(size.getDiscountedPrice())
-                    && firstClubDiscountedPrice.equals(size.getClubDiscountedPrice());
+            return compareBigDecimals(firstPrice, size.getPrice())
+                    && compareBigDecimals(firstDiscountedPrice, size.getDiscountedPrice())
+                    && compareBigDecimals(firstClubDiscountedPrice, size.getClubDiscountedPrice());
         });
+    }
+
+    private boolean compareBigDecimals(BigDecimal first, BigDecimal second) {
+        if (first == null && second == null) {
+            return true;
+        }
+        if (first == null || second == null) {
+            return false;
+        }
+        return first.compareTo(second) == 0;
     }
 
     private boolean isValidSize(ProductPricesResponse.Size size) {
@@ -126,20 +137,36 @@ public class ProductPriceService {
             String techSizeName,
             ProductPricesResponse.Size size
     ) {
-        return ProductPriceHistory.builder()
-                .nmId(good.getNmId())
-                .vendorCode(good.getVendorCode())
-                .date(date)
-                .sizeId(sizeId)
-                .techSizeName(techSizeName)
-                .price(size.getPrice())
-                .discountedPrice(size.getDiscountedPrice())
-                .clubDiscountedPrice(size.getClubDiscountedPrice())
-                .discount(good.getDiscount())
-                .clubDiscount(good.getClubDiscount())
-                .editableSizePrice(good.getEditableSizePrice())
-                .isBadTurnover(good.getIsBadTurnover())
-                .build();
+        // Все цены уже приходят в рублях (BigDecimal), сохраняем как есть без округления
+        log.debug("Сохранение цен для nmId={}: price={}, discountedPrice={}, clubDiscountedPrice={}, sppPrice={} (все в рублях)",
+                good.getNmId(),
+                size.getPrice(), 
+                size.getDiscountedPrice(), 
+                size.getClubDiscountedPrice(),
+                size.getSppPrice());
+        
+        // Логируем значение СПП для отладки
+        if (size.getSppPrice() != null) {
+            log.info("Найдено значение СПП для nmId={}, sizeId={}: sppPrice={}", 
+                    good.getNmId(), sizeId, size.getSppPrice());
+        } else {
+            log.debug("Значение СПП отсутствует (null) для nmId={}, sizeId={}", good.getNmId(), sizeId);
+        }
+        
+            return ProductPriceHistory.builder()
+                    .nmId(good.getNmId())
+                    .date(date)
+                    .sizeId(sizeId)
+                    .techSizeName(techSizeName)
+                    .price(size.getPrice())
+                    .discountedPrice(size.getDiscountedPrice())
+                    .clubDiscountedPrice(size.getClubDiscountedPrice())
+                    .sppPrice(size.getSppPrice())
+                    .discount(good.getDiscount())
+                    .clubDiscount(good.getClubDiscount())
+                    .editableSizePrice(good.getEditableSizePrice())
+                    .isBadTurnover(good.getIsBadTurnover())
+                    .build();
     }
 
     /**

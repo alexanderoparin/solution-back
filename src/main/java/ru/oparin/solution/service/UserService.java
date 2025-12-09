@@ -6,13 +6,19 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.oparin.solution.dto.CreateUserRequest;
 import ru.oparin.solution.dto.RegisterRequest;
+import ru.oparin.solution.dto.UpdateUserRequest;
+import ru.oparin.solution.dto.UserListItemDto;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.model.WbApiKey;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.repository.WbApiKeyRepository;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Сервис для работы с пользователями.
@@ -177,5 +183,184 @@ public class UserService {
     private void updateUserPassword(User user, String newPassword) {
         user.setPassword(encodePassword(newPassword));
         user.setIsTemporaryPassword(false);
+    }
+
+    /**
+     * Создание нового пользователя с проверкой прав доступа.
+     *
+     * @param request данные для создания пользователя
+     * @param currentUser текущий пользователь (создатель)
+     * @return созданный пользователь
+     * @throws UserException если нет прав или пользователь с таким email уже существует
+     */
+    @Transactional
+    public User createUser(CreateUserRequest request, User currentUser) {
+        validateCanCreateUser(currentUser, request.getRole());
+        validateEmailNotExists(request.getEmail());
+
+        String encodedPassword = encodePassword(request.getPassword());
+        User newUser = User.builder()
+                .email(request.getEmail())
+                .password(encodedPassword)
+                .role(request.getRole())
+                .isActive(true)
+                .isTemporaryPassword(true)
+                .owner(getOwnerForNewUser(currentUser, request.getRole()))
+                .build();
+
+        return userRepository.save(newUser);
+    }
+
+    /**
+     * Обновление пользователя.
+     *
+     * @param userId ID пользователя для обновления
+     * @param request данные для обновления
+     * @param currentUser текущий пользователь
+     * @return обновленный пользователь
+     * @throws UserException если нет прав или пользователь не найден
+     */
+    @Transactional
+    public User updateUser(Long userId, UpdateUserRequest request, User currentUser) {
+        User userToUpdate = findUserById(userId);
+        validateCanManageUser(currentUser, userToUpdate);
+
+        // Проверяем, что email не занят другим пользователем
+        if (!userToUpdate.getEmail().equals(request.getEmail())) {
+            validateEmailNotExists(request.getEmail());
+            userToUpdate.setEmail(request.getEmail());
+        }
+
+        if (request.getIsActive() != null) {
+            userToUpdate.setIsActive(request.getIsActive());
+        }
+
+        return userRepository.save(userToUpdate);
+    }
+
+    /**
+     * Переключение активности пользователя.
+     *
+     * @param userId ID пользователя
+     * @param currentUser текущий пользователь
+     * @return обновленный пользователь
+     * @throws UserException если нет прав или пользователь не найден
+     */
+    @Transactional
+    public User toggleUserActive(Long userId, User currentUser) {
+        User userToUpdate = findUserById(userId);
+        validateCanManageUser(currentUser, userToUpdate);
+
+        userToUpdate.setIsActive(!userToUpdate.getIsActive());
+        return userRepository.save(userToUpdate);
+    }
+
+    /**
+     * Получение списка пользователей, которыми может управлять текущий пользователь.
+     *
+     * @param currentUser текущий пользователь
+     * @return список пользователей
+     */
+    public List<UserListItemDto> getManagedUsers(User currentUser) {
+        List<User> users;
+
+        if (currentUser.getRole() == Role.ADMIN) {
+            // Админ видит всех менеджеров
+            users = userRepository.findByRole(Role.MANAGER);
+        } else if (currentUser.getRole() == Role.MANAGER) {
+            // Менеджер видит своих селлеров
+            users = userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId());
+        } else if (currentUser.getRole() == Role.SELLER) {
+            // Селлер видит своих работников
+            users = userRepository.findByRoleAndOwnerId(Role.WORKER, currentUser.getId());
+        } else {
+            // WORKER не может управлять пользователями
+            return List.of();
+        }
+
+        return users.stream()
+                .map(this::mapToUserListItemDto)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Проверяет, может ли текущий пользователь создавать пользователей указанной роли.
+     */
+    private void validateCanCreateUser(User currentUser, Role newUserRole) {
+        if (currentUser.getRole() == Role.ADMIN && newUserRole != Role.MANAGER) {
+            throw new UserException("ADMIN может создавать только MANAGER", HttpStatus.FORBIDDEN);
+        }
+        if (currentUser.getRole() == Role.MANAGER && newUserRole != Role.SELLER) {
+            throw new UserException("MANAGER может создавать только SELLER", HttpStatus.FORBIDDEN);
+        }
+        if (currentUser.getRole() == Role.SELLER && newUserRole != Role.WORKER) {
+            throw new UserException("SELLER может создавать только WORKER", HttpStatus.FORBIDDEN);
+        }
+        if (currentUser.getRole() == Role.WORKER) {
+            throw new UserException("WORKER не может создавать пользователей", HttpStatus.FORBIDDEN);
+        }
+    }
+
+    /**
+     * Проверяет, может ли текущий пользователь управлять указанным пользователем.
+     */
+    private void validateCanManageUser(User currentUser, User userToManage) {
+        if (currentUser.getRole() == Role.ADMIN) {
+            // Админ может управлять только менеджерами
+            if (userToManage.getRole() != Role.MANAGER) {
+                throw new UserException("ADMIN может управлять только MANAGER", HttpStatus.FORBIDDEN);
+            }
+            // Админ может управлять менеджерами, у которых он владелец
+            if (userToManage.getOwner() == null || !currentUser.getId().equals(userToManage.getOwner().getId())) {
+                throw new UserException("ADMIN может управлять только своими MANAGER", HttpStatus.FORBIDDEN);
+            }
+        } else if (currentUser.getRole() == Role.MANAGER) {
+            // Менеджер может управлять только своими селлерами
+            if (userToManage.getRole() != Role.SELLER) {
+                throw new UserException("MANAGER может управлять только SELLER", HttpStatus.FORBIDDEN);
+            }
+            if (userToManage.getOwner() == null || !currentUser.getId().equals(userToManage.getOwner().getId())) {
+                throw new UserException("MANAGER может управлять только своими SELLER", HttpStatus.FORBIDDEN);
+            }
+        } else if (currentUser.getRole() == Role.SELLER) {
+            // Селлер может управлять только своими работниками
+            if (userToManage.getRole() != Role.WORKER) {
+                throw new UserException("SELLER может управлять только WORKER", HttpStatus.FORBIDDEN);
+            }
+            if (userToManage.getOwner() == null || !currentUser.getId().equals(userToManage.getOwner().getId())) {
+                throw new UserException("SELLER может управлять только своими WORKER", HttpStatus.FORBIDDEN);
+            }
+        } else {
+            throw new UserException("WORKER не может управлять пользователями", HttpStatus.FORBIDDEN);
+        }
+    }
+
+    /**
+     * Получает владельца для нового пользователя в зависимости от роли.
+     */
+    private User getOwnerForNewUser(User currentUser, Role newUserRole) {
+        if (newUserRole == Role.MANAGER) {
+            return currentUser; // ADMIN создает MANAGER
+        } else if (newUserRole == Role.SELLER) {
+            return currentUser; // MANAGER создает SELLER
+        } else if (newUserRole == Role.WORKER) {
+            return currentUser; // SELLER создает WORKER
+        }
+        return null;
+    }
+
+    /**
+     * Преобразует User в UserListItemDto.
+     */
+    private UserListItemDto mapToUserListItemDto(User user) {
+        return UserListItemDto.builder()
+                .id(user.getId())
+                .email(user.getEmail())
+                .role(user.getRole())
+                .isActive(user.getIsActive())
+                .isTemporaryPassword(user.getIsTemporaryPassword())
+                .createdAt(user.getCreatedAt())
+                .ownerEmail(user.getOwner() != null ? user.getOwner().getEmail() : null)
+                .build();
     }
 }

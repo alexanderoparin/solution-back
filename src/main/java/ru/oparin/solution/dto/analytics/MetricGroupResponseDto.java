@@ -10,6 +10,7 @@ import java.util.List;
 
 /**
  * DTO для ответа детальных метрик по группе.
+ * Содержит значения метрики для всех артикулов или кампаний.
  */
 @Getter
 @Setter
@@ -17,10 +18,29 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class MetricGroupResponseDto {
-    private String metricName; // Английский ключ (например, "cart_conversion")
-    private String metricNameRu; // Русское название для отображения
-    private String category; // "funnel" или "advertising"
-    private List<ArticleMetricDto> articles; // Для метрик воронки
-    private List<CampaignMetricDto> campaigns; // Для рекламных метрик
+    /**
+     * Английский ключ метрики (например, "cart_conversion", "cpc").
+     */
+    private String metricName;
+    
+    /**
+     * Русское название метрики для отображения на фронтенде.
+     */
+    private String metricNameRu;
+    
+    /**
+     * Категория метрики: "funnel" (общая воронка), "advertising" (рекламная воронка) или "pricing" (ценообразование).
+     */
+    private String category;
+    
+    /**
+     * Список значений метрики по артикулам. Используется для метрик воронки.
+     */
+    private List<ArticleMetricDto> articles;
+    
+    /**
+     * Список значений метрики по рекламным кампаниям. Используется для рекламных метрик.
+     */
+    private List<CampaignMetricDto> campaigns;
 }
 

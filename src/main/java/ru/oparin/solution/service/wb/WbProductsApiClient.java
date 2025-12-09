@@ -47,6 +47,21 @@ public class WbProductsApiClient extends AbstractWbApiClient {
 
             validateResponse(response);
 
+            // Логируем полный сырой ответ для проверки всех полей (включая СПП)
+            String responseBody = response.getBody();
+            if (responseBody != null) {
+                log.info("=== ПОЛНЫЙ СЫРОЙ ОТВЕТ ОТ WB API (длина: {} символов) ===", responseBody.length());
+                // Логируем первые 5000 символов для анализа структуры
+                int logLength = Math.min(5000, responseBody.length());
+                log.info("Первые {} символов ответа:\n{}", logLength, responseBody.substring(0, logLength));
+                
+                // Если ответ большой, логируем также последние 1000 символов
+                if (responseBody.length() > 5000) {
+                    int lastStart = Math.max(0, responseBody.length() - 1000);
+                    log.info("Последние 1000 символов ответа:\n{}", responseBody.substring(lastStart));
+                }
+            }
+
             ProductPricesResponse pricesResponse = objectMapper.readValue(
                     response.getBody(), 
                     ProductPricesResponse.class
@@ -61,6 +76,32 @@ public class WbProductsApiClient extends AbstractWbApiClient {
                     ? pricesResponse.getData().getListGoods().size()
                     : 0;
             log.info("Получено товаров с ценами: {}", goodsCount);
+            
+            // Логируем подробную информацию о первом товаре для проверки всех полей
+            if (goodsCount > 0) {
+                ProductPricesResponse.Good firstGood = pricesResponse.getData().getListGoods().get(0);
+                log.info("=== ДЕТАЛЬНАЯ ИНФОРМАЦИЯ О ПЕРВОМ ТОВАРЕ ===");
+                log.info("nmId: {}", firstGood.getNmId());
+                log.info("vendorCode: {}", firstGood.getVendorCode());
+                log.info("discount: {}", firstGood.getDiscount());
+                log.info("clubDiscount: {}", firstGood.getClubDiscount());
+                
+                if (firstGood.getSizes() != null && !firstGood.getSizes().isEmpty()) {
+                    log.info("Количество размеров: {}", firstGood.getSizes().size());
+                    for (int i = 0; i < Math.min(3, firstGood.getSizes().size()); i++) {
+                        ProductPricesResponse.Size size = firstGood.getSizes().get(i);
+                        log.info("--- Размер #{} ---", i + 1);
+                        log.info("  sizeId: {}", size.getSizeId());
+                        log.info("  techSizeName: {}", size.getTechSizeName());
+                        log.info("  price: {}", size.getPrice());
+                        log.info("  discountedPrice: {}", size.getDiscountedPrice());
+                        log.info("  clubDiscountedPrice: {}", size.getClubDiscountedPrice());
+                        log.info("  sppPrice: {} (проверка поля СПП)", size.getSppPrice());
+                    }
+                } else {
+                    log.warn("У первого товара нет размеров!");
+                }
+            }
 
             return pricesResponse;
 

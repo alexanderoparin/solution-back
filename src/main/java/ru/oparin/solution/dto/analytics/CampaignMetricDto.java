@@ -10,6 +10,7 @@ import java.util.List;
 
 /**
  * DTO для метрики конкретной рекламной кампании.
+ * Используется для отображения рекламных метрик по кампаниям.
  */
 @Getter
 @Setter
@@ -17,9 +18,24 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CampaignMetricDto {
+    /**
+     * ID рекламной кампании (advert_id).
+     */
     private Long campaignId;
+    
+    /**
+     * Название рекламной кампании.
+     */
     private String campaignName;
-    private List<Long> articles; // Список артикулов (nmId) в кампании
-    private List<PeriodMetricValueDto> periods; // Значения метрики по периодам
+    
+    /**
+     * Список артикулов (nmId), участвующих в кампании.
+     */
+    private List<Long> articles;
+    
+    /**
+     * Список значений метрики по периодам.
+     */
+    private List<PeriodMetricValueDto> periods;
 }
 

@@ -37,5 +37,30 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * @return список активных пользователей с указанной ролью
      */
     List<User> findByRoleAndIsActive(Role role, Boolean isActive);
+
+    /**
+     * Поиск пользователей по владельцу (owner_id).
+     *
+     * @param ownerId ID владельца
+     * @return список пользователей, принадлежащих указанному владельцу
+     */
+    List<User> findByOwnerId(Long ownerId);
+
+    /**
+     * Поиск пользователей по роли и владельцу.
+     *
+     * @param role роль пользователя
+     * @param ownerId ID владельца
+     * @return список пользователей с указанной ролью, принадлежащих указанному владельцу
+     */
+    List<User> findByRoleAndOwnerId(Role role, Long ownerId);
+
+    /**
+     * Поиск пользователей по роли.
+     *
+     * @param role роль пользователя
+     * @return список пользователей с указанной ролью
+     */
+    List<User> findByRole(Role role);
 }
 

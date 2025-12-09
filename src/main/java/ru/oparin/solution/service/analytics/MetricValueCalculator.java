@@ -118,7 +118,7 @@ public class MetricValueCalculator {
         return switch (metricName) {
             case VIEWS -> stats.views();
             case CLICKS -> stats.clicks();
-            case COSTS -> MathUtils.convertKopecksToRubles(stats.sumKopecks());
+            case COSTS -> stats.sum();
             case CPC -> calculateCpc(stats);
             case CTR -> calculateCtr(stats);
             case CPO -> calculateCpo(stats);
@@ -128,7 +128,10 @@ public class MetricValueCalculator {
     }
 
     private BigDecimal calculateCpc(CampaignStatisticsAggregator.AdvertisingStats stats) {
-        return MathUtils.divideKopecksByValue(stats.sumKopecks(), stats.clicks());
+        if (stats.clicks() == 0) {
+            return null;
+        }
+        return stats.sum().divide(BigDecimal.valueOf(stats.clicks()), 2, java.math.RoundingMode.HALF_UP);
     }
 
     private BigDecimal calculateCtr(CampaignStatisticsAggregator.AdvertisingStats stats) {
@@ -136,11 +139,18 @@ public class MetricValueCalculator {
     }
 
     private BigDecimal calculateCpo(CampaignStatisticsAggregator.AdvertisingStats stats) {
-        return MathUtils.divideKopecksByValue(stats.sumKopecks(), stats.orders());
+        if (stats.orders() == 0) {
+            return null;
+        }
+        return stats.sum().divide(BigDecimal.valueOf(stats.orders()), 2, java.math.RoundingMode.HALF_UP);
     }
 
     private BigDecimal calculateDrr(CampaignStatisticsAggregator.AdvertisingStats stats) {
-        return MathUtils.calculatePercentage(stats.sumKopecks(), stats.ordersSumKopecks());
+        if (stats.sum().compareTo(BigDecimal.ZERO) == 0 || stats.ordersSum().compareTo(BigDecimal.ZERO) == 0) {
+            return null;
+        }
+        // ДРР (доля рекламных расходов) = (расходы / сумма заказов) * 100
+        return MathUtils.calculatePercentage(stats.sum(), stats.ordersSum());
     }
 
     private List<ProductCardAnalytics> getAnalytics(Long nmId, PeriodDto period) {

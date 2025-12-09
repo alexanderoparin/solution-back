@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 
 /**
  * DTO для сводных метрик по периоду.
+ * Содержит агрегированные метрики общей воронки и рекламной воронки за период.
  */
 @Getter
 @Setter
@@ -17,21 +18,69 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AggregatedMetricsDto {
-    // Метрики воронки
-    private Integer transitions; // Переходы в карточку
-    private Integer cart; // Положили в корзину, шт
-    private Integer orders; // Заказали товаров, шт
-    private BigDecimal ordersAmount; // Заказали на сумму, руб
-    private BigDecimal cartConversion; // Конверсия в корзину, %
-    private BigDecimal orderConversion; // Конверсия в заказ, %
+    /**
+     * Переходы в карточку товара.
+     */
+    private Integer transitions;
     
-    // Метрики рекламы
-    private Integer views; // Просмотры
-    private Integer clicks; // Клики
-    private BigDecimal costs; // Затраты, руб
-    private BigDecimal cpc; // СРС, руб
-    private BigDecimal ctr; // CTR, %
-    private BigDecimal cpo; // СРО, руб
-    private BigDecimal drr; // ДРР, %
+    /**
+     * Количество товаров, добавленных в корзину.
+     */
+    private Integer cart;
+    
+    /**
+     * Количество заказанных товаров.
+     */
+    private Integer orders;
+    
+    /**
+     * Сумма заказов в рублях.
+     */
+    private BigDecimal ordersAmount;
+    
+    /**
+     * Конверсия в корзину в процентах.
+     */
+    private BigDecimal cartConversion;
+    
+    /**
+     * Конверсия в заказ в процентах.
+     */
+    private BigDecimal orderConversion;
+    
+    /**
+     * Просмотры рекламных объявлений.
+     */
+    private Integer views;
+    
+    /**
+     * Клики по рекламным объявлениям.
+     */
+    private Integer clicks;
+    
+    /**
+     * Затраты на рекламу в рублях.
+     */
+    private BigDecimal costs;
+    
+    /**
+     * Стоимость клика (CPC - Cost Per Click) в рублях.
+     */
+    private BigDecimal cpc;
+    
+    /**
+     * CTR (Click-Through Rate) - процент кликов от показов.
+     */
+    private BigDecimal ctr;
+    
+    /**
+     * Стоимость заказа (CPO - Cost Per Order) в рублях.
+     */
+    private BigDecimal cpo;
+    
+    /**
+     * ДРР (Доля расходов на рекламу) - процент затрат от суммы заказов.
+     */
+    private BigDecimal drr;
 }
 

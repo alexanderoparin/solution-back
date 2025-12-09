@@ -72,18 +72,6 @@ public class ProductCardAnalytics {
     private BigDecimal ordersSum;
 
     /**
-     * Конверсия из корзины в заказ, % (orders / addToCart * 100).
-     */
-    @Column(name = "cart_to_order", precision = 5, scale = 2)
-    private BigDecimal cartToOrder;
-
-    /**
-     * Конверсия из переходов в корзину, % (addToCart / openCard * 100).
-     */
-    @Column(name = "open_card_to_cart", precision = 5, scale = 2)
-    private BigDecimal openCardToCart;
-
-    /**
      * Дата создания записи.
      */
     @CreatedDate

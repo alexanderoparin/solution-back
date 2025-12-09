@@ -17,10 +17,29 @@ import lombok.Setter;
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public class ArticleSummaryDto {
+    /**
+     * Артикул WB (nmID).
+     */
     private Long nmId;
+    
+    /**
+     * Название товара.
+     */
     private String title;
+    
+    /**
+     * Бренд товара.
+     */
     private String brand;
+    
+    /**
+     * Название категории товара.
+     */
     private String subjectName;
-    private String photoTm; // URL миниатюры первой фотографии товара
+    
+    /**
+     * URL миниатюры первой фотографии товара.
+     */
+    private String photoTm;
 }
 

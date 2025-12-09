@@ -11,6 +11,7 @@ import java.util.Map;
 
 /**
  * DTO для ответа сводной страницы аналитики.
+ * Содержит список артикулов и агрегированные метрики по периодам.
  */
 @Getter
 @Setter
@@ -18,8 +19,19 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class SummaryResponseDto {
+    /**
+     * Список периодов аналитики.
+     */
     private List<PeriodDto> periods;
+    
+    /**
+     * Список артикулов с краткой информацией.
+     */
     private List<ArticleSummaryDto> articles;
-    private Map<Integer, AggregatedMetricsDto> aggregatedMetrics; // ключ - periodId
+    
+    /**
+     * Агрегированные метрики по периодам. Ключ - идентификатор периода (periodId).
+     */
+    private Map<Integer, AggregatedMetricsDto> aggregatedMetrics;
 }
 

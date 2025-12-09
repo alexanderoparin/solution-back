@@ -14,6 +14,7 @@ import java.util.List;
 
 /**
  * DTO для запроса сводной аналитики.
+ * Используется для получения агрегированных данных по всем артикулам за указанные периоды.
  */
 @Getter
 @Setter
@@ -21,12 +22,17 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class SummaryRequestDto {
-    
+    /**
+     * Список периодов для анализа. Должен содержать от 1 до 10 периодов.
+     */
     @Valid
     @NotEmpty(message = "Периоды не могут быть пустыми")
     @Size(min = 1, max = 10, message = "Количество периодов должно быть от 1 до 10")
     private List<PeriodDto> periods;
     
+    /**
+     * Список артикулов (nmId), которые нужно исключить из анализа.
+     */
     @Builder.Default
     private List<Long> excludedNmIds = new ArrayList<>();
 }

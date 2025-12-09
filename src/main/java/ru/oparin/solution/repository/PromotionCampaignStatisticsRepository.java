@@ -83,5 +83,22 @@ public interface PromotionCampaignStatisticsRepository extends JpaRepository<Pro
             @Param("dateFrom") LocalDate dateFrom,
             @Param("dateTo") LocalDate dateTo
     );
+
+    /**
+     * Поиск статистики по артикулу за период.
+     *
+     * @param nmId артикул товара
+     * @param dateFrom дата начала периода
+     * @param dateTo дата окончания периода
+     * @return список статистики
+     */
+    @Query("SELECT s FROM PromotionCampaignStatistics s " +
+           "WHERE s.nmId = :nmId " +
+           "AND s.date BETWEEN :dateFrom AND :dateTo")
+    List<PromotionCampaignStatistics> findByNmIdAndDateBetween(
+            @Param("nmId") Long nmId,
+            @Param("dateFrom") LocalDate dateFrom,
+            @Param("dateTo") LocalDate dateTo
+    );
 }
 
