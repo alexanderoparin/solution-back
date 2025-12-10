@@ -52,12 +52,15 @@ services:
     restart: always
     ports:
       - "80:80"
+      - "443:443"
     environment:
       # Часовой пояс
       - TZ=Europe/Moscow
     volumes:
       # Монтируем часовой пояс хоста
       - /etc/localtime:/etc/localtime:ro
+      # Монтируем SSL сертификаты Let's Encrypt
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - backend
     networks:
