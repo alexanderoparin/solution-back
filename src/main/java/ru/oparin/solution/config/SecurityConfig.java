@@ -36,7 +36,11 @@ import java.util.List;
 public class SecurityConfig {
 
     private static final int BCRYPT_STRENGTH = 12;
-    private static final String FRONTEND_URL = "http://localhost:5173";
+    private static final List<String> ALLOWED_ORIGINS = List.of(
+        "http://localhost:5173",
+        "https://wb-solution.ru",
+        "http://wb-solution.ru"
+    );
     private static final String AUTH_ENDPOINTS = "/auth/**";
     private static final String HEALTH_ENDPOINT = "/health";
     private static final String ADMIN_ENDPOINTS = "/admin/**";
@@ -139,7 +143,7 @@ public class SecurityConfig {
      */
     private CorsConfiguration createCorsConfiguration() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of(FRONTEND_URL));
+        configuration.setAllowedOrigins(ALLOWED_ORIGINS);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);
