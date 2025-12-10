@@ -11,6 +11,8 @@ services:
     ports:
       - "8080:8080"
     environment:
+      # Часовой пояс
+      - TZ=Europe/Moscow
       # База данных (PostgreSQL на отдельном сервере)
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT:-5432}
@@ -30,6 +32,8 @@ services:
     volumes:
       # Монтируем директорию для логов на хост
       - ./logs:/app/logs
+      # Монтируем часовой пояс хоста
+      - /etc/localtime:/etc/localtime:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
       interval: 30s
@@ -48,6 +52,12 @@ services:
     restart: always
     ports:
       - "80:80"
+    environment:
+      # Часовой пояс
+      - TZ=Europe/Moscow
+    volumes:
+      # Монтируем часовой пояс хоста
+      - /etc/localtime:/etc/localtime:ro
     depends_on:
       - backend
     networks:
