@@ -17,6 +17,7 @@ import ru.oparin.solution.model.WbApiKey;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.repository.WbApiKeyRepository;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -265,8 +266,11 @@ public class UserService {
         List<User> users;
 
         if (currentUser.getRole() == Role.ADMIN) {
-            // Админ видит всех менеджеров
-            users = userRepository.findByRole(Role.MANAGER);
+            // Админ видит всех менеджеров и всех селлеров, которых он создал
+            List<User> managers = userRepository.findByRole(Role.MANAGER);
+            List<User> sellers = userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId());
+            users = new ArrayList<>(managers);
+            users.addAll(sellers);
         } else if (currentUser.getRole() == Role.MANAGER) {
             // Менеджер видит своих селлеров
             users = userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId());
@@ -284,19 +288,58 @@ public class UserService {
     }
 
     /**
+     * Получение списка активных селлеров для аналитики.
+     * Для ADMIN возвращает всех активных селлеров в системе с API ключами.
+     * Для MANAGER возвращает только своих активных селлеров с API ключами.
+     * Селлеры без API ключа исключаются из списка.
+     *
+     * @param currentUser текущий пользователь
+     * @return список активных селлеров с API ключами
+     */
+    public List<UserListItemDto> getActiveSellers(User currentUser) {
+        List<User> sellers;
+
+        if (currentUser.getRole() == Role.ADMIN) {
+            // Админ видит всех активных селлеров
+            sellers = userRepository.findByRoleAndIsActive(Role.SELLER, true);
+        } else if (currentUser.getRole() == Role.MANAGER) {
+            // Менеджер видит только своих активных селлеров
+            List<User> allSellers = userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId());
+            sellers = allSellers.stream()
+                    .filter(user -> Boolean.TRUE.equals(user.getIsActive()))
+                    .collect(Collectors.toList());
+        } else {
+            // Только ADMIN и MANAGER могут просматривать аналитику селлеров
+            return List.of();
+        }
+
+        // Фильтруем только селлеров с API ключами
+        List<User> sellersWithApiKeys = sellers.stream()
+                .filter(seller -> {
+                    // Проверяем наличие API ключа для селлера
+                    return wbApiKeyRepository.findByUserId(seller.getId()).isPresent();
+                })
+                .collect(Collectors.toList());
+
+        return sellersWithApiKeys.stream()
+                .map(this::mapToUserListItemDto)
+                .collect(Collectors.toList());
+    }
+
+    /**
      * Проверяет, может ли текущий пользователь создавать пользователей указанной роли.
      */
     private void validateCanCreateUser(User currentUser, Role newUserRole) {
-        if (currentUser.getRole() == Role.ADMIN && newUserRole != Role.MANAGER) {
-            throw new UserException("ADMIN может создавать только MANAGER", HttpStatus.FORBIDDEN);
-        }
-        if (currentUser.getRole() == Role.MANAGER && newUserRole != Role.SELLER) {
+        if (currentUser.getRole() == Role.ADMIN) {
+            // Админ может создавать менеджеров и селлеров
+            if (newUserRole != Role.MANAGER && newUserRole != Role.SELLER) {
+                throw new UserException("ADMIN может создавать только MANAGER или SELLER", HttpStatus.FORBIDDEN);
+            }
+        } else if (currentUser.getRole() == Role.MANAGER && newUserRole != Role.SELLER) {
             throw new UserException("MANAGER может создавать только SELLER", HttpStatus.FORBIDDEN);
-        }
-        if (currentUser.getRole() == Role.SELLER && newUserRole != Role.WORKER) {
+        } else if (currentUser.getRole() == Role.SELLER && newUserRole != Role.WORKER) {
             throw new UserException("SELLER может создавать только WORKER", HttpStatus.FORBIDDEN);
-        }
-        if (currentUser.getRole() == Role.WORKER) {
+        } else if (currentUser.getRole() == Role.WORKER) {
             throw new UserException("WORKER не может создавать пользователей", HttpStatus.FORBIDDEN);
         }
     }
@@ -306,13 +349,13 @@ public class UserService {
      */
     private void validateCanManageUser(User currentUser, User userToManage) {
         if (currentUser.getRole() == Role.ADMIN) {
-            // Админ может управлять только менеджерами
-            if (userToManage.getRole() != Role.MANAGER) {
-                throw new UserException("ADMIN может управлять только MANAGER", HttpStatus.FORBIDDEN);
+            // Админ может управлять менеджерами и селлерами, которых он создал
+            if (userToManage.getRole() != Role.MANAGER && userToManage.getRole() != Role.SELLER) {
+                throw new UserException("ADMIN может управлять только MANAGER или SELLER", HttpStatus.FORBIDDEN);
             }
-            // Админ может управлять менеджерами, у которых он владелец
+            // Админ может управлять менеджерами и селлерами, у которых он владелец
             if (userToManage.getOwner() == null || !currentUser.getId().equals(userToManage.getOwner().getId())) {
-                throw new UserException("ADMIN может управлять только своими MANAGER", HttpStatus.FORBIDDEN);
+                throw new UserException("ADMIN может управлять только своими MANAGER или SELLER", HttpStatus.FORBIDDEN);
             }
         } else if (currentUser.getRole() == Role.MANAGER) {
             // Менеджер может управлять только своими селлерами
@@ -342,7 +385,8 @@ public class UserService {
         if (newUserRole == Role.MANAGER) {
             return currentUser; // ADMIN создает MANAGER
         } else if (newUserRole == Role.SELLER) {
-            return currentUser; // MANAGER создает SELLER
+            // ADMIN или MANAGER может создавать SELLER
+            return currentUser;
         } else if (newUserRole == Role.WORKER) {
             return currentUser; // SELLER создает WORKER
         }

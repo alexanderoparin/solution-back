@@ -40,6 +40,21 @@ public class UsersManagementController {
     }
 
     /**
+     * Получение списка активных селлеров для аналитики.
+     * Для ADMIN возвращает всех активных селлеров.
+     * Для MANAGER возвращает только своих активных селлеров.
+     *
+     * @param authentication данные аутентификации
+     * @return список активных селлеров
+     */
+    @GetMapping("/active-sellers")
+    public ResponseEntity<List<UserListItemDto>> getActiveSellers(Authentication authentication) {
+        User currentUser = getCurrentUser(authentication);
+        List<UserListItemDto> sellers = userService.getActiveSellers(currentUser);
+        return ResponseEntity.ok(sellers);
+    }
+
+    /**
      * Создание нового пользователя.
      *
      * @param request данные для создания пользователя

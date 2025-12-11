@@ -37,7 +37,10 @@ public class AnalyticsController {
             @RequestBody SummaryRequestDto request,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication, 
+                request.getSellerId()
+        );
         
         SummaryResponseDto response = analyticsService.getSummary(
                 context.user(), 
@@ -62,7 +65,10 @@ public class AnalyticsController {
             @RequestBody SummaryRequestDto request,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication, 
+                request.getSellerId()
+        );
         
         // Декодируем название метрики из URL
         String decodedMetricName = URLDecoder.decode(metricName, StandardCharsets.UTF_8);
@@ -91,7 +97,10 @@ public class AnalyticsController {
             @RequestBody SummaryRequestDto request,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication, 
+                request.getSellerId()
+        );
         
         ArticleResponseDto response = analyticsService.getArticle(
                 context.user(), 

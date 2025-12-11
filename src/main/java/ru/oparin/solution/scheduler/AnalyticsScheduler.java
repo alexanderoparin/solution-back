@@ -8,6 +8,7 @@ import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.model.WbApiKey;
 import ru.oparin.solution.repository.UserRepository;
+import ru.oparin.solution.repository.WbApiKeyRepository;
 import ru.oparin.solution.service.ProductCardAnalyticsService;
 import ru.oparin.solution.service.WbApiKeyService;
 import ru.oparin.solution.dto.wb.WbWarehouseResponse;
@@ -27,6 +28,7 @@ public class AnalyticsScheduler {
 
     private final UserRepository userRepository;
     private final WbApiKeyService wbApiKeyService;
+    private final WbApiKeyRepository wbApiKeyRepository;
     private final ProductCardAnalyticsService analyticsService;
     private final WbWarehousesApiClient warehousesApiClient;
     private final WbWarehouseService warehouseService;
@@ -125,6 +127,41 @@ public class AnalyticsScheduler {
                 period.from(),
                 period.to()
         );
+    }
+
+    /**
+     * Ручной запуск обновления данных для конкретного продавца.
+     * Используется для принудительного обновления без ожидания ночного шедулера.
+     *
+     * @param seller продавец, для которого нужно обновить данные
+     */
+    public void triggerManualUpdate(User seller) {
+        log.info("Ручной запуск обновления данных для продавца (ID: {}, email: {})", 
+                seller.getId(), seller.getEmail());
+
+        try {
+            WbApiKey apiKey = wbApiKeyService.findByUserId(seller.getId());
+            
+            // Сохраняем время запуска обновления
+            apiKey.setLastDataUpdateAt(java.time.LocalDateTime.now());
+            wbApiKeyRepository.save(apiKey);
+            
+            DateRange period = calculateLastWeekPeriod();
+            
+            analyticsService.updateCardsAndLoadAnalytics(
+                    seller,
+                    apiKey.getApiKey(),
+                    period.from(),
+                    period.to()
+            );
+            
+            log.info("Ручное обновление данных для продавца (ID: {}, email: {}) успешно запущено", 
+                    seller.getId(), seller.getEmail());
+        } catch (Exception e) {
+            log.error("Ошибка при ручном обновлении данных для продавца (ID: {}, email: {}): {}", 
+                    seller.getId(), seller.getEmail(), e.getMessage(), e);
+            throw e;
+        }
     }
 
     private record DateRange(LocalDate from, LocalDate to) {

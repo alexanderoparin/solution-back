@@ -71,6 +71,11 @@ public class UserProfileResponse {
          * Описание ошибки валидации, если ключ невалиден.
          */
         private String validationError;
+
+        /**
+         * Дата последнего запуска обновления данных.
+         */
+        private LocalDateTime lastDataUpdateAt;
     }
 }
 

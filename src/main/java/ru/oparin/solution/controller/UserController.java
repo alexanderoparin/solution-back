@@ -13,6 +13,8 @@ import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.model.WbApiKey;
+import ru.oparin.solution.repository.WbApiKeyRepository;
+import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.WbApiKeyService;
 
@@ -26,6 +28,8 @@ public class UserController {
 
     private final UserService userService;
     private final WbApiKeyService wbApiKeyService;
+    private final WbApiKeyRepository wbApiKeyRepository;
+    private final AnalyticsScheduler analyticsScheduler;
 
     /**
      * Обновление WB API ключа пользователя.
@@ -104,6 +108,27 @@ public class UserController {
     }
 
     /**
+     * Принудительный запуск обновления данных для текущего продавца.
+     * Запускает процесс обновления карточек, кампаний и аналитики без ожидания ночного шедулера.
+     *
+     * @param authentication данные аутентификации
+     * @return сообщение об успешном запуске обновления
+     */
+    @PostMapping("/update-data")
+    public ResponseEntity<MessageResponse> triggerDataUpdate(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        validateSellerRole(user);
+
+        // Запускаем обновление асинхронно
+        analyticsScheduler.triggerManualUpdate(user);
+
+        return ResponseEntity.ok(createSuccessMessage(
+                "Обновление данных запущено. Процесс выполняется в фоновом режиме. " +
+                "Данные будут доступны через несколько минут."
+        ));
+    }
+
+    /**
      * Получает текущего пользователя из аутентификации.
      */
     private User getCurrentUser(Authentication authentication) {
@@ -147,14 +172,17 @@ public class UserController {
 
     /**
      * Строит информацию об API ключе для профиля.
+     * Возвращает null, если API ключ не найден.
      */
     private UserProfileResponse.ApiKeyInfo buildApiKeyInfo(Long userId) {
-        WbApiKey apiKey = wbApiKeyService.findByUserId(userId);
-        return UserProfileResponse.ApiKeyInfo.builder()
-                .apiKey(apiKey.getApiKey())
-                .isValid(apiKey.getIsValid())
-                .lastValidatedAt(apiKey.getLastValidatedAt())
-                .validationError(apiKey.getValidationError())
-                .build();
+        return wbApiKeyRepository.findByUserId(userId)
+                .map(apiKey -> UserProfileResponse.ApiKeyInfo.builder()
+                        .apiKey(apiKey.getApiKey())
+                        .isValid(apiKey.getIsValid())
+                        .lastValidatedAt(apiKey.getLastValidatedAt())
+                        .validationError(apiKey.getValidationError())
+                        .lastDataUpdateAt(apiKey.getLastDataUpdateAt())
+                        .build())
+                .orElse(null);
     }
 }

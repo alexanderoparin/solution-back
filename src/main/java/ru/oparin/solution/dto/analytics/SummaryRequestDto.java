@@ -35,5 +35,11 @@ public class SummaryRequestDto {
      */
     @Builder.Default
     private List<Long> excludedNmIds = new ArrayList<>();
+
+    /**
+     * ID селлера для просмотра аналитики (опционально, только для ADMIN/MANAGER).
+     * Если не указан, используется последний активный селлер.
+     */
+    private Long sellerId;
 }
 

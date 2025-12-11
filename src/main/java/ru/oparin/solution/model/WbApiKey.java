@@ -69,6 +69,12 @@ public class WbApiKey {
     private String validationError;
 
     /**
+     * Дата последнего запуска обновления данных.
+     */
+    @Column(name = "last_data_update_at")
+    private LocalDateTime lastDataUpdateAt;
+
+    /**
      * Дата создания записи.
      */
     @CreatedDate
