@@ -1,5 +1,6 @@
 package ru.oparin.solution.security;
 
+import io.jsonwebtoken.ExpiredJwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -46,8 +47,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             } else {
                 logger.debug("JWT токен не найден или невалиден для запроса: " + request.getMethod() + " " + request.getRequestURI());
             }
+        } catch (ExpiredJwtException ex) {
+            // Истекший токен - это нормальная ситуация, логируем как debug
+            logger.debug("JWT токен истек для запроса: " + request.getMethod() + " " + request.getRequestURI());
         } catch (Exception ex) {
-            logger.error("Не удалось установить аутентификацию пользователя в контексте безопасности", ex);
+            // Другие ошибки (невалидная подпись и т.д.) логируем как warning
+            logger.warn("Не удалось установить аутентификацию пользователя в контексте безопасности: " + ex.getMessage());
         }
 
         filterChain.doFilter(request, response);
@@ -71,8 +76,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (!StringUtils.hasText(jwt)) {
             return false;
         }
-        String email = tokenProvider.getEmailFromToken(jwt);
-        return tokenProvider.validateToken(jwt, email);
+        try {
+            // Сначала проверяем истечение токена, чтобы избежать исключения при извлечении email
+            if (tokenProvider.isTokenExpired(jwt)) {
+                return false;
+            }
+            String email = tokenProvider.getEmailFromToken(jwt);
+            return tokenProvider.validateToken(jwt, email);
+        } catch (ExpiredJwtException ex) {
+            return false;
+        } catch (Exception ex) {
+            logger.debug("Ошибка при проверке JWT токена: " + ex.getMessage());
+            return false;
+        }
     }
 
     /**
