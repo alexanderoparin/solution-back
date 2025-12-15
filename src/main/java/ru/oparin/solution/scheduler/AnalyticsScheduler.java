@@ -2,8 +2,11 @@ package ru.oparin.solution.scheduler;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.model.WbApiKey;
@@ -16,7 +19,7 @@ import ru.oparin.solution.service.WbWarehouseService;
 import ru.oparin.solution.service.wb.WbWarehousesApiClient;
 
 import java.time.LocalDate;
-import java.util.Comparator;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -132,11 +135,19 @@ public class AnalyticsScheduler {
     }
 
     /**
+     * Минимальный интервал между ручными обновлениями данных (6 часов).
+     */
+    private static final int MIN_UPDATE_INTERVAL_HOURS = 6;
+
+    /**
      * Ручной запуск обновления данных для конкретного продавца.
      * Используется для принудительного обновления без ожидания ночного шедулера.
+     * Обновление можно запускать не чаще одного раза в 6 часов.
      *
      * @param seller продавец, для которого нужно обновить данные
+     * @throws UserException если с последнего обновления прошло меньше 6 часов
      */
+    @Transactional
     public void triggerManualUpdate(User seller) {
         log.info("Ручной запуск обновления данных для продавца (ID: {}, email: {})",
                 seller.getId(), seller.getEmail());
@@ -144,12 +155,17 @@ public class AnalyticsScheduler {
         try {
             WbApiKey apiKey = wbApiKeyService.findByUserId(seller.getId());
 
+            // Проверяем время последнего обновления в транзакции
+            validateUpdateInterval(apiKey);
+
             // Сохраняем время запуска обновления
-            apiKey.setLastDataUpdateAt(java.time.LocalDateTime.now());
+            LocalDateTime now = LocalDateTime.now();
+            apiKey.setLastDataUpdateAt(now);
             wbApiKeyRepository.save(apiKey);
 
             DateRange period = calculateLastWeekPeriod();
 
+            // Запускаем обновление асинхронно (вне транзакции)
             analyticsService.updateCardsAndLoadAnalytics(
                     seller,
                     apiKey.getApiKey(),
@@ -159,10 +175,57 @@ public class AnalyticsScheduler {
 
             log.info("Ручное обновление данных для продавца (ID: {}, email: {}) успешно запущено",
                     seller.getId(), seller.getEmail());
+        } catch (UserException e) {
+            // Пробрасываем UserException без логирования как ошибку (это ожидаемое поведение)
+            throw e;
         } catch (Exception e) {
             log.error("Ошибка при ручном обновлении данных для продавца (ID: {}, email: {}): {}",
                     seller.getId(), seller.getEmail(), e.getMessage(), e);
             throw e;
+        }
+    }
+
+    /**
+     * Проверяет, прошло ли достаточно времени с последнего обновления.
+     * Если прошло меньше MIN_UPDATE_INTERVAL_HOURS часов, выбрасывает UserException.
+     *
+     * @param apiKey API ключ продавца
+     * @throws UserException если с последнего обновления прошло меньше 6 часов
+     */
+    private void validateUpdateInterval(WbApiKey apiKey) {
+        LocalDateTime lastUpdate = apiKey.getLastDataUpdateAt();
+        
+        if (lastUpdate == null) {
+            // Если обновление еще не запускалось, разрешаем
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        long hoursSinceLastUpdate = java.time.Duration.between(lastUpdate, now).toHours();
+
+        if (hoursSinceLastUpdate < MIN_UPDATE_INTERVAL_HOURS) {
+            long remainingHours = MIN_UPDATE_INTERVAL_HOURS - hoursSinceLastUpdate;
+            String message = String.format(
+                    "Обновление данных можно запускать не чаще одного раза в %d часов. " +
+                    "Следующее обновление будет доступно через %d %s",
+                    MIN_UPDATE_INTERVAL_HOURS,
+                    remainingHours,
+                    getHoursWord(remainingHours)
+            );
+            throw new UserException(message, HttpStatus.TOO_MANY_REQUESTS);
+        }
+    }
+
+    /**
+     * Возвращает правильное склонение слова "час/часа/часов".
+     */
+    private String getHoursWord(long hours) {
+        if (hours % 10 == 1 && hours % 100 != 11) {
+            return "час";
+        } else if (hours % 10 >= 2 && hours % 10 <= 4 && (hours % 100 < 10 || hours % 100 >= 20)) {
+            return "часа";
+        } else {
+            return "часов";
         }
     }
 
