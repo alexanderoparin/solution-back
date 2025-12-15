@@ -12,6 +12,7 @@ import ru.oparin.solution.repository.ProductBarcodeRepository;
 import ru.oparin.solution.repository.ProductStockRepository;
 import ru.oparin.solution.service.wb.WbStocksApiClient;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,9 +24,136 @@ import java.util.Optional;
 @Slf4j
 public class ProductStocksService {
 
+    private static final String STOCK_TYPE_WB = "wb";
+    private static final String ORDER_FIELD_STOCK_COUNT = "stockCount";
+    private static final String ORDER_MODE_ASC = "asc";
+    private static final long DEFAULT_STOCK_COUNT = 0L;
+
     private final WbStocksApiClient stocksApiClient;
     private final ProductStockRepository stockRepository;
     private final ProductBarcodeRepository barcodeRepository;
+
+    /**
+     * Получает и сохраняет остатки товаров по размерам на складах WB.
+     * Данные перезаписываются каждый день, время записи фиксируется в created_at и updated_at.
+     *
+     * @param apiKey API ключ продавца (токен для категории "Аналитика")
+     * @param nmId артикул товара (nmID)
+     * @return ответ с остатками товаров по размерам
+     */
+    @Transactional
+    public WbStocksSizesResponse getWbStocksBySizes(String apiKey, Long nmId) {
+        log.info("Начало загрузки остатков по размерам на складах WB для артикула {}", nmId);
+
+        WbStocksSizesRequest request = buildStocksRequest(nmId);
+        WbStocksSizesResponse response = stocksApiClient.getWbStocksBySizes(apiKey, request);
+
+        if (isEmptyResponse(response)) {
+            log.warn("Не получено остатков по размерам на складах WB для артикула {}", nmId);
+            return createEmptyResponse();
+        }
+
+        log.info("Получено {} размеров с остатками на складах WB для артикула {}", 
+                response.getData().getSizes().size(), nmId);
+
+        saveWbStocksBySizes(nmId, response.getData().getSizes());
+        return response;
+    }
+
+    /**
+     * Сохраняет остатки товаров по размерам на складах WB в БД.
+     * Данные перезаписываются, время записи фиксируется в created_at и updated_at.
+     *
+     * @param nmId артикул товара
+     * @param sizeItems список размеров с остатками
+     */
+    private void saveWbStocksBySizes(Long nmId, List<WbStocksSizesResponse.SizeItem> sizeItems) {
+        SaveStatistics statistics = new SaveStatistics();
+
+        for (WbStocksSizesResponse.SizeItem sizeItem : sizeItems) {
+            if (!isValidSizeItem(sizeItem)) {
+                statistics.incrementSkipped();
+                continue;
+            }
+
+            processSizeItem(nmId, sizeItem, statistics);
+        }
+
+        logSaveStatistics(statistics);
+    }
+
+    /**
+     * Обрабатывает один размер товара.
+     */
+    private void processSizeItem(Long nmId, WbStocksSizesResponse.SizeItem sizeItem, SaveStatistics statistics) {
+        if (!hasOfficeDetails(sizeItem)) {
+            log.debug("Размер {} (chrtID: {}) для артикула {} не имеет детализации по складам, пропускаем",
+                    sizeItem.getName(), sizeItem.getChrtID(), nmId);
+            statistics.incrementSkipped();
+            return;
+        }
+
+        String barcode = findBarcodeByChrtId(nmId, sizeItem.getChrtID());
+        if (barcode == null || barcode.isEmpty()) {
+            log.warn("Не найден баркод для товара nmID {} и размера chrtID {}, пропускаем", nmId, sizeItem.getChrtID());
+            statistics.incrementSkipped();
+            return;
+        }
+
+        for (WbStocksSizesResponse.OfficeStock office : sizeItem.getOffices()) {
+            if (isValidOffice(office)) {
+                processOfficeStock(nmId, office, barcode, statistics);
+            }
+        }
+    }
+
+    /**
+     * Обрабатывает остатки на одном складе.
+     */
+    private void processOfficeStock(Long nmId, WbStocksSizesResponse.OfficeStock office, 
+                                    String barcode, SaveStatistics statistics) {
+        Long stockCount = getStockCount(office);
+        Optional<ProductStock> existingStock = findExistingStock(nmId, office.getOfficeID(), barcode);
+
+        try {
+            if (existingStock.isPresent()) {
+                updateExistingStock(existingStock.get(), stockCount);
+                statistics.incrementUpdated();
+            } else {
+                if (shouldCreateNewStock(stockCount)) {
+                    createNewStock(nmId, office.getOfficeID(), barcode, stockCount);
+                    statistics.incrementSaved();
+                } else {
+                    statistics.incrementSkipped();
+                }
+            }
+        } catch (Exception e) {
+            log.error("Ошибка при сохранении остатка для nmID {}, warehouseId {}, barcode {}: {}",
+                    nmId, office.getOfficeID(), barcode, e.getMessage(), e);
+            statistics.incrementSkipped();
+        }
+    }
+
+    /**
+     * Обновляет существующую запись об остатках.
+     */
+    private void updateExistingStock(ProductStock stock, Long stockCount) {
+        stock.setAmount(stockCount.intValue());
+        stockRepository.save(stock);
+    }
+
+    /**
+     * Создает новую запись об остатках.
+     */
+    private void createNewStock(Long nmId, Long warehouseId, String barcode, Long stockCount) {
+        ProductStock stock = ProductStock.builder()
+                .nmId(nmId)
+                .warehouseId(warehouseId)
+                .barcode(barcode)
+                .amount(stockCount.intValue())
+                .build();
+        stockRepository.save(stock);
+    }
 
     /**
      * Находит баркод по nmID и chrtID.
@@ -42,156 +170,141 @@ public class ProductStocksService {
 
         List<ProductBarcode> barcodes = barcodeRepository.findByNmId(nmId);
         return barcodes.stream()
-                .filter(b -> chrtId.equals(b.getChrtId()))
+                .filter(barcode -> chrtId.equals(barcode.getChrtId()))
                 .map(ProductBarcode::getBarcode)
                 .findFirst()
                 .orElse(null);
     }
 
     /**
-     * Получает и сохраняет остатки товаров по размерам на складах WB.
-     * Данные перезаписываются каждый день, время записи фиксируется в created_at и updated_at.
-     *
-     * @param apiKey API ключ продавца (токен для категории "Аналитика")
-     * @param nmId артикул товара (nmID)
-     * @return ответ с остатками товаров по размерам
+     * Создает запрос для получения остатков.
      */
-    @Transactional
-    public WbStocksSizesResponse getWbStocksBySizes(String apiKey, Long nmId) {
-        log.info("Начало загрузки остатков по размерам на складах WB для артикула {}", nmId);
-
-        // Формируем период (вчерашний день)
-        java.time.LocalDate yesterday = java.time.LocalDate.now().minusDays(1);
+    private WbStocksSizesRequest buildStocksRequest(Long nmId) {
+        LocalDate yesterday = LocalDate.now().minusDays(1);
         WbStocksSizesRequest.Period period = WbStocksSizesRequest.Period.builder()
                 .start(yesterday.toString())
                 .end(yesterday.toString())
                 .build();
 
-        // Формируем сортировку по остаткам на текущий день (по возрастанию)
         WbStocksSizesRequest.OrderBy orderBy = WbStocksSizesRequest.OrderBy.builder()
-                .field("stockCount")
-                .mode("asc")
+                .field(ORDER_FIELD_STOCK_COUNT)
+                .mode(ORDER_MODE_ASC)
                 .build();
 
-        // Формируем запрос с детализацией по складам
-        WbStocksSizesRequest request = WbStocksSizesRequest.builder()
+        return WbStocksSizesRequest.builder()
                 .nmID(nmId)
                 .currentPeriod(period)
-                .stockType("wb") // Склады WB (не склады продавца)
+                .stockType(STOCK_TYPE_WB)
                 .orderBy(orderBy)
-                .includeOffice(true) // Включаем детализацию по складам
+                .includeOffice(true)
                 .build();
-
-        // Получаем остатки с API
-        WbStocksSizesResponse response = stocksApiClient.getWbStocksBySizes(apiKey, request);
-
-        if (response == null || response.getData() == null 
-                || response.getData().getSizes() == null 
-                || response.getData().getSizes().isEmpty()) {
-            log.warn("Не получено остатков по размерам на складах WB для артикула {}", nmId);
-            return WbStocksSizesResponse.builder()
-                    .data(WbStocksSizesResponse.Data.builder()
-                            .sizes(List.of())
-                            .build())
-                    .build();
-        }
-
-        log.info("Получено {} размеров с остатками на складах WB для артикула {}", 
-                response.getData().getSizes().size(), nmId);
-
-        // Сохраняем остатки в БД (перезаписываем существующие записи)
-        saveWbStocksBySizes(nmId, response.getData().getSizes());
-
-        return response;
     }
 
     /**
-     * Сохраняет остатки товаров по размерам на складах WB в БД.
-     * Данные перезаписываются, время записи фиксируется в created_at и updated_at.
-     *
-     * @param nmId артикул товара
-     * @param sizeItems список размеров с остатками
+     * Проверяет, является ли ответ пустым.
      */
-    private void saveWbStocksBySizes(Long nmId, List<WbStocksSizesResponse.SizeItem> sizeItems) {
-        int savedCount = 0;
-        int updatedCount = 0;
-        int skippedCount = 0;
+    private boolean isEmptyResponse(WbStocksSizesResponse response) {
+        return response == null
+                || response.getData() == null
+                || response.getData().getSizes() == null
+                || response.getData().getSizes().isEmpty();
+    }
 
-        for (WbStocksSizesResponse.SizeItem sizeItem : sizeItems) {
-            if (sizeItem == null || sizeItem.getName() == null) {
-                skippedCount++;
-                continue;
-            }
+    /**
+     * Создает пустой ответ.
+     */
+    private WbStocksSizesResponse createEmptyResponse() {
+        return WbStocksSizesResponse.builder()
+                .data(WbStocksSizesResponse.Data.builder()
+                        .sizes(List.of())
+                        .build())
+                .build();
+    }
 
-            String sizeName = sizeItem.getName(); // Название размера (например, "M", "S")
-            Long chrtID = sizeItem.getChrtID(); // ID характеристики размера
+    /**
+     * Проверяет валидность размера.
+     */
+    private boolean isValidSizeItem(WbStocksSizesResponse.SizeItem sizeItem) {
+        return sizeItem != null && sizeItem.getName() != null;
+    }
 
-            // Если есть детализация по складам
-            if (sizeItem.getOffices() != null && !sizeItem.getOffices().isEmpty()) {
-                for (WbStocksSizesResponse.OfficeStock office : sizeItem.getOffices()) {
-                    if (office == null || office.getOfficeID() == null || office.getMetrics() == null) {
-                        continue;
-                    }
+    /**
+     * Проверяет наличие детализации по складам.
+     */
+    private boolean hasOfficeDetails(WbStocksSizesResponse.SizeItem sizeItem) {
+        return sizeItem.getOffices() != null && !sizeItem.getOffices().isEmpty();
+    }
 
-                    Long stockCount = office.getMetrics().getStockCount();
-                    if (stockCount == null) {
-                        stockCount = 0L;
-                    }
+    /**
+     * Проверяет валидность склада.
+     */
+    private boolean isValidOffice(WbStocksSizesResponse.OfficeStock office) {
+        return office != null
+                && office.getOfficeID() != null
+                && office.getMetrics() != null;
+    }
 
-                    // Находим баркод по chrtID для этого размера
-                    // Если баркодов несколько для одного chrtID, берем первый
-                    String barcode = findBarcodeByChrtId(nmId, chrtID);
-                    if (barcode == null || barcode.isEmpty()) {
-                        log.warn("Не найден баркод для товара nmID {} и размера chrtID {}, пропускаем", 
-                                nmId, chrtID);
-                        skippedCount++;
-                        continue;
-                    }
+    /**
+     * Получает количество остатков на складе.
+     */
+    private Long getStockCount(WbStocksSizesResponse.OfficeStock office) {
+        Long stockCount = office.getMetrics().getStockCount();
+        return stockCount != null ? stockCount : DEFAULT_STOCK_COUNT;
+    }
 
-                    // Проверяем, есть ли уже запись (без учета даты, так как перезаписываем каждый день)
-                    Optional<ProductStock> existingStock = stockRepository.findByNmIdAndWarehouseIdAndBarcode(
-                            nmId, office.getOfficeID(), barcode
-                    );
+    /**
+     * Находит существующую запись об остатках.
+     */
+    private Optional<ProductStock> findExistingStock(Long nmId, Long warehouseId, String barcode) {
+        return stockRepository.findByNmIdAndWarehouseIdAndBarcode(nmId, warehouseId, barcode);
+    }
 
-                    try {
-                        if (existingStock.isPresent()) {
-                            // Обновляем существующую запись (включая обновление на 0, чтобы видеть историю)
-                            ProductStock stock = existingStock.get();
-                            stock.setAmount(stockCount.intValue());
-                            stockRepository.save(stock);
-                            updatedCount++;
-                        } else {
-                            // Создаем новую запись только если остатки не нулевые
-                            if (stockCount > 0) {
-                                ProductStock stock = new ProductStock();
-                                stock.setNmId(nmId);
-                                stock.setWarehouseId(office.getOfficeID());
-                                stock.setBarcode(barcode);
-                                stock.setAmount(stockCount.intValue());
-                                stockRepository.save(stock);
-                                savedCount++;
-                            } else {
-                                // Пропускаем создание новых записей с нулевыми остатками
-                                skippedCount++;
-                            }
-                        }
-                    } catch (Exception e) {
-                        log.error("Ошибка при сохранении остатка для nmID {}, warehouseId {}, barcode {}: {}", 
-                                nmId, office.getOfficeID(), barcode, e.getMessage(), e);
-                        skippedCount++;
-                        // Продолжаем обработку других записей
-                    }
-                }
-            } else {
-                // Если нет детализации по складам, пропускаем
-                log.debug("Размер {} (chrtID: {}) для артикула {} не имеет детализации по складам, пропускаем", 
-                        sizeName, chrtID, nmId);
-                skippedCount++;
-            }
+    /**
+     * Определяет, нужно ли создавать новую запись.
+     */
+    private boolean shouldCreateNewStock(Long stockCount) {
+        return stockCount > 0;
+    }
+
+    /**
+     * Логирует статистику сохранения.
+     */
+    private void logSaveStatistics(SaveStatistics statistics) {
+        log.info("Сохранено остатков по размерам на складах WB: создано {}, обновлено {}, пропущено {}",
+                statistics.getSaved(), statistics.getUpdated(), statistics.getSkipped());
+    }
+
+    /**
+     * Класс для подсчета статистики сохранения.
+     */
+    private static class SaveStatistics {
+        private int saved = 0;
+        private int updated = 0;
+        private int skipped = 0;
+
+        void incrementSaved() {
+            saved++;
         }
 
-        log.info("Сохранено остатков по размерам на складах WB: создано {}, обновлено {}, пропущено {}", 
-                savedCount, updatedCount, skippedCount);
+        void incrementUpdated() {
+            updated++;
+        }
+
+        void incrementSkipped() {
+            skipped++;
+        }
+
+        int getSaved() {
+            return saved;
+        }
+
+        int getUpdated() {
+            return updated;
+        }
+
+        int getSkipped() {
+            return skipped;
+        }
     }
 }
 

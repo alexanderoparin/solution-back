@@ -138,22 +138,7 @@ public class ProductPriceService {
             ProductPricesResponse.Size size
     ) {
         // Все цены уже приходят в рублях (BigDecimal), сохраняем как есть без округления
-        log.debug("Сохранение цен для nmId={}: price={}, discountedPrice={}, clubDiscountedPrice={}, sppPrice={} (все в рублях)",
-                good.getNmId(),
-                size.getPrice(), 
-                size.getDiscountedPrice(), 
-                size.getClubDiscountedPrice(),
-                size.getSppPrice());
-        
-        // Логируем значение СПП для отладки
-        if (size.getSppPrice() != null) {
-            log.info("Найдено значение СПП для nmId={}, sizeId={}: sppPrice={}", 
-                    good.getNmId(), sizeId, size.getSppPrice());
-        } else {
-            log.debug("Значение СПП отсутствует (null) для nmId={}, sizeId={}", good.getNmId(), sizeId);
-        }
-        
-            return ProductPriceHistory.builder()
+        return ProductPriceHistory.builder()
                     .nmId(good.getNmId())
                     .date(date)
                     .sizeId(sizeId)

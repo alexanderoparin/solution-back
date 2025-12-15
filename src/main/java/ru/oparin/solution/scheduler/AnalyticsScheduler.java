@@ -16,6 +16,7 @@ import ru.oparin.solution.service.WbWarehouseService;
 import ru.oparin.solution.service.wb.WbWarehousesApiClient;
 
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -75,7 +76,7 @@ public class AnalyticsScheduler {
      * Автоматическое обновление списка складов WB.
      * Запускается каждый день в 4:00 утра.
      */
-    @Scheduled(cron = "0 0 4 * * ?")
+    @Scheduled(cron = "0 0 2 * * ?")
     public void updateWbWarehouses() {
         log.info("Запуск автоматического обновления складов WB");
 
@@ -87,7 +88,7 @@ public class AnalyticsScheduler {
                 return;
             }
 
-            User firstSeller = activeSellers.get(0);
+            User firstSeller = activeSellers.stream().min(Comparator.comparing(User::getId)).orElseThrow();
             WbApiKey apiKey = wbApiKeyService.findByUserId(firstSeller.getId());
 
             log.info("Обновление складов WB с использованием API ключа продавца (ID: {}, email: {})",

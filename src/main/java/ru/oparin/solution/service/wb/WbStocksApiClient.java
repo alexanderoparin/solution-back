@@ -8,6 +8,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.WbStocksSizesRequest;
 import ru.oparin.solution.dto.wb.WbStocksSizesResponse;
@@ -58,15 +59,28 @@ public class WbStocksApiClient extends AbstractWbApiClient {
 
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                ResponseEntity<String> response = restTemplate.exchange(
+                ResponseEntity<WbStocksSizesResponse> response = restTemplate.exchange(
                         url,
                         HttpMethod.POST,
                         entity,
-                        String.class
+                        WbStocksSizesResponse.class
                 );
 
-                // Проверяем на ошибку 429
-                if (response.getStatusCode().value() == 429) {
+                if (!response.getStatusCode().is2xxSuccessful()) {
+                    log.error("Ошибка от WB API: статус={}", response.getStatusCode());
+                    throw new RestClientException("Ошибка от WB API: " + response.getStatusCode());
+                }
+
+                if (response.getBody() == null) {
+                    log.error("Тело ответа от WB API пустое");
+                    throw new RestClientException("Тело ответа от WB API пустое");
+                }
+
+                return response.getBody();
+
+            } catch (HttpClientErrorException e) {
+                // Обрабатываем 429 ошибку
+                if (e.getStatusCode().value() == 429) {
                     if (attempt < maxRetries) {
                         log.warn("Получен 429 Too Many Requests (попытка {}/{}). Ожидание {} мс перед повторной попыткой...", 
                                 attempt, maxRetries, RETRY_DELAY_MS_429);
@@ -79,24 +93,12 @@ public class WbStocksApiClient extends AbstractWbApiClient {
                         continue; // Повторяем попытку
                     } else {
                         log.error("Получен 429 Too Many Requests после {} попыток", maxRetries);
-                        throw new RestClientException("429 Too Many Requests: " + response.getBody());
+                        throw new RestClientException("429 Too Many Requests после " + maxRetries + " попыток");
                     }
                 }
-
-                validateResponse(response);
-
-                WbStocksSizesResponse stocksResponse = objectMapper.readValue(
-                        response.getBody(),
-                        WbStocksSizesResponse.class
-                );
-
-                log.debug("Получено {} размеров с остатками для nmID: {}", 
-                        stocksResponse.getData() != null && stocksResponse.getData().getSizes() != null 
-                                ? stocksResponse.getData().getSizes().size() : 0, 
-                        request.getNmID());
-
-                return stocksResponse;
-
+                // Для других HTTP ошибок клиента пробрасываем дальше
+                log.error("Ошибка от WB API: статус={}, сообщение={}", e.getStatusCode(), e.getMessage());
+                throw new RestClientException("Ошибка от WB API: " + e.getStatusCode() + " - " + e.getMessage(), e);
             } catch (RestClientException e) {
                 // Если это 429 и есть еще попытки, продолжаем цикл
                 if (e.getMessage() != null && e.getMessage().contains("429") && attempt < maxRetries) {

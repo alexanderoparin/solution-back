@@ -48,7 +48,8 @@ public class WbWarehousesApiClient extends AbstractWbApiClient {
 
             List<WbWarehouseResponse> warehouses = objectMapper.readValue(
                     response.getBody(),
-                    new TypeReference<List<WbWarehouseResponse>>() {}
+                    new TypeReference<>() {
+                    }
             );
 
             log.info("Получено складов WB: {}", warehouses != null ? warehouses.size() : 0);

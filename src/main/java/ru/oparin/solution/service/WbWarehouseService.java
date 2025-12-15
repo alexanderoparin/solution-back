@@ -28,13 +28,13 @@ public class WbWarehouseService {
      * Если склад новый - создает запись.
      *
      * @param warehouses список складов из API
-     * @return результат обработки (количество созданных и обновленных)
      */
     @Transactional
-    public ProcessingResult saveOrUpdateWarehouses(List<WbWarehouseResponse> warehouses) {
+    public void saveOrUpdateWarehouses(List<WbWarehouseResponse> warehouses) {
         if (warehouses == null || warehouses.isEmpty()) {
             log.warn("Получен пустой список складов WB");
-            return new ProcessingResult(0, 0);
+            new ProcessingResult(0, 0);
+            return;
         }
 
         // Получаем существующие склады из БД
@@ -63,7 +63,7 @@ public class WbWarehouseService {
         }
 
         log.info("Обработано складов WB: создано {}, обновлено {}", createdCount, updatedCount);
-        return new ProcessingResult(createdCount, updatedCount);
+        new ProcessingResult(createdCount, updatedCount);
     }
 
     private boolean isValidWarehouse(WbWarehouseResponse warehouse) {
