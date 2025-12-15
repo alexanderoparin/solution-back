@@ -88,17 +88,17 @@ public class AnalyticsScheduler {
                 return;
             }
 
-            activeSellers.forEach(sellereller -> {
-                WbApiKey apiKey = wbApiKeyService.findByUserId(sellereller.getId());
+            activeSellers.forEach(seller -> {
+                WbApiKey apiKey = wbApiKeyService.findByUserId(seller.getId());
 
                 log.info("Обновление складов WB с использованием API ключа продавца (ID: {}, email: {})",
-                        sellereller.getId(), sellereller.getEmail());
+                        seller.getId(), seller.getEmail());
 
                 List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(apiKey.getApiKey());
                 warehouseService.saveOrUpdateWarehouses(warehouses);
 
                 log.info("Завершено автоматическое обновление складов WB с использованием API ключа продавца (ID: {}, email: {})",
-                        sellereller.getId(), sellereller.getEmail());
+                        seller.getId(), seller.getEmail());
             });
         } catch (Exception e) {
             log.error("Ошибка при автоматическом обновлении складов WB: {}", e.getMessage(), e);
