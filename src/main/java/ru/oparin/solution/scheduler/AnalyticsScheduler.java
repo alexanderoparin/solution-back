@@ -62,13 +62,13 @@ public class AnalyticsScheduler {
                 processSellerAnalytics(seller, period);
                 successCount++;
             } catch (Exception e) {
-                log.error("Ошибка при загрузке аналитики для продавца (ID: {}, email: {}): {}", 
+                log.error("Ошибка при загрузке аналитики для продавца (ID: {}, email: {}): {}",
                         seller.getId(), seller.getEmail(), e.getMessage());
                 errorCount++;
             }
         }
 
-        log.info("Завершена автоматическая загрузка аналитики: успешно {}, ошибок {}", 
+        log.info("Завершена автоматическая загрузка аналитики: успешно {}, ошибок {}",
                 successCount, errorCount);
     }
 
@@ -88,17 +88,18 @@ public class AnalyticsScheduler {
                 return;
             }
 
-            User firstSeller = activeSellers.stream().min(Comparator.comparing(User::getId)).orElseThrow();
-            WbApiKey apiKey = wbApiKeyService.findByUserId(firstSeller.getId());
+            activeSellers.forEach(sellereller -> {
+                WbApiKey apiKey = wbApiKeyService.findByUserId(sellereller.getId());
 
-            log.info("Обновление складов WB с использованием API ключа продавца (ID: {}, email: {})",
-                    firstSeller.getId(), firstSeller.getEmail());
+                log.info("Обновление складов WB с использованием API ключа продавца (ID: {}, email: {})",
+                        sellereller.getId(), sellereller.getEmail());
 
-            List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(apiKey.getApiKey());
-            warehouseService.saveOrUpdateWarehouses(warehouses);
+                List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(apiKey.getApiKey());
+                warehouseService.saveOrUpdateWarehouses(warehouses);
 
-            log.info("Завершено автоматическое обновление складов WB");
-
+                log.info("Завершено автоматическое обновление складов WB с использованием API ключа продавца (ID: {}, email: {})",
+                        sellereller.getId(), sellereller.getEmail());
+            });
         } catch (Exception e) {
             log.error("Ошибка при автоматическом обновлении складов WB: {}", e.getMessage(), e);
         }
@@ -119,7 +120,7 @@ public class AnalyticsScheduler {
     private void processSellerAnalytics(User seller, DateRange period) {
         WbApiKey apiKey = wbApiKeyService.findByUserId(seller.getId());
 
-        log.info("Загрузка аналитики для продавца (ID: {}, email: {})", 
+        log.info("Загрузка аналитики для продавца (ID: {}, email: {})",
                 seller.getId(), seller.getEmail());
 
         analyticsService.updateCardsAndLoadAnalytics(
@@ -137,29 +138,29 @@ public class AnalyticsScheduler {
      * @param seller продавец, для которого нужно обновить данные
      */
     public void triggerManualUpdate(User seller) {
-        log.info("Ручной запуск обновления данных для продавца (ID: {}, email: {})", 
+        log.info("Ручной запуск обновления данных для продавца (ID: {}, email: {})",
                 seller.getId(), seller.getEmail());
 
         try {
             WbApiKey apiKey = wbApiKeyService.findByUserId(seller.getId());
-            
+
             // Сохраняем время запуска обновления
             apiKey.setLastDataUpdateAt(java.time.LocalDateTime.now());
             wbApiKeyRepository.save(apiKey);
-            
+
             DateRange period = calculateLastWeekPeriod();
-            
+
             analyticsService.updateCardsAndLoadAnalytics(
                     seller,
                     apiKey.getApiKey(),
                     period.from(),
                     period.to()
             );
-            
-            log.info("Ручное обновление данных для продавца (ID: {}, email: {}) успешно запущено", 
+
+            log.info("Ручное обновление данных для продавца (ID: {}, email: {}) успешно запущено",
                     seller.getId(), seller.getEmail());
         } catch (Exception e) {
-            log.error("Ошибка при ручном обновлении данных для продавца (ID: {}, email: {}): {}", 
+            log.error("Ошибка при ручном обновлении данных для продавца (ID: {}, email: {}): {}",
                     seller.getId(), seller.getEmail(), e.getMessage(), e);
             throw e;
         }
