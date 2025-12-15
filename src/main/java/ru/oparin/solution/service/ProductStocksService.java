@@ -84,6 +84,9 @@ public class ProductStocksService {
 
     /**
      * Обрабатывает один размер товара.
+     * Учитывает случаи:
+     * - Товар с размерами (chrtID != null) - ищем баркод по chrtID
+     * - Товар без размеров (chrtID == null, techSize="0") - берем первый баркод товара
      */
     private void processSizeItem(Long nmId, WbStocksSizesResponse.SizeItem sizeItem, SaveStatistics statistics) {
         if (!hasOfficeDetails(sizeItem)) {
@@ -93,7 +96,8 @@ public class ProductStocksService {
             return;
         }
 
-        String barcode = findBarcodeByChrtId(nmId, sizeItem.getChrtID());
+        // Для товаров без размеров (chrtID == null) берем первый баркод товара
+        String barcode = findBarcodeForSizeItem(nmId, sizeItem);
         if (barcode == null || barcode.isEmpty()) {
             log.warn("Не найден баркод для товара nmID {} и размера chrtID {}, пропускаем", nmId, sizeItem.getChrtID());
             statistics.incrementSkipped();
@@ -153,6 +157,32 @@ public class ProductStocksService {
                 .amount(stockCount.intValue())
                 .build();
         stockRepository.save(stock);
+    }
+
+    /**
+     * Находит баркод для размера товара.
+     * Для товаров с размерами (chrtID != null) ищет по chrtID.
+     * Для товаров без размеров (chrtID == null) берет первый баркод товара.
+     *
+     * @param nmId артикул товара
+     * @param sizeItem элемент размера из ответа API
+     * @return баркод или null, если не найден
+     */
+    private String findBarcodeForSizeItem(Long nmId, WbStocksSizesResponse.SizeItem sizeItem) {
+        Long chrtId = sizeItem.getChrtID();
+        
+        // Если chrtID есть, ищем баркод по chrtID (товар с размерами)
+        if (chrtId != null) {
+            return findBarcodeByChrtId(nmId, chrtId);
+        }
+        
+        // Если chrtID == null, это товар без размеров (hasSizes=false, techSize="0")
+        // Берем первый баркод товара
+        List<ProductBarcode> barcodes = barcodeRepository.findByNmId(nmId);
+        return barcodes.stream()
+                .map(ProductBarcode::getBarcode)
+                .findFirst()
+                .orElse(null);
     }
 
     /**
@@ -223,9 +253,11 @@ public class ProductStocksService {
 
     /**
      * Проверяет валидность размера.
+     * Для товаров без размеров name может быть null или пустым,
+     * но сам sizeItem должен существовать.
      */
     private boolean isValidSizeItem(WbStocksSizesResponse.SizeItem sizeItem) {
-        return sizeItem != null && sizeItem.getName() != null;
+        return sizeItem != null;
     }
 
     /**
@@ -237,11 +269,17 @@ public class ProductStocksService {
 
     /**
      * Проверяет валидность склада.
+     * Учитывает, что склады продавца могут иметь regionName="Маркетплейс" и officeName="",
+     * но officeID должен быть заполнен.
      */
     private boolean isValidOffice(WbStocksSizesResponse.OfficeStock office) {
-        return office != null
-                && office.getOfficeID() != null
-                && office.getMetrics() != null;
+        if (office == null || office.getOfficeID() == null || office.getMetrics() == null) {
+            return false;
+        }
+        
+        // Склады продавца приходят с regionName="Маркетплейс" и officeName=""
+        // Это валидные данные, их тоже нужно обрабатывать
+        return true;
     }
 
     /**
