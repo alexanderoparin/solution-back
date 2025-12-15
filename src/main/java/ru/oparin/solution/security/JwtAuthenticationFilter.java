@@ -26,8 +26,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String ROLE_PREFIX = "ROLE_";
+    private static final String HEALTH_ENDPOINT = "/health";
 
     private final JwtTokenProvider tokenProvider;
+
+    /**
+     * Определяет, должен ли фильтр обрабатывать данный запрос.
+     * Исключаем healthcheck запросы из обработки.
+     */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String requestURI = request.getRequestURI();
+        return requestURI.endsWith(HEALTH_ENDPOINT) || requestURI.endsWith(HEALTH_ENDPOINT + "/");
+    }
 
     /**
      * Обработка запроса и извлечение JWT токена из заголовка.
@@ -40,12 +51,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         String requestURI = request.getRequestURI();
-        
-        // Пропускаем healthcheck запросы без проверки токена (они не требуют аутентификации)
-        if (requestURI.endsWith("/health") || requestURI.endsWith("/health/")) {
-            filterChain.doFilter(request, response);
-            return;
-        }
         
         try {
             String jwt = extractJwtFromRequest(request);

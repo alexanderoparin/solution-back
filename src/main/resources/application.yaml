@@ -50,6 +50,8 @@ logging:
     org.springframework.web: INFO
     org.springframework.security: DEBUG
     org.springframework.security.authentication: DEBUG
+    org.springframework.security.web.FilterChainProxy: INFO
+    org.springframework.security.web.authentication.AnonymousAuthenticationFilter: INFO
     org.hibernate.SQL: INFO
     org.hibernate.type.descriptor.sql.BasicBinder: INFO
   file:
