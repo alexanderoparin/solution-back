@@ -67,14 +67,16 @@ public class UserService {
 
     /**
      * Обновление WB API ключа пользователя.
+     * Создает новую запись, если ключ еще не существует, или обновляет существующую.
      *
      * @param userId ID пользователя (SELLER)
      * @param newApiKey новый API ключ со всеми правами
-     * @throws UserException если API ключ не найден
      */
     @Transactional
     public void updateApiKey(Long userId, String newApiKey) {
-        WbApiKey apiKey = findApiKeyByUserId(userId);
+        WbApiKey apiKey = wbApiKeyRepository.findByUserId(userId)
+                .orElseGet(() -> createNewApiKey(userId));
+        
         resetApiKeyValidation(apiKey);
         apiKey.setApiKey(newApiKey);
         wbApiKeyRepository.save(apiKey);
@@ -140,15 +142,14 @@ public class UserService {
                 ));
     }
 
+
     /**
-     * Находит API ключ по ID пользователя.
+     * Создает новую запись API ключа для пользователя.
      */
-    private WbApiKey findApiKeyByUserId(Long userId) {
-        return wbApiKeyRepository.findByUserId(userId)
-                .orElseThrow(() -> new UserException(
-                        "API ключ не найден для пользователя с ID: " + userId, 
-                        HttpStatus.NOT_FOUND
-                ));
+    private WbApiKey createNewApiKey(Long userId) {
+        return WbApiKey.builder()
+                .userId(userId)
+                .build();
     }
 
     /**
