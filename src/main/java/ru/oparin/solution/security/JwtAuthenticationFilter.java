@@ -39,17 +39,25 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        String requestURI = request.getRequestURI();
+        
+        // Пропускаем healthcheck запросы без проверки токена (они не требуют аутентификации)
+        if (requestURI.endsWith("/health") || requestURI.endsWith("/health/")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+        
         try {
             String jwt = extractJwtFromRequest(request);
             
             if (isValidJwtToken(jwt)) {
                 setAuthenticationInContext(request, jwt);
             } else {
-                logger.debug("JWT токен не найден или невалиден для запроса: " + request.getMethod() + " " + request.getRequestURI());
+                logger.debug("JWT токен не найден или невалиден для запроса: " + request.getMethod() + " " + requestURI);
             }
         } catch (ExpiredJwtException ex) {
             // Истекший токен - это нормальная ситуация, логируем как debug
-            logger.debug("JWT токен истек для запроса: " + request.getMethod() + " " + request.getRequestURI());
+            logger.debug("JWT токен истек для запроса: " + request.getMethod() + " " + requestURI);
         } catch (Exception ex) {
             // Другие ошибки (невалидная подпись и т.д.) логируем как warning
             logger.warn("Не удалось установить аутентификацию пользователя в контексте безопасности: " + ex.getMessage());
