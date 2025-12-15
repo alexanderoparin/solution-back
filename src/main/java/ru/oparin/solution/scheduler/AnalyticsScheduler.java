@@ -126,6 +126,10 @@ public class AnalyticsScheduler {
         log.info("Загрузка аналитики для продавца (ID: {}, email: {})",
                 seller.getId(), seller.getEmail());
 
+        // Сохраняем время запуска автоматического обновления
+        apiKey.setLastDataUpdateAt(LocalDateTime.now());
+        wbApiKeyRepository.save(apiKey);
+
         analyticsService.updateCardsAndLoadAnalytics(
                 seller,
                 apiKey.getApiKey(),
