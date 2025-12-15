@@ -133,7 +133,7 @@ public class SecurityConfig {
                 .requestMatchers(ADMIN_ENDPOINTS).hasRole(ADMIN)
                 .requestMatchers(SELLER_ENDPOINTS).hasAnyRole(ADMIN, SELLER)
                 .requestMatchers(WORKER_ENDPOINTS).hasAnyRole(ADMIN, SELLER, WORKER)
-                .requestMatchers(ANALYTICS_ENDPOINTS).hasAnyRole(ADMIN, SELLER)
+                .requestMatchers(ANALYTICS_ENDPOINTS).hasAnyRole(ADMIN, MANAGER, SELLER)
                 .requestMatchers(USERS_MANAGEMENT_ENDPOINTS).hasAnyRole(ADMIN, MANAGER, SELLER)
                 .anyRequest().authenticated();
     }
