@@ -83,28 +83,29 @@ public class AnalyticsScheduler {
     public void updateWbWarehouses() {
         log.info("Запуск автоматического обновления складов WB");
 
+        List<User> activeSellers = findActiveSellers();
+        if (activeSellers.isEmpty()) {
+            log.warn("Не найдено активных продавцов для обновления складов WB");
+            return;
+        }
+
+        activeSellers.forEach(this::updateWarehousesForSeller);
+    }
+
+    private void updateWarehousesForSeller(User seller) {
         try {
-            // Берем API ключ первого активного продавца для запроса
-            List<User> activeSellers = findActiveSellers();
-            if (activeSellers.isEmpty()) {
-                log.warn("Не найдено активных продавцов для обновления складов WB");
-                return;
-            }
+            WbApiKey apiKey = wbApiKeyService.findByUserId(seller.getId());
 
-            activeSellers.forEach(seller -> {
-                WbApiKey apiKey = wbApiKeyService.findByUserId(seller.getId());
+            log.info("Обновление складов WB с использованием API ключа продавца (ID: {}, email: {})",
+                    seller.getId(), seller.getEmail());
 
-                log.info("Обновление складов WB с использованием API ключа продавца (ID: {}, email: {})",
-                        seller.getId(), seller.getEmail());
+            List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(apiKey.getApiKey());
+            warehouseService.saveOrUpdateWarehouses(warehouses);
 
-                List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(apiKey.getApiKey());
-                warehouseService.saveOrUpdateWarehouses(warehouses);
-
-                log.info("Завершено автоматическое обновление складов WB с использованием API ключа продавца (ID: {}, email: {})",
-                        seller.getId(), seller.getEmail());
-            });
+            log.info("Завершено автоматическое обновление складов WB с использованием API ключа продавца (ID: {}, email: {})",
+                    seller.getId(), seller.getEmail());
         } catch (Exception e) {
-            log.error("Ошибка при автоматическом обновлении складов WB: {}", e.getMessage(), e);
+            log.warn("Не удалось обновить список складов wb для селлера {}, ошибка: {}", seller.getEmail(), e.getMessage());
         }
     }
 
@@ -198,7 +199,7 @@ public class AnalyticsScheduler {
      */
     private void validateUpdateInterval(WbApiKey apiKey) {
         LocalDateTime lastUpdate = apiKey.getLastDataUpdateAt();
-        
+
         if (lastUpdate == null) {
             // Если обновление еще не запускалось, разрешаем
             return;
@@ -211,7 +212,7 @@ public class AnalyticsScheduler {
             long remainingHours = MIN_UPDATE_INTERVAL_HOURS - hoursSinceLastUpdate;
             String message = String.format(
                     "Обновление данных можно запускать не чаще одного раза в %d часов. " +
-                    "Следующее обновление будет доступно через %d %s",
+                            "Следующее обновление будет доступно через %d %s",
                     MIN_UPDATE_INTERVAL_HOURS,
                     remainingHours,
                     getHoursWord(remainingHours)
