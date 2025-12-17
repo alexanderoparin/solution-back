@@ -56,37 +56,32 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
     }
 
     private LocalDate validateAndAdjustDateFrom(String dateFrom) {
-        LocalDate fromDate = LocalDate.parse(dateFrom);
-        LocalDate today = LocalDate.now();
-        LocalDate minDate = today.minusDays(MAX_ANALYTICS_PERIOD_DAYS);
-        
-        if (fromDate.isBefore(minDate)) {
-            log.warn("Дата начала {} слишком старая, ограничиваем до {}", fromDate, minDate);
-            return minDate;
-        }
-        
-        return fromDate;
+        return LocalDate.parse(dateFrom);
     }
 
     private LocalDate validateAndAdjustDateTo(String dateTo) {
         LocalDate toDate = LocalDate.parse(dateTo);
-        LocalDate today = LocalDate.now();
+        // API позволяет получать данные максимум до вчера
+        LocalDate yesterday = LocalDate.now().minusDays(1);
         
-        if (toDate.isAfter(today)) {
-            log.warn("Дата окончания {} в будущем, ограничиваем до {}", toDate, today);
-            return today;
+        if (toDate.isAfter(yesterday)) {
+            log.warn("Дата окончания {} в будущем или сегодня, ограничиваем до вчера ({})", toDate, yesterday);
+            return yesterday;
         }
         
         return toDate;
     }
 
     private SaleFunnelHistoryRequest buildAnalyticsRequest(Long nmId, LocalDate fromDate, LocalDate toDate) {
+        // API позволяет получать данные максимум за неделю (7 дней включая обе даты)
+        // ChronoUnit.DAYS.between не включает обе даты, поэтому для 7 дней включая обе даты нужно daysBetween <= 6
         long daysBetween = ChronoUnit.DAYS.between(fromDate, toDate);
         
-        if (daysBetween > MAX_ANALYTICS_PERIOD_DAYS) {
-            log.warn("Период превышает {} дней ({} дней), ограничиваем дату начала", 
-                    MAX_ANALYTICS_PERIOD_DAYS, daysBetween);
-            fromDate = toDate.minusDays(MAX_ANALYTICS_PERIOD_DAYS);
+        if (daysBetween >= MAX_ANALYTICS_PERIOD_DAYS) {
+            log.warn("Период превышает {} дней ({} дней между датами, что означает больше {} дней включая обе даты), ограничиваем дату начала", 
+                    MAX_ANALYTICS_PERIOD_DAYS, daysBetween, MAX_ANALYTICS_PERIOD_DAYS);
+            // minusDays(6) даст 7 дней включая обе даты (например, с 1 по 7 января)
+            fromDate = toDate.minusDays(MAX_ANALYTICS_PERIOD_DAYS - 1);
         }
         
         SaleFunnelHistoryRequest.Period period = SaleFunnelHistoryRequest.Period.builder()
