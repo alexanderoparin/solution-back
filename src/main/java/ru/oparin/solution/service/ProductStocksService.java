@@ -132,8 +132,8 @@ public class ProductStocksService {
                 }
             }
         } catch (Exception e) {
-            log.error("Ошибка при сохранении остатка для nmID {}, warehouseId {}, barcode {}: {}",
-                    nmId, office.getOfficeID(), barcode, e.getMessage(), e);
+            log.error("Ошибка при сохранении остатка для nmID {}, warehouseId {}, barcode {}, amount {}: {}",
+                    nmId, office.getOfficeID(), barcode, stockCount, e.getMessage());
             statistics.incrementSkipped();
         }
     }
