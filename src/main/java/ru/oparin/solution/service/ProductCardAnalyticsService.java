@@ -558,9 +558,13 @@ public class ProductCardAnalyticsService {
         }
 
         int totalReceived = response.getCards().size();
+        Integer totalInResponse = response.getCursor() != null ? response.getCursor().getTotal() : null;
+        log.info("Первая страница: получено {} карточек, total в ответе: {}", totalReceived, totalInResponse);
 
+        int pageNumber = 1;
         // Согласно документации: повторяем, пока total >= limit (т.е. пока есть еще страницы)
         while (hasMoreCards(response, totalReceived)) {
+            pageNumber++;
             // Задержка между запросами для соблюдения лимита API (100 запросов в минуту)
             try {
                 Thread.sleep(CARDS_PAGINATION_DELAY_MS);
@@ -574,21 +578,28 @@ public class ProductCardAnalyticsService {
             CardsListResponse nextResponse = contentApiClient.getCardsList(apiKey, nextRequest);
 
             if (nextResponse.getCards() == null || nextResponse.getCards().isEmpty()) {
+                log.info("Страница {}: пустой ответ, завершаем пагинацию", pageNumber);
                 break;
             }
 
+            int cardsOnPage = nextResponse.getCards().size();
             response.getCards().addAll(nextResponse.getCards());
-            totalReceived += nextResponse.getCards().size();
+            totalReceived += cardsOnPage;
             response.setCursor(nextResponse.getCursor());
             
-            // Если total в ответе меньше limit, значит это последняя страница
-            if (nextResponse.getCursor() != null && nextResponse.getCursor().getTotal() != null 
-                    && nextResponse.getCursor().getTotal() < CARDS_PAGE_LIMIT) {
+            Integer nextTotal = nextResponse.getCursor() != null ? nextResponse.getCursor().getTotal() : null;
+            log.info("Страница {}: получено {} карточек, total в ответе: {}, всего получено: {}", 
+                    pageNumber, cardsOnPage, nextTotal, totalReceived);
+            
+            // Согласно документации: если total в ответе меньше limit, значит это последняя страница
+            if (nextTotal != null && nextTotal < CARDS_PAGE_LIMIT) {
+                log.info("Страница {}: total ({}) < limit ({}), это последняя страница", 
+                        pageNumber, nextTotal, CARDS_PAGE_LIMIT);
                 break;
             }
         }
 
-        log.info("Получено карточек всего: {}", totalReceived);
+        log.info("Пагинация завершена. Всего получено карточек: {}", totalReceived);
         return response;
     }
 
@@ -597,8 +608,14 @@ public class ProductCardAnalyticsService {
                 .limit(CARDS_PAGE_LIMIT)
                 .build();
 
+        // Согласно документации: добавляем фильтр withPhoto: -1 (все карточки)
+        CardsListRequest.Filter filter = CardsListRequest.Filter.builder()
+                .withPhoto(-1)
+                .build();
+
         CardsListRequest.Settings settings = CardsListRequest.Settings.builder()
                 .cursor(cursor)
+                .filter(filter)
                 .build();
 
         return CardsListRequest.builder()
@@ -608,24 +625,44 @@ public class ProductCardAnalyticsService {
 
     private boolean hasMoreCards(CardsListResponse response, int totalReceived) {
         if (response.getCursor() == null || response.getCursor().getTotal() == null) {
+            log.debug("hasMoreCards: cursor или total отсутствует, завершаем пагинацию");
             return false;
         }
         
-        // Согласно документации: повторяем, пока total >= limit
-        // Также проверяем, что мы получили меньше карточек, чем total
-        return response.getCursor().getTotal() >= CARDS_PAGE_LIMIT 
-                && totalReceived < response.getCursor().getTotal();
+        Integer total = response.getCursor().getTotal();
+        // Согласно документации: "повторяйте пункты 2 и 3, пока значение total в ответе не станет меньше чем значение limit в запросе"
+        // Если total >= limit, значит есть еще страницы, продолжаем пагинацию
+        boolean shouldContinue = total >= CARDS_PAGE_LIMIT;
+        
+        log.debug("hasMoreCards: total={}, limit={}, totalReceived={}, shouldContinue={}", 
+                total, CARDS_PAGE_LIMIT, totalReceived, shouldContinue);
+        
+        return shouldContinue;
     }
 
     private CardsListRequest createNextPageRequest(CardsListResponse response) {
+        if (response.getCursor() == null) {
+            throw new IllegalStateException("Cursor отсутствует в ответе для создания следующего запроса");
+        }
+        
+        CardsListResponse.Cursor cursor = response.getCursor();
+        log.debug("Создание запроса следующей страницы: nmID={}, updatedAt={}", 
+                cursor.getNmID(), cursor.getUpdatedAt());
+        
         CardsListRequest.Cursor nextCursor = CardsListRequest.Cursor.builder()
                 .limit(CARDS_PAGE_LIMIT)
-                .nmID(response.getCursor().getNmID())
-                .updatedAt(response.getCursor().getUpdatedAt())
+                .nmID(cursor.getNmID())
+                .updatedAt(cursor.getUpdatedAt())
+                .build();
+
+        // Сохраняем фильтр withPhoto: -1 для всех последующих запросов
+        CardsListRequest.Filter filter = CardsListRequest.Filter.builder()
+                .withPhoto(-1)
                 .build();
 
         CardsListRequest.Settings nextSettings = CardsListRequest.Settings.builder()
                 .cursor(nextCursor)
+                .filter(filter)
                 .build();
 
         return CardsListRequest.builder()

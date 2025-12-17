@@ -322,7 +322,7 @@ public class UserService {
                     // Проверяем наличие API ключа для селлера
                     return wbApiKeyRepository.findByUserId(seller.getId()).isPresent();
                 })
-                .collect(Collectors.toList());
+                .toList();
 
         return sellersWithApiKeys.stream()
                 .map(this::mapToUserListItemDto)
