@@ -46,6 +46,7 @@ public class PromotionCampaignStatisticsService {
         return statisticsRepository.findByCampaignAdvertIdAndDateBetween(campaignId, dateFrom, dateTo)
                 .stream()
                 .map(PromotionCampaignStatistics::getDate)
+                .distinct() // Убираем дубликаты дат (в кампании может быть несколько артикулов)
                 .collect(Collectors.toList());
     }
 

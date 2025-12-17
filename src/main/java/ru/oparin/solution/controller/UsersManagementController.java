@@ -10,7 +10,9 @@ import ru.oparin.solution.dto.CreateUserRequest;
 import ru.oparin.solution.dto.MessageResponse;
 import ru.oparin.solution.dto.UpdateUserRequest;
 import ru.oparin.solution.dto.UserListItemDto;
+import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.UserService;
 
 import java.util.List;
@@ -25,6 +27,7 @@ import java.util.List;
 public class UsersManagementController {
 
     private final UserService userService;
+    private final AnalyticsScheduler analyticsScheduler;
 
     /**
      * Получение списка пользователей, которыми может управлять текущий пользователь.
@@ -108,6 +111,58 @@ public class UsersManagementController {
         userService.toggleUserActive(userId, currentUser);
         return ResponseEntity.ok(MessageResponse.builder()
                 .message("Статус активности пользователя изменен")
+                .build());
+    }
+
+    /**
+     * Принудительный запуск обновления данных для указанного селлера.
+     * Доступно только для ADMIN и MANAGER.
+     *
+     * @param sellerId ID селлера
+     * @param authentication данные аутентификации
+     * @return сообщение об успешном запуске обновления
+     */
+    @PostMapping("/{sellerId}/trigger-update")
+    public ResponseEntity<MessageResponse> triggerSellerDataUpdate(
+            @PathVariable Long sellerId,
+            Authentication authentication
+    ) {
+        User currentUser = getCurrentUser(authentication);
+        
+        // Проверяем права доступа
+        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(MessageResponse.builder()
+                            .message("Недостаточно прав для выполнения операции")
+                            .build());
+        }
+        
+        // Получаем селлера
+        User seller = userService.findById(sellerId);
+        
+        // Проверяем, что это селлер
+        if (seller.getRole() != Role.SELLER) {
+            return ResponseEntity.badRequest()
+                    .body(MessageResponse.builder()
+                            .message("Указанный пользователь не является селлером")
+                            .build());
+        }
+        
+        // Для менеджера проверяем, что селлер принадлежит ему
+        if (currentUser.getRole() == Role.MANAGER && 
+            (seller.getOwner() == null || !seller.getOwner().getId().equals(currentUser.getId()))) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(MessageResponse.builder()
+                            .message("У вас нет доступа к данному селлеру")
+                            .build());
+        }
+        
+        // Запускаем обновление асинхронно
+        analyticsScheduler.triggerManualUpdate(seller);
+        
+        return ResponseEntity.ok(MessageResponse.builder()
+                .message("Обновление данных запущено. Процесс выполняется в фоновом режиме. " +
+                        "Данные будут доступны через несколько минут.")
                 .build());
     }
 

@@ -40,7 +40,7 @@ public class AnalyticsScheduler {
     /**
      * Автоматическая загрузка аналитики для всех активных продавцов.
      * Запускается каждый день в 01:30 ночи.
-     * Период: последняя неделя (без текущих суток).
+     * Период: последние 14 дней (без текущих суток).
      */
     @Scheduled(cron = "0 30 1 * * ?")
     public void loadAnalyticsForAllActiveSellers() {
@@ -54,7 +54,7 @@ public class AnalyticsScheduler {
             return;
         }
 
-        DateRange period = calculateLastWeekPeriod();
+        DateRange period = calculateLastTwoWeeksPeriod();
         log.info("Период для загрузки аналитики: {} - {}", period.from(), period.to());
 
         int successCount = 0;
@@ -113,12 +113,12 @@ public class AnalyticsScheduler {
         return userRepository.findByRoleAndIsActive(Role.SELLER, true);
     }
 
-    private DateRange calculateLastWeekPeriod() {
+    private DateRange calculateLastTwoWeeksPeriod() {
         LocalDate today = LocalDate.now();
         LocalDate yesterday = today.minusDays(1);
-        LocalDate weekAgo = yesterday.minusDays(6);
+        LocalDate twoWeeksAgo = yesterday.minusDays(13);
 
-        return new DateRange(weekAgo, yesterday);
+        return new DateRange(twoWeeksAgo, yesterday);
     }
 
     private void processSellerAnalytics(User seller, DateRange period) {
@@ -168,7 +168,7 @@ public class AnalyticsScheduler {
             apiKey.setLastDataUpdateAt(now);
             wbApiKeyRepository.save(apiKey);
 
-            DateRange period = calculateLastWeekPeriod();
+            DateRange period = calculateLastTwoWeeksPeriod();
 
             // Запускаем обновление асинхронно (вне транзакции)
             analyticsService.updateCardsAndLoadAnalytics(

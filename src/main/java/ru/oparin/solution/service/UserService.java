@@ -92,7 +92,7 @@ public class UserService {
      */
     @Transactional
     public void changePassword(Long userId, String currentPassword, String newPassword) {
-        User user = findUserById(userId);
+        User user = findById(userId);
         validateCurrentPassword(user, currentPassword);
         validateNewPasswordDifferent(user, newPassword);
         
@@ -134,7 +134,7 @@ public class UserService {
     /**
      * Находит пользователя по ID.
      */
-    private User findUserById(Long userId) {
+    public User findById(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new UserException(
                         "Пользователь не найден с ID: " + userId,
@@ -224,7 +224,7 @@ public class UserService {
      */
     @Transactional
     public User updateUser(Long userId, UpdateUserRequest request, User currentUser) {
-        User userToUpdate = findUserById(userId);
+        User userToUpdate = findById(userId);
         validateCanManageUser(currentUser, userToUpdate);
 
         // Проверяем, что email не занят другим пользователем
@@ -250,7 +250,7 @@ public class UserService {
      */
     @Transactional
     public User toggleUserActive(Long userId, User currentUser) {
-        User userToUpdate = findUserById(userId);
+        User userToUpdate = findById(userId);
         validateCanManageUser(currentUser, userToUpdate);
 
         userToUpdate.setIsActive(!userToUpdate.getIsActive());
