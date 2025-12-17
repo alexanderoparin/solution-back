@@ -51,6 +51,7 @@ public class ProductCardAnalyticsService {
     private static final int STATISTICS_API_CALL_DELAY_MS = 20000; // 20 секунд для статистики (лимит: 3 запроса в минуту)
     private static final int AUCTION_ADVERTS_DELAY_MS = 200; // 200 мс между запросами аукционных кампаний (лимит: 5 запросов в секунду)
     private static final int CARDS_PAGE_LIMIT = 100;
+    private static final int CARDS_PAGINATION_DELAY_MS = 700; // 700 мс между запросами пагинации карточек (лимит: 100 запросов в минуту, минимум 600 мс)
     private static final int PRICES_API_CALL_DELAY_MS = 600; // 600 мс между запросами цен (лимит: 10 запросов за 6 секунд)
     private static final int PRICES_BATCH_SIZE = 1000; // Максимум товаров за один запрос
 
@@ -551,8 +552,24 @@ public class ProductCardAnalyticsService {
     private CardsListResponse fetchAllCards(String apiKey) {
         CardsListRequest initialRequest = createInitialCardsRequest();
         CardsListResponse response = contentApiClient.getCardsList(apiKey, initialRequest);
+        
+        if (response.getCards() == null) {
+            response.setCards(new ArrayList<>());
+        }
 
-        while (hasMoreCards(response)) {
+        int totalReceived = response.getCards().size();
+
+        // Согласно документации: повторяем, пока total >= limit (т.е. пока есть еще страницы)
+        while (hasMoreCards(response, totalReceived)) {
+            // Задержка между запросами для соблюдения лимита API (100 запросов в минуту)
+            try {
+                Thread.sleep(CARDS_PAGINATION_DELAY_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Прервана задержка между запросами пагинации карточек");
+                break;
+            }
+            
             CardsListRequest nextRequest = createNextPageRequest(response);
             CardsListResponse nextResponse = contentApiClient.getCardsList(apiKey, nextRequest);
 
@@ -561,9 +578,17 @@ public class ProductCardAnalyticsService {
             }
 
             response.getCards().addAll(nextResponse.getCards());
+            totalReceived += nextResponse.getCards().size();
             response.setCursor(nextResponse.getCursor());
+            
+            // Если total в ответе меньше limit, значит это последняя страница
+            if (nextResponse.getCursor() != null && nextResponse.getCursor().getTotal() != null 
+                    && nextResponse.getCursor().getTotal() < CARDS_PAGE_LIMIT) {
+                break;
+            }
         }
 
+        log.info("Получено карточек всего: {}", totalReceived);
         return response;
     }
 
@@ -581,10 +606,15 @@ public class ProductCardAnalyticsService {
                 .build();
     }
 
-    private boolean hasMoreCards(CardsListResponse response) {
-        return response.getCursor() != null 
-                && response.getCards() != null 
-                && response.getCards().size() < response.getCursor().getTotal();
+    private boolean hasMoreCards(CardsListResponse response, int totalReceived) {
+        if (response.getCursor() == null || response.getCursor().getTotal() == null) {
+            return false;
+        }
+        
+        // Согласно документации: повторяем, пока total >= limit
+        // Также проверяем, что мы получили меньше карточек, чем total
+        return response.getCursor().getTotal() >= CARDS_PAGE_LIMIT 
+                && totalReceived < response.getCursor().getTotal();
     }
 
     private CardsListRequest createNextPageRequest(CardsListResponse response) {

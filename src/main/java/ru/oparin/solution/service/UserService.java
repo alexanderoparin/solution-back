@@ -17,8 +17,10 @@ import ru.oparin.solution.model.WbApiKey;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.repository.WbApiKeyRepository;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -398,6 +400,15 @@ public class UserService {
      * Преобразует User в UserListItemDto.
      */
     private UserListItemDto mapToUserListItemDto(User user) {
+        // Получаем lastDataUpdateAt из API ключа, если это селлер
+        LocalDateTime lastDataUpdateAt = null;
+        if (user.getRole() == Role.SELLER) {
+            Optional<WbApiKey> apiKey = wbApiKeyRepository.findByUserId(user.getId());
+            if (apiKey.isPresent() && apiKey.get().getLastDataUpdateAt() != null) {
+                lastDataUpdateAt = apiKey.get().getLastDataUpdateAt();
+            }
+        }
+        
         return UserListItemDto.builder()
                 .id(user.getId())
                 .email(user.getEmail())
@@ -406,6 +417,7 @@ public class UserService {
                 .isTemporaryPassword(user.getIsTemporaryPassword())
                 .createdAt(user.getCreatedAt())
                 .ownerEmail(user.getOwner() != null ? user.getOwner().getEmail() : null)
+                .lastDataUpdateAt(lastDataUpdateAt)
                 .build();
     }
 }

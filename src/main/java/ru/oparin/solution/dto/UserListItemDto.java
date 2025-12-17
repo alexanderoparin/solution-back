@@ -53,5 +53,10 @@ public class UserListItemDto {
      * Email владельца (если есть).
      */
     private String ownerEmail;
+
+    /**
+     * Дата последнего обновления данных (для селлеров).
+     */
+    private LocalDateTime lastDataUpdateAt;
 }
 
