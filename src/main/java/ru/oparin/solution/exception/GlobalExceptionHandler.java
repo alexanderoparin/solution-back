@@ -1,5 +1,6 @@
 package ru.oparin.solution.exception;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -15,6 +16,7 @@ import java.util.Map;
  * Глобальный обработчик исключений.
  */
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     /**
@@ -55,6 +57,19 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Обработка IllegalArgumentException (некорректные аргументы).
+     *
+     * @param ex исключение
+     * @return ответ с ошибкой
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgumentException(IllegalArgumentException ex) {
+        log.warn("Некорректный аргумент: {}", ex.getMessage(), ex);
+        ErrorResponse error = createErrorResponse(ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
+
+    /**
      * Обработка общих исключений.
      *
      * @param ex исключение
@@ -62,6 +77,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception ex) {
+        log.error("Внутренняя ошибка сервера", ex);
         ErrorResponse error = createErrorResponse("Внутренняя ошибка сервера");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
     }
