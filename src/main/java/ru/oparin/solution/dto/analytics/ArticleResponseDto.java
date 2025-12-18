@@ -42,5 +42,10 @@ public class ArticleResponseDto {
      * Список рекламных кампаний, в которых участвует артикул.
      */
     private List<CampaignDto> campaigns;
+    
+    /**
+     * Остатки товара на складах на текущий момент.
+     */
+    private List<StockDto> stocks;
 }
 

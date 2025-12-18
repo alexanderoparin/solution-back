@@ -11,8 +11,10 @@ import ru.oparin.solution.repository.CampaignArticleRepository;
 import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.ProductPriceHistoryRepository;
+import ru.oparin.solution.repository.ProductStockRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
 import ru.oparin.solution.repository.PromotionCampaignStatisticsRepository;
+import ru.oparin.solution.repository.WbWarehouseRepository;
 import ru.oparin.solution.model.CampaignArticle;
 import ru.oparin.solution.model.CampaignStatus;
 import ru.oparin.solution.model.ProductCardAnalytics;
@@ -47,6 +49,8 @@ public class AnalyticsService {
     private final CampaignArticleRepository campaignArticleRepository;
     private final PromotionCampaignStatisticsRepository campaignStatisticsRepository;
     private final ProductPriceHistoryRepository priceHistoryRepository;
+    private final ProductStockRepository stockRepository;
+    private final WbWarehouseRepository warehouseRepository;
     private final FunnelMetricsCalculator funnelMetricsCalculator;
     private final AdvertisingMetricsCalculator advertisingMetricsCalculator;
     private final MetricValueCalculator metricValueCalculator;
@@ -286,6 +290,7 @@ public class AnalyticsService {
                 .metrics(calculateAllMetrics(card, periods, seller.getId()))
                 .dailyData(getDailyData(nmId))
                 .campaigns(getCampaigns(nmId))
+                .stocks(getStocks(nmId))
                 .build();
     }
 
@@ -457,8 +462,6 @@ public class AnalyticsService {
         
         // Получаем рекламные данные
         List<PromotionCampaignStatistics> advertisingData = campaignStatisticsRepository.findByNmIdAndDateBetween(nmId, startDate, endDate);
-        log.debug("Найдено {} записей рекламной статистики для nmId {} за период {} - {}",
-                advertisingData.size(), nmId, startDate, endDate);
         
         // Получаем данные ценообразования
         List<ProductPriceHistory> priceData = priceHistoryRepository.findByNmIdAndDateBetween(nmId, startDate, endDate);
@@ -649,6 +652,74 @@ public class AnalyticsService {
                         .createdAt(c.getCreateTime())
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Получает остатки товара на складах.
+     */
+    private List<StockDto> getStocks(Long nmId) {
+        // Получаем все остатки для артикула
+        List<ru.oparin.solution.model.ProductStock> stocks = stockRepository.findByNmId(nmId);
+        
+        if (stocks.isEmpty()) {
+            return Collections.emptyList();
+        }
+        
+        // Группируем по складам и суммируем количество
+        Map<Long, StockAggregate> stockByWarehouse = stocks.stream()
+                .collect(Collectors.groupingBy(
+                        ru.oparin.solution.model.ProductStock::getWarehouseId,
+                        Collectors.collectingAndThen(
+                                Collectors.toList(),
+                                stockList -> {
+                                    int totalAmount = stockList.stream()
+                                            .mapToInt(ru.oparin.solution.model.ProductStock::getAmount)
+                                            .sum();
+                                    java.time.LocalDateTime latestUpdate = stockList.stream()
+                                            .map(ru.oparin.solution.model.ProductStock::getUpdatedAt)
+                                            .max(java.time.LocalDateTime::compareTo)
+                                            .orElse(null);
+                                    return new StockAggregate(totalAmount, latestUpdate);
+                                }
+                        )
+                ));
+        
+        // Получаем названия складов
+        Map<Long, String> warehouseNames = warehouseRepository.findAll().stream()
+                .collect(Collectors.toMap(
+                        w -> Long.valueOf(w.getId()),
+                        ru.oparin.solution.model.WbWarehouse::getName,
+                        (existing, replacement) -> existing
+                ));
+        
+        // Формируем список DTO
+        return stockByWarehouse.entrySet().stream()
+                .map(entry -> {
+                    Long warehouseId = entry.getKey();
+                    StockAggregate aggregate = entry.getValue();
+                    String warehouseName = warehouseNames.getOrDefault(warehouseId, "Склад " + warehouseId);
+                    
+                    return StockDto.builder()
+                            .warehouseName(warehouseName)
+                            .amount(aggregate.totalAmount)
+                            .updatedAt(aggregate.latestUpdate)
+                            .build();
+                })
+                .sorted((a, b) -> b.getAmount().compareTo(a.getAmount())) // Сортируем по убыванию количества
+                .collect(Collectors.toList());
+    }
+    
+    /**
+     * Вспомогательный класс для агрегации остатков по складу.
+     */
+    private static class StockAggregate {
+        final int totalAmount;
+        final java.time.LocalDateTime latestUpdate;
+        
+        StockAggregate(int totalAmount, java.time.LocalDateTime latestUpdate) {
+            this.totalAmount = totalAmount;
+            this.latestUpdate = latestUpdate;
+        }
     }
 
     private ProductCard findCardBySeller(Long nmId, Long sellerId) {
