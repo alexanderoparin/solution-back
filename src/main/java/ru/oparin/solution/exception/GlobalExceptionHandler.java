@@ -52,6 +52,21 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuthenticationException(
             org.springframework.security.core.AuthenticationException ex) {
+        log.warn("Ошибка аутентификации: {}", ex.getMessage());
+        ErrorResponse error = createErrorResponse("Неверный email или пароль");
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
+    }
+
+    /**
+     * Обработка BadCredentialsException (неверный пароль).
+     *
+     * @param ex исключение
+     * @return ответ с ошибкой
+     */
+    @ExceptionHandler(org.springframework.security.authentication.BadCredentialsException.class)
+    public ResponseEntity<ErrorResponse> handleBadCredentialsException(
+            org.springframework.security.authentication.BadCredentialsException ex) {
+        log.warn("Неверные учетные данные: {}", ex.getMessage());
         ErrorResponse error = createErrorResponse("Неверный email или пароль");
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
     }
