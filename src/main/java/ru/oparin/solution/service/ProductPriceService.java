@@ -146,11 +146,10 @@ public class ProductPriceService {
                     .price(size.getPrice())
                     .discountedPrice(size.getDiscountedPrice())
                     .clubDiscountedPrice(size.getClubDiscountedPrice())
-                    .sppPrice(size.getSppPrice())
                     .discount(good.getDiscount())
                     .clubDiscount(good.getClubDiscount())
+                    .sppDiscount(null) // TODO: будет заполняться из API, когда пользователь укажет источник
                     .editableSizePrice(good.getEditableSizePrice())
-                    .isBadTurnover(good.getIsBadTurnover())
                     .build();
     }
 
@@ -166,6 +165,44 @@ public class ProductPriceService {
      */
     public List<ProductPriceHistory> getPricesByNmIdsAndDate(List<Long> nmIds, LocalDate date) {
         return priceHistoryRepository.findByNmIdInAndDate(nmIds, date);
+    }
+
+    /**
+     * Обновляет поле sppDiscount для записей цен за указанную дату на основе данных из заказов.
+     * 
+     * @param sppByNmId Map, где ключ - nmId, значение - spp (скидка СПП в процентах)
+     * @param date дата, за которую нужно обновить цены
+     */
+    @Transactional
+    public void updateSppDiscount(java.util.Map<Long, Integer> sppByNmId, LocalDate date) {
+        if (sppByNmId == null || sppByNmId.isEmpty()) {
+            log.warn("Нет данных СПП для обновления за дату {}", date);
+            return;
+        }
+
+        int updatedCount = 0;
+        for (java.util.Map.Entry<Long, Integer> entry : sppByNmId.entrySet()) {
+            Long nmId = entry.getKey();
+            Integer sppDiscount = entry.getValue();
+
+            if (nmId == null || sppDiscount == null) {
+                continue;
+            }
+
+            List<ProductPriceHistory> prices = priceHistoryRepository.findByNmIdAndDate(nmId, date);
+            for (ProductPriceHistory price : prices) {
+                price.setSppDiscount(sppDiscount);
+                updatedCount++;
+            }
+        }
+
+        if (updatedCount > 0) {
+            // Сохраняем все изменения
+            priceHistoryRepository.flush();
+            log.info("Обновлено записей цен с СПП за дату {}: {}", date, updatedCount);
+        } else {
+            log.warn("Не найдено записей цен для обновления СПП за дату {}", date);
+        }
     }
 }
 

@@ -75,17 +75,17 @@ public class ProductPriceHistory {
     private BigDecimal clubDiscountedPrice;
 
     /**
-     * Цена с СПП (Скидка постоянного покупателя) в рублях.
-     * СПП - это скидка, которую дает сам Wildberries постоянным покупателям.
-     */
-    @Column(name = "spp_price", precision = 10, scale = 2)
-    private BigDecimal sppPrice;
-
-    /**
      * Скидка продавца (%).
      */
     @Column(name = "discount", nullable = false)
     private Integer discount;
+
+    /**
+     * Скидка СПП (Скидка постоянного покупателя) в процентах.
+     * СПП - это скидка, которую дает сам Wildberries постоянным покупателям.
+     */
+    @Column(name = "spp_discount")
+    private Integer sppDiscount;
 
     /**
      * Скидка WB Клуба (%).
@@ -98,12 +98,6 @@ public class ProductPriceHistory {
      */
     @Column(name = "editable_size_price")
     private Boolean editableSizePrice;
-
-    /**
-     * Плохой оборот товара.
-     */
-    @Column(name = "is_bad_turnover")
-    private Boolean isBadTurnover;
 
     /**
      * Дата создания записи в БД.

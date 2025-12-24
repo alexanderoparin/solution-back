@@ -550,18 +550,20 @@ public class AnalyticsService {
                         
                         // Расчет СПП (Скидка постоянного покупателя)
                         // СПП - это скидка, которую дает сам Wildberries постоянным покупателям
-                        if (price.getSppPrice() != null) {
-                            builder.priceWithSpp(price.getSppPrice());
+                        if (price.getSppDiscount() != null && price.getClubDiscountedPrice() != null) {
+                            // СПП (%) берем напрямую из БД
+                            BigDecimal sppPercent = BigDecimal.valueOf(price.getSppDiscount());
+                            builder.sppPercent(sppPercent);
                             
-                            // СПП (руб) = Цена со скидкой WB Клуба - Цена с СПП
-                            if (price.getClubDiscountedPrice() != null && price.getSppPrice() != null) {
-                                BigDecimal sppAmount = price.getClubDiscountedPrice().subtract(price.getSppPrice());
-                                builder.sppAmount(sppAmount);
-                                
-                                // СПП (%) = (СПП руб / Цена со скидкой WB Клуба) * 100
-                                BigDecimal sppPercent = MathUtils.calculatePercentage(sppAmount, price.getClubDiscountedPrice());
-                                builder.sppPercent(sppPercent);
-                            }
+                            // СПП (руб) = (Цена со скидкой WB Клуба * СПП %) / 100
+                            BigDecimal sppAmount = price.getClubDiscountedPrice()
+                                    .multiply(sppPercent)
+                                    .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+                            builder.sppAmount(sppAmount);
+                            
+                            // Цена с СПП = Цена со скидкой WB Клуба - СПП (руб)
+                            BigDecimal priceWithSpp = price.getClubDiscountedPrice().subtract(sppAmount);
+                            builder.priceWithSpp(priceWithSpp);
                         }
                     }
                     

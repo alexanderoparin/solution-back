@@ -5,13 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.oparin.solution.dto.wb.CardsListRequest;
-import ru.oparin.solution.dto.wb.CardsListResponse;
-import ru.oparin.solution.dto.wb.PromotionAdvertsResponse;
-import ru.oparin.solution.dto.wb.PromotionCountResponse;
-import ru.oparin.solution.dto.wb.PromotionFullStatsRequest;
-import ru.oparin.solution.dto.wb.PromotionFullStatsResponse;
-import ru.oparin.solution.dto.wb.SaleFunnelResponse;
+import ru.oparin.solution.dto.wb.*;
 import ru.oparin.solution.model.CampaignStatus;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.ProductCardAnalytics;
@@ -21,19 +15,17 @@ import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
-import ru.oparin.solution.service.wb.WbAnalyticsApiClient;
-import ru.oparin.solution.service.wb.WbContentApiClient;
-import ru.oparin.solution.service.wb.WbPromotionApiClient;
-import ru.oparin.solution.service.wb.WbProductsApiClient;
-import ru.oparin.solution.dto.wb.ProductPricesRequest;
-import ru.oparin.solution.dto.wb.ProductPricesResponse;
+import ru.oparin.solution.service.wb.*;
 import ru.oparin.solution.service.ProductStocksService;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -67,6 +59,7 @@ public class ProductCardAnalyticsService {
     private final WbProductsApiClient productsApiClient;
     private final ProductPriceService productPriceService;
     private final ProductStocksService stocksService;
+    private final WbOrdersApiClient ordersApiClient;
 
     /**
      * Обновляет все карточки и загружает аналитику за указанный период.
@@ -84,6 +77,9 @@ public class ProductCardAnalyticsService {
 
         // Загрузка цен товаров за вчерашнюю дату
         updateProductPrices(seller, apiKey);
+
+        // Обновление СПП (скидка постоянного покупателя) из заказов
+        updateSppFromOrders(seller, apiKey);
 
         // Обновление остатков товаров
         updateProductStocks(seller, apiKey);
@@ -125,7 +121,7 @@ public class ProductCardAnalyticsService {
             // Разделяем кампании по типам (8 и 9)
             CampaignIdsByType campaignsByType = separateCampaignsByType(countResponse);
             
-            List<Long> allCampaignIds = new java.util.ArrayList<>();
+            List<Long> allCampaignIds = new ArrayList<>();
             allCampaignIds.addAll(campaignsByType.type8Ids());
             allCampaignIds.addAll(campaignsByType.type9Ids());
             
@@ -140,19 +136,19 @@ public class ProductCardAnalyticsService {
                     campaignsByType.type8Ids().size(), campaignsByType.type9Ids().size());
 
             // Получаем детальную информацию о кампаниях типа 8 (Автоматическая РК)
-            List<PromotionAdvertsResponse.Campaign> type8Campaigns = new java.util.ArrayList<>();
+            List<PromotionAdvertsResponse.Campaign> type8Campaigns = new ArrayList<>();
             if (!campaignsByType.type8Ids().isEmpty()) {
                 type8Campaigns = fetchCampaignsInBatches(apiKey, campaignsByType.type8Ids(), 8);
             }
 
             // Получаем детальную информацию о кампаниях типа 9 (Аукцион)
-            List<PromotionAdvertsResponse.Campaign> type9Campaigns = new java.util.ArrayList<>();
+            List<PromotionAdvertsResponse.Campaign> type9Campaigns = new ArrayList<>();
             if (!campaignsByType.type9Ids().isEmpty()) {
                 type9Campaigns = fetchAuctionCampaignsInBatches(apiKey, campaignsByType.type9Ids());
             }
 
             // Объединяем все кампании
-            List<PromotionAdvertsResponse.Campaign> allCampaigns = new java.util.ArrayList<>();
+            List<PromotionAdvertsResponse.Campaign> allCampaigns = new ArrayList<>();
             allCampaigns.addAll(type8Campaigns);
             allCampaigns.addAll(type9Campaigns);
 
@@ -253,7 +249,7 @@ public class ProductCardAnalyticsService {
             LocalDate dateFrom,
             LocalDate dateTo
     ) {
-        List<PromotionFullStatsResponse.CampaignStats> allStats = new java.util.ArrayList<>();
+        List<PromotionFullStatsResponse.CampaignStats> allStats = new ArrayList<>();
         int batchSize = 100; // Максимум 100 кампаний согласно документации
         int totalBatches = (campaignIds.size() + batchSize - 1) / batchSize;
 
@@ -392,7 +388,7 @@ public class ProductCardAnalyticsService {
             LocalDate dateFrom,
             LocalDate dateTo
     ) {
-        List<Long> campaignsToFetch = new java.util.ArrayList<>();
+        List<Long> campaignsToFetch = new ArrayList<>();
         long totalDays = calculateTotalDays(dateFrom, dateTo);
 
         for (Long campaignId : campaignIds) {
@@ -427,8 +423,8 @@ public class ProductCardAnalyticsService {
      * Фильтрует только кампании со статусами 7 (Завершена), 9 (Активна), 11 (Пауза).
      */
     private CampaignIdsByType separateCampaignsByType(PromotionCountResponse countResponse) {
-        List<Long> type8Ids = new java.util.ArrayList<>();
-        List<Long> type9Ids = new java.util.ArrayList<>();
+        List<Long> type8Ids = new ArrayList<>();
+        List<Long> type9Ids = new ArrayList<>();
         
         if (countResponse == null || countResponse.getAdverts() == null) {
             return new CampaignIdsByType(type8Ids, type9Ids);
@@ -474,7 +470,7 @@ public class ProductCardAnalyticsService {
      * @return список всех кампаний
      */
     private List<PromotionAdvertsResponse.Campaign> fetchCampaignsInBatches(String apiKey, List<Long> campaignIds, int campaignType) {
-        List<PromotionAdvertsResponse.Campaign> allCampaigns = new java.util.ArrayList<>();
+            List<PromotionAdvertsResponse.Campaign> allCampaigns = new ArrayList<>();
         int batchSize = 50;
         int totalBatches = (campaignIds.size() + batchSize - 1) / batchSize;
 
@@ -504,7 +500,7 @@ public class ProductCardAnalyticsService {
     }
     
     private List<PromotionAdvertsResponse.Campaign> fetchAuctionCampaignsInBatches(String apiKey, List<Long> campaignIds) {
-        List<PromotionAdvertsResponse.Campaign> allCampaigns = new java.util.ArrayList<>();
+            List<PromotionAdvertsResponse.Campaign> allCampaigns = new ArrayList<>();
         int batchSize = 50; // Максимум 50 ID за запрос согласно документации API
         int totalBatches = (campaignIds.size() + batchSize - 1) / batchSize;
 
@@ -518,11 +514,11 @@ public class ProductCardAnalyticsService {
 
             try {
                 log.info("Загрузка батча {}/{}: {} аукционных кампаний", currentBatch, totalBatches, batch.size());
-                ru.oparin.solution.dto.wb.AuctionAdvertsResponse batchResponse = promotionApiClient.getAuctionAdverts(apiKey, batch);
+                AuctionAdvertsResponse batchResponse = promotionApiClient.getAuctionAdverts(apiKey, batch);
 
                 if (batchResponse != null && batchResponse.getAdverts() != null) {
                     // Конвертируем аукционные кампании в формат PromotionAdvertsResponse.Campaign
-                    for (ru.oparin.solution.dto.wb.AuctionAdvertsResponse.AuctionCampaign auctionCampaign : batchResponse.getAdverts()) {
+                    for (AuctionAdvertsResponse.AuctionCampaign auctionCampaign : batchResponse.getAdverts()) {
                         PromotionAdvertsResponse.Campaign campaign = promotionApiClient.convertAuctionToPromotionCampaign(auctionCampaign);
                         if (campaign != null) {
                             allCampaigns.add(campaign);
@@ -845,7 +841,7 @@ public class ProductCardAnalyticsService {
      * Сохраняет батч аналитики в отдельной транзакции.
      */
     @Transactional
-    private SaveBatchResult saveAnalyticsBatch(List<AnalyticsSaveItem> items) {
+    protected SaveBatchResult saveAnalyticsBatch(List<AnalyticsSaveItem> items) {
         int savedCount = 0;
         int updatedCount = 0;
 
@@ -1060,6 +1056,75 @@ public class ProductCardAnalyticsService {
 
         } catch (Exception e) {
             log.error("Ошибка при загрузке цен товаров для продавца (ID: {}, email: {}): {}", 
+                    seller.getId(), seller.getEmail(), e.getMessage(), e);
+            // Не прерываем выполнение, продолжаем загрузку аналитики
+        }
+    }
+
+    /**
+     * Обновляет СПП (скидка постоянного покупателя) из заказов за вчерашнюю дату.
+     * Получает заказы, собирает Map nmId -> spp и обновляет поле sppDiscount в product_price_history.
+     */
+    private void updateSppFromOrders(User seller, String apiKey) {
+        try {
+            LocalDate yesterdayDate = LocalDate.now().minusDays(1);
+            log.info("Начало обновления СПП из заказов за дату {} для продавца (ID: {}, email: {})", 
+                    yesterdayDate, seller.getId(), seller.getEmail());
+
+            // Получаем заказы за вчерашнюю дату (flag=1 - только реализованные)
+            List<OrdersResponse.Order> orders = ordersApiClient.getOrders(apiKey, yesterdayDate, 1);
+
+            if (orders == null || orders.isEmpty()) {
+                log.info("Не найдено заказов за дату {} для продавца (ID: {}, email: {}). Пропускаем обновление СПП.", 
+                        yesterdayDate, seller.getId(), seller.getEmail());
+                return;
+            }
+
+            log.info("Получено заказов за дату {}: {} для продавца (ID: {}, email: {})", 
+                    yesterdayDate, orders.size(), seller.getId(), seller.getEmail());
+
+            // Собираем Map: nmId -> spp
+            // СПП для всех покупателей для одного товара на дату должен быть одинаковый
+            Map<Long, Integer> sppByNmId = new HashMap<>();
+            Map<Long, Set<Integer>> sppValuesByNmId = new HashMap<>(); // Для проверки различий
+            
+            for (OrdersResponse.Order order : orders) {
+                if (order.getNmId() != null && order.getSpp() != null) {
+                    Long nmId = order.getNmId();
+                    Integer spp = order.getSpp();
+                    
+                    // Сохраняем все уникальные значения для проверки
+                    sppValuesByNmId.computeIfAbsent(nmId, k -> new HashSet<>()).add(spp);
+                    
+                    // Перезаписываем значение (должно быть одинаковое для всех заказов одного товара)
+                    sppByNmId.put(nmId, spp);
+                }
+            }
+            
+            // Проверяем, есть ли товары с разными значениями СПП
+            for (Map.Entry<Long, Set<Integer>> entry : sppValuesByNmId.entrySet()) {
+                if (entry.getValue().size() > 1) {
+                    log.warn("Обнаружены разные значения СПП для товара nmId={} за дату {}: {}. Используется последнее значение: {}", 
+                            entry.getKey(), yesterdayDate, entry.getValue(), sppByNmId.get(entry.getKey()));
+                }
+            }
+
+            if (sppByNmId.isEmpty()) {
+                log.warn("Не найдено валидных данных СПП в заказах за дату {} для продавца (ID: {}, email: {})", 
+                        yesterdayDate, seller.getId(), seller.getEmail());
+                return;
+            }
+
+            log.info("Найдено {} уникальных артикулов с данными СПП для обновления", sppByNmId.size());
+
+            // Обновляем sppDiscount в product_price_history
+            productPriceService.updateSppDiscount(sppByNmId, yesterdayDate);
+
+            log.info("Завершено обновление СПП из заказов за дату {} для продавца (ID: {}, email: {})", 
+                    yesterdayDate, seller.getId(), seller.getEmail());
+
+        } catch (Exception e) {
+            log.error("Ошибка при обновлении СПП из заказов для продавца (ID: {}, email: {}): {}", 
                     seller.getId(), seller.getEmail(), e.getMessage(), e);
             // Не прерываем выполнение, продолжаем загрузку аналитики
         }
