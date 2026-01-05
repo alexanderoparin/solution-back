@@ -11,6 +11,7 @@ import ru.oparin.solution.repository.CampaignArticleRepository;
 import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.ProductPriceHistoryRepository;
+import ru.oparin.solution.repository.ProductBarcodeRepository;
 import ru.oparin.solution.repository.ProductStockRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
 import ru.oparin.solution.repository.PromotionCampaignStatisticsRepository;
@@ -50,6 +51,7 @@ public class AnalyticsService {
     private final PromotionCampaignStatisticsRepository campaignStatisticsRepository;
     private final ProductPriceHistoryRepository priceHistoryRepository;
     private final ProductStockRepository stockRepository;
+    private final ProductBarcodeRepository barcodeRepository;
     private final WbWarehouseRepository warehouseRepository;
     private final FunnelMetricsCalculator funnelMetricsCalculator;
     private final AdvertisingMetricsCalculator advertisingMetricsCalculator;
@@ -712,6 +714,89 @@ public class AnalyticsService {
     }
     
     /**
+     * Получает детализацию остатков по размерам для товара на конкретном складе.
+     *
+     * @param nmId артикул товара
+     * @param warehouseName название склада
+     * @return список остатков по размерам
+     */
+    public List<StockSizeDto> getStockSizes(Long nmId, String warehouseName) {
+        // Находим ID склада по названию
+        Long warehouseId = warehouseRepository.findAll().stream()
+                .filter(w -> w.getName().equals(warehouseName))
+                .map(w -> Long.valueOf(w.getId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Склад не найден: " + warehouseName));
+        
+        // Получаем все остатки для товара на этом складе
+        List<ru.oparin.solution.model.ProductStock> stocks = stockRepository.findByNmIdAndWarehouseId(nmId, warehouseId);
+        
+        if (stocks.isEmpty()) {
+            return Collections.emptyList();
+        }
+        
+        // Получаем информацию о баркодах для этого товара
+        Map<String, ru.oparin.solution.model.ProductBarcode> barcodeMap = barcodeRepository.findByNmId(nmId).stream()
+                .collect(Collectors.toMap(
+                        ru.oparin.solution.model.ProductBarcode::getBarcode,
+                        b -> b,
+                        (existing, replacement) -> existing
+                ));
+        
+        // Группируем остатки по размерам
+        Map<String, StockSizeAggregate> sizeMap = new HashMap<>();
+        
+        for (ru.oparin.solution.model.ProductStock stock : stocks) {
+            ru.oparin.solution.model.ProductBarcode barcode = barcodeMap.get(stock.getBarcode());
+            if (barcode == null) {
+                continue;
+            }
+            
+            // Используем wbSize, если есть, иначе techSize
+            String sizeKey = barcode.getWbSize() != null && !barcode.getWbSize().isEmpty()
+                    ? barcode.getWbSize()
+                    : (barcode.getTechSize() != null ? barcode.getTechSize() : "Неизвестно");
+            
+            sizeMap.compute(sizeKey, (key, aggregate) -> {
+                if (aggregate == null) {
+                    return new StockSizeAggregate(
+                            barcode.getTechSize(),
+                            barcode.getWbSize(),
+                            stock.getAmount()
+                    );
+                } else {
+                    aggregate.amount += stock.getAmount();
+                    return aggregate;
+                }
+            });
+        }
+        
+        // Формируем список DTO, исключая нулевые остатки
+        return sizeMap.values().stream()
+                .filter(agg -> agg.amount > 0) // Фильтруем нулевые остатки
+                .map(agg -> StockSizeDto.builder()
+                        .techSize(agg.techSize)
+                        .wbSize(agg.wbSize)
+                        .amount(agg.amount)
+                        .build())
+                .sorted((a, b) -> {
+                    // Сортируем по wbSize (числовому размеру), если есть
+                    if (a.getWbSize() != null && b.getWbSize() != null) {
+                        try {
+                            return Integer.compare(Integer.parseInt(a.getWbSize()), Integer.parseInt(b.getWbSize()));
+                        } catch (NumberFormatException e) {
+                            return a.getWbSize().compareTo(b.getWbSize());
+                        }
+                    }
+                    // Иначе по techSize
+                    String aSize = a.getTechSize() != null ? a.getTechSize() : "";
+                    String bSize = b.getTechSize() != null ? b.getTechSize() : "";
+                    return aSize.compareTo(bSize);
+                })
+                .collect(Collectors.toList());
+    }
+    
+    /**
      * Вспомогательный класс для агрегации остатков по складу.
      */
     private static class StockAggregate {
@@ -723,8 +808,23 @@ public class AnalyticsService {
             this.latestUpdate = latestUpdate;
         }
     }
+    
+    /**
+     * Вспомогательный класс для агрегации остатков по размерам.
+     */
+    private static class StockSizeAggregate {
+        String techSize;
+        String wbSize;
+        int amount;
+        
+        StockSizeAggregate(String techSize, String wbSize, int amount) {
+            this.techSize = techSize;
+            this.wbSize = wbSize;
+            this.amount = amount;
+        }
+    }
 
-    private ProductCard findCardBySeller(Long nmId, Long sellerId) {
+    public ProductCard findCardBySeller(Long nmId, Long sellerId) {
         ProductCard card = productCardRepository.findByNmId(nmId)
                 .orElseThrow(() -> new IllegalArgumentException("Артикул не найден: " + nmId));
 

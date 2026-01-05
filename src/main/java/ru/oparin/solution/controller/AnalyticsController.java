@@ -6,6 +6,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.analytics.ArticleResponseDto;
 import ru.oparin.solution.dto.analytics.MetricGroupResponseDto;
+import ru.oparin.solution.dto.analytics.StockSizeDto;
 import ru.oparin.solution.dto.analytics.SummaryRequestDto;
 import ru.oparin.solution.dto.analytics.SummaryResponseDto;
 import ru.oparin.solution.service.AnalyticsService;
@@ -107,6 +108,35 @@ public class AnalyticsController {
                 nmId, 
                 request.getPeriods()
         );
+        
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Получает детализацию остатков по размерам для товара на конкретном складе.
+     *
+     * @param nmId артикул товара
+     * @param warehouseName название склада
+     * @param sellerId ID продавца (опционально, для ADMIN/MANAGER)
+     * @param authentication данные аутентификации
+     * @return список остатков по размерам
+     */
+    @GetMapping("/article/{nmId}/stocks/{warehouseName}/sizes")
+    public ResponseEntity<java.util.List<StockSizeDto>> getStockSizes(
+            @PathVariable Long nmId,
+            @PathVariable String warehouseName,
+            @RequestParam(required = false) Long sellerId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                sellerId
+        );
+        
+        // Проверяем, что артикул принадлежит продавцу
+        analyticsService.findCardBySeller(nmId, context.user().getId());
+        
+        java.util.List<StockSizeDto> response = analyticsService.getStockSizes(nmId, warehouseName);
         
         return ResponseEntity.ok(response);
     }
