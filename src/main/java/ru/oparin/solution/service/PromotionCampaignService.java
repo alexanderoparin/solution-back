@@ -31,8 +31,6 @@ import java.util.Optional;
 @Slf4j
 public class PromotionCampaignService {
 
-    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
-
     private final PromotionCampaignRepository campaignRepository;
     private final CampaignArticleRepository campaignArticleRepository;
     private final ProductCardRepository productCardRepository;
@@ -251,7 +249,7 @@ public class PromotionCampaignService {
             return null;
         }
         try {
-            return OffsetDateTime.parse(dateTimeStr, DATE_TIME_FORMATTER).toLocalDateTime();
+            return OffsetDateTime.parse(dateTimeStr, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toLocalDateTime();
         } catch (DateTimeParseException e) {
             log.warn("Не удалось распарсить дату '{}': {}", dateTimeStr, e.getMessage());
             return null;
