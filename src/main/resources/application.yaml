@@ -9,6 +9,20 @@ spring:
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      # Максимальное время жизни соединения (25 минут, меньше чем настройки БД)
+      # Это предотвращает предупреждения о закрытых соединениях
+      max-lifetime: 1500000  # 25 минут в миллисекундах
+      # Время ожидания получения соединения из пула
+      connection-timeout: 30000  # 30 секунд
+      # Время, после которого неиспользуемое соединение будет закрыто
+      idle-timeout: 600000  # 10 минут
+      # Минимальное количество соединений в пуле
+      minimum-idle: 5
+      # Максимальное количество соединений в пуле
+      maximum-pool-size: 20
+      # Валидация соединений перед использованием
+      connection-test-query: SELECT 1
 
   jpa:
     hibernate:
