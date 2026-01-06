@@ -1,12 +1,14 @@
 package ru.oparin.solution.exception;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import ru.oparin.solution.dto.ErrorResponse;
 
 import java.util.HashMap;
@@ -82,6 +84,30 @@ public class GlobalExceptionHandler {
         log.warn("Некорректный аргумент: {}", ex.getMessage(), ex);
         ErrorResponse error = createErrorResponse(ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
+
+    /**
+     * Обработка исключений разрыва соединения клиентом.
+     * Это нормальная ситуация (клиент закрыл вкладку, обновил страницу и т.д.),
+     * не нужно логировать как ошибку.
+     *
+     * @param ex исключение
+     * @return пустой ответ (соединение уже разорвано)
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public ResponseEntity<Void> handleAsyncRequestNotUsableException(AsyncRequestNotUsableException ex) {
+        // Проверяем, является ли причиной разрыв соединения клиентом
+        Throwable cause = ex.getCause();
+        if (cause instanceof ClientAbortException ||
+            (cause != null && cause.getCause() instanceof ClientAbortException)) {
+            // Логируем только на уровне DEBUG, так как это нормальная ситуация
+            log.debug("Клиент разорвал соединение: {}", ex.getMessage());
+        } else {
+            // Если причина другая, логируем как предупреждение
+            log.warn("Проблема с асинхронным запросом: {}", ex.getMessage());
+        }
+        // Возвращаем пустой ответ, так как соединение уже разорвано
+        return ResponseEntity.status(HttpStatus.OK).build();
     }
 
     /**
