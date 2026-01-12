@@ -28,6 +28,9 @@ Thumbs.db
 *.log
 logs/
 
+# Uploads (загруженные пользователями файлы)
+uploads/
+
 # Application
 application-local.properties
 application-dev.properties

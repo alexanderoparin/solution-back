@@ -32,6 +32,8 @@ services:
     volumes:
       # Монтируем директорию для логов на хост
       - ./logs:/app/logs
+      # Монтируем директорию для загруженных файлов на хост
+      - ./uploads:/app/uploads
       # Монтируем часовой пояс хоста
       - /etc/localtime:/etc/localtime:ro
     healthcheck:
