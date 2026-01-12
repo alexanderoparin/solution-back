@@ -159,15 +159,17 @@ public class ArticleNoteService {
         validateFile(file);
 
         try {
-            // Создаем директорию для файлов заметки
-            Path noteDir = Paths.get(uploadsDirectory, String.valueOf(nmId), String.valueOf(noteId));
-            Files.createDirectories(noteDir);
+            // Убеждаемся, что директория существует
+            Path uploadsPath = Paths.get(uploadsDirectory);
+            if (!Files.exists(uploadsPath)) {
+                Files.createDirectories(uploadsPath);
+            }
 
             // Генерируем уникальное имя файла
             String originalFileName = file.getOriginalFilename();
             String fileExtension = getFileExtension(originalFileName);
             String uniqueFileName = UUID.randomUUID().toString() + fileExtension;
-            Path filePath = noteDir.resolve(uniqueFileName);
+            Path filePath = uploadsPath.resolve(uniqueFileName);
 
             // Сохраняем файл
             Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);

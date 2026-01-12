@@ -22,8 +22,9 @@ RUN apk add --no-cache curl
 # Создаем пользователя для безопасности
 RUN addgroup -S spring && adduser -S spring -G spring
 
-# Создаем директорию для логов с правильными правами
+# Создаем директории для логов и загрузок с правильными правами
 RUN mkdir -p /app/logs && chown spring:spring /app/logs
+RUN mkdir -p /app/uploads && chown spring:spring /app/uploads
 
 # Копируем собранный JAR из этапа сборки
 COPY --from=build /app/target/solution_back-1.0.0.jar app.jar

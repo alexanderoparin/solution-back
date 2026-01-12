@@ -65,7 +65,7 @@ wb:
 
 app:
   uploads:
-    directory: ${UPLOADS_DIRECTORY:/app/uploads/article-notes}
+    directory: ${UPLOADS_DIRECTORY:/app/uploads}
     max-file-size: ${MAX_FILE_SIZE:31457280}  # 30 MB по умолчанию
 
 logging:
