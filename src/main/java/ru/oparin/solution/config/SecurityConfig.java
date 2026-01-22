@@ -37,9 +37,11 @@ public class SecurityConfig {
 
     private static final int BCRYPT_STRENGTH = 12;
     private static final List<String> ALLOWED_ORIGINS = List.of(
-        "http://localhost:5173",
-        "https://wb-solution.ru",
-        "http://wb-solution.ru"
+            "http://localhost:5173",
+            "https://wb-solution.ru",
+            "http://wb-solution.ru",
+            "http://109.68.213.220",
+            "http://109.68.213.220:80"
     );
     private static final String AUTH_ENDPOINTS = "/auth/**";
     private static final String HEALTH_ENDPOINT = "/health";
