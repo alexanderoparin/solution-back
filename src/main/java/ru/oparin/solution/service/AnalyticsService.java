@@ -65,13 +65,14 @@ public class AnalyticsService {
     @Transactional(readOnly = true)
     public SummaryResponseDto getSummary(User seller, List<PeriodDto> periods, List<Long> excludedNmIds) {
         validatePeriods(periods);
+        List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
 
         List<ProductCard> visibleCards = getVisibleCards(seller.getId(), excludedNmIds);
         Map<Integer, AggregatedMetricsDto> aggregatedMetrics = calculateAggregatedMetrics(
-                visibleCards, periods, seller.getId());
+                visibleCards, sortedPeriods, seller.getId());
 
         return SummaryResponseDto.builder()
-                .periods(periods)
+                .periods(sortedPeriods)
                 .articles(mapToArticleSummaries(visibleCards))
                 .aggregatedMetrics(aggregatedMetrics)
                 .build();
@@ -87,12 +88,11 @@ public class AnalyticsService {
             List<PeriodDto> periods,
             List<Long> excludedNmIds
     ) {
+        List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
         if (isAdvertisingMetric(metricName)) {
-            // Для рекламных метрик группируем по кампаниям
-            return getAdvertisingMetricGroup(seller, metricName, periods);
+            return getAdvertisingMetricGroup(seller, metricName, sortedPeriods);
         } else {
-            // Для метрик воронки группируем по артикулам
-            return getFunnelMetricGroup(seller, metricName, periods, excludedNmIds);
+            return getFunnelMetricGroup(seller, metricName, sortedPeriods, excludedNmIds);
         }
     }
 
@@ -220,17 +220,14 @@ public class AnalyticsService {
         return false;
     }
 
+    /** allPeriods должен быть отсортирован по dateFrom (слева направо: старый → новый). */
     private BigDecimal calculateCampaignChangePercent(
             Long campaignId,
             String metricName,
             PeriodDto period,
-            List<PeriodDto> allPeriods
+            List<PeriodDto> allPeriodsSortedByDate
     ) {
-        if (period.getId() == 1) {
-            return null;
-        }
-
-        PeriodDto previousPeriod = findPreviousPeriod(period, allPeriods);
+        PeriodDto previousPeriod = findPreviousPeriodByDateOrder(period, allPeriodsSortedByDate);
         if (previousPeriod == null) {
             return null;
         }
@@ -364,16 +361,15 @@ public class AnalyticsService {
             ProductCard card,
             String metricName,
             PeriodDto period,
-            List<PeriodDto> allPeriods,
+            List<PeriodDto> allPeriodsSortedByDate,
             Long sellerId,
             Object currentValue,
             Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
-        if (period.getId() == 1 || currentValue == null) {
+        if (currentValue == null) {
             return null;
         }
-
-        PeriodDto previousPeriod = findPreviousPeriod(period, allPeriods);
+        PeriodDto previousPeriod = findPreviousPeriodByDateOrder(period, allPeriodsSortedByDate);
         if (previousPeriod == null) {
             return null;
         }
@@ -388,11 +384,30 @@ public class AnalyticsService {
         }
     }
 
+    /** Список периодов должен быть отсортирован по dateFrom (слева направо: старый → новый). */
+    private List<PeriodDto> sortPeriodsByDateFrom(List<PeriodDto> periods) {
+        return periods.stream()
+                .sorted(Comparator.comparing(PeriodDto::getDateFrom))
+                .collect(Collectors.toList());
+    }
+
+    /** Предыдущий период по хронологическому порядку (слева в таблице). allPeriods должен быть отсортирован по dateFrom. */
+    private PeriodDto findPreviousPeriodByDateOrder(PeriodDto currentPeriod, List<PeriodDto> allPeriodsSortedByDate) {
+        int idx = -1;
+        for (int i = 0; i < allPeriodsSortedByDate.size(); i++) {
+            if (Objects.equals(allPeriodsSortedByDate.get(i).getId(), currentPeriod.getId())) {
+                idx = i;
+                break;
+            }
+        }
+        if (idx <= 0) {
+            return null;
+        }
+        return allPeriodsSortedByDate.get(idx - 1);
+    }
+
     private PeriodDto findPreviousPeriod(PeriodDto currentPeriod, List<PeriodDto> allPeriods) {
-        return allPeriods.stream()
-                .filter(p -> p.getId() == currentPeriod.getId() - 1)
-                .findFirst()
-                .orElse(null);
+        return findPreviousPeriodByDateOrder(currentPeriod, allPeriods);
     }
 
     private BigDecimal calculatePercentageChange(Object current, Object previous) {
