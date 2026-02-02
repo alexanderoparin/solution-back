@@ -15,6 +15,7 @@ import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.CampaignArticleRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
+import ru.oparin.solution.repository.PromotionCampaignStatisticsRepository;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -34,6 +35,7 @@ public class PromotionCampaignService {
     private final PromotionCampaignRepository campaignRepository;
     private final CampaignArticleRepository campaignArticleRepository;
     private final ProductCardRepository productCardRepository;
+    private final PromotionCampaignStatisticsRepository campaignStatisticsRepository;
 
     /**
      * Сохраняет или обновляет кампании из ответа WB API.
@@ -138,33 +140,76 @@ public class PromotionCampaignService {
      */
     private void saveCampaignArticles(PromotionAdvertsResponse.Campaign campaignDto, Long campaignId, Long sellerId) {
         if (campaignDto.getNmIds() == null || campaignDto.getNmIds().isEmpty()) {
+            log.warn("У кампании advertId {} в ответе WB нет артикулов (nmIds пустой или null), восстанавливаем связи из promotion_campaign_statistics", campaignId);
+            syncCampaignArticlesFromStatistics(campaignId, sellerId);
             return;
         }
         
         // Удаляем старые связи
         campaignArticleRepository.deleteByCampaignId(campaignId);
         
-        // Создаем новые связи
+        // Создаем новые связи (ошибка по одному nmId не должна ломать остальные)
+        int savedCount = 0;
         for (Long nmId : campaignDto.getNmIds()) {
-            // Проверяем, что артикул принадлежит продавцу
-            ProductCard productCard = productCardRepository.findByNmId(nmId)
-                    .filter(card -> card.getSeller().getId().equals(sellerId))
-                    .orElse(null);
-            
-            if (productCard == null) {
-                log.warn("Артикул {} не найден или не принадлежит продавцу {}, пропускаем связь с кампанией {}", 
-                        nmId, sellerId, campaignId);
-                continue;
+            try {
+                ProductCard productCard = productCardRepository.findByNmId(nmId)
+                        .filter(card -> card.getSeller().getId().equals(sellerId))
+                        .orElse(null);
+
+                if (productCard == null) {
+                    log.warn("Артикул {} не найден или не принадлежит продавцу {}, пропускаем связь с кампанией {}",
+                            nmId, sellerId, campaignId);
+                    continue;
+                }
+
+                CampaignArticle campaignArticle = new CampaignArticle();
+                campaignArticle.setCampaignId(campaignId);
+                campaignArticle.setNmId(nmId);
+
+                campaignArticleRepository.save(campaignArticle);
+                savedCount++;
+            } catch (Exception e) {
+                log.error("Ошибка при сохранении связи кампания {} — артикул {}: {}, пропускаем",
+                        campaignId, nmId, e.getMessage(), e);
             }
-            
-            CampaignArticle campaignArticle = new CampaignArticle();
-            campaignArticle.setCampaignId(campaignId);
-            campaignArticle.setNmId(nmId);
-            
-            campaignArticleRepository.save(campaignArticle);
         }
-        
-        log.debug("Сохранено {} связей артикулов для кампании {}", campaignDto.getNmIds().size(), campaignId);
+
+        log.debug("Сохранено {} из {} связей артикулов для кампании {}", savedCount, campaignDto.getNmIds().size(), campaignId);
+    }
+
+    /**
+     * Восстанавливает связи campaign_articles из таблицы promotion_campaign_statistics,
+     * когда WB API не возвращает nmIds в ответе по кампании.
+     */
+    private void syncCampaignArticlesFromStatistics(Long campaignId, Long sellerId) {
+        List<Long> nmIdsFromStats = campaignStatisticsRepository.findDistinctNmIdsByCampaignAdvertId(campaignId);
+        if (nmIdsFromStats == null || nmIdsFromStats.isEmpty()) {
+            log.debug("У кампании advertId {} нет записей в promotion_campaign_statistics, связи не созданы", campaignId);
+            return;
+        }
+        campaignArticleRepository.deleteByCampaignId(campaignId);
+        int savedCount = 0;
+        for (Long nmId : nmIdsFromStats) {
+            try {
+                ProductCard productCard = productCardRepository.findByNmId(nmId)
+                        .filter(card -> card.getSeller().getId().equals(sellerId))
+                        .orElse(null);
+                if (productCard == null) {
+                    log.warn("Артикул {} из статистики кампании {} не найден у продавца {}, пропускаем",
+                            nmId, campaignId, sellerId);
+                    continue;
+                }
+                CampaignArticle campaignArticle = new CampaignArticle();
+                campaignArticle.setCampaignId(campaignId);
+                campaignArticle.setNmId(nmId);
+                campaignArticleRepository.save(campaignArticle);
+                savedCount++;
+            } catch (Exception e) {
+                log.error("Ошибка при сохранении связи кампания {} — артикул {} (из статистики): {}, пропускаем",
+                        campaignId, nmId, e.getMessage(), e);
+            }
+        }
+        log.info("Кампания advertId {}: восстановлено {} связей campaign_articles из promotion_campaign_statistics", campaignId, savedCount);
     }
     
     /**
