@@ -31,14 +31,17 @@ public class CabinetController {
     private final UserService userService;
 
     /**
-     * Список кабинетов текущего пользователя (только SELLER).
+     * Список кабинетов: для SELLER — свои, для WORKER — кабинеты владельца (продавца).
      * Сортировка по дате создания (новые первые); первый в списке — кабинет по умолчанию.
      */
     @GetMapping
     public ResponseEntity<List<CabinetDto>> list(Authentication authentication) {
         User user = userService.findByEmail(authentication.getName());
-        validateSellerRole(user);
-        List<CabinetDto> cabinets = cabinetService.listByUserId(user.getId());
+        Long ownerId = getCabinetOwnerUserId(user);
+        if (ownerId == null) {
+            throw new UserException("Доступ к кабинетам запрещён", HttpStatus.FORBIDDEN);
+        }
+        List<CabinetDto> cabinets = cabinetService.listByUserId(ownerId);
         return ResponseEntity.ok(cabinets);
     }
 
@@ -51,8 +54,11 @@ public class CabinetController {
             Authentication authentication
     ) {
         User user = userService.findByEmail(authentication.getName());
-        validateSellerRole(user);
-        CabinetDto dto = cabinetService.getByIdAndUserId(id, user.getId());
+        Long ownerId = getCabinetOwnerUserId(user);
+        if (ownerId == null) {
+            throw new UserException("Доступ к кабинетам запрещён", HttpStatus.FORBIDDEN);
+        }
+        CabinetDto dto = cabinetService.getByIdAndUserId(id, ownerId);
         return ResponseEntity.ok(dto);
     }
 
@@ -107,5 +113,11 @@ public class CabinetController {
         if (user.getRole() != Role.SELLER) {
             throw new UserException("Только продавец может управлять кабинетами", HttpStatus.FORBIDDEN);
         }
+    }
+
+    private Long getCabinetOwnerUserId(User user) {
+        if (user.getRole() == Role.SELLER) return user.getId();
+        if (user.getRole() == Role.WORKER && user.getOwner() != null) return user.getOwner().getId();
+        return null;
     }
 }
