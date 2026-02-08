@@ -37,5 +37,23 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * Пул для параллельного обновления кабинетов по расписанию.
+     * До 4 кабинетов одновременно (с учётом лимитов WB API).
+     */
+    @Bean(name = "cabinetUpdateExecutor")
+    public Executor cabinetUpdateExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("cabinet-update-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(300);
+        executor.initialize();
+        return executor;
+    }
 }
 

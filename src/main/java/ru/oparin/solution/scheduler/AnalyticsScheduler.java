@@ -1,5 +1,6 @@
 package ru.oparin.solution.scheduler;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -7,11 +8,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.exception.UserException;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.model.WbApiKey;
-import ru.oparin.solution.repository.UserRepository;
-import ru.oparin.solution.repository.WbApiKeyRepository;
+import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.service.ProductCardAnalyticsService;
 import ru.oparin.solution.service.WbApiKeyService;
 import ru.oparin.solution.dto.wb.WbWarehouseResponse;
@@ -21,96 +21,122 @@ import ru.oparin.solution.service.wb.WbWarehousesApiClient;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Планировщик задач для автоматической загрузки аналитики.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class AnalyticsScheduler {
 
-    private final UserRepository userRepository;
     private final WbApiKeyService wbApiKeyService;
-    private final WbApiKeyRepository wbApiKeyRepository;
+    private final CabinetRepository cabinetRepository;
     private final ProductCardAnalyticsService analyticsService;
     private final WbWarehousesApiClient warehousesApiClient;
     private final WbWarehouseService warehouseService;
+    private final Executor cabinetUpdateExecutor;
+
+    public AnalyticsScheduler(WbApiKeyService wbApiKeyService,
+                             CabinetRepository cabinetRepository,
+                             ProductCardAnalyticsService analyticsService,
+                             WbWarehousesApiClient warehousesApiClient,
+                             WbWarehouseService warehouseService,
+                             @Qualifier("cabinetUpdateExecutor") Executor cabinetUpdateExecutor) {
+        this.wbApiKeyService = wbApiKeyService;
+        this.cabinetRepository = cabinetRepository;
+        this.analyticsService = analyticsService;
+        this.warehousesApiClient = warehousesApiClient;
+        this.warehouseService = warehouseService;
+        this.cabinetUpdateExecutor = cabinetUpdateExecutor;
+    }
 
     /**
-     * Автоматическая загрузка аналитики для всех активных продавцов.
-     * Запускается каждый день в 01:30 ночи.
+     * Автоматическая загрузка аналитики для всех кабинетов с привязанным API-ключом (активные продавцы).
+     * Запускается каждый день в 01:30. Для каждого кабинета загружаются карточки, кампании и аналитика.
      * Период: последние 14 дней (без текущих суток).
      */
     @Scheduled(cron = "0 30 1 * * ?")
     public void loadAnalyticsForAllActiveSellers() {
-        log.info("Запуск автоматической загрузки аналитики для всех активных продавцов");
+        log.info("Запуск автоматической загрузки аналитики по кабинетам");
 
-        List<User> activeSellers = findActiveSellers();
-        log.info("Найдено активных продавцов: {}", activeSellers.size());
+        List<Cabinet> cabinetsWithKey = findCabinetsWithApiKey();
+        log.info("Найдено кабинетов с API-ключом: {}", cabinetsWithKey.size());
 
-        if (activeSellers.isEmpty()) {
-            log.info("Активных продавцов не найдено, загрузка аналитики пропущена");
+        if (cabinetsWithKey.isEmpty()) {
+            log.info("Кабинетов с ключом не найдено, загрузка аналитики пропущена");
             return;
         }
 
         DateRange period = calculateLastTwoWeeksPeriod();
         log.info("Период для загрузки аналитики: {} - {}", period.from(), period.to());
 
-        int successCount = 0;
-        int errorCount = 0;
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger errorCount = new AtomicInteger(0);
 
-        for (User seller : activeSellers) {
-            try {
-                processSellerAnalytics(seller, period);
-                successCount++;
-            } catch (Exception e) {
-                log.error("Ошибка при загрузке аналитики для продавца (ID: {}, email: {}): {}",
-                        seller.getId(), seller.getEmail(), e.getMessage());
-                errorCount++;
-            }
-        }
+        List<CompletableFuture<Void>> futures = cabinetsWithKey.stream()
+                .map(cabinet -> CompletableFuture.runAsync(() -> {
+                    try {
+                        processCabinetAnalytics(cabinet, period);
+                        successCount.incrementAndGet();
+                    } catch (Exception e) {
+                        log.error("Ошибка при загрузке аналитики для кабинета (ID: {}, продавец: {}): {}",
+                                cabinet.getId(), cabinet.getUser().getEmail(), e.getMessage());
+                        errorCount.incrementAndGet();
+                    }
+                }, cabinetUpdateExecutor))
+                .toList();
 
-        log.info("Завершена автоматическая загрузка аналитики: успешно {}, ошибок {}",
-                successCount, errorCount);
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        log.info("Завершена автоматическая загрузка аналитики по кабинетам (параллельно): успешно {}, ошибок {}",
+                successCount.get(), errorCount.get());
     }
 
     /**
-     * Автоматическое обновление списка складов WB.
-     * Запускается каждый день в 00:00 утра.
+     * Автоматическое обновление списка складов WB по кабинетам с ключом.
+     * Запускается каждый день в 00:00.
      */
     @Scheduled(cron = "0 0 0 * * ?")
     public void updateWbWarehouses() {
         log.info("Запуск автоматического обновления складов WB");
 
-        List<User> activeSellers = findActiveSellers();
-        if (activeSellers.isEmpty()) {
-            log.warn("Не найдено активных продавцов для обновления складов WB");
+        List<Cabinet> cabinetsWithKey = findCabinetsWithApiKey();
+        if (cabinetsWithKey.isEmpty()) {
+            log.warn("Не найдено кабинетов с API-ключом для обновления складов WB");
             return;
         }
 
-        activeSellers.forEach(this::updateWarehousesForSeller);
+        List<CompletableFuture<Void>> futures = cabinetsWithKey.stream()
+                .map(cabinet -> CompletableFuture.runAsync(() -> updateWarehousesForCabinet(cabinet), cabinetUpdateExecutor))
+                .toList();
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
     }
 
-    private void updateWarehousesForSeller(User seller) {
+    private void updateWarehousesForCabinet(Cabinet cabinet) {
         try {
-            WbApiKey apiKey = wbApiKeyService.findByUserId(seller.getId());
+            if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+                return;
+            }
+            log.info("Обновление складов WB для кабинета (ID: {}, продавец: {})",
+                    cabinet.getId(), cabinet.getUser().getEmail());
 
-            log.info("Обновление складов WB с использованием API ключа продавца (ID: {}, email: {})",
-                    seller.getId(), seller.getEmail());
-
-            List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(apiKey.getApiKey());
+            List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(cabinet.getApiKey());
             warehouseService.saveOrUpdateWarehouses(warehouses);
 
-            log.info("Завершено автоматическое обновление складов WB с использованием API ключа продавца (ID: {}, email: {})",
-                    seller.getId(), seller.getEmail());
+            log.info("Завершено обновление складов WB для кабинета (ID: {})", cabinet.getId());
         } catch (Exception e) {
-            log.warn("Не удалось обновить список складов wb для селлера {}, ошибка: {}", seller.getEmail(), e.getMessage());
+            log.warn("Не удалось обновить склады WB для кабинета {}: {}", cabinet.getId(), e.getMessage());
         }
     }
 
-    private List<User> findActiveSellers() {
-        return userRepository.findByRoleAndIsActive(Role.SELLER, true);
+    /**
+     * Кабинеты с заданным API-ключом и активным продавцом (для планировщика).
+     */
+    private List<Cabinet> findCabinetsWithApiKey() {
+        return cabinetRepository.findByApiKeyIsNotNullAndUser_IsActiveTrueAndUser_RoleOrderByIdAsc(Role.SELLER);
     }
 
     private DateRange calculateLastTwoWeeksPeriod() {
@@ -121,22 +147,14 @@ public class AnalyticsScheduler {
         return new DateRange(twoWeeksAgo, yesterday);
     }
 
-    private void processSellerAnalytics(User seller, DateRange period) {
-        WbApiKey apiKey = wbApiKeyService.findByUserId(seller.getId());
+    private void processCabinetAnalytics(Cabinet cabinet, DateRange period) {
+        log.info("Загрузка аналитики для кабинета (ID: {}, продавец: {})",
+                cabinet.getId(), cabinet.getUser().getEmail());
 
-        log.info("Загрузка аналитики для продавца (ID: {}, email: {})",
-                seller.getId(), seller.getEmail());
+        cabinet.setLastDataUpdateAt(LocalDateTime.now());
+        cabinetRepository.save(cabinet);
 
-        // Сохраняем время запуска автоматического обновления
-        apiKey.setLastDataUpdateAt(LocalDateTime.now());
-        wbApiKeyRepository.save(apiKey);
-
-        analyticsService.updateCardsAndLoadAnalytics(
-                seller,
-                apiKey.getApiKey(),
-                period.from(),
-                period.to()
-        );
+        analyticsService.updateCardsAndLoadAnalytics(cabinet, period.from(), period.to());
     }
 
     /**
@@ -158,25 +176,17 @@ public class AnalyticsScheduler {
                 seller.getId(), seller.getEmail());
 
         try {
-            WbApiKey apiKey = wbApiKeyService.findByUserId(seller.getId());
+            Cabinet cabinet = wbApiKeyService.findDefaultCabinetByUserId(seller.getId());
 
-            // Проверяем время последнего обновления в транзакции
-            validateUpdateInterval(apiKey);
+            validateUpdateInterval(cabinet);
 
-            // Сохраняем время запуска обновления
             LocalDateTime now = LocalDateTime.now();
-            apiKey.setLastDataUpdateAt(now);
-            wbApiKeyRepository.save(apiKey);
+            cabinet.setLastDataUpdateAt(now);
+            cabinetRepository.save(cabinet);
 
             DateRange period = calculateLastTwoWeeksPeriod();
 
-            // Запускаем обновление асинхронно (вне транзакции)
-            analyticsService.updateCardsAndLoadAnalytics(
-                    seller,
-                    apiKey.getApiKey(),
-                    period.from(),
-                    period.to()
-            );
+            analyticsService.updateCardsAndLoadAnalytics(cabinet, period.from(), period.to());
 
             log.info("Ручное обновление данных для продавца (ID: {}, email: {}) успешно запущено",
                     seller.getId(), seller.getEmail());
@@ -192,13 +202,12 @@ public class AnalyticsScheduler {
 
     /**
      * Проверяет, прошло ли достаточно времени с последнего обновления.
-     * Если прошло меньше MIN_UPDATE_INTERVAL_HOURS часов, выбрасывает UserException.
      *
-     * @param apiKey API ключ продавца
+     * @param cabinet кабинет продавца
      * @throws UserException если с последнего обновления прошло меньше 6 часов
      */
-    private void validateUpdateInterval(WbApiKey apiKey) {
-        LocalDateTime lastUpdate = apiKey.getLastDataUpdateAt();
+    private void validateUpdateInterval(Cabinet cabinet) {
+        LocalDateTime lastUpdate = cabinet.getLastDataUpdateAt();
 
         if (lastUpdate == null) {
             // Если обновление еще не запускалось, разрешаем

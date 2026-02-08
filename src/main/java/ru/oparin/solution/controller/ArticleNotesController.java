@@ -43,11 +43,12 @@ public class ArticleNotesController {
     public ResponseEntity<ArticleNoteDto> createNote(
             @PathVariable Long nmId,
             @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
             @Valid @RequestBody CreateNoteRequest request,
             Authentication authentication) {
-        
+
         User currentUser = userService.findByEmail(authentication.getName());
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
         
         ArticleNoteDto note = noteService.createNote(nmId, context, request, currentUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(note);
@@ -60,9 +61,10 @@ public class ArticleNotesController {
     public ResponseEntity<List<ArticleNoteDto>> getNotes(
             @PathVariable Long nmId,
             @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
-        
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId);
+
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
         List<ArticleNoteDto> notes = noteService.getNotes(nmId, context);
         return ResponseEntity.ok(notes);
     }
@@ -75,10 +77,11 @@ public class ArticleNotesController {
             @PathVariable Long nmId,
             @PathVariable Long noteId,
             @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
             @Valid @RequestBody UpdateNoteRequest request,
             Authentication authentication) {
-        
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId);
+
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
         ArticleNoteDto note = noteService.updateNote(noteId, nmId, context, request);
         return ResponseEntity.ok(note);
     }
@@ -91,9 +94,10 @@ public class ArticleNotesController {
             @PathVariable Long nmId,
             @PathVariable Long noteId,
             @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
-        
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId);
+
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
         noteService.deleteNote(noteId, nmId, context);
         return ResponseEntity.noContent().build();
     }
@@ -106,10 +110,11 @@ public class ArticleNotesController {
             @PathVariable Long nmId,
             @PathVariable Long noteId,
             @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
             @RequestParam("file") MultipartFile file,
             Authentication authentication) {
-        
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId);
+
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
         ru.oparin.solution.dto.notes.ArticleNoteFileDto fileDto = noteService.uploadFile(noteId, nmId, context, file);
         return ResponseEntity.status(HttpStatus.CREATED).body(fileDto);
     }
@@ -123,9 +128,10 @@ public class ArticleNotesController {
             @PathVariable Long noteId,
             @PathVariable Long fileId,
             @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
-        
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId);
+
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
         Path filePath = noteService.getFile(noteId, fileId, nmId, context);
         
         Resource resource = new FileSystemResource(filePath);
@@ -152,9 +158,10 @@ public class ArticleNotesController {
             @PathVariable Long noteId,
             @PathVariable Long fileId,
             @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
-        
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId);
+
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
         noteService.deleteFile(noteId, fileId, nmId, context);
         return ResponseEntity.noContent().build();
     }

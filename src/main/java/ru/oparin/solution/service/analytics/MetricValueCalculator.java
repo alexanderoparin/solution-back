@@ -38,28 +38,31 @@ public class MetricValueCalculator {
             String metricName,
             PeriodDto period,
             Long sellerId,
+            Long cabinetId,
             Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
+        Long cardCabinetId = card.getCabinet() != null ? card.getCabinet().getId() : cabinetId;
         return switch (metricName) {
-            case TRANSITIONS -> sumField(card.getNmId(), period, ProductCardAnalytics::getOpenCard);
-            case CART -> sumField(card.getNmId(), period, ProductCardAnalytics::getAddToCart);
-            case ORDERS -> sumField(card.getNmId(), period, ProductCardAnalytics::getOrders);
-            case ORDERS_AMOUNT -> sumAmount(card.getNmId(), period);
-            case CART_CONVERSION -> calculateCartConversion(card.getNmId(), period);
-            case ORDER_CONVERSION -> calculateOrderConversion(card.getNmId(), period);
+            case TRANSITIONS -> sumField(card.getNmId(), cardCabinetId, period, ProductCardAnalytics::getOpenCard);
+            case CART -> sumField(card.getNmId(), cardCabinetId, period, ProductCardAnalytics::getAddToCart);
+            case ORDERS -> sumField(card.getNmId(), cardCabinetId, period, ProductCardAnalytics::getOrders);
+            case ORDERS_AMOUNT -> sumAmount(card.getNmId(), cardCabinetId, period);
+            case CART_CONVERSION -> calculateCartConversion(card.getNmId(), cardCabinetId, period);
+            case ORDER_CONVERSION -> calculateOrderConversion(card.getNmId(), cardCabinetId, period);
             case VIEWS, CLICKS, COSTS, CPC,
                  CTR, CPO, DRR ->
-                    calculateAdvertisingMetric(metricName, period, sellerId, card.getNmId(), advertisingStatsCache);
+                    calculateAdvertisingMetric(metricName, period, sellerId, cabinetId, card.getNmId(), advertisingStatsCache);
             default -> null;
         };
     }
 
     private Integer sumField(
             Long nmId,
+            Long cabinetId,
             PeriodDto period,
             Function<ProductCardAnalytics, Integer> extractor
     ) {
-        List<ProductCardAnalytics> analytics = getAnalytics(nmId, period);
+        List<ProductCardAnalytics> analytics = getAnalytics(nmId, cabinetId, period);
         return sumField(analytics, extractor);
     }
 
@@ -74,24 +77,24 @@ public class MetricValueCalculator {
                 .sum();
     }
 
-    private BigDecimal sumAmount(Long nmId, PeriodDto period) {
-        List<ProductCardAnalytics> analytics = getAnalytics(nmId, period);
+    private BigDecimal sumAmount(Long nmId, Long cabinetId, PeriodDto period) {
+        List<ProductCardAnalytics> analytics = getAnalytics(nmId, cabinetId, period);
         return analytics.stream()
                 .map(ProductCardAnalytics::getOrdersSum)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private BigDecimal calculateCartConversion(Long nmId, PeriodDto period) {
-        List<ProductCardAnalytics> analytics = getAnalytics(nmId, period);
+    private BigDecimal calculateCartConversion(Long nmId, Long cabinetId, PeriodDto period) {
+        List<ProductCardAnalytics> analytics = getAnalytics(nmId, cabinetId, period);
         int transitions = sumField(analytics, ProductCardAnalytics::getOpenCard);
         int cart = sumField(analytics, ProductCardAnalytics::getAddToCart);
 
         return MathUtils.calculatePercentage(cart, transitions);
     }
 
-    private BigDecimal calculateOrderConversion(Long nmId, PeriodDto period) {
-        List<ProductCardAnalytics> analytics = getAnalytics(nmId, period);
+    private BigDecimal calculateOrderConversion(Long nmId, Long cabinetId, PeriodDto period) {
+        List<ProductCardAnalytics> analytics = getAnalytics(nmId, cabinetId, period);
         int cart = sumField(analytics, ProductCardAnalytics::getAddToCart);
         int orders = sumField(analytics, ProductCardAnalytics::getOrders);
 
@@ -99,19 +102,18 @@ public class MetricValueCalculator {
     }
 
     private Object calculateAdvertisingMetric(
-            String metricName, 
-            PeriodDto period, 
-            Long sellerId, 
+            String metricName,
+            PeriodDto period,
+            Long sellerId,
+            Long cabinetId,
             Long nmId,
             Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
-        // Используем кэшированную статистику, если она есть, иначе получаем заново
         CampaignStatisticsAggregator.AdvertisingStats stats;
         if (advertisingStatsCache != null && advertisingStatsCache.containsKey(period)) {
             stats = advertisingStatsCache.get(period);
         } else {
-            // Fallback: если кэш не передан, получаем статистику заново
-            List<Long> campaignIds = getCampaignIds(sellerId);
+            List<Long> campaignIds = getCampaignIds(sellerId, cabinetId);
             stats = statisticsAggregator.aggregateStats(campaignIds, period);
         }
 
@@ -153,16 +155,20 @@ public class MetricValueCalculator {
         return MathUtils.calculatePercentage(stats.sum(), stats.ordersSum());
     }
 
-    private List<ProductCardAnalytics> getAnalytics(Long nmId, PeriodDto period) {
+    private List<ProductCardAnalytics> getAnalytics(Long nmId, Long cabinetId, PeriodDto period) {
+        if (cabinetId != null) {
+            return analyticsRepository.findByCabinet_IdAndProductCardNmIdAndDateBetween(
+                    cabinetId, nmId, period.getDateFrom(), period.getDateTo());
+        }
         return analyticsRepository.findByProductCardNmIdAndDateBetween(
-                nmId,
-                period.getDateFrom(),
-                period.getDateTo()
-        );
+                nmId, period.getDateFrom(), period.getDateTo());
     }
 
-    private List<Long> getCampaignIds(Long sellerId) {
-        return campaignRepository.findBySellerId(sellerId).stream()
+    private List<Long> getCampaignIds(Long sellerId, Long cabinetId) {
+        List<PromotionCampaign> campaigns = cabinetId != null
+                ? campaignRepository.findByCabinet_Id(cabinetId)
+                : campaignRepository.findBySellerId(sellerId);
+        return campaigns.stream()
                 .map(PromotionCampaign::getAdvertId)
                 .toList();
     }

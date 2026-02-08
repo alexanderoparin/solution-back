@@ -49,5 +49,15 @@ public interface PromotionCampaignRepository extends JpaRepository<PromotionCamp
      * @return список кампаний
      */
     List<PromotionCampaign> findBySellerIdAndType(Long sellerId, CampaignType type);
+
+    /**
+     * Поиск всех кампаний кабинета.
+     */
+    List<PromotionCampaign> findByCabinet_Id(Long cabinetId);
+
+    /**
+     * Поиск кампании по advertId и кабинету.
+     */
+    Optional<PromotionCampaign> findByAdvertIdAndCabinet_Id(Long advertId, Long cabinetId);
 }
 

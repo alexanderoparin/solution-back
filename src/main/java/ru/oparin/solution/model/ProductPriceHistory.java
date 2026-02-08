@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Table(name = "product_price_history", schema = "solution",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"nm_id", "date", "size_id"}))
+        uniqueConstraints = @UniqueConstraint(columnNames = {"cabinet_id", "nm_id", "date", "size_id"}))
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
@@ -37,6 +37,13 @@ public class ProductPriceHistory {
      */
     @Column(name = "nm_id", nullable = false)
     private Long nmId;
+
+    /**
+     * Кабинет (история цен привязана к кабинету).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cabinet_id", nullable = false)
+    private Cabinet cabinet;
 
     /**
      * Дата, за которую сохранена цена (вчерашняя дата).

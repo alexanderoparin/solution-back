@@ -10,10 +10,9 @@ import ru.oparin.solution.dto.MessageResponse;
 import ru.oparin.solution.dto.UpdateApiKeyRequest;
 import ru.oparin.solution.dto.UserProfileResponse;
 import ru.oparin.solution.exception.UserException;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.model.WbApiKey;
-import ru.oparin.solution.repository.WbApiKeyRepository;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.WbApiKeyService;
@@ -28,7 +27,6 @@ public class UserController {
 
     private final UserService userService;
     private final WbApiKeyService wbApiKeyService;
-    private final WbApiKeyRepository wbApiKeyRepository;
     private final AnalyticsScheduler analyticsScheduler;
 
     /**
@@ -64,12 +62,12 @@ public class UserController {
 
         wbApiKeyService.validateApiKey(user.getId());
 
-        WbApiKey apiKey = wbApiKeyService.findByUserId(user.getId());
-        if (apiKey.getIsValid()) {
+        Cabinet cabinet = wbApiKeyService.findDefaultCabinetByUserId(user.getId());
+        if (Boolean.TRUE.equals(cabinet.getIsValid())) {
             return ResponseEntity.ok(createSuccessMessage("API ключ валиден"));
         } else {
-            String errorMsg = apiKey.getValidationError() != null 
-                    ? "API ключ невалиден: " + apiKey.getValidationError()
+            String errorMsg = cabinet.getValidationError() != null
+                    ? "API ключ невалиден: " + cabinet.getValidationError()
                     : "API ключ невалиден";
             return ResponseEntity.ok(createSuccessMessage(errorMsg));
         }
@@ -175,13 +173,13 @@ public class UserController {
      * Возвращает null, если API ключ не найден.
      */
     private UserProfileResponse.ApiKeyInfo buildApiKeyInfo(Long userId) {
-        return wbApiKeyRepository.findByUserId(userId)
-                .map(apiKey -> UserProfileResponse.ApiKeyInfo.builder()
-                        .apiKey(apiKey.getApiKey())
-                        .isValid(apiKey.getIsValid())
-                        .lastValidatedAt(apiKey.getLastValidatedAt())
-                        .validationError(apiKey.getValidationError())
-                        .lastDataUpdateAt(apiKey.getLastDataUpdateAt())
+        return wbApiKeyService.findDefaultCabinetByUserIdOptional(userId)
+                .map(cabinet -> UserProfileResponse.ApiKeyInfo.builder()
+                        .apiKey(cabinet.getApiKey())
+                        .isValid(cabinet.getIsValid())
+                        .lastValidatedAt(cabinet.getLastValidatedAt())
+                        .validationError(cabinet.getValidationError())
+                        .lastDataUpdateAt(cabinet.getLastDataUpdateAt())
                         .build())
                 .orElse(null);
     }

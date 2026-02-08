@@ -8,70 +8,97 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.WbApiKey;
-import ru.oparin.solution.repository.WbApiKeyRepository;
+import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.service.wb.WbContentApiClient;
 
 import java.time.LocalDateTime;
 
 /**
- * Сервис для работы с WB API ключами.
- * Связь 1:1 - у каждого SELLER'а только один ключ со всеми правами.
+ * Сервис для работы с WB API ключами (ключ хранится в кабинете).
+ * Для пользователя возвращается кабинет по умолчанию (последний созданный).
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class WbApiKeyService {
 
-    private final WbApiKeyRepository wbApiKeyRepository;
+    private final CabinetRepository cabinetRepository;
     private final WbContentApiClient contentApiClient;
 
     /**
-     * Поиск API ключа по ID пользователя.
+     * Кабинет по умолчанию для пользователя (последний созданный).
      *
      * @param userId ID пользователя (SELLER)
-     * @return найденный API ключ
-     * @throws UserException если API ключ не найден
+     * @return кабинет с ключом
+     * @throws UserException если кабинет не найден
      */
-    public WbApiKey findByUserId(Long userId) {
-        return wbApiKeyRepository.findByUserId(userId)
+    public Cabinet findDefaultCabinetByUserId(Long userId) {
+        return cabinetRepository.findDefaultByUserId(userId)
                 .orElseThrow(() -> new UserException(
-                        "API ключ не найден для пользователя с ID: " + userId,
+                        "Кабинет не найден для пользователя с ID: " + userId,
                         HttpStatus.NOT_FOUND
                 ));
     }
 
     /**
-     * Валидация WB API ключа пользователя.
+     * Кабинет по умолчанию для пользователя (Optional).
+     */
+    public java.util.Optional<Cabinet> findDefaultCabinetByUserIdOptional(Long userId) {
+        return cabinetRepository.findDefaultByUserId(userId);
+    }
+
+    /**
+     * Валидация WB API ключа кабинета по умолчанию для пользователя.
      *
      * @param userId ID пользователя (SELLER)
      */
     @Transactional
     public void validateApiKey(Long userId) {
-        WbApiKey apiKey = findByUserId(userId);
+        Cabinet cabinet = findDefaultCabinetByUserId(userId);
+        validateApiKeyByCabinet(cabinet);
+    }
 
+    /**
+     * Валидация WB API ключа указанного кабинета.
+     *
+     * @param cabinet кабинет с ключом для проверки
+     */
+    @Transactional
+    public void validateApiKeyByCabinet(Cabinet cabinet) {
+        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+            updateValidationStatus(cabinet, false, "API ключ не задан");
+            return;
+        }
         try {
-            contentApiClient.ping(apiKey.getApiKey());
-            updateValidationStatus(apiKey, true, null);
-            log.info("WB API ключ для пользователя {} валиден", userId);
+            contentApiClient.ping(cabinet.getApiKey());
+            updateValidationStatus(cabinet, true, null);
+            log.info("WB API ключ для кабинета {} валиден", cabinet.getId());
         } catch (HttpClientErrorException e) {
             String userFriendlyMessage = extractUserFriendlyErrorMessage(e);
-            updateValidationStatus(apiKey, false, userFriendlyMessage);
-            log.error("Ошибка при валидации WB API ключа для пользователя {}: статус={}, сообщение={}", 
-                    userId, e.getStatusCode(), e.getMessage());
+            updateValidationStatus(cabinet, false, userFriendlyMessage);
+            log.error("Ошибка при валидации WB API ключа для кабинета {}: статус={}, сообщение={}",
+                    cabinet.getId(), e.getStatusCode(), e.getMessage());
         } catch (Exception e) {
             String errorMessage = "Ошибка при валидации: " + e.getMessage();
-            updateValidationStatus(apiKey, false, errorMessage);
-            log.error("Ошибка при валидации WB API ключа для пользователя {}", userId, e);
+            updateValidationStatus(cabinet, false, errorMessage);
+            log.error("Ошибка при валидации WB API ключа для кабинета {}", cabinet.getId(), e);
         }
     }
 
     /**
-     * Извлекает понятное сообщение об ошибке для пользователя из исключения HTTP.
+     * Сбрасывает статус валидации и устанавливает новый API ключ кабинета.
      */
+    @Transactional
+    public void resetValidationAndSetApiKey(Cabinet cabinet, String apiKey) {
+        cabinet.setIsValid(null);
+        cabinet.setValidationError(null);
+        cabinet.setLastValidatedAt(null);
+        cabinet.setApiKey(apiKey != null ? apiKey.trim() : null);
+    }
+
     private String extractUserFriendlyErrorMessage(HttpClientErrorException e) {
         HttpStatusCode statusCode = e.getStatusCode();
-        
         if (statusCode.value() == 401) {
             return "API ключ невалиден или истек. Проверьте правильность ключа и его срок действия.";
         } else if (statusCode.value() == 403) {
@@ -85,11 +112,11 @@ public class WbApiKeyService {
         }
     }
 
-    private void updateValidationStatus(WbApiKey apiKey, boolean isValid, String errorMessage) {
-        apiKey.setIsValid(isValid);
-        apiKey.setLastValidatedAt(LocalDateTime.now());
-        apiKey.setValidationError(isValid ? null : getErrorMessage(errorMessage));
-        wbApiKeyRepository.save(apiKey);
+    private void updateValidationStatus(Cabinet cabinet, boolean isValid, String errorMessage) {
+        cabinet.setIsValid(isValid);
+        cabinet.setLastValidatedAt(LocalDateTime.now());
+        cabinet.setValidationError(isValid ? null : getErrorMessage(errorMessage));
+        cabinetRepository.save(cabinet);
     }
 
     private String getErrorMessage(String errorMessage) {

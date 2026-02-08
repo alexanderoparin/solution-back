@@ -17,6 +17,7 @@ import ru.oparin.solution.model.ArticleNoteFile;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.ArticleNoteFileRepository;
 import ru.oparin.solution.repository.ArticleNoteRepository;
+import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.service.SellerContextService.SellerContext;
 
 import java.io.IOException;
@@ -39,6 +40,7 @@ public class ArticleNoteService {
     private final ArticleNoteRepository noteRepository;
     private final ArticleNoteFileRepository fileRepository;
     private final UserService userService;
+    private final CabinetRepository cabinetRepository;
 
     @Value("${app.uploads.directory:/app/uploads/article-notes}")
     private String uploadsDirectory;
@@ -57,9 +59,11 @@ public class ArticleNoteService {
      */
     @Transactional
     public ArticleNoteDto createNote(Long nmId, SellerContext context, CreateNoteRequest request, User currentUser) {
+        long cabinetId = resolveCabinetId(context);
         ArticleNote note = ArticleNote.builder()
                 .nmId(nmId)
                 .sellerId(context.user().getId())
+                .cabinetId(cabinetId)
                 .user(currentUser)
                 .content(request.getContent())
                 .build();
@@ -80,8 +84,8 @@ public class ArticleNoteService {
      */
     @Transactional(readOnly = true)
     public List<ArticleNoteDto> getNotes(Long nmId, SellerContext context) {
-        List<ArticleNote> notes = noteRepository.findByNmIdAndSellerIdOrderByCreatedAtDesc(
-                nmId, context.user().getId());
+        long cabinetId = resolveCabinetId(context);
+        List<ArticleNote> notes = noteRepository.findByNmIdAndCabinetIdOrderByCreatedAtDesc(nmId, cabinetId);
 
         return notes.stream()
                 .map(this::mapToDto)
@@ -99,7 +103,8 @@ public class ArticleNoteService {
      */
     @Transactional
     public ArticleNoteDto updateNote(Long noteId, Long nmId, SellerContext context, UpdateNoteRequest request) {
-        ArticleNote note = noteRepository.findByIdAndNmIdAndSellerId(noteId, nmId, context.user().getId())
+        long cabinetId = resolveCabinetId(context);
+        ArticleNote note = noteRepository.findByIdAndNmIdAndCabinetId(noteId, nmId, cabinetId)
                 .orElseThrow(() -> new UserException(
                         "Заметка не найдена",
                         HttpStatus.NOT_FOUND
@@ -121,7 +126,8 @@ public class ArticleNoteService {
      */
     @Transactional
     public void deleteNote(Long noteId, Long nmId, SellerContext context) {
-        ArticleNote note = noteRepository.findByIdAndNmIdAndSellerId(noteId, nmId, context.user().getId())
+        long cabinetId = resolveCabinetId(context);
+        ArticleNote note = noteRepository.findByIdAndNmIdAndCabinetId(noteId, nmId, cabinetId)
                 .orElseThrow(() -> new UserException(
                         "Заметка не найдена",
                         HttpStatus.NOT_FOUND
@@ -148,8 +154,8 @@ public class ArticleNoteService {
      */
     @Transactional
     public ArticleNoteFileDto uploadFile(Long noteId, Long nmId, SellerContext context, MultipartFile file) {
-        // Проверяем существование заметки
-        ArticleNote note = noteRepository.findByIdAndNmIdAndSellerId(noteId, nmId, context.user().getId())
+        long cabinetId = resolveCabinetId(context);
+        ArticleNote note = noteRepository.findByIdAndNmIdAndCabinetId(noteId, nmId, cabinetId)
                 .orElseThrow(() -> new UserException(
                         "Заметка не найдена",
                         HttpStatus.NOT_FOUND
@@ -209,8 +215,8 @@ public class ArticleNoteService {
      */
     @Transactional
     public void deleteFile(Long noteId, Long fileId, Long nmId, SellerContext context) {
-        // Проверяем существование заметки
-        ArticleNote note = noteRepository.findByIdAndNmIdAndSellerId(noteId, nmId, context.user().getId())
+        long cabinetId = resolveCabinetId(context);
+        ArticleNote note = noteRepository.findByIdAndNmIdAndCabinetId(noteId, nmId, cabinetId)
                 .orElseThrow(() -> new UserException(
                         "Заметка не найдена",
                         HttpStatus.NOT_FOUND
@@ -242,8 +248,8 @@ public class ArticleNoteService {
      */
     @Transactional(readOnly = true)
     public Path getFile(Long noteId, Long fileId, Long nmId, SellerContext context) {
-        // Проверяем существование заметки
-        noteRepository.findByIdAndNmIdAndSellerId(noteId, nmId, context.user().getId())
+        long cabinetId = resolveCabinetId(context);
+        noteRepository.findByIdAndNmIdAndCabinetId(noteId, nmId, cabinetId)
                 .orElseThrow(() -> new UserException(
                         "Заметка не найдена",
                         HttpStatus.NOT_FOUND
@@ -277,8 +283,8 @@ public class ArticleNoteService {
      */
     @Transactional(readOnly = true)
     public ArticleNoteFileDto getFileInfo(Long noteId, Long fileId, Long nmId, SellerContext context) {
-        // Проверяем существование заметки (не сохраняем в переменную, так как не используем)
-        noteRepository.findByIdAndNmIdAndSellerId(noteId, nmId, context.user().getId())
+        long cabinetId = resolveCabinetId(context);
+        noteRepository.findByIdAndNmIdAndCabinetId(noteId, nmId, cabinetId)
                 .orElseThrow(() -> new UserException(
                         "Заметка не найдена",
                         HttpStatus.NOT_FOUND
@@ -291,6 +297,18 @@ public class ArticleNoteService {
                 ));
 
         return mapFileToDto(file);
+    }
+
+    /**
+     * Определяет ID кабинета по умолчанию для контекста продавца.
+     */
+    private long resolveCabinetId(SellerContext context) {
+        return cabinetRepository.findDefaultByUserId(context.user().getId())
+                .orElseThrow(() -> new UserException(
+                        "У продавца нет кабинета по умолчанию",
+                        HttpStatus.BAD_REQUEST
+                ))
+                .getId();
     }
 
     /**

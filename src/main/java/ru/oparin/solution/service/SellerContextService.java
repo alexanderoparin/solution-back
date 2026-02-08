@@ -5,11 +5,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.exception.UserException;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.model.WbApiKey;
+import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
-import ru.oparin.solution.repository.WbApiKeyRepository;
 
 import java.util.List;
 
@@ -23,26 +23,26 @@ public class SellerContextService {
     private final UserService userService;
     private final WbApiKeyService wbApiKeyService;
     private final UserRepository userRepository;
-    private final WbApiKeyRepository wbApiKeyRepository;
+    private final CabinetRepository cabinetRepository;
 
     /**
      * Создает контекст продавца из данных аутентификации.
      * Для SELLER использует текущего пользователя.
      * Для ADMIN/MANAGER использует выбранного sellerId (если указан) или последнего активного селлера.
+     * Кабинет: по умолчанию (последний созданный) или из cabinetId, если передан и принадлежит селлеру.
      *
      * @param authentication данные аутентификации
      * @param sellerId ID селлера (опционально, только для ADMIN/MANAGER)
+     * @param cabinetId ID кабинета (опционально; если передан и принадлежит селлеру — используется этот кабинет)
      * @return контекст продавца
      */
-    public SellerContext createContext(Authentication authentication, Long sellerId) {
+    public SellerContext createContext(Authentication authentication, Long sellerId, Long cabinetId) {
         User currentUser = userService.findByEmail(authentication.getName());
-        
+
         User seller;
         if (currentUser.getRole() == Role.SELLER) {
-            // SELLER всегда использует свой контекст
             seller = currentUser;
         } else if (currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER) {
-            // ADMIN/MANAGER могут выбрать селлера
             if (sellerId != null) {
                 seller = userRepository.findById(sellerId)
                         .orElseThrow(() -> new UserException(
@@ -51,7 +51,6 @@ public class SellerContextService {
                         ));
                 validateCanViewSellerAnalytics(currentUser, seller);
             } else {
-                // Если sellerId не указан, берем последнего добавленного активного селлера
                 seller = getLastActiveSeller(currentUser);
                 if (seller == null) {
                     throw new UserException(
@@ -67,20 +66,33 @@ public class SellerContextService {
             );
         }
 
-        WbApiKey apiKey = wbApiKeyService.findByUserId(seller.getId());
-        return new SellerContext(seller, apiKey.getApiKey());
+        Cabinet cabinet = resolveCabinet(seller.getId(), cabinetId);
+        return new SellerContext(seller, cabinet);
     }
 
     /**
-     * Создает контекст продавца из данных аутентификации (без указания sellerId).
-     * Для SELLER использует текущего пользователя.
-     * Для ADMIN/MANAGER использует последнего активного селлера.
-     *
-     * @param authentication данные аутентификации
-     * @return контекст продавца
+     * Кабинет: если cabinetId передан и принадлежит селлеру — этот кабинет, иначе кабинет по умолчанию.
+     */
+    private Cabinet resolveCabinet(Long sellerId, Long cabinetId) {
+        if (cabinetId != null && cabinetRepository.existsByIdAndUser_Id(cabinetId, sellerId)) {
+            return cabinetRepository.findById(cabinetId)
+                    .orElseGet(() -> wbApiKeyService.findDefaultCabinetByUserId(sellerId));
+        }
+        return wbApiKeyService.findDefaultCabinetByUserId(sellerId);
+    }
+
+    /**
+     * Создает контекст продавца (без указания cabinetId — используется кабинет по умолчанию).
+     */
+    public SellerContext createContext(Authentication authentication, Long sellerId) {
+        return createContext(authentication, sellerId, null);
+    }
+
+    /**
+     * Создает контекст продавца (без указания sellerId и cabinetId).
      */
     public SellerContext createContext(Authentication authentication) {
-        return createContext(authentication, null);
+        return createContext(authentication, null, null);
     }
 
     /**
@@ -99,16 +111,13 @@ public class SellerContextService {
             return null;
         }
 
-        // Фильтруем только селлеров с API ключами
-        List<User> sellersWithApiKeys = sellers.stream()
-                .filter(seller -> {
-                    // Проверяем наличие API ключа для селлера
-                    return wbApiKeyRepository.findByUserId(seller.getId()).isPresent();
-                })
+        // Фильтруем только селлеров с кабинетами
+        List<User> sellersWithCabinets = sellers.stream()
+                .filter(seller -> cabinetRepository.findDefaultByUserId(seller.getId()).isPresent())
                 .toList();
 
         // Возвращаем последнего добавленного (по createdAt DESC)
-        return sellersWithApiKeys.stream()
+        return sellersWithCabinets.stream()
                 .sorted((a, b) -> {
                     if (a.getCreatedAt() == null && b.getCreatedAt() == null) return 0;
                     if (a.getCreatedAt() == null) return 1;
@@ -157,9 +166,16 @@ public class SellerContextService {
     }
 
     /**
-     * Контекст продавца.
+     * Контекст продавца: пользователь-селлер и выбранный кабинет (ключ и id берутся из кабинета).
      */
-    public record SellerContext(User user, String apiKey) {
+    public record SellerContext(User user, Cabinet cabinet) {
+        public String apiKey() {
+            return cabinet != null ? cabinet.getApiKey() : null;
+        }
+
+        public Long cabinetId() {
+            return cabinet != null ? cabinet.getId() : null;
+        }
     }
 }
 

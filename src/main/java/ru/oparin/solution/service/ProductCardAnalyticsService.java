@@ -6,12 +6,14 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.wb.*;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CampaignStatus;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.ProductCardAnalytics;
 import ru.oparin.solution.model.ProductPriceHistory;
 import ru.oparin.solution.model.PromotionCampaign;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
@@ -47,6 +49,7 @@ public class ProductCardAnalyticsService {
     private static final int PRICES_API_CALL_DELAY_MS = 600; // 600 мс между запросами цен (лимит: 10 запросов за 6 секунд)
     private static final int PRICES_BATCH_SIZE = 1000; // Максимум товаров за один запрос
 
+    private final CabinetRepository cabinetRepository;
     private final ProductCardRepository productCardRepository;
     private final ProductCardAnalyticsRepository analyticsRepository;
     private final WbContentApiClient contentApiClient;
@@ -62,47 +65,49 @@ public class ProductCardAnalyticsService {
     private final WbOrdersApiClient ordersApiClient;
 
     /**
-     * Обновляет все карточки и загружает аналитику за указанный период.
-     * Выполняется асинхронно с ограниченным параллелизмом (максимум 5 потоков).
-     * Каждая операция сохранения выполняется в отдельной транзакции для независимости обновлений.
+     * Обновляет все карточки и загружает аналитику за указанный период (кабинет по умолчанию продавца).
      */
     @Async("taskExecutor")
     public void updateCardsAndLoadAnalytics(User seller, String apiKey, LocalDate dateFrom, LocalDate dateTo) {
-        log.info("Начало обновления карточек, кампаний и загрузки аналитики для продавца (ID: {}, email: {}) за период {} - {}", 
-                seller.getId(), seller.getEmail(), dateFrom, dateTo);
+        Cabinet cabinet = cabinetRepository.findDefaultByUserId(seller.getId())
+                .orElseThrow(() -> new IllegalStateException("У продавца нет кабинета по умолчанию"));
+        updateCardsAndLoadAnalytics(cabinet, dateFrom, dateTo);
+    }
 
-        // Обновление карточек товаров
+    /**
+     * Обновляет карточки и загружает аналитику для указанного кабинета (ключ берётся из кабинета).
+     * Выполняется асинхронно. Данные сохраняются с привязкой к этому кабинету.
+     */
+    @Async("taskExecutor")
+    public void updateCardsAndLoadAnalytics(Cabinet cabinet, LocalDate dateFrom, LocalDate dateTo) {
+        User seller = cabinet.getUser();
+        String apiKey = cabinet.getApiKey();
+        log.info("Начало обновления карточек, кампаний и загрузки аналитики для кабинета (ID: {}, продавец: {}) за период {} - {}",
+                cabinet.getId(), seller.getEmail(), dateFrom, dateTo);
+
         CardsListResponse cardsResponse = fetchAllCards(apiKey);
-        productCardService.saveOrUpdateCards(cardsResponse, seller);
+        productCardService.saveOrUpdateCards(cardsResponse, cabinet);
 
-        // Загрузка цен товаров за вчерашнюю дату
-        updateProductPrices(seller, apiKey);
+        updateProductPrices(cabinet, apiKey);
+        updateSppFromOrders(cabinet, apiKey);
+        updateProductStocks(cabinet, apiKey);
 
-        // Обновление СПП (скидка постоянного покупателя) из заказов
-        updateSppFromOrders(seller, apiKey);
+        List<Long> campaignIds = updatePromotionCampaigns(cabinet, apiKey);
 
-        // Обновление остатков товаров
-        updateProductStocks(seller, apiKey);
-
-        // Обновление рекламных кампаний
-        List<Long> campaignIds = updatePromotionCampaigns(seller, apiKey);
-
-        // Загрузка статистики по кампаниям (исключая завершенные)
         if (!campaignIds.isEmpty()) {
-            List<Long> nonFinishedCampaignIds = filterNonFinishedCampaigns(seller.getId(), campaignIds);
+            List<Long> nonFinishedCampaignIds = filterNonFinishedCampaigns(cabinet.getId(), campaignIds);
             if (!nonFinishedCampaignIds.isEmpty()) {
                 updatePromotionCampaignStatistics(seller, apiKey, nonFinishedCampaignIds, dateFrom, dateTo);
             }
         }
 
-        // Загрузка аналитики по карточкам
-        List<ProductCard> productCards = productCardRepository.findBySellerId(seller.getId());
+        List<ProductCard> productCards = productCardRepository.findByCabinet_Id(cabinet.getId());
         log.info("Найдено карточек для загрузки аналитики: {}", productCards.size());
 
         ProcessingResult result = loadAnalyticsForAllCards(productCards, apiKey, dateFrom, dateTo);
-        
-        log.info("Завершено обновление карточек, кампаний и загрузка аналитики для продавца (ID: {}, email: {}): успешно {}, ошибок {}", 
-                seller.getId(), seller.getEmail(), result.successCount(), result.errorCount());
+
+        log.info("Завершено обновление карточек, кампаний и загрузка аналитики для кабинета (ID: {}): успешно {}, ошибок {}",
+                cabinet.getId(), result.successCount(), result.errorCount());
     }
 
     /**
@@ -166,15 +171,70 @@ public class ProductCardAnalyticsService {
             // Сохраняем кампании в БД вместе со связями артикулов
             promotionCampaignService.saveOrUpdateCampaigns(advertsResponse, seller);
 
-            log.info("Завершено обновление рекламных кампаний для продавца (ID: {}, email: {})", 
+            log.info("Завершено обновление рекламных кампаний для продавца (ID: {}, email: {})",
                     seller.getId(), seller.getEmail());
 
             return allCampaignIds;
 
         } catch (Exception e) {
-            log.error("Ошибка при обновлении рекламных кампаний для продавца (ID: {}, email: {}): {}", 
+            log.error("Ошибка при обновлении рекламных кампаний для продавца (ID: {}, email: {}): {}",
                     seller.getId(), seller.getEmail(), e.getMessage(), e);
-            // Не прерываем выполнение, продолжаем загрузку аналитики
+            return List.of();
+        }
+    }
+
+    /**
+     * Обновляет рекламные кампании для кабинета (сохранение с привязкой к кабинету).
+     */
+    private List<Long> updatePromotionCampaigns(Cabinet cabinet, String apiKey) {
+        try {
+            User seller = cabinet.getUser();
+            log.info("Начало обновления рекламных кампаний для кабинета (ID: {}, продавец: {})",
+                    cabinet.getId(), seller.getEmail());
+
+            PromotionCountResponse countResponse = promotionApiClient.getPromotionCount(apiKey);
+            CampaignIdsByType campaignsByType = separateCampaignsByType(countResponse);
+
+            List<Long> allCampaignIds = new ArrayList<>();
+            allCampaignIds.addAll(campaignsByType.type8Ids());
+            allCampaignIds.addAll(campaignsByType.type9Ids());
+
+            if (allCampaignIds.isEmpty()) {
+                log.info("У кабинета (ID: {}) нет рекламных кампаний типов 8 и 9", cabinet.getId());
+                return allCampaignIds;
+            }
+
+            List<PromotionAdvertsResponse.Campaign> type8Campaigns = new ArrayList<>();
+            if (!campaignsByType.type8Ids().isEmpty()) {
+                type8Campaigns = fetchCampaignsInBatches(apiKey, campaignsByType.type8Ids(), 8);
+            }
+
+            List<PromotionAdvertsResponse.Campaign> type9Campaigns = new ArrayList<>();
+            if (!campaignsByType.type9Ids().isEmpty()) {
+                type9Campaigns = fetchAuctionCampaignsInBatches(apiKey, campaignsByType.type9Ids());
+            }
+
+            List<PromotionAdvertsResponse.Campaign> allCampaigns = new ArrayList<>();
+            allCampaigns.addAll(type8Campaigns);
+            allCampaigns.addAll(type9Campaigns);
+
+            if (allCampaigns.isEmpty()) {
+                log.info("Не удалось получить детальную информацию о кампаниях для кабинета (ID: {})", cabinet.getId());
+                return allCampaignIds;
+            }
+
+            PromotionAdvertsResponse advertsResponse = PromotionAdvertsResponse.builder()
+                    .adverts(allCampaigns)
+                    .build();
+
+            promotionCampaignService.saveOrUpdateCampaigns(advertsResponse, cabinet);
+
+            log.info("Завершено обновление рекламных кампаний для кабинета (ID: {})", cabinet.getId());
+            return allCampaignIds;
+
+        } catch (Exception e) {
+            log.error("Ошибка при обновлении рекламных кампаний для кабинета (ID: {}): {}",
+                    cabinet.getId(), e.getMessage(), e);
             return List.of();
         }
     }
@@ -342,22 +402,25 @@ public class ProductCardAnalyticsService {
      * Фильтрует список ID кампаний, исключая завершенные.
      * Оставляет активные, на паузе и готовые к запуску кампании.
      *
-     * @param sellerId ID продавца
+     * @param cabinetId ID кабинета
      * @param campaignIds список ID всех кампаний
      * @return список ID незавершенных кампаний
      */
-    private List<Long> filterNonFinishedCampaigns(Long sellerId, List<Long> campaignIds) {
-        List<PromotionCampaign> campaigns = campaignRepository.findBySellerId(sellerId);
-        
+    private List<Long> filterNonFinishedCampaigns(Long cabinetId, List<Long> campaignIds) {
+        List<PromotionCampaign> campaigns = campaignRepository.findByCabinet_Id(cabinetId);
+        return filterNonFinishedCampaignsInternal(campaigns, campaignIds);
+    }
+
+    private List<Long> filterNonFinishedCampaignsInternal(List<PromotionCampaign> campaigns, List<Long> campaignIds) {
         Set<Long> finishedCampaignIds = extractFinishedCampaignIds(campaigns);
         List<Long> nonFinishedCampaignIds = filterOutFinishedCampaigns(campaignIds, finishedCampaignIds);
-        
+
         int filteredCount = campaignIds.size() - nonFinishedCampaignIds.size();
         if (filteredCount > 0) {
             log.info("Исключено {} завершенных кампаний из запроса статистики. Незавершенных кампаний: {}",
                     filteredCount, nonFinishedCampaignIds.size());
         }
-        
+
         return nonFinishedCampaignIds;
     }
 
@@ -699,7 +762,8 @@ public class ProductCardAnalyticsService {
             LocalDate dateFrom, 
             LocalDate dateTo
     ) {
-        List<LocalDate> existingDates = getExistingAnalyticsDates(card.getNmId(), dateFrom, dateTo);
+        Long cabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
+        List<LocalDate> existingDates = getExistingAnalyticsDates(card.getNmId(), cabinetId, dateFrom, dateTo);
         
         if (isAllDatesPresent(existingDates, dateFrom, dateTo)) {
             log.info("Аналитика для nmID {} за период {} - {} уже присутствует в БД", 
@@ -888,15 +952,23 @@ public class ProductCardAnalyticsService {
             SaleFunnelResponse.DailyData dailyData, 
             LocalDate date
     ) {
-        Optional<ProductCardAnalytics> existing = analyticsRepository
-                .findByProductCardNmIdAndDate(card.getNmId(), date);
+        Long cabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
+        Optional<ProductCardAnalytics> existing = cabinetId != null
+                ? analyticsRepository.findByProductCardNmIdAndDateAndCabinet_Id(card.getNmId(), date, cabinetId)
+                : analyticsRepository.findByProductCardNmIdAndDate(card.getNmId(), date);
 
         ProductCardAnalytics analytics = existing.orElseGet(() -> {
             ProductCardAnalytics newAnalytics = new ProductCardAnalytics();
             newAnalytics.setProductCard(card);
             newAnalytics.setDate(date);
+            if (card.getCabinet() != null) {
+                newAnalytics.setCabinet(card.getCabinet());
+            }
             return newAnalytics;
         });
+        if (card.getCabinet() != null && analytics.getCabinet() == null) {
+            analytics.setCabinet(card.getCabinet());
+        }
 
         updateAnalyticsFields(analytics, dailyData);
         analyticsRepository.save(analytics);
@@ -912,9 +984,10 @@ public class ProductCardAnalyticsService {
         // Конверсии больше не сохраняем в БД, рассчитываем на лету
     }
 
-    private List<LocalDate> getExistingAnalyticsDates(Long nmId, LocalDate dateFrom, LocalDate dateTo) {
-        List<ProductCardAnalytics> existing = analyticsRepository
-                .findByProductCardNmIdAndDateBetween(nmId, dateFrom, dateTo);
+    private List<LocalDate> getExistingAnalyticsDates(Long nmId, Long cabinetId, LocalDate dateFrom, LocalDate dateTo) {
+        List<ProductCardAnalytics> existing = cabinetId != null
+                ? analyticsRepository.findByCabinet_IdAndProductCardNmIdAndDateBetween(cabinetId, nmId, dateFrom, dateTo)
+                : analyticsRepository.findByProductCardNmIdAndDateBetween(nmId, dateFrom, dateTo);
 
         return existing.stream()
                 .map(ProductCardAnalytics::getDate)
@@ -967,24 +1040,21 @@ public class ProductCardAnalyticsService {
     }
 
     /**
-     * Обновляет цены товаров за вчерашнюю дату.
+     * Обновляет цены товаров за вчерашнюю дату для кабинета.
      */
-    private void updateProductPrices(User seller, String apiKey) {
+    private void updateProductPrices(Cabinet cabinet, String apiKey) {
         try {
+            User seller = cabinet.getUser();
             LocalDate yesterdayDate = LocalDate.now().minusDays(1);
-            log.info("Начало загрузки цен товаров за дату {} для продавца (ID: {}, email: {})", 
-                    yesterdayDate, seller.getId(), seller.getEmail());
+            log.info("Начало загрузки цен товаров за дату {} для кабинета (ID: {})", yesterdayDate, cabinet.getId());
 
-            // Получаем список всех карточек продавца
-            List<ProductCard> productCards = productCardRepository.findBySellerId(seller.getId());
-            
+            List<ProductCard> productCards = productCardRepository.findByCabinet_Id(cabinet.getId());
+
             if (productCards.isEmpty()) {
-                log.info("У продавца (ID: {}, email: {}) нет карточек товаров для загрузки цен", 
-                        seller.getId(), seller.getEmail());
+                log.info("У кабинета (ID: {}) нет карточек товаров для загрузки цен", cabinet.getId());
                 return;
             }
 
-            // Собираем список nmId
             List<Long> nmIds = productCards.stream()
                     .map(ProductCard::getNmId)
                     .filter(nmId -> nmId != null)
@@ -992,36 +1062,33 @@ public class ProductCardAnalyticsService {
                     .collect(Collectors.toList());
 
             if (nmIds.isEmpty()) {
-                log.warn("Не найдено валидных nmId для загрузки цен у продавца (ID: {}, email: {})", 
-                        seller.getId(), seller.getEmail());
+                log.warn("Не найдено валидных nmId для загрузки цен у кабинета (ID: {})", cabinet.getId());
                 return;
             }
 
-            // Проверяем, есть ли уже цены за вчерашнюю дату для всех товаров
-            List<ProductPriceHistory> existingPrices = productPriceService.getPricesByNmIdsAndDate(nmIds, yesterdayDate);
+            List<ProductPriceHistory> existingPrices = productPriceService.getPricesByNmIdsAndDate(nmIds, yesterdayDate, cabinet.getId());
             Set<Long> existingNmIds = existingPrices.stream()
                     .map(ProductPriceHistory::getNmId)
                     .collect(Collectors.toSet());
 
             if (existingNmIds.size() == nmIds.size()) {
-                log.info("Цены за дату {} уже загружены для всех {} товаров продавца (ID: {}, email: {}). Пропускаем загрузку.", 
-                        yesterdayDate, nmIds.size(), seller.getId(), seller.getEmail());
+                log.info("Цены за дату {} уже загружены для всех {} товаров кабинета (ID: {}). Пропускаем загрузку.",
+                        yesterdayDate, nmIds.size(), cabinet.getId());
                 return;
             }
 
-            // Фильтруем товары, для которых еще нет цен
             List<Long> nmIdsToLoad = nmIds.stream()
                     .filter(nmId -> !existingNmIds.contains(nmId))
                     .collect(Collectors.toList());
 
             if (nmIdsToLoad.isEmpty()) {
-                log.info("Цены за дату {} уже загружены для всех товаров продавца (ID: {}, email: {}). Пропускаем загрузку.", 
-                        yesterdayDate, seller.getId(), seller.getEmail());
+                log.info("Цены за дату {} уже загружены для всех товаров кабинета (ID: {}). Пропускаем загрузку.",
+                        yesterdayDate, cabinet.getId());
                 return;
             }
 
-            log.info("Найдено {} товаров для загрузки цен у продавца (ID: {}, email: {}). Уже загружено: {}, требуется загрузить: {}", 
-                    nmIds.size(), seller.getId(), seller.getEmail(), existingNmIds.size(), nmIdsToLoad.size());
+            log.info("Найдено {} товаров для загрузки цен у кабинета (ID: {}). Уже загружено: {}, требуется загрузить: {}",
+                    nmIds.size(), cabinet.getId(), existingNmIds.size(), nmIdsToLoad.size());
 
             // Разбиваем на батчи по 1000 товаров
             List<List<Long>> batches = partitionList(nmIdsToLoad, PRICES_BATCH_SIZE);
@@ -1038,7 +1105,7 @@ public class ProductCardAnalyticsService {
                             .build();
 
                     ProductPricesResponse response = productsApiClient.getProductPrices(apiKey, request);
-                    productPriceService.savePrices(response, yesterdayDate);
+                    productPriceService.savePrices(response, yesterdayDate, cabinet);
 
                     // Задержка между запросами (кроме последнего)
                     if (i < batches.size() - 1) {
@@ -1051,12 +1118,10 @@ public class ProductCardAnalyticsService {
                 }
             }
 
-            log.info("Завершена загрузка цен товаров за дату {} для продавца (ID: {}, email: {})", 
-                    yesterdayDate, seller.getId(), seller.getEmail());
+            log.info("Завершена загрузка цен товаров за дату {} для кабинета (ID: {})", yesterdayDate, cabinet.getId());
 
         } catch (Exception e) {
-            log.error("Ошибка при загрузке цен товаров для продавца (ID: {}, email: {}): {}", 
-                    seller.getId(), seller.getEmail(), e.getMessage(), e);
+            log.error("Ошибка при загрузке цен товаров для кабинета (ID: {}): {}", cabinet.getId(), e.getMessage(), e);
             // Не прерываем выполнение, продолжаем загрузку аналитики
         }
     }
@@ -1065,23 +1130,19 @@ public class ProductCardAnalyticsService {
      * Обновляет СПП (скидка постоянного покупателя) из заказов за вчерашнюю дату.
      * Получает заказы, собирает Map nmId -> spp и обновляет поле sppDiscount в product_price_history.
      */
-    private void updateSppFromOrders(User seller, String apiKey) {
+    private void updateSppFromOrders(Cabinet cabinet, String apiKey) {
         try {
             LocalDate yesterdayDate = LocalDate.now().minusDays(1);
-            log.info("Начало обновления СПП из заказов за дату {} для продавца (ID: {}, email: {})", 
-                    yesterdayDate, seller.getId(), seller.getEmail());
+            log.info("Начало обновления СПП из заказов за дату {} для кабинета (ID: {})", yesterdayDate, cabinet.getId());
 
-            // Получаем заказы за вчерашнюю дату (flag=1 - только реализованные)
             List<OrdersResponse.Order> orders = ordersApiClient.getOrders(apiKey, yesterdayDate, 1);
 
             if (orders == null || orders.isEmpty()) {
-                log.info("Не найдено заказов за дату {} для продавца (ID: {}, email: {}). Пропускаем обновление СПП.", 
-                        yesterdayDate, seller.getId(), seller.getEmail());
+                log.info("Не найдено заказов за дату {} для кабинета (ID: {}). Пропускаем обновление СПП.", yesterdayDate, cabinet.getId());
                 return;
             }
 
-            log.info("Получено заказов за дату {}: {} для продавца (ID: {}, email: {})", 
-                    yesterdayDate, orders.size(), seller.getId(), seller.getEmail());
+            log.info("Получено заказов за дату {}: {} для кабинета (ID: {})", yesterdayDate, orders.size(), cabinet.getId());
 
             // Собираем Map: nmId -> spp
             // СПП для всех покупателей для одного товара на дату должен быть одинаковый
@@ -1110,22 +1171,18 @@ public class ProductCardAnalyticsService {
             }
 
             if (sppByNmId.isEmpty()) {
-                log.warn("Не найдено валидных данных СПП в заказах за дату {} для продавца (ID: {}, email: {})", 
-                        yesterdayDate, seller.getId(), seller.getEmail());
+                log.warn("Не найдено валидных данных СПП в заказах за дату {} для кабинета (ID: {})", yesterdayDate, cabinet.getId());
                 return;
             }
 
             log.info("Найдено {} уникальных артикулов с данными СПП для обновления", sppByNmId.size());
 
-            // Обновляем sppDiscount в product_price_history
-            productPriceService.updateSppDiscount(sppByNmId, yesterdayDate);
+            productPriceService.updateSppDiscount(sppByNmId, yesterdayDate, cabinet.getId());
 
-            log.info("Завершено обновление СПП из заказов за дату {} для продавца (ID: {}, email: {})", 
-                    yesterdayDate, seller.getId(), seller.getEmail());
+            log.info("Завершено обновление СПП из заказов за дату {} для кабинета (ID: {})", yesterdayDate, cabinet.getId());
 
         } catch (Exception e) {
-            log.error("Ошибка при обновлении СПП из заказов для продавца (ID: {}, email: {}): {}", 
-                    seller.getId(), seller.getEmail(), e.getMessage(), e);
+            log.error("Ошибка при обновлении СПП из заказов для кабинета (ID: {}): {}", cabinet.getId(), e.getMessage(), e);
             // Не прерываем выполнение, продолжаем загрузку аналитики
         }
     }
@@ -1143,23 +1200,19 @@ public class ProductCardAnalyticsService {
     }
 
     /**
-     * Обновляет остатки товаров на складах WB (не на складах продавца).
+     * Обновляет остатки товаров на складах WB для кабинета.
      */
-    private void updateProductStocks(User seller, String apiKey) {
+    private void updateProductStocks(Cabinet cabinet, String apiKey) {
         try {
-            log.info("Начало обновления остатков товаров на складах WB для продавца (ID: {}, email: {})", 
-                    seller.getId(), seller.getEmail());
+            log.info("Начало обновления остатков товаров на складах WB для кабинета (ID: {})", cabinet.getId());
 
-            // Получаем список всех карточек продавца
-            List<ProductCard> productCards = productCardRepository.findBySellerId(seller.getId());
-            
+            List<ProductCard> productCards = productCardRepository.findByCabinet_Id(cabinet.getId());
+
             if (productCards.isEmpty()) {
-                log.info("У продавца (ID: {}, email: {}) нет карточек товаров для обновления остатков", 
-                        seller.getId(), seller.getEmail());
+                log.info("У кабинета (ID: {}) нет карточек товаров для обновления остатков", cabinet.getId());
                 return;
             }
 
-            // Собираем список nmId
             List<Long> nmIds = productCards.stream()
                     .map(ProductCard::getNmId)
                     .filter(nmId -> nmId != null)
@@ -1167,27 +1220,21 @@ public class ProductCardAnalyticsService {
                     .collect(Collectors.toList());
 
             if (nmIds.isEmpty()) {
-                log.warn("Не найдено валидных nmId для обновления остатков у продавца (ID: {}, email: {})", 
-                        seller.getId(), seller.getEmail());
+                log.warn("Не найдено валидных nmId для обновления остатков у кабинета (ID: {})", cabinet.getId());
                 return;
             }
 
-            log.info("Найдено {} товаров для обновления остатков на складах WB у продавца (ID: {}, email: {})", 
-                    nmIds.size(), seller.getId(), seller.getEmail());
+            log.info("Найдено {} товаров для обновления остатков на складах WB у кабинета (ID: {})", nmIds.size(), cabinet.getId());
 
-            // Загружаем остатки по размерам для каждого товара
-            // Лимит: 3 запроса в минуту, интервал 20 секунд между запросами
             int requestCount = 0;
             for (Long nmId : nmIds) {
                 try {
-                    stocksService.getWbStocksBySizes(apiKey, nmId);
+                    stocksService.getWbStocksBySizes(apiKey, nmId, cabinet);
                     requestCount++;
-                    
-                    // Делаем паузу 20 секунд между запросами (кроме последнего)
-                    // Лимит API: 3 запроса в минуту, интервал 20 секунд
+
                     if (requestCount < nmIds.size()) {
                         log.info("Пауза 20 секунд перед следующим запросом остатков (лимит API: 3 запроса в минуту, интервал 20 секунд)");
-                        Thread.sleep(20000); // 20 секунд
+                        Thread.sleep(20000);
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -1195,17 +1242,13 @@ public class ProductCardAnalyticsService {
                     break;
                 } catch (Exception e) {
                     log.error("Ошибка при обновлении остатков для артикула {}: {}", nmId, e.getMessage(), e);
-                    // Продолжаем обновление остатков для других товаров
                 }
             }
 
-            log.info("Завершено обновление остатков товаров на складах WB для продавца (ID: {}, email: {})", 
-                    seller.getId(), seller.getEmail());
+            log.info("Завершено обновление остатков товаров на складах WB для кабинета (ID: {})", cabinet.getId());
 
         } catch (Exception e) {
-            log.error("Ошибка при обновлении остатков товаров на складах WB для продавца (ID: {}, email: {}): {}", 
-                    seller.getId(), seller.getEmail(), e.getMessage(), e);
-            // Не прерываем выполнение, продолжаем загрузку аналитики
+            log.error("Ошибка при обновлении остатков товаров на складах WB для кабинета (ID: {}): {}", cabinet.getId(), e.getMessage(), e);
         }
     }
 }

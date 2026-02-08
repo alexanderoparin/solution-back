@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.wb.WbStocksSizesRequest;
 import ru.oparin.solution.dto.wb.WbStocksSizesResponse;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductBarcode;
 import ru.oparin.solution.model.ProductStock;
 import ru.oparin.solution.repository.ProductBarcodeRepository;
@@ -43,6 +44,11 @@ public class ProductStocksService {
      */
     @Transactional
     public WbStocksSizesResponse getWbStocksBySizes(String apiKey, Long nmId) {
+        return getWbStocksBySizes(apiKey, nmId, null);
+    }
+
+    @Transactional
+    public WbStocksSizesResponse getWbStocksBySizes(String apiKey, Long nmId, Cabinet cabinet) {
         log.info("Начало загрузки остатков по размерам на складах WB для артикула {}", nmId);
 
         WbStocksSizesRequest request = buildStocksRequest(nmId);
@@ -53,10 +59,9 @@ public class ProductStocksService {
             return createEmptyResponse();
         }
 
-        log.info("Получено {} размеров с остатками на складах WB для артикула {}", 
-                response.getData().getSizes().size(), nmId);
+        log.info("Получено {} размеров с остатками на складах WB для артикула {}", response.getData().getSizes().size(), nmId);
 
-        saveWbStocksBySizes(nmId, response.getData().getSizes());
+        saveWbStocksBySizes(nmId, response.getData().getSizes(), cabinet);
         return response;
     }
 
@@ -67,7 +72,11 @@ public class ProductStocksService {
      * @param nmId артикул товара
      * @param sizeItems список размеров с остатками
      */
-    private void saveWbStocksBySizes(Long nmId, List<WbStocksSizesResponse.SizeItem> sizeItems) {
+    private void saveWbStocksBySizes(Long nmId, List<WbStocksSizesResponse.SizeItem> sizeItems, Cabinet cabinet) {
+        if (cabinet == null) {
+            log.warn("Кабинет не указан, остатки не сохранены");
+            return;
+        }
         SaveStatistics statistics = new SaveStatistics();
 
         for (WbStocksSizesResponse.SizeItem sizeItem : sizeItems) {
@@ -76,7 +85,7 @@ public class ProductStocksService {
                 continue;
             }
 
-            processSizeItem(nmId, sizeItem, statistics);
+            processSizeItem(nmId, sizeItem, statistics, cabinet);
         }
 
         logSaveStatistics(statistics);
@@ -88,25 +97,22 @@ public class ProductStocksService {
      * - Товар с размерами (chrtID != null) - ищем баркод по chrtID
      * - Товар без размеров (chrtID == null, techSize="0") - берем первый баркод товара
      */
-    private void processSizeItem(Long nmId, WbStocksSizesResponse.SizeItem sizeItem, SaveStatistics statistics) {
+    private void processSizeItem(Long nmId, WbStocksSizesResponse.SizeItem sizeItem, SaveStatistics statistics, Cabinet cabinet) {
         if (!hasOfficeDetails(sizeItem)) {
-            log.debug("Размер {} (chrtID: {}) для артикула {} не имеет детализации по складам, пропускаем",
-                    sizeItem.getName(), sizeItem.getChrtID(), nmId);
             statistics.incrementSkipped();
             return;
         }
 
-        // Для товаров без размеров (chrtID == null) берем первый баркод товара
-        String barcode = findBarcodeForSizeItem(nmId, sizeItem);
+        String barcode = findBarcodeForSizeItem(nmId, sizeItem, cabinet.getId());
         if (barcode == null || barcode.isEmpty()) {
-            log.warn("Не найден баркод для товара nmID {} и размера chrtID {}, пропускаем", nmId, sizeItem.getChrtID());
+            log.warn("Не найден баркод для товара nmID {} и размера chrtID {} в кабинете {}, пропускаем", nmId, sizeItem.getChrtID(), cabinet.getId());
             statistics.incrementSkipped();
             return;
         }
 
         for (WbStocksSizesResponse.OfficeStock office : sizeItem.getOffices()) {
             if (isValidOffice(office)) {
-                processOfficeStock(nmId, office, barcode, statistics);
+                processOfficeStock(nmId, office, barcode, statistics, cabinet);
             }
         }
     }
@@ -114,10 +120,10 @@ public class ProductStocksService {
     /**
      * Обрабатывает остатки на одном складе.
      */
-    private void processOfficeStock(Long nmId, WbStocksSizesResponse.OfficeStock office, 
-                                    String barcode, SaveStatistics statistics) {
+    private void processOfficeStock(Long nmId, WbStocksSizesResponse.OfficeStock office,
+                                    String barcode, SaveStatistics statistics, Cabinet cabinet) {
         Long stockCount = getStockCount(office);
-        Optional<ProductStock> existingStock = findExistingStock(nmId, office.getOfficeID(), barcode);
+        Optional<ProductStock> existingStock = findExistingStock(nmId, office.getOfficeID(), barcode, cabinet.getId());
 
         try {
             if (existingStock.isPresent()) {
@@ -125,7 +131,7 @@ public class ProductStocksService {
                 statistics.incrementUpdated();
             } else {
                 if (shouldCreateNewStock(stockCount)) {
-                    createNewStock(nmId, office.getOfficeID(), barcode, stockCount);
+                    createNewStock(nmId, office.getOfficeID(), barcode, stockCount, cabinet);
                     statistics.incrementSaved();
                 } else {
                     statistics.incrementSkipped();
@@ -146,12 +152,10 @@ public class ProductStocksService {
         stockRepository.save(stock);
     }
 
-    /**
-     * Создает новую запись об остатках.
-     */
-    private void createNewStock(Long nmId, Long warehouseId, String barcode, Long stockCount) {
+    private void createNewStock(Long nmId, Long warehouseId, String barcode, Long stockCount, Cabinet cabinet) {
         ProductStock stock = ProductStock.builder()
                 .nmId(nmId)
+                .cabinet(cabinet)
                 .warehouseId(warehouseId)
                 .barcode(barcode)
                 .amount(stockCount.intValue())
@@ -168,39 +172,20 @@ public class ProductStocksService {
      * @param sizeItem элемент размера из ответа API
      * @return баркод или null, если не найден
      */
-    private String findBarcodeForSizeItem(Long nmId, WbStocksSizesResponse.SizeItem sizeItem) {
+    private String findBarcodeForSizeItem(Long nmId, WbStocksSizesResponse.SizeItem sizeItem, Long cabinetId) {
         Long chrtId = sizeItem.getChrtID();
-        
-        // Если chrtID есть, ищем баркод по chrtID (товар с размерами)
+        List<ProductBarcode> barcodes = cabinetId != null
+                ? barcodeRepository.findByNmIdAndCabinet_Id(nmId, cabinetId)
+                : barcodeRepository.findByNmId(nmId);
+
         if (chrtId != null) {
-            return findBarcodeByChrtId(nmId, chrtId);
+            return barcodes.stream()
+                    .filter(b -> chrtId.equals(b.getChrtId()))
+                    .map(ProductBarcode::getBarcode)
+                    .findFirst()
+                    .orElse(null);
         }
-        
-        // Если chrtID == null, это товар без размеров (hasSizes=false, techSize="0")
-        // Берем первый баркод товара
-        List<ProductBarcode> barcodes = barcodeRepository.findByNmId(nmId);
         return barcodes.stream()
-                .map(ProductBarcode::getBarcode)
-                .findFirst()
-                .orElse(null);
-    }
-
-    /**
-     * Находит баркод по nmID и chrtID.
-     * Если баркодов несколько для одного chrtID, возвращает первый.
-     *
-     * @param nmId артикул товара
-     * @param chrtId ID характеристики размера
-     * @return баркод или null, если не найден
-     */
-    private String findBarcodeByChrtId(Long nmId, Long chrtId) {
-        if (chrtId == null) {
-            return null;
-        }
-
-        List<ProductBarcode> barcodes = barcodeRepository.findByNmId(nmId);
-        return barcodes.stream()
-                .filter(barcode -> chrtId.equals(barcode.getChrtId()))
                 .map(ProductBarcode::getBarcode)
                 .findFirst()
                 .orElse(null);
@@ -295,6 +280,10 @@ public class ProductStocksService {
      */
     private Optional<ProductStock> findExistingStock(Long nmId, Long warehouseId, String barcode) {
         return stockRepository.findByNmIdAndWarehouseIdAndBarcode(nmId, warehouseId, barcode);
+    }
+
+    private Optional<ProductStock> findExistingStock(Long nmId, Long warehouseId, String barcode, Long cabinetId) {
+        return stockRepository.findByNmIdAndWarehouseIdAndBarcodeAndCabinet_Id(nmId, warehouseId, barcode, cabinetId);
     }
 
     /**

@@ -11,11 +11,11 @@ import ru.oparin.solution.dto.RegisterRequest;
 import ru.oparin.solution.dto.UpdateUserRequest;
 import ru.oparin.solution.dto.UserListItemDto;
 import ru.oparin.solution.exception.UserException;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.model.WbApiKey;
+import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
-import ru.oparin.solution.repository.WbApiKeyRepository;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
 public class UserService {
 
     private final UserRepository userRepository;
-    private final WbApiKeyRepository wbApiKeyRepository;
+    private final CabinetRepository cabinetRepository;
     private final PasswordEncoder passwordEncoder;
 
     /**
@@ -76,12 +76,12 @@ public class UserService {
      */
     @Transactional
     public void updateApiKey(Long userId, String newApiKey) {
-        WbApiKey apiKey = wbApiKeyRepository.findByUserId(userId)
-                .orElseGet(() -> createNewApiKey(userId));
-        
-        resetApiKeyValidation(apiKey);
-        apiKey.setApiKey(newApiKey);
-        wbApiKeyRepository.save(apiKey);
+        Cabinet cabinet = cabinetRepository.findDefaultByUserId(userId)
+                .orElseGet(() -> createNewCabinet(userId));
+
+        resetApiKeyValidation(cabinet);
+        cabinet.setApiKey(newApiKey);
+        cabinetRepository.save(cabinet);
     }
 
     /**
@@ -146,21 +146,24 @@ public class UserService {
 
 
     /**
-     * Создает новую запись API ключа для пользователя.
+     * Создаёт новый кабинет для пользователя (по умолчанию «Основной кабинет»).
      */
-    private WbApiKey createNewApiKey(Long userId) {
-        return WbApiKey.builder()
-                .userId(userId)
+    private Cabinet createNewCabinet(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserException("Пользователь не найден: " + userId, HttpStatus.NOT_FOUND));
+        return Cabinet.builder()
+                .user(user)
+                .name("Основной кабинет")
                 .build();
     }
 
     /**
-     * Сбрасывает статус валидации API ключа.
+     * Сбрасывает статус валидации API ключа кабинета.
      */
-    private void resetApiKeyValidation(WbApiKey apiKey) {
-        apiKey.setIsValid(null);
-        apiKey.setValidationError(null);
-        apiKey.setLastValidatedAt(null);
+    private void resetApiKeyValidation(Cabinet cabinet) {
+        cabinet.setIsValid(null);
+        cabinet.setValidationError(null);
+        cabinet.setLastValidatedAt(null);
     }
 
     /**
@@ -316,15 +319,12 @@ public class UserService {
             return List.of();
         }
 
-        // Фильтруем только селлеров с API ключами
-        List<User> sellersWithApiKeys = sellers.stream()
-                .filter(seller -> {
-                    // Проверяем наличие API ключа для селлера
-                    return wbApiKeyRepository.findByUserId(seller.getId()).isPresent();
-                })
+        // Фильтруем только селлеров с кабинетами
+        List<User> sellersWithCabinets = sellers.stream()
+                .filter(seller -> cabinetRepository.findDefaultByUserId(seller.getId()).isPresent())
                 .toList();
 
-        return sellersWithApiKeys.stream()
+        return sellersWithCabinets.stream()
                 .map(this::mapToUserListItemDto)
                 .collect(Collectors.toList());
     }
@@ -400,12 +400,12 @@ public class UserService {
      * Преобразует User в UserListItemDto.
      */
     private UserListItemDto mapToUserListItemDto(User user) {
-        // Получаем lastDataUpdateAt из API ключа, если это селлер
+        // Получаем lastDataUpdateAt из кабинета по умолчанию, если это селлер
         LocalDateTime lastDataUpdateAt = null;
         if (user.getRole() == Role.SELLER) {
-            Optional<WbApiKey> apiKey = wbApiKeyRepository.findByUserId(user.getId());
-            if (apiKey.isPresent() && apiKey.get().getLastDataUpdateAt() != null) {
-                lastDataUpdateAt = apiKey.get().getLastDataUpdateAt();
+            Optional<Cabinet> cabinet = cabinetRepository.findDefaultByUserId(user.getId());
+            if (cabinet.isPresent() && cabinet.get().getLastDataUpdateAt() != null) {
+                lastDataUpdateAt = cabinet.get().getLastDataUpdateAt();
             }
         }
         

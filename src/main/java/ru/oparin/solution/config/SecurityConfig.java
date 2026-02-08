@@ -50,6 +50,7 @@ public class SecurityConfig {
     private static final String WORKER_ENDPOINTS = "/worker/**";
     private static final String ANALYTICS_ENDPOINTS = "/analytics/**";
     private static final String USERS_MANAGEMENT_ENDPOINTS = "/users/**";
+    private static final String CABINETS_ENDPOINTS = "/cabinets/**";
     public static final String ADMIN = Role.ADMIN.name();
     public static final String MANAGER = Role.MANAGER.name();
     public static final String SELLER = Role.SELLER.name();
@@ -137,6 +138,7 @@ public class SecurityConfig {
                 .requestMatchers(WORKER_ENDPOINTS).hasAnyRole(ADMIN, SELLER, WORKER)
                 .requestMatchers(ANALYTICS_ENDPOINTS).hasAnyRole(ADMIN, MANAGER, SELLER)
                 .requestMatchers(USERS_MANAGEMENT_ENDPOINTS).hasAnyRole(ADMIN, MANAGER, SELLER)
+                .requestMatchers(CABINETS_ENDPOINTS).hasRole(SELLER)
                 .anyRequest().authenticated();
     }
 
@@ -146,7 +148,7 @@ public class SecurityConfig {
     private CorsConfiguration createCorsConfiguration() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(ALLOWED_ORIGINS);
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);
         return configuration;

@@ -22,32 +22,26 @@ public class AdvertisingMetricsCalculator {
     private final CampaignStatisticsAggregator statisticsAggregator;
 
     /**
-     * Рассчитывает метрики рекламы для периода и заполняет переданный DTO.
-     *
-     * @param metrics DTO для заполнения метриками
-     * @param sellerId ID продавца
-     * @param period период для расчета метрик
+     * Рассчитывает метрики рекламы для периода (при cabinetId != null — только кампании кабинета).
      */
     public void calculateAdvertisingMetrics(
             AggregatedMetricsDto metrics,
             Long sellerId,
+            Long cabinetId,
             PeriodDto period
     ) {
-        List<Long> campaignIds = getCampaignIds(sellerId);
+        List<Long> campaignIds = getCampaignIds(sellerId, cabinetId);
         CampaignStatisticsAggregator.AdvertisingStats stats = statisticsAggregator.aggregateStats(campaignIds, period);
 
         setBasicMetrics(metrics, stats);
         calculateDerivedMetrics(metrics, stats);
     }
 
-    /**
-     * Получает список ID рекламных кампаний продавца.
-     *
-     * @param sellerId ID продавца
-     * @return список ID кампаний (advert_id)
-     */
-    private List<Long> getCampaignIds(Long sellerId) {
-        return campaignRepository.findBySellerId(sellerId).stream()
+    private List<Long> getCampaignIds(Long sellerId, Long cabinetId) {
+        List<PromotionCampaign> campaigns = cabinetId != null
+                ? campaignRepository.findByCabinet_Id(cabinetId)
+                : campaignRepository.findBySellerId(sellerId);
+        return campaigns.stream()
                 .map(PromotionCampaign::getAdvertId)
                 .toList();
     }

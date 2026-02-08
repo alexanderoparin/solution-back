@@ -22,5 +22,15 @@ public interface ProductCardRepository extends JpaRepository<ProductCard, Long> 
      * Находит все карточки продавца.
      */
     List<ProductCard> findBySellerId(Long sellerId);
+
+    /**
+     * Находит все карточки кабинета.
+     */
+    List<ProductCard> findByCabinet_Id(Long cabinetId);
+
+    /**
+     * Находит карточку по nmID и кабинету.
+     */
+    Optional<ProductCard> findByNmIdAndCabinet_Id(Long nmId, Long cabinetId);
 }
 

@@ -41,5 +41,11 @@ public interface ProductCardAnalyticsRepository extends JpaRepository<ProductCar
             LocalDate dateFrom,
             LocalDate dateTo
     );
+
+    Optional<ProductCardAnalytics> findByProductCardNmIdAndDateAndCabinet_Id(Long nmId, LocalDate date, Long cabinetId);
+
+    List<ProductCardAnalytics> findByCabinet_IdAndProductCardNmIdAndDateBetween(
+            Long cabinetId, Long nmId, LocalDate dateFrom, LocalDate dateTo
+    );
 }
 

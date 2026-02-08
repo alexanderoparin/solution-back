@@ -18,7 +18,8 @@ import java.time.LocalDateTime;
  * Сущность аналитики воронки продаж для карточки товара.
  */
 @Entity
-@Table(name = "product_card_analytics", schema = "solution")
+@Table(name = "product_card_analytics", schema = "solution",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"cabinet_id", "nm_id", "date"}))
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
@@ -40,6 +41,13 @@ public class ProductCardAnalytics {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "nm_id", nullable = false)
     private ProductCard productCard;
+
+    /**
+     * Кабинет (аналитика привязана к кабинету).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cabinet_id", nullable = false)
+    private Cabinet cabinet;
 
     /**
      * Дата аналитики.

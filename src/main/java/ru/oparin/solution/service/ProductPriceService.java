@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.wb.ProductPricesResponse;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductPriceHistory;
 import ru.oparin.solution.repository.ProductPriceHistoryRepository;
 
@@ -24,19 +25,16 @@ public class ProductPriceService {
     private final ProductPriceHistoryRepository priceHistoryRepository;
 
     /**
-     * Сохраняет цены товаров за вчерашнюю дату.
-     * Если у всех размеров одинаковая цена, сохраняется одна запись с sizeId = null.
-     * Если цены различаются, сохраняются отдельные записи для каждого размера.
+     * Сохраняет цены товаров за дату для кабинета.
      */
     @Transactional
-    public void savePrices(ProductPricesResponse response, LocalDate yesterdayDate) {
+    public void savePrices(ProductPricesResponse response, LocalDate yesterdayDate, Cabinet cabinet) {
         if (response == null || response.getData() == null || response.getData().getListGoods() == null) {
             log.warn("Получен пустой ответ с ценами товаров");
             return;
         }
 
         List<ProductPriceHistory> pricesToSave = new ArrayList<>();
-        int savedCount = 0;
         int skippedCount = 0;
 
         for (ProductPricesResponse.Good good : response.getData().getListGoods()) {
@@ -46,14 +44,13 @@ public class ProductPriceService {
                 continue;
             }
 
-            List<ProductPriceHistory> prices = processGood(good, yesterdayDate);
+            List<ProductPriceHistory> prices = processGood(good, yesterdayDate, cabinet);
             pricesToSave.addAll(prices);
         }
 
         if (!pricesToSave.isEmpty()) {
             priceHistoryRepository.saveAll(pricesToSave);
-            savedCount = pricesToSave.size();
-            log.info("Сохранено записей цен: {} (пропущено товаров: {})", savedCount, skippedCount);
+            log.info("Сохранено записей цен: {} (пропущено товаров: {})", pricesToSave.size(), skippedCount);
         } else {
             log.warn("Нет данных для сохранения цен");
         }
@@ -68,19 +65,16 @@ public class ProductPriceService {
                 && !good.getSizes().isEmpty();
     }
 
-    private List<ProductPriceHistory> processGood(ProductPricesResponse.Good good, LocalDate date) {
+    private List<ProductPriceHistory> processGood(ProductPricesResponse.Good good, LocalDate date, Cabinet cabinet) {
         List<ProductPriceHistory> prices = new ArrayList<>();
 
-        // Проверяем, одинаковые ли цены у всех размеров
         if (areAllPricesEqual(good.getSizes())) {
-            // Сохраняем одну запись с sizeId = null (берем данные из первого размера)
-            ProductPriceHistory price = createPriceHistory(good, date, null, null, good.getSizes().get(0));
+            ProductPriceHistory price = createPriceHistory(good, date, null, null, good.getSizes().get(0), cabinet);
             prices.add(price);
         } else {
-            // Сохраняем отдельные записи для каждого размера
             for (ProductPricesResponse.Size size : good.getSizes()) {
                 if (isValidSize(size)) {
-                    ProductPriceHistory price = createPriceHistory(good, date, size.getSizeId(), size.getTechSizeName(), size);
+                    ProductPriceHistory price = createPriceHistory(good, date, size.getSizeId(), size.getTechSizeName(), size, cabinet);
                     prices.add(price);
                 }
             }
@@ -135,22 +129,23 @@ public class ProductPriceService {
             LocalDate date,
             Long sizeId,
             String techSizeName,
-            ProductPricesResponse.Size size
+            ProductPricesResponse.Size size,
+            Cabinet cabinet
     ) {
-        // Все цены уже приходят в рублях (BigDecimal), сохраняем как есть без округления
         return ProductPriceHistory.builder()
-                    .nmId(good.getNmId())
-                    .date(date)
-                    .sizeId(sizeId)
-                    .techSizeName(techSizeName)
-                    .price(size.getPrice())
-                    .discountedPrice(size.getDiscountedPrice())
-                    .clubDiscountedPrice(size.getClubDiscountedPrice())
-                    .discount(good.getDiscount())
-                    .clubDiscount(good.getClubDiscount())
-                    .sppDiscount(null) // TODO: будет заполняться из API, когда пользователь укажет источник
-                    .editableSizePrice(good.getEditableSizePrice())
-                    .build();
+                .nmId(good.getNmId())
+                .cabinet(cabinet)
+                .date(date)
+                .sizeId(sizeId)
+                .techSizeName(techSizeName)
+                .price(size.getPrice())
+                .discountedPrice(size.getDiscountedPrice())
+                .clubDiscountedPrice(size.getClubDiscountedPrice())
+                .discount(good.getDiscount())
+                .clubDiscount(good.getClubDiscount())
+                .sppDiscount(null)
+                .editableSizePrice(good.getEditableSizePrice())
+                .build();
     }
 
     /**
@@ -161,7 +156,14 @@ public class ProductPriceService {
     }
 
     /**
-     * Получает цены для списка товаров за указанную дату.
+     * Получает цены для списка товаров за указанную дату по кабинету.
+     */
+    public List<ProductPriceHistory> getPricesByNmIdsAndDate(List<Long> nmIds, LocalDate date, Long cabinetId) {
+        return priceHistoryRepository.findByNmIdInAndDateAndCabinet_Id(nmIds, date, cabinetId);
+    }
+
+    /**
+     * Получает цены для списка товаров за дату (без фильтра по кабинету, для обратной совместимости).
      */
     public List<ProductPriceHistory> getPricesByNmIdsAndDate(List<Long> nmIds, LocalDate date) {
         return priceHistoryRepository.findByNmIdInAndDate(nmIds, date);
@@ -175,6 +177,11 @@ public class ProductPriceService {
      */
     @Transactional
     public void updateSppDiscount(java.util.Map<Long, Integer> sppByNmId, LocalDate date) {
+        updateSppDiscount(sppByNmId, date, null);
+    }
+
+    @Transactional
+    public void updateSppDiscount(java.util.Map<Long, Integer> sppByNmId, LocalDate date, Long cabinetId) {
         if (sppByNmId == null || sppByNmId.isEmpty()) {
             log.warn("Нет данных СПП для обновления за дату {}", date);
             return;
@@ -189,7 +196,9 @@ public class ProductPriceService {
                 continue;
             }
 
-            List<ProductPriceHistory> prices = priceHistoryRepository.findByNmIdAndDate(nmId, date);
+            List<ProductPriceHistory> prices = cabinetId != null
+                    ? priceHistoryRepository.findByNmIdAndDateAndCabinet_Id(nmId, date, cabinetId)
+                    : priceHistoryRepository.findByNmIdAndDate(nmId, date);
             for (ProductPriceHistory price : prices) {
                 price.setSppDiscount(sppDiscount);
                 updatedCount++;
@@ -197,7 +206,6 @@ public class ProductPriceService {
         }
 
         if (updatedCount > 0) {
-            // Сохраняем все изменения
             priceHistoryRepository.flush();
             log.info("Обновлено записей цен с СПП за дату {}: {}", date, updatedCount);
         } else {

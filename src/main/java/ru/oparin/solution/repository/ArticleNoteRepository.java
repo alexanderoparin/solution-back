@@ -46,5 +46,20 @@ public interface ArticleNoteRepository extends JpaRepository<ArticleNote, Long> 
      */
     @Query("SELECT COUNT(n) > 0 FROM ArticleNote n WHERE n.id = :id AND n.nmId = :nmId AND n.sellerId = :sellerId")
     boolean existsByIdAndNmIdAndSellerId(@Param("id") Long id, @Param("nmId") Long nmId, @Param("sellerId") Long sellerId);
+
+    /**
+     * Находит все заметки для артикула и кабинета.
+     */
+    List<ArticleNote> findByNmIdAndCabinetIdOrderByCreatedAtDesc(Long nmId, Long cabinetId);
+
+    /**
+     * Находит заметку по ID, артикулу и кабинету.
+     */
+    Optional<ArticleNote> findByIdAndNmIdAndCabinetId(Long id, Long nmId, Long cabinetId);
+
+    /**
+     * Проверяет существование заметки по ID, артикулу и кабинету.
+     */
+    boolean existsByIdAndNmIdAndCabinetId(Long id, Long nmId, Long cabinetId);
 }
 

@@ -40,7 +40,8 @@ public class FunnelMetricsCalculator {
         BigDecimal ordersAmount = BigDecimal.ZERO;
 
         for (ProductCard card : cards) {
-            List<ProductCardAnalytics> analytics = getCardAnalytics(card.getNmId(), period);
+            Long cabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
+            List<ProductCardAnalytics> analytics = getCardAnalytics(card.getNmId(), cabinetId, period);
             FunnelTotals cardTotals = aggregateCardAnalytics(analytics);
             
             transitions += cardTotals.transitions();
@@ -52,12 +53,13 @@ public class FunnelMetricsCalculator {
         return new FunnelTotals(transitions, cart, orders, ordersAmount);
     }
 
-    private List<ProductCardAnalytics> getCardAnalytics(Long nmId, PeriodDto period) {
+    private List<ProductCardAnalytics> getCardAnalytics(Long nmId, Long cabinetId, PeriodDto period) {
+        if (cabinetId != null) {
+            return analyticsRepository.findByCabinet_IdAndProductCardNmIdAndDateBetween(
+                    cabinetId, nmId, period.getDateFrom(), period.getDateTo());
+        }
         return analyticsRepository.findByProductCardNmIdAndDateBetween(
-                nmId,
-                period.getDateFrom(),
-                period.getDateTo()
-        );
+                nmId, period.getDateFrom(), period.getDateTo());
     }
 
     private FunnelTotals aggregateCardAnalytics(List<ProductCardAnalytics> analytics) {

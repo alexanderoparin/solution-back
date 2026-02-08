@@ -8,10 +8,12 @@ import ru.oparin.solution.dto.wb.PromotionAdvertsResponse;
 import ru.oparin.solution.model.BidType;
 import ru.oparin.solution.model.CampaignStatus;
 import ru.oparin.solution.model.CampaignType;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CampaignArticle;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.PromotionCampaign;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.CampaignArticleRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
@@ -36,12 +38,10 @@ public class PromotionCampaignService {
     private final CampaignArticleRepository campaignArticleRepository;
     private final ProductCardRepository productCardRepository;
     private final PromotionCampaignStatisticsRepository campaignStatisticsRepository;
+    private final CabinetRepository cabinetRepository;
 
     /**
-     * Сохраняет или обновляет кампании из ответа WB API.
-     *
-     * @param response ответ от WB API со списком кампаний
-     * @param seller   продавец, владелец кампаний
+     * Сохраняет или обновляет кампании из ответа WB API (кабинет по умолчанию для продавца).
      */
     @Transactional
     public void saveOrUpdateCampaigns(PromotionAdvertsResponse response, User seller) {
@@ -49,9 +49,21 @@ public class PromotionCampaignService {
             log.info("Ответ со списком кампаний пуст, сохранение/обновление не требуется.");
             return;
         }
+        Cabinet cabinet = cabinetRepository.findDefaultByUserId(seller.getId())
+                .orElseThrow(() -> new IllegalStateException("У продавца нет кабинета по умолчанию"));
+        saveOrUpdateCampaigns(response, cabinet);
+    }
 
-        ProcessingResult result = processCampaigns(response.getAdverts(), seller);
-
+    /**
+     * Сохраняет или обновляет кампании из ответа WB API для указанного кабинета.
+     */
+    @Transactional
+    public void saveOrUpdateCampaigns(PromotionAdvertsResponse response, Cabinet cabinet) {
+        if (isEmptyResponse(response)) {
+            log.info("Ответ со списком кампаний пуст, сохранение/обновление не требуется.");
+            return;
+        }
+        ProcessingResult result = processCampaigns(response.getAdverts(), cabinet.getUser(), cabinet);
         log.info("Обработано кампаний: создано {}, обновлено {}, пропущено {}",
                 result.savedCount(), result.updatedCount(), result.skippedCount());
     }
@@ -62,7 +74,7 @@ public class PromotionCampaignService {
                 || response.getAdverts().isEmpty();
     }
 
-    private ProcessingResult processCampaigns(List<PromotionAdvertsResponse.Campaign> campaignDtos, User seller) {
+    private ProcessingResult processCampaigns(List<PromotionAdvertsResponse.Campaign> campaignDtos, User seller, Cabinet cabinet) {
         int savedCount = 0;
         int updatedCount = 0;
         int skippedCount = 0;
@@ -74,7 +86,7 @@ public class PromotionCampaignService {
             }
 
             try {
-                Optional<SaveResult> result = processCampaign(campaignDto, seller);
+                Optional<SaveResult> result = processCampaign(campaignDto, seller, cabinet);
                 if (result.isPresent()) {
                     if (result.get().isNew()) {
                         savedCount++;
@@ -102,15 +114,15 @@ public class PromotionCampaignService {
         return true;
     }
 
-    private Optional<SaveResult> processCampaign(PromotionAdvertsResponse.Campaign campaignDto, User seller) {
-        PromotionCampaign campaign = mapToPromotionCampaign(campaignDto, seller);
+    private Optional<SaveResult> processCampaign(PromotionAdvertsResponse.Campaign campaignDto, User seller, Cabinet cabinet) {
+        PromotionCampaign campaign = mapToPromotionCampaign(campaignDto, seller, cabinet);
         if (campaign == null) {
             return Optional.empty();
         }
 
-        Optional<PromotionCampaign> existingCampaign = campaignRepository.findByAdvertIdAndSellerId(
+        Optional<PromotionCampaign> existingCampaign = campaignRepository.findByAdvertIdAndCabinet_Id(
                 campaign.getAdvertId(),
-                seller.getId()
+                cabinet.getId()
         );
 
         if (existingCampaign.isPresent()) {
@@ -119,7 +131,7 @@ public class PromotionCampaignService {
             campaignRepository.save(existing);
             // Обновляем связи с артикулами только для активных кампаний или на паузе
             if (shouldUpdateCampaignArticles(campaign.getStatus())) {
-                updateCampaignArticles(campaignDto, existing.getAdvertId(), seller.getId());
+                updateCampaignArticles(campaignDto, existing.getAdvertId(), cabinet.getId());
             } else {
                 // Для завершенных кампаний удаляем связи
                 campaignArticleRepository.deleteByCampaignId(existing.getAdvertId());
@@ -129,36 +141,33 @@ public class PromotionCampaignService {
             campaignRepository.save(campaign);
             // Сохраняем связи с артикулами только для активных кампаний или на паузе
             if (shouldUpdateCampaignArticles(campaign.getStatus())) {
-                saveCampaignArticles(campaignDto, campaign.getAdvertId(), seller.getId());
+                saveCampaignArticles(campaignDto, campaign.getAdvertId(), cabinet.getId());
             }
             return Optional.of(new SaveResult(true));
         }
     }
     
     /**
-     * Сохраняет связи кампании с артикулами.
+     * Сохраняет связи кампании с артикулами (по кабинету).
      */
-    private void saveCampaignArticles(PromotionAdvertsResponse.Campaign campaignDto, Long campaignId, Long sellerId) {
+    private void saveCampaignArticles(PromotionAdvertsResponse.Campaign campaignDto, Long campaignId, Long cabinetId) {
         if (campaignDto.getNmIds() == null || campaignDto.getNmIds().isEmpty()) {
             log.warn("У кампании advertId {} в ответе WB нет артикулов (nmIds пустой или null), восстанавливаем связи из promotion_campaign_statistics", campaignId);
-            syncCampaignArticlesFromStatistics(campaignId, sellerId);
+            syncCampaignArticlesFromStatistics(campaignId, cabinetId);
             return;
         }
-        
-        // Удаляем старые связи
+
         campaignArticleRepository.deleteByCampaignId(campaignId);
-        
-        // Создаем новые связи (ошибка по одному nmId не должна ломать остальные)
+
         int savedCount = 0;
         for (Long nmId : campaignDto.getNmIds()) {
             try {
-                ProductCard productCard = productCardRepository.findByNmId(nmId)
-                        .filter(card -> card.getSeller().getId().equals(sellerId))
+                ProductCard productCard = productCardRepository.findByNmIdAndCabinet_Id(nmId, cabinetId)
                         .orElse(null);
 
                 if (productCard == null) {
-                    log.warn("Артикул {} не найден или не принадлежит продавцу {}, пропускаем связь с кампанией {}",
-                            nmId, sellerId, campaignId);
+                    log.warn("Артикул {} не найден в кабинете {}, пропускаем связь с кампанией {}",
+                            nmId, cabinetId, campaignId);
                     continue;
                 }
 
@@ -178,10 +187,9 @@ public class PromotionCampaignService {
     }
 
     /**
-     * Восстанавливает связи campaign_articles из таблицы promotion_campaign_statistics,
-     * когда WB API не возвращает nmIds в ответе по кампании.
+     * Восстанавливает связи campaign_articles из promotion_campaign_statistics по кабинету.
      */
-    private void syncCampaignArticlesFromStatistics(Long campaignId, Long sellerId) {
+    private void syncCampaignArticlesFromStatistics(Long campaignId, Long cabinetId) {
         List<Long> nmIdsFromStats = campaignStatisticsRepository.findDistinctNmIdsByCampaignAdvertId(campaignId);
         if (nmIdsFromStats == null || nmIdsFromStats.isEmpty()) {
             log.debug("У кампании advertId {} нет записей в promotion_campaign_statistics, связи не созданы", campaignId);
@@ -191,12 +199,11 @@ public class PromotionCampaignService {
         int savedCount = 0;
         for (Long nmId : nmIdsFromStats) {
             try {
-                ProductCard productCard = productCardRepository.findByNmId(nmId)
-                        .filter(card -> card.getSeller().getId().equals(sellerId))
+                ProductCard productCard = productCardRepository.findByNmIdAndCabinet_Id(nmId, cabinetId)
                         .orElse(null);
                 if (productCard == null) {
-                    log.warn("Артикул {} из статистики кампании {} не найден у продавца {}, пропускаем",
-                            nmId, campaignId, sellerId);
+                    log.warn("Артикул {} из статистики кампании {} не найден в кабинете {}, пропускаем",
+                            nmId, campaignId, cabinetId);
                     continue;
                 }
                 CampaignArticle campaignArticle = new CampaignArticle();
@@ -215,8 +222,8 @@ public class PromotionCampaignService {
     /**
      * Обновляет связи кампании с артикулами.
      */
-    private void updateCampaignArticles(PromotionAdvertsResponse.Campaign campaignDto, Long campaignId, Long sellerId) {
-        saveCampaignArticles(campaignDto, campaignId, sellerId);
+    private void updateCampaignArticles(PromotionAdvertsResponse.Campaign campaignDto, Long campaignId, Long cabinetId) {
+        saveCampaignArticles(campaignDto, campaignId, cabinetId);
     }
     
     /**
@@ -235,7 +242,7 @@ public class PromotionCampaignService {
     /**
      * Преобразует DTO кампании в сущность PromotionCampaign.
      */
-    private PromotionCampaign mapToPromotionCampaign(PromotionAdvertsResponse.Campaign campaignDto, User seller) {
+    private PromotionCampaign mapToPromotionCampaign(PromotionAdvertsResponse.Campaign campaignDto, User seller, Cabinet cabinet) {
         try {
             ru.oparin.solution.model.CampaignType campaignType = resolveCampaignType(campaignDto.getType());
             BidType bidType = resolveBidType(campaignDto.getBidType());
@@ -244,6 +251,7 @@ public class PromotionCampaignService {
             return PromotionCampaign.builder()
                     .advertId(campaignDto.getAdvertId())
                     .seller(seller)
+                    .cabinet(cabinet)
                     .name(campaignDto.getName())
                     .type(campaignType)
                     .status(status)

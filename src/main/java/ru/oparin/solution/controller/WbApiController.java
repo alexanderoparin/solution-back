@@ -46,9 +46,10 @@ public class WbApiController {
     @PostMapping("/cards/list")
     public ResponseEntity<CardsListResponse> getCardsList(
             @Valid @RequestBody(required = false) CardsListRequest request,
+            @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
         CardsListRequest requestWithDefaults = CardsListRequestBuilder.withDefaults(request);
         CardsListResponse response = contentApiClient.getCardsList(context.apiKey(), requestWithDefaults);
         
@@ -60,9 +61,10 @@ public class WbApiController {
     @GetMapping("/cards/search")
     public ResponseEntity<CardsListResponse> searchCardsByVendorCode(
             @RequestParam String vendorCode,
+            @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
         CardsListRequest searchRequest = CardsListRequestBuilder.createSearchRequest(vendorCode);
         CardsListResponse response = contentApiClient.getCardsList(context.apiKey(), searchRequest);
         
@@ -70,8 +72,11 @@ public class WbApiController {
     }
 
     @GetMapping("/ping")
-    public ResponseEntity<PingResponse> ping(Authentication authentication) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
+    public ResponseEntity<PingResponse> ping(
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
         PingResponse response = contentApiClient.ping(context.apiKey());
         
         return ResponseEntity.ok(response);
@@ -80,9 +85,10 @@ public class WbApiController {
     @PostMapping("/cards/trash")
     public ResponseEntity<CardsListResponse> getCardsTrash(
             @Valid @RequestBody(required = false) CardsListRequest request,
+            @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
         CardsListRequest requestWithDefaults = CardsListRequestBuilder.withDefaults(request);
         CardsListResponse response = contentApiClient.getCardsTrash(context.apiKey(), requestWithDefaults);
         
@@ -90,8 +96,11 @@ public class WbApiController {
     }
 
     @GetMapping("/seller-info")
-    public ResponseEntity<SellerInfoResponse> getSellerInfo(Authentication authentication) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
+    public ResponseEntity<SellerInfoResponse> getSellerInfo(
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
         SellerInfoResponse response = commonApiClient.getSellerInfo(context.apiKey());
         
         return ResponseEntity.ok(response);
@@ -100,9 +109,10 @@ public class WbApiController {
     @PostMapping("/cards/update-analytics")
     public ResponseEntity<Map<String, String>> updateCardsAndLoadAnalytics(
             @Valid @RequestBody AnalyticsRequest request,
+            @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
         
         AnalyticsPeriodValidator.validate(request.getDateFrom(), request.getDateTo());
         
@@ -117,8 +127,11 @@ public class WbApiController {
     }
 
     @GetMapping("/warehouses/update")
-    public ResponseEntity<Map<String, String>> updateWbWarehouses(Authentication authentication) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
+    public ResponseEntity<Map<String, String>> updateWbWarehouses(
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
         
         List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(context.apiKey());
         warehouseService.saveOrUpdateWarehouses(warehouses);
@@ -129,9 +142,10 @@ public class WbApiController {
     @PostMapping("/stocks/{nmId}")
     public ResponseEntity<WbStocksSizesResponse> getStocksBySizes(
             @PathVariable Long nmId,
+            @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
         
         WbStocksSizesResponse response = stocksService.getWbStocksBySizes(
                 context.apiKey(),

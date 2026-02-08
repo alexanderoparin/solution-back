@@ -60,16 +60,16 @@ public class AnalyticsService {
 
 
     /**
-     * Получает сводную аналитику для продавца.
+     * Получает сводную аналитику для продавца (при cabinetId != null — только по выбранному кабинету).
      */
     @Transactional(readOnly = true)
-    public SummaryResponseDto getSummary(User seller, List<PeriodDto> periods, List<Long> excludedNmIds) {
+    public SummaryResponseDto getSummary(User seller, Long cabinetId, List<PeriodDto> periods, List<Long> excludedNmIds) {
         validatePeriods(periods);
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
 
-        List<ProductCard> visibleCards = getVisibleCards(seller.getId(), excludedNmIds);
+        List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
         Map<Integer, AggregatedMetricsDto> aggregatedMetrics = calculateAggregatedMetrics(
-                visibleCards, sortedPeriods, seller.getId());
+                visibleCards, sortedPeriods, seller.getId(), cabinetId);
 
         return SummaryResponseDto.builder()
                 .periods(sortedPeriods)
@@ -79,33 +79,35 @@ public class AnalyticsService {
     }
 
     /**
-     * Получает детальные метрики по группе для всех артикулов (воронка) или кампаний (реклама).
+     * Получает детальные метрики по группе (при cabinetId != null — по выбранному кабинету).
      */
     @Transactional(readOnly = true)
     public MetricGroupResponseDto getMetricGroup(
             User seller,
+            Long cabinetId,
             String metricName,
             List<PeriodDto> periods,
             List<Long> excludedNmIds
     ) {
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
         if (isAdvertisingMetric(metricName)) {
-            return getAdvertisingMetricGroup(seller, metricName, sortedPeriods);
+            return getAdvertisingMetricGroup(seller, cabinetId, metricName, sortedPeriods);
         } else {
-            return getFunnelMetricGroup(seller, metricName, sortedPeriods, excludedNmIds);
+            return getFunnelMetricGroup(seller, cabinetId, metricName, sortedPeriods, excludedNmIds);
         }
     }
 
     private MetricGroupResponseDto getFunnelMetricGroup(
             User seller,
+            Long cabinetId,
             String metricName,
             List<PeriodDto> periods,
             List<Long> excludedNmIds
     ) {
-        List<ProductCard> visibleCards = getVisibleCards(seller.getId(), excludedNmIds);
-        
+        List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
+
         List<ArticleMetricDto> articleMetrics = visibleCards.stream()
-                .map(card -> calculateArticleMetric(card, metricName, periods, seller.getId(), null))
+                .map(card -> calculateArticleMetric(card, metricName, periods, seller.getId(), cabinetId, null))
                 .collect(Collectors.toList());
 
         return MetricGroupResponseDto.builder()
@@ -118,11 +120,13 @@ public class AnalyticsService {
 
     private MetricGroupResponseDto getAdvertisingMetricGroup(
             User seller,
+            Long cabinetId,
             String metricName,
             List<PeriodDto> periods
     ) {
-        // Получаем все кампании продавца
-        List<PromotionCampaign> campaigns = campaignRepository.findBySellerId(seller.getId());
+        List<PromotionCampaign> campaigns = cabinetId != null
+                ? campaignRepository.findByCabinet_Id(cabinetId)
+                : campaignRepository.findBySellerId(seller.getId());
         
         List<CampaignMetricDto> campaignMetrics = new ArrayList<>();
         
@@ -260,19 +264,23 @@ public class AnalyticsService {
     
     private Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> preloadAdvertisingStats(
             Long sellerId,
+            Long cabinetId,
             List<PeriodDto> periods
     ) {
         Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> cache = new HashMap<>();
-        List<Long> campaignIds = campaignRepository.findBySellerId(sellerId).stream()
+        List<PromotionCampaign> campaigns = cabinetId != null
+                ? campaignRepository.findByCabinet_Id(cabinetId)
+                : campaignRepository.findBySellerId(sellerId);
+        List<Long> campaignIds = campaigns.stream()
                 .map(PromotionCampaign::getAdvertId)
                 .collect(Collectors.toList());
-        
+
         for (PeriodDto period : periods) {
-            CampaignStatisticsAggregator.AdvertisingStats stats = 
+            CampaignStatisticsAggregator.AdvertisingStats stats =
                     campaignStatisticsAggregator.aggregateStats(campaignIds, period);
             cache.put(period, stats);
         }
-        
+
         return cache;
     }
 
@@ -280,16 +288,17 @@ public class AnalyticsService {
      * Получает детальную информацию по артикулу.
      */
     @Transactional(readOnly = true)
-    public ArticleResponseDto getArticle(User seller, Long nmId, List<PeriodDto> periods) {
-        ProductCard card = findCardBySeller(nmId, seller.getId());
+    public ArticleResponseDto getArticle(User seller, Long cabinetId, Long nmId, List<PeriodDto> periods) {
+        ProductCard card = findCardBySeller(nmId, seller.getId(), cabinetId);
+        Long cardCabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
 
         return ArticleResponseDto.builder()
                 .article(mapToArticleDetail(card))
                 .periods(periods)
-                .metrics(calculateAllMetrics(card, periods, seller.getId()))
-                .dailyData(getDailyData(nmId))
-                .campaigns(getCampaigns(nmId))
-                .stocks(getStocks(nmId))
+                .metrics(calculateAllMetrics(card, periods, seller.getId(), cardCabinetId))
+                .dailyData(getDailyData(nmId, cardCabinetId))
+                .campaigns(getCampaigns(nmId, cardCabinetId))
+                .stocks(getStocks(nmId, cardCabinetId))
                 .build();
     }
 
@@ -299,22 +308,25 @@ public class AnalyticsService {
         }
     }
 
-    private List<ProductCard> getVisibleCards(Long sellerId, List<Long> excludedNmIds) {
-        List<ProductCard> allCards = productCardRepository.findBySellerId(sellerId);
+    private List<ProductCard> getVisibleCards(Long sellerId, Long cabinetId, List<Long> excludedNmIds) {
+        List<ProductCard> allCards = cabinetId != null
+                ? productCardRepository.findByCabinet_Id(cabinetId)
+                : productCardRepository.findBySellerId(sellerId);
         return ProductCardFilter.filterVisibleCards(allCards, excludedNmIds);
     }
 
     private Map<Integer, AggregatedMetricsDto> calculateAggregatedMetrics(
             List<ProductCard> cards,
             List<PeriodDto> periods,
-            Long sellerId
+            Long sellerId,
+            Long cabinetId
     ) {
         Map<Integer, AggregatedMetricsDto> result = new HashMap<>();
 
         for (PeriodDto period : periods) {
             AggregatedMetricsDto metrics = new AggregatedMetricsDto();
             funnelMetricsCalculator.calculateFunnelMetrics(metrics, cards, period);
-            advertisingMetricsCalculator.calculateAdvertisingMetrics(metrics, sellerId, period);
+            advertisingMetricsCalculator.calculateAdvertisingMetrics(metrics, sellerId, cabinetId, period);
             result.put(period.getId(), metrics);
         }
 
@@ -326,10 +338,11 @@ public class AnalyticsService {
             String metricName,
             List<PeriodDto> periods,
             Long sellerId,
+            Long cabinetId,
             Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
         List<PeriodMetricValueDto> periodValues = periods.stream()
-                .map(period -> calculatePeriodMetricValue(card, metricName, period, periods, sellerId, advertisingStatsCache))
+                .map(period -> calculatePeriodMetricValue(card, metricName, period, periods, sellerId, cabinetId, advertisingStatsCache))
                 .collect(Collectors.toList());
 
         return ArticleMetricDto.builder()
@@ -345,10 +358,11 @@ public class AnalyticsService {
             PeriodDto period,
             List<PeriodDto> allPeriods,
             Long sellerId,
+            Long cabinetId,
             Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
-        Object value = metricValueCalculator.calculateValue(card, metricName, period, sellerId, advertisingStatsCache);
-        BigDecimal changePercent = calculateChangePercent(card, metricName, period, allPeriods, sellerId, value, advertisingStatsCache);
+        Object value = metricValueCalculator.calculateValue(card, metricName, period, sellerId, cabinetId, advertisingStatsCache);
+        BigDecimal changePercent = calculateChangePercent(card, metricName, period, allPeriods, sellerId, cabinetId, value, advertisingStatsCache);
 
         return PeriodMetricValueDto.builder()
                 .periodId(period.getId())
@@ -363,6 +377,7 @@ public class AnalyticsService {
             PeriodDto period,
             List<PeriodDto> allPeriodsSortedByDate,
             Long sellerId,
+            Long cabinetId,
             Object currentValue,
             Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
@@ -374,7 +389,7 @@ public class AnalyticsService {
             return null;
         }
 
-        Object previousValue = metricValueCalculator.calculateValue(card, metricName, previousPeriod, sellerId, advertisingStatsCache);
+        Object previousValue = metricValueCalculator.calculateValue(card, metricName, previousPeriod, sellerId, cabinetId, advertisingStatsCache);
         
         // Для процентных метрик вычисляем разницу, для остальных - процентное изменение
         if (MetricNames.isPercentageMetric(metricName)) {
@@ -439,18 +454,18 @@ public class AnalyticsService {
         };
     }
 
-    private List<MetricDto> calculateAllMetrics(ProductCard card, List<PeriodDto> periods, Long sellerId) {
-        // Для рекламных метрик кэшируем статистику по периодам
-        Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache = preloadAdvertisingStats(sellerId, periods);
-        
+    private List<MetricDto> calculateAllMetrics(ProductCard card, List<PeriodDto> periods, Long sellerId, Long cabinetId) {
+        Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache =
+                preloadAdvertisingStats(sellerId, cabinetId, periods);
+
         List<MetricDto> metrics = new ArrayList<>();
 
         for (String metricName : MetricNames.getAllMetrics()) {
             List<PeriodMetricValueDto> periodValues = periods.stream()
                     .map(period -> {
-                        Object value = metricValueCalculator.calculateValue(card, metricName, period, sellerId, advertisingStatsCache);
+                        Object value = metricValueCalculator.calculateValue(card, metricName, period, sellerId, cabinetId, advertisingStatsCache);
                         BigDecimal changePercent = calculateChangePercent(
-                                card, metricName, period, periods, sellerId, value, advertisingStatsCache);
+                                card, metricName, period, periods, sellerId, cabinetId, value, advertisingStatsCache);
                         return PeriodMetricValueDto.builder()
                                 .periodId(period.getId())
                                 .value(value)
@@ -470,18 +485,19 @@ public class AnalyticsService {
         return metrics;
     }
 
-    private List<DailyDataDto> getDailyData(Long nmId) {
+    private List<DailyDataDto> getDailyData(Long nmId, Long cabinetId) {
         LocalDate endDate = LocalDate.now().minusDays(1);
         LocalDate startDate = endDate.minusDays(13);
 
-        // Получаем данные воронки
-        List<ProductCardAnalytics> funnelData = analyticsRepository.findByProductCardNmIdAndDateBetween(nmId, startDate, endDate);
-        
-        // Получаем рекламные данные
+        List<ProductCardAnalytics> funnelData = cabinetId != null
+                ? analyticsRepository.findByCabinet_IdAndProductCardNmIdAndDateBetween(cabinetId, nmId, startDate, endDate)
+                : analyticsRepository.findByProductCardNmIdAndDateBetween(nmId, startDate, endDate);
+
         List<PromotionCampaignStatistics> advertisingData = campaignStatisticsRepository.findByNmIdAndDateBetween(nmId, startDate, endDate);
-        
-        // Получаем данные ценообразования
-        List<ProductPriceHistory> priceData = priceHistoryRepository.findByNmIdAndDateBetween(nmId, startDate, endDate);
+
+        List<ProductPriceHistory> priceData = cabinetId != null
+                ? priceHistoryRepository.findByNmIdAndDateBetweenAndCabinet_Id(nmId, startDate, endDate, cabinetId)
+                : priceHistoryRepository.findByNmIdAndDateBetween(nmId, startDate, endDate);
         
         // Группируем рекламные данные по датам
         Map<LocalDate, AdvertisingDailyStats> advertisingByDate = advertisingData.stream()
@@ -654,14 +670,14 @@ public class AnalyticsService {
             BigDecimal drr
     ) {}
 
-    private List<CampaignDto> getCampaigns(Long nmId) {
-        // Находим все кампании, в которых участвует этот артикул
+    private List<CampaignDto> getCampaigns(Long nmId, Long cabinetId) {
         List<CampaignArticle> campaignArticles = campaignArticleRepository.findByNmId(nmId);
-        
+
         return campaignArticles.stream()
                 .map(CampaignArticle::getCampaign)
                 .filter(Objects::nonNull)
-                .filter(campaign -> campaign.getStatus() != CampaignStatus.FINISHED) // Исключаем завершенные кампании
+                .filter(campaign -> campaign.getStatus() != CampaignStatus.FINISHED)
+                .filter(campaign -> cabinetId == null || (campaign.getCabinet() != null && campaign.getCabinet().getId().equals(cabinetId)))
                 .map(c -> CampaignDto.builder()
                         .id(c.getAdvertId())
                         .name(c.getName())
@@ -676,9 +692,10 @@ public class AnalyticsService {
     /**
      * Получает остатки товара на складах.
      */
-    private List<StockDto> getStocks(Long nmId) {
-        // Получаем все остатки для артикула
-        List<ru.oparin.solution.model.ProductStock> stocks = stockRepository.findByNmId(nmId);
+    private List<StockDto> getStocks(Long nmId, Long cabinetId) {
+        List<ru.oparin.solution.model.ProductStock> stocks = cabinetId != null
+                ? stockRepository.findByNmIdAndCabinet_Id(nmId, cabinetId)
+                : stockRepository.findByNmId(nmId);
         
         if (stocks.isEmpty()) {
             return Collections.emptyList();
@@ -840,7 +857,13 @@ public class AnalyticsService {
     }
 
     public ProductCard findCardBySeller(Long nmId, Long sellerId) {
-        ProductCard card = productCardRepository.findByNmId(nmId)
+        return findCardBySeller(nmId, sellerId, null);
+    }
+
+    public ProductCard findCardBySeller(Long nmId, Long sellerId, Long cabinetId) {
+        ProductCard card = (cabinetId != null
+                ? productCardRepository.findByNmIdAndCabinet_Id(nmId, cabinetId)
+                : productCardRepository.findByNmId(nmId))
                 .orElseThrow(() -> new IllegalArgumentException("Артикул не найден: " + nmId));
 
         if (!card.getSeller().getId().equals(sellerId)) {

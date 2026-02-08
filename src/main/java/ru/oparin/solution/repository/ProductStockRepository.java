@@ -20,6 +20,16 @@ public interface ProductStockRepository extends JpaRepository<ProductStock, Long
             Long nmId, Long warehouseId, String barcode
     );
 
+    Optional<ProductStock> findByNmIdAndWarehouseIdAndBarcodeAndCabinet_Id(
+            Long nmId, Long warehouseId, String barcode, Long cabinetId
+    );
+
+    List<ProductStock> findByCabinet_Id(Long cabinetId);
+
+    List<ProductStock> findByNmIdAndCabinet_Id(Long nmId, Long cabinetId);
+
+    void deleteByCabinet_IdAndNmId(Long cabinetId, Long nmId);
+
     /**
      * Находит все остатки для товара на складе.
      */

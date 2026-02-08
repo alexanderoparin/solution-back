@@ -39,13 +39,15 @@ public class AnalyticsController {
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(
-                authentication, 
-                request.getSellerId()
+                authentication,
+                request.getSellerId(),
+                request.getCabinetId()
         );
-        
+
         SummaryResponseDto response = analyticsService.getSummary(
-                context.user(), 
-                request.getPeriods(), 
+                context.user(),
+                context.cabinetId(),
+                request.getPeriods(),
                 request.getExcludedNmIds()
         );
         
@@ -67,16 +69,17 @@ public class AnalyticsController {
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(
-                authentication, 
-                request.getSellerId()
+                authentication,
+                request.getSellerId(),
+                request.getCabinetId()
         );
-        
-        // Декодируем название метрики из URL
+
         String decodedMetricName = URLDecoder.decode(metricName, StandardCharsets.UTF_8);
-        
+
         MetricGroupResponseDto response = analyticsService.getMetricGroup(
-                context.user(), 
-                decodedMetricName, 
+                context.user(),
+                context.cabinetId(),
+                decodedMetricName,
                 request.getPeriods(),
                 request.getExcludedNmIds()
         );
@@ -99,13 +102,15 @@ public class AnalyticsController {
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(
-                authentication, 
-                request.getSellerId()
+                authentication,
+                request.getSellerId(),
+                request.getCabinetId()
         );
-        
+
         ArticleResponseDto response = analyticsService.getArticle(
-                context.user(), 
-                nmId, 
+                context.user(),
+                context.cabinetId(),
+                nmId,
                 request.getPeriods()
         );
         
@@ -126,11 +131,13 @@ public class AnalyticsController {
             @PathVariable Long nmId,
             @PathVariable String warehouseName,
             @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
-                sellerId
+                sellerId,
+                cabinetId
         );
         
         // Проверяем, что артикул принадлежит продавцу

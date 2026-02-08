@@ -10,6 +10,7 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import ru.oparin.solution.converter.BidTypeConverter;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.converter.CampaignStatusConverter;
 import ru.oparin.solution.converter.CampaignTypeConverter;
 
@@ -36,11 +37,18 @@ public class PromotionCampaign {
     private Long advertId;
 
     /**
-     * Продавец, владелец кампании.
+     * Продавец, владелец кампании (оставляем для удобства).
      */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "seller_id", nullable = false)
     private User seller;
+
+    /**
+     * Кабинет, которому принадлежит кампания.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cabinet_id", nullable = false)
+    private Cabinet cabinet;
 
     /**
      * Название кампании.

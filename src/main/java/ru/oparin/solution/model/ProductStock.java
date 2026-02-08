@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Table(name = "product_stocks", schema = "solution",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"nm_id", "warehouse_id", "barcode"}))
+        uniqueConstraints = @UniqueConstraint(columnNames = {"cabinet_id", "nm_id", "warehouse_id", "barcode"}))
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
@@ -37,6 +37,13 @@ public class ProductStock {
      */
     @Column(name = "nm_id", nullable = false)
     private Long nmId;
+
+    /**
+     * Кабинет (остатки привязаны к кабинету).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cabinet_id", nullable = false)
+    private Cabinet cabinet;
 
     /**
      * ID склада WB.

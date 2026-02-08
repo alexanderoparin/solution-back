@@ -10,9 +10,11 @@ import ru.oparin.solution.dto.CreateUserRequest;
 import ru.oparin.solution.dto.MessageResponse;
 import ru.oparin.solution.dto.UpdateUserRequest;
 import ru.oparin.solution.dto.UserListItemDto;
+import ru.oparin.solution.dto.cabinet.CabinetDto;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
+import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.UserService;
 
 import java.util.List;
@@ -27,6 +29,7 @@ import java.util.List;
 public class UsersManagementController {
 
     private final UserService userService;
+    private final CabinetService cabinetService;
     private final AnalyticsScheduler analyticsScheduler;
 
     /**
@@ -112,6 +115,30 @@ public class UsersManagementController {
         return ResponseEntity.ok(MessageResponse.builder()
                 .message("Статус активности пользователя изменен")
                 .build());
+    }
+
+    /**
+     * Список кабинетов селлера. Доступно только для ADMIN и MANAGER (для своего селлера).
+     */
+    @GetMapping("/{sellerId}/cabinets")
+    public ResponseEntity<List<CabinetDto>> getSellerCabinets(
+            @PathVariable Long sellerId,
+            Authentication authentication
+    ) {
+        User currentUser = getCurrentUser(authentication);
+        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        User seller = userService.findById(sellerId);
+        if (seller.getRole() != Role.SELLER) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (currentUser.getRole() == Role.MANAGER &&
+                (seller.getOwner() == null || !seller.getOwner().getId().equals(currentUser.getId()))) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        List<CabinetDto> cabinets = cabinetService.listByUserId(seller.getId());
+        return ResponseEntity.ok(cabinets);
     }
 
     /**

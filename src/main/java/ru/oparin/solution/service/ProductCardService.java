@@ -6,9 +6,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.wb.CardDto;
 import ru.oparin.solution.dto.wb.CardsListResponse;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductBarcode;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.ProductBarcodeRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 
@@ -25,19 +27,31 @@ public class ProductCardService {
 
     private final ProductCardRepository productCardRepository;
     private final ProductBarcodeRepository barcodeRepository;
+    private final CabinetRepository cabinetRepository;
 
     /**
-     * Сохраняет или обновляет карточки товаров из ответа WB API.
+     * Сохраняет или обновляет карточки товаров из ответа WB API (кабинет по умолчанию для продавца).
      */
     @Transactional
     public void saveOrUpdateCards(CardsListResponse response, User seller) {
         if (isEmptyResponse(response)) {
             return;
         }
+        Cabinet cabinet = cabinetRepository.findDefaultByUserId(seller.getId())
+                .orElseThrow(() -> new IllegalStateException("У продавца нет кабинета по умолчанию"));
+        saveOrUpdateCards(response, cabinet);
+    }
 
-        ProcessingResult result = processCards(response.getCards(), seller);
-        
-        log.info("Обработано карточек: создано {}, обновлено {}", 
+    /**
+     * Сохраняет или обновляет карточки товаров из ответа WB API для указанного кабинета.
+     */
+    @Transactional
+    public void saveOrUpdateCards(CardsListResponse response, Cabinet cabinet) {
+        if (isEmptyResponse(response)) {
+            return;
+        }
+        ProcessingResult result = processCards(response.getCards(), cabinet.getUser(), cabinet);
+        log.info("Обработано карточек: создано {}, обновлено {}",
                 result.savedCount(), result.updatedCount());
     }
 
@@ -47,7 +61,7 @@ public class ProductCardService {
                 || response.getCards().isEmpty();
     }
 
-    private ProcessingResult processCards(List<CardDto> cards, User seller) {
+    private ProcessingResult processCards(List<CardDto> cards, User seller, Cabinet cabinet) {
         int savedCount = 0;
         int updatedCount = 0;
 
@@ -56,7 +70,7 @@ public class ProductCardService {
                 continue;
             }
 
-            Optional<SaveResult> result = processCard(cardDto, seller);
+            Optional<SaveResult> result = processCard(cardDto, seller, cabinet);
             if (result.isPresent()) {
                 if (result.get().isNew()) {
                     savedCount++;
@@ -73,14 +87,14 @@ public class ProductCardService {
         return cardDto != null && cardDto.getNmId() != null;
     }
 
-    private Optional<SaveResult> processCard(CardDto cardDto, User seller) {
+    private Optional<SaveResult> processCard(CardDto cardDto, User seller, Cabinet cabinet) {
         try {
-            ProductCard card = mapToProductCard(cardDto, seller);
+            ProductCard card = mapToProductCard(cardDto, seller, cabinet);
             if (card == null) {
                 return Optional.empty();
             }
 
-            Optional<ProductCard> existingCard = productCardRepository.findByNmId(card.getNmId());
+            Optional<ProductCard> existingCard = productCardRepository.findByNmIdAndCabinet_Id(card.getNmId(), cabinet.getId());
 
             if (existingCard.isPresent()) {
                 return handleExistingCard(existingCard.get(), card, seller, cardDto);
@@ -109,46 +123,38 @@ public class ProductCardService {
 
         updateCardFields(existingCard, updatedCard);
         productCardRepository.save(existingCard);
-        
-        // Обновляем баркоды
-        saveBarcodes(cardDto);
-        
+
+        saveBarcodes(cardDto, existingCard.getCabinet());
+
         return Optional.of(new SaveResult(false));
     }
 
     /**
-     * Сохраняет баркоды товара из карточки.
-     * Баркоды сохраняются из CardDto.Size.skus, каждый баркод - отдельная запись.
-     * Баркод является уникальным ключом.
+     * Сохраняет баркоды товара из карточки для кабинета.
      */
-    private void saveBarcodes(CardDto cardDto) {
-        if (cardDto.getSizes() == null || cardDto.getSizes().isEmpty()) {
+    private void saveBarcodes(CardDto cardDto, Cabinet cabinet) {
+        if (cabinet == null || cardDto.getSizes() == null || cardDto.getSizes().isEmpty()) {
             return;
         }
 
-        // Сохраняем баркоды из каждого размера
         for (CardDto.Size size : cardDto.getSizes()) {
             if (size.getSkus() == null || size.getSkus().isEmpty()) {
                 continue;
             }
 
-            // Проверяем обязательные поля размера
             if (size.getChrtId() == null) {
                 log.warn("Размер для товара nmID {} не имеет chrtID, пропускаем", cardDto.getNmId());
                 continue;
             }
 
-            // Сохраняем каждый баркод из массива skus
             for (String barcodeValue : size.getSkus()) {
                 if (barcodeValue == null || barcodeValue.isEmpty()) {
                     continue;
                 }
 
-                // Проверяем, существует ли уже такой баркод (баркод - уникальный ключ)
-                Optional<ProductBarcode> existingBarcode = barcodeRepository.findByBarcode(barcodeValue);
+                Optional<ProductBarcode> existingBarcode = barcodeRepository.findByBarcodeAndCabinet_Id(barcodeValue, cabinet.getId());
 
                 if (existingBarcode.isPresent()) {
-                    // Обновляем существующий баркод (может измениться nmId, chrtId, techSize, wbSize)
                     ProductBarcode barcode = existingBarcode.get();
                     barcode.setNmId(cardDto.getNmId());
                     barcode.setChrtId(size.getChrtId());
@@ -156,9 +162,9 @@ public class ProductCardService {
                     barcode.setWbSize(size.getWbSize());
                     barcodeRepository.save(barcode);
                 } else {
-                    // Создаем новый баркод
                     ProductBarcode barcode = ProductBarcode.builder()
                             .nmId(cardDto.getNmId())
+                            .cabinet(cabinet)
                             .chrtId(size.getChrtId())
                             .barcode(barcodeValue)
                             .techSize(size.getTechSize())
@@ -176,20 +182,20 @@ public class ProductCardService {
 
     private Optional<SaveResult> handleNewCard(ProductCard card, CardDto cardDto) {
         productCardRepository.save(card);
-        
-        // Сохраняем баркоды
-        saveBarcodes(cardDto);
-        
+
+        saveBarcodes(cardDto, card.getCabinet());
+
         return Optional.of(new SaveResult(true));
     }
 
-    private ProductCard mapToProductCard(CardDto cardDto, User seller) {
+    private ProductCard mapToProductCard(CardDto cardDto, User seller, Cabinet cabinet) {
         String photoTm = extractPhotoTm(cardDto);
 
         return ProductCard.builder()
                 .nmId(cardDto.getNmId())
                 .imtId(cardDto.getImtId())
                 .seller(seller)
+                .cabinet(cabinet)
                 .title(cardDto.getTitle())
                 .subjectName(cardDto.getSubjectName())
                 .brand(cardDto.getBrand())

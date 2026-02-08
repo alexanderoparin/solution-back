@@ -41,10 +41,16 @@ public class ArticleNote {
     private Long nmId;
 
     /**
-     * Продавец (SELLER), которому принадлежит артикул.
+     * Продавец (SELLER), которому принадлежит артикул (оставляем для удобства).
      */
     @Column(name = "seller_id", nullable = false)
     private Long sellerId;
+
+    /**
+     * Кабинет, которому принадлежит заметка (привязка к артикулу в кабинете).
+     */
+    @Column(name = "cabinet_id", nullable = false)
+    private Long cabinetId;
 
     /**
      * Пользователь, создавший заметку.

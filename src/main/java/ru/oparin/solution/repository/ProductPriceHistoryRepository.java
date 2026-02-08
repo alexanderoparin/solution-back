@@ -53,5 +53,13 @@ public interface ProductPriceHistoryRepository extends JpaRepository<ProductPric
      * Подсчитывает количество уникальных товаров с ценами за указанную дату.
      */
     long countDistinctNmIdByDate(LocalDate date);
+
+    Optional<ProductPriceHistory> findByNmIdAndDateAndSizeIdAndCabinet_Id(Long nmId, LocalDate date, Long sizeId, Long cabinetId);
+
+    List<ProductPriceHistory> findByNmIdAndDateAndCabinet_Id(Long nmId, LocalDate date, Long cabinetId);
+
+    List<ProductPriceHistory> findByNmIdInAndDateAndCabinet_Id(List<Long> nmIds, LocalDate date, Long cabinetId);
+
+    List<ProductPriceHistory> findByNmIdAndDateBetweenAndCabinet_Id(Long nmId, LocalDate dateFrom, LocalDate dateTo, Long cabinetId);
 }
 

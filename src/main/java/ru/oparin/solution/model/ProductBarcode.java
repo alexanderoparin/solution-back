@@ -42,6 +42,13 @@ public class ProductBarcode {
     private Long nmId;
 
     /**
+     * Кабинет (баркоды привязаны к кабинету).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cabinet_id", nullable = false)
+    private Cabinet cabinet;
+
+    /**
      * ID характеристики размера (chrtID).
      */
     @Column(name = "chrt_id", nullable = false)
