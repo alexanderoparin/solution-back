@@ -35,5 +35,7 @@ public interface ProductBarcodeRepository extends JpaRepository<ProductBarcode, 
      * Удаляет все баркоды для товара.
      */
     void deleteByNmId(Long nmId);
+
+    void deleteByCabinet_Id(Long cabinetId);
 }
 

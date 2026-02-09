@@ -109,6 +109,20 @@ public class CabinetController {
         return ResponseEntity.ok(MessageResponse.builder().message(message).build());
     }
 
+    /**
+     * Удаление кабинета и всех связанных с ним данных.
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        validateSellerRole(user);
+        cabinetService.delete(id, user.getId());
+        return ResponseEntity.noContent().build();
+    }
+
     private void validateSellerRole(User user) {
         if (user.getRole() != Role.SELLER) {
             throw new UserException("Только продавец может управлять кабинетами", HttpStatus.FORBIDDEN);

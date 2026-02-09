@@ -32,5 +32,7 @@ public interface ProductCardRepository extends JpaRepository<ProductCard, Long> 
      * Находит карточку по nmID и кабинету.
      */
     Optional<ProductCard> findByNmIdAndCabinet_Id(Long nmId, Long cabinetId);
+
+    void deleteByCabinet_Id(Long cabinetId);
 }
 

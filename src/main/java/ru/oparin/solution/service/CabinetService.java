@@ -9,9 +9,19 @@ import ru.oparin.solution.dto.cabinet.CreateCabinetRequest;
 import ru.oparin.solution.dto.cabinet.UpdateCabinetRequest;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.PromotionCampaign;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.repository.ArticleNoteRepository;
 import ru.oparin.solution.repository.CabinetRepository;
+import ru.oparin.solution.repository.CampaignArticleRepository;
+import ru.oparin.solution.repository.ProductBarcodeRepository;
+import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
+import ru.oparin.solution.repository.ProductCardRepository;
+import ru.oparin.solution.repository.ProductPriceHistoryRepository;
+import ru.oparin.solution.repository.PromotionCampaignRepository;
+import ru.oparin.solution.repository.PromotionCampaignStatisticsRepository;
+import ru.oparin.solution.repository.ProductStockRepository;
 import ru.oparin.solution.repository.UserRepository;
 
 import java.util.List;
@@ -27,6 +37,15 @@ public class CabinetService {
     private final CabinetRepository cabinetRepository;
     private final UserRepository userRepository;
     private final WbApiKeyService wbApiKeyService;
+    private final PromotionCampaignStatisticsRepository promotionCampaignStatisticsRepository;
+    private final CampaignArticleRepository campaignArticleRepository;
+    private final PromotionCampaignRepository promotionCampaignRepository;
+    private final ProductPriceHistoryRepository productPriceHistoryRepository;
+    private final ProductStockRepository productStockRepository;
+    private final ProductBarcodeRepository productBarcodeRepository;
+    private final ProductCardAnalyticsRepository productCardAnalyticsRepository;
+    private final ProductCardRepository productCardRepository;
+    private final ArticleNoteRepository articleNoteRepository;
 
     /**
      * Список кабинетов пользователя (продавца), отсортированный по дате создания (новые первые).
@@ -90,6 +109,28 @@ public class CabinetService {
     public void validateApiKey(Long cabinetId, Long userId) {
         Cabinet cabinet = findCabinetByIdAndUserId(cabinetId, userId);
         wbApiKeyService.validateApiKeyByCabinet(cabinet);
+    }
+
+    /**
+     * Удаление кабинета и всех связанных данных (остатки, баркоды, карточки, аналитика, кампании, заметки и т.д.).
+     */
+    @Transactional
+    public void delete(Long cabinetId, Long userId) {
+        Cabinet cabinet = findCabinetByIdAndUserId(cabinetId, userId);
+
+        List<PromotionCampaign> campaigns = promotionCampaignRepository.findByCabinet_Id(cabinetId);
+        for (PromotionCampaign campaign : campaigns) {
+            promotionCampaignStatisticsRepository.deleteByCampaign_AdvertId(campaign.getAdvertId());
+            campaignArticleRepository.deleteByCampaignId(campaign.getAdvertId());
+        }
+        promotionCampaignRepository.deleteByCabinet_Id(cabinetId);
+        productPriceHistoryRepository.deleteByCabinet_Id(cabinetId);
+        productStockRepository.deleteByCabinet_Id(cabinetId);
+        productBarcodeRepository.deleteByCabinet_Id(cabinetId);
+        productCardAnalyticsRepository.deleteByCabinet_Id(cabinetId);
+        productCardRepository.deleteByCabinet_Id(cabinetId);
+        articleNoteRepository.deleteByCabinetId(cabinetId);
+        cabinetRepository.delete(cabinet);
     }
 
     /**

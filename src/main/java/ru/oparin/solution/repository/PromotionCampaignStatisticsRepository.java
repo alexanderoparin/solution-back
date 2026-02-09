@@ -110,5 +110,7 @@ public interface PromotionCampaignStatisticsRepository extends JpaRepository<Pro
      */
     @Query("SELECT DISTINCT s.nmId FROM PromotionCampaignStatistics s WHERE s.campaign.advertId = :campaignId")
     List<Long> findDistinctNmIdsByCampaignAdvertId(@Param("campaignId") Long campaignId);
+
+    void deleteByCampaign_AdvertId(Long advertId);
 }
 

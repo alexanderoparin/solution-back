@@ -61,5 +61,7 @@ public interface ProductPriceHistoryRepository extends JpaRepository<ProductPric
     List<ProductPriceHistory> findByNmIdInAndDateAndCabinet_Id(List<Long> nmIds, LocalDate date, Long cabinetId);
 
     List<ProductPriceHistory> findByNmIdAndDateBetweenAndCabinet_Id(Long nmId, LocalDate dateFrom, LocalDate dateTo, Long cabinetId);
+
+    void deleteByCabinet_Id(Long cabinetId);
 }
 

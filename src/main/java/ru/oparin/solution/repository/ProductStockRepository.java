@@ -59,5 +59,7 @@ public interface ProductStockRepository extends JpaRepository<ProductStock, Long
      * Удаляет все остатки для товара.
      */
     void deleteByNmId(Long nmId);
+
+    void deleteByCabinet_Id(Long cabinetId);
 }
 

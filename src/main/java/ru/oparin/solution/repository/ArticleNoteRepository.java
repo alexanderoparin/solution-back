@@ -61,5 +61,7 @@ public interface ArticleNoteRepository extends JpaRepository<ArticleNote, Long> 
      * Проверяет существование заметки по ID, артикулу и кабинету.
      */
     boolean existsByIdAndNmIdAndCabinetId(Long id, Long nmId, Long cabinetId);
+
+    void deleteByCabinetId(Long cabinetId);
 }
 

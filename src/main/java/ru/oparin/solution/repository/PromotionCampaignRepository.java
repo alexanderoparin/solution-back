@@ -59,5 +59,7 @@ public interface PromotionCampaignRepository extends JpaRepository<PromotionCamp
      * Поиск кампании по advertId и кабинету.
      */
     Optional<PromotionCampaign> findByAdvertIdAndCabinet_Id(Long advertId, Long cabinetId);
+
+    void deleteByCabinet_Id(Long cabinetId);
 }
 
