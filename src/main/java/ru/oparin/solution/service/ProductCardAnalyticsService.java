@@ -265,7 +265,7 @@ public class ProductCardAnalyticsService {
             log.info("Требуется загрузка статистики для {} из {} кампаний",
                     campaignsToFetch.size(), campaignIds.size());
 
-            // Получаем статистику батчами (максимум 100 кампаний за запрос)
+            // Получаем статистику батчами (максимум 50 кампаний за запрос — лимит WB API)
             List<PromotionFullStatsResponse.CampaignStats> allStats = fetchStatisticsInBatches(
                     apiKey, campaignsToFetch, dateFrom, dateTo
             );
@@ -310,7 +310,7 @@ public class ProductCardAnalyticsService {
             LocalDate dateTo
     ) {
         List<PromotionFullStatsResponse.CampaignStats> allStats = new ArrayList<>();
-        int batchSize = 100; // Максимум 100 кампаний согласно документации
+        int batchSize = 50; // Лимит WB API: number of advert cannot be more than 50
         int totalBatches = (campaignIds.size() + batchSize - 1) / batchSize;
 
         log.info("Загрузка статистики для {} кампаний батчами по {} (всего батчей: {})",
