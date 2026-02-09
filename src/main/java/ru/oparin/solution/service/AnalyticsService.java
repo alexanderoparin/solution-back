@@ -5,8 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.analytics.*;
+import ru.oparin.solution.model.ProductBarcode;
 import ru.oparin.solution.model.ProductCard;
+import ru.oparin.solution.model.ProductStock;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.WbWarehouse;
 import ru.oparin.solution.repository.CampaignArticleRepository;
 import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
@@ -32,7 +35,9 @@ import ru.oparin.solution.service.analytics.ProductCardFilter;
 import ru.oparin.solution.util.PeriodGenerator;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -194,14 +199,14 @@ public class AnalyticsService {
                 if (stats.clicks() == 0) {
                     yield null;
                 }
-                yield stats.sum().divide(BigDecimal.valueOf(stats.clicks()), 2, java.math.RoundingMode.HALF_UP);
+                yield stats.sum().divide(BigDecimal.valueOf(stats.clicks()), 2, RoundingMode.HALF_UP);
             }
             case MetricNames.CTR -> MathUtils.calculatePercentage(stats.clicks(), stats.views());
             case MetricNames.CPO -> {
                 if (stats.orders() == 0) {
                     yield null;
                 }
-                yield stats.sum().divide(BigDecimal.valueOf(stats.orders()), 2, java.math.RoundingMode.HALF_UP);
+                yield stats.sum().divide(BigDecimal.valueOf(stats.orders()), 2, RoundingMode.HALF_UP);
             }
             case MetricNames.DRR -> {
                 if (stats.sum().compareTo(BigDecimal.ZERO) == 0 || stats.ordersSum().compareTo(BigDecimal.ZERO) == 0) {
@@ -591,7 +596,7 @@ public class AnalyticsService {
                             // СПП (руб) = (Цена со скидкой WB Клуба * СПП %) / 100
                             BigDecimal sppAmount = price.getClubDiscountedPrice()
                                     .multiply(sppPercent)
-                                    .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+                                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
                             builder.sppAmount(sppAmount);
                             
                             // Цена с СПП = Цена со скидкой WB Клуба - СПП (руб)
@@ -693,7 +698,7 @@ public class AnalyticsService {
      * Получает остатки товара на складах.
      */
     private List<StockDto> getStocks(Long nmId, Long cabinetId) {
-        List<ru.oparin.solution.model.ProductStock> stocks = cabinetId != null
+        List<ProductStock> stocks = cabinetId != null
                 ? stockRepository.findByNmIdAndCabinet_Id(nmId, cabinetId)
                 : stockRepository.findByNmId(nmId);
         
@@ -704,16 +709,16 @@ public class AnalyticsService {
         // Группируем по складам и суммируем количество
         Map<Long, StockAggregate> stockByWarehouse = stocks.stream()
                 .collect(Collectors.groupingBy(
-                        ru.oparin.solution.model.ProductStock::getWarehouseId,
+                        ProductStock::getWarehouseId,
                         Collectors.collectingAndThen(
                                 Collectors.toList(),
                                 stockList -> {
                                     int totalAmount = stockList.stream()
-                                            .mapToInt(ru.oparin.solution.model.ProductStock::getAmount)
+                                            .mapToInt(ProductStock::getAmount)
                                             .sum();
-                                    java.time.LocalDateTime latestUpdate = stockList.stream()
-                                            .map(ru.oparin.solution.model.ProductStock::getUpdatedAt)
-                                            .max(java.time.LocalDateTime::compareTo)
+                                    LocalDateTime latestUpdate = stockList.stream()
+                                            .map(ProductStock::getUpdatedAt)
+                                            .max(LocalDateTime::compareTo)
                                             .orElse(null);
                                     return new StockAggregate(totalAmount, latestUpdate);
                                 }
@@ -724,7 +729,7 @@ public class AnalyticsService {
         Map<Long, String> warehouseNames = warehouseRepository.findAll().stream()
                 .collect(Collectors.toMap(
                         w -> Long.valueOf(w.getId()),
-                        ru.oparin.solution.model.WbWarehouse::getName,
+                        WbWarehouse::getName,
                         (existing, replacement) -> existing
                 ));
         
@@ -761,51 +766,54 @@ public class AnalyticsService {
                 .orElseThrow(() -> new IllegalArgumentException("Склад не найден: " + warehouseName));
         
         // Получаем все остатки для товара на этом складе
-        List<ru.oparin.solution.model.ProductStock> stocks = stockRepository.findByNmIdAndWarehouseId(nmId, warehouseId);
-        
-        if (stocks.isEmpty()) {
-            return Collections.emptyList();
-        }
-        
-        // Получаем информацию о баркодах для этого товара
-        Map<String, ru.oparin.solution.model.ProductBarcode> barcodeMap = barcodeRepository.findByNmId(nmId).stream()
+        List<ProductStock> stocks = stockRepository.findByNmIdAndWarehouseId(nmId, warehouseId);
+
+        // Получаем информацию о баркодах для этого товара (все размеры)
+        Map<String, ProductBarcode> barcodeMap = barcodeRepository.findByNmId(nmId).stream()
                 .collect(Collectors.toMap(
-                        ru.oparin.solution.model.ProductBarcode::getBarcode,
+                        ProductBarcode::getBarcode,
                         b -> b,
                         (existing, replacement) -> existing
                 ));
         
-        // Группируем остатки по размерам
-        Map<String, StockSizeAggregate> sizeMap = new HashMap<>();
-        
-        for (ru.oparin.solution.model.ProductStock stock : stocks) {
-            ru.oparin.solution.model.ProductBarcode barcode = barcodeMap.get(stock.getBarcode());
-            if (barcode == null) {
-                continue;
-            }
-            
-            // Используем wbSize, если есть, иначе techSize
+        // Все уникальные размеры из баркодов (для вывода и нулевых остатков)
+        Map<String, StockSizeAggregate> allSizes = new HashMap<>();
+        for (ProductBarcode barcode : barcodeMap.values()) {
             String sizeKey = barcode.getWbSize() != null && !barcode.getWbSize().isEmpty()
                     ? barcode.getWbSize()
                     : (barcode.getTechSize() != null ? barcode.getTechSize() : "Неизвестно");
-            
-            sizeMap.compute(sizeKey, (key, aggregate) -> {
-                if (aggregate == null) {
-                    return new StockSizeAggregate(
-                            barcode.getTechSize(),
-                            barcode.getWbSize(),
-                            stock.getAmount()
-                    );
-                } else {
-                    aggregate.amount += stock.getAmount();
-                    return aggregate;
-                }
-            });
+            if (!allSizes.containsKey(sizeKey)) {
+                allSizes.put(sizeKey, new StockSizeAggregate(
+                        barcode.getTechSize(),
+                        barcode.getWbSize(),
+                        0
+                ));
+            }
         }
-        
-        // Формируем список DTO, исключая нулевые остатки
-        return sizeMap.values().stream()
-                .filter(agg -> agg.amount > 0) // Фильтруем нулевые остатки
+
+        // Суммируем остатки по размерам из ProductStock
+        for (ProductStock stock : stocks) {
+            ProductBarcode barcode = barcodeMap.get(stock.getBarcode());
+            if (barcode == null) {
+                continue;
+            }
+            String sizeKey = barcode.getWbSize() != null && !barcode.getWbSize().isEmpty()
+                    ? barcode.getWbSize()
+                    : (barcode.getTechSize() != null ? barcode.getTechSize() : "Неизвестно");
+            StockSizeAggregate agg = allSizes.get(sizeKey);
+            if (agg != null) {
+                agg.amount += stock.getAmount();
+            } else {
+                allSizes.put(sizeKey, new StockSizeAggregate(
+                        barcode.getTechSize(),
+                        barcode.getWbSize(),
+                        stock.getAmount()
+                ));
+            }
+        }
+
+        // Формируем список DTO (все размеры, включая с нулём)
+        return allSizes.values().stream()
                 .map(agg -> StockSizeDto.builder()
                         .techSize(agg.techSize)
                         .wbSize(agg.wbSize)
@@ -833,9 +841,9 @@ public class AnalyticsService {
      */
     private static class StockAggregate {
         final int totalAmount;
-        final java.time.LocalDateTime latestUpdate;
+        final LocalDateTime latestUpdate;
         
-        StockAggregate(int totalAmount, java.time.LocalDateTime latestUpdate) {
+        StockAggregate(int totalAmount, LocalDateTime latestUpdate) {
             this.totalAmount = totalAmount;
             this.latestUpdate = latestUpdate;
         }
