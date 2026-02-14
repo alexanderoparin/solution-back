@@ -7,10 +7,11 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * DTO для рекламной кампании на странице артикула.
+ * DTO для рекламной кампании на странице артикула и на странице «Рекламные компании».
  */
 @Getter
 @Setter
@@ -48,5 +49,20 @@ public class CampaignDto {
      */
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdAt;
+    
+    /** Показы (агрегат за период). */
+    private Integer views;
+    /** Клики. */
+    private Integer clicks;
+    /** CTR, %. */
+    private BigDecimal ctr;
+    /** CPC, руб. */
+    private BigDecimal cpc;
+    /** Затраты, руб. */
+    private BigDecimal costs;
+    /** Добавлено в корзину. */
+    private Integer cart;
+    /** Заказы. */
+    private Integer orders;
 }
 

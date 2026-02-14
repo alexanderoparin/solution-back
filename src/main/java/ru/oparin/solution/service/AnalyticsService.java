@@ -749,6 +749,61 @@ public class AnalyticsService {
                 .sorted((a, b) -> b.getAmount().compareTo(a.getAmount())) // Сортируем по убыванию количества
                 .collect(Collectors.toList());
     }
+
+    /**
+     * Список рекламных кампаний кабинета с агрегированной статистикой за последние 30 дней.
+     */
+    @Transactional(readOnly = true)
+    public List<CampaignDto> listCampaignsByCabinet(Long cabinetId) {
+        if (cabinetId == null) {
+            return Collections.emptyList();
+        }
+        List<PromotionCampaign> campaigns = campaignRepository.findByCabinet_Id(cabinetId).stream()
+                .filter(c -> c.getStatus() != CampaignStatus.FINISHED)
+                .collect(Collectors.toList());
+        if (campaigns.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> campaignIds = campaigns.stream().map(PromotionCampaign::getAdvertId).collect(Collectors.toList());
+        LocalDate dateTo = LocalDate.now();
+        LocalDate dateFrom = dateTo.minusDays(30);
+        List<PromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
+                campaignIds, dateFrom, dateTo);
+        Map<Long, List<PromotionCampaignStatistics>> statsByCampaign = allStats.stream()
+                .collect(Collectors.groupingBy(s -> s.getCampaign().getAdvertId()));
+
+        return campaigns.stream()
+                .map(c -> {
+                    List<PromotionCampaignStatistics> stats = statsByCampaign.getOrDefault(c.getAdvertId(), Collections.emptyList());
+                    int views = 0, clicks = 0, orders = 0, cart = 0;
+                    BigDecimal sum = BigDecimal.ZERO;
+                    for (PromotionCampaignStatistics s : stats) {
+                        if (s.getViews() != null) views += s.getViews();
+                        if (s.getClicks() != null) clicks += s.getClicks();
+                        if (s.getSum() != null) sum = sum.add(s.getSum());
+                        if (s.getOrders() != null) orders += s.getOrders();
+                        if (s.getAtbs() != null) cart += s.getAtbs();
+                    }
+                    BigDecimal ctr = MathUtils.calculatePercentage(clicks, views);
+                    BigDecimal cpc = (clicks > 0 && sum != null) ? sum.divide(BigDecimal.valueOf(clicks), 2, RoundingMode.HALF_UP) : null;
+                    return CampaignDto.builder()
+                            .id(c.getAdvertId())
+                            .name(c.getName())
+                            .type(c.getType() != null ? c.getType().getDescription() : null)
+                            .status(c.getStatus() != null ? c.getStatus().getCode() : null)
+                            .statusName(c.getStatus() != null ? c.getStatus().getDescription() : null)
+                            .createdAt(c.getCreateTime())
+                            .views(views > 0 ? views : null)
+                            .clicks(clicks > 0 ? clicks : null)
+                            .ctr(ctr)
+                            .cpc(cpc)
+                            .costs(sum != null && sum.compareTo(BigDecimal.ZERO) > 0 ? sum : null)
+                            .cart(cart > 0 ? cart : null)
+                            .orders(orders > 0 ? orders : null)
+                            .build();
+                })
+                .collect(Collectors.toList());
+    }
     
     /**
      * Получает детализацию остатков по размерам для товара на конкретном складе.
