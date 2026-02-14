@@ -949,6 +949,7 @@ public class AnalyticsService {
                 .brand(card.getBrand())
                 .subjectName(card.getSubjectName())
                 .photoTm(card.getPhotoTm())
+                .vendorCode(card.getVendorCode())
                 .build();
     }
 

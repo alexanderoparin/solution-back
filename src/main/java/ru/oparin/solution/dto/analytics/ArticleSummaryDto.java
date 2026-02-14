@@ -41,5 +41,10 @@ public class ArticleSummaryDto {
      * URL миниатюры первой фотографии товара.
      */
     private String photoTm;
+
+    /**
+     * Артикул продавца.
+     */
+    private String vendorCode;
 }
 
