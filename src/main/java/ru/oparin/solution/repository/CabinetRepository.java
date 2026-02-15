@@ -1,6 +1,8 @@
 package ru.oparin.solution.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
@@ -34,6 +36,8 @@ public interface CabinetRepository extends JpaRepository<Cabinet, Long> {
 
     /**
      * Все кабинеты с заданным API-ключом и активным продавцом (для планировщика загрузки данных).
+     * Загружает User (join fetch), чтобы обращение к cabinet.getUser() не требовало сессии в другом потоке.
      */
-    List<Cabinet> findByApiKeyIsNotNullAndUser_IsActiveTrueAndUser_RoleOrderByIdAsc(Role role);
+    @Query("SELECT c FROM Cabinet c JOIN FETCH c.user u WHERE c.apiKey IS NOT NULL AND u.isActive = true AND u.role = :role ORDER BY c.id")
+    List<Cabinet> findCabinetsWithApiKeyAndUser(@Param("role") Role role);
 }

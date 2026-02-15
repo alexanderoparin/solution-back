@@ -297,14 +297,33 @@ public class AnalyticsService {
         ProductCard card = findCardBySeller(nmId, seller.getId(), cabinetId);
         Long cardCabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
 
+        List<DailyDataDto> dailyData = getDailyData(nmId, cardCabinetId);
+        Boolean inWbPromotion = computeInWbPromotion(dailyData);
+
         return ArticleResponseDto.builder()
                 .article(mapToArticleDetail(card))
                 .periods(periods)
                 .metrics(calculateAllMetrics(card, periods, seller.getId(), cardCabinetId))
-                .dailyData(getDailyData(nmId, cardCabinetId))
+                .dailyData(dailyData)
                 .campaigns(getCampaigns(nmId, cardCabinetId))
+                .inWbPromotion(inWbPromotion)
                 .stocks(getStocks(nmId, cardCabinetId))
                 .build();
+    }
+
+    /**
+     * Определяет, участвует ли товар в акции WB по скидке продавца (не путать с рекламными кампаниями).
+     * Берётся последняя известная дата с данными о цене: если скидка продавца > 0 — товар в акции.
+     */
+    private Boolean computeInWbPromotion(List<DailyDataDto> dailyData) {
+        if (dailyData == null || dailyData.isEmpty()) {
+            return null;
+        }
+        return dailyData.stream()
+                .filter(d -> d.getSellerDiscount() != null)
+                .max(java.util.Comparator.comparing(DailyDataDto::getDate))
+                .map(d -> d.getSellerDiscount() > 0)
+                .orElse(null);
     }
 
     private void validatePeriods(List<PeriodDto> periods) {

@@ -110,33 +110,38 @@ public class AnalyticsScheduler {
         }
 
         List<CompletableFuture<Void>> futures = cabinetsWithKey.stream()
-                .map(cabinet -> CompletableFuture.runAsync(() -> updateWarehousesForCabinet(cabinet), cabinetUpdateExecutor))
+                .map(cabinet -> {
+                    long cabinetId = cabinet.getId();
+                    String apiKey = cabinet.getApiKey();
+                    String userEmail = cabinet.getUser() != null ? cabinet.getUser().getEmail() : null;
+                    return CompletableFuture.runAsync(() -> updateWarehousesForCabinet(cabinetId, apiKey, userEmail), cabinetUpdateExecutor);
+                })
                 .toList();
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
     }
 
-    private void updateWarehousesForCabinet(Cabinet cabinet) {
+    private void updateWarehousesForCabinet(long cabinetId, String apiKey, String userEmail) {
         try {
-            if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+            if (apiKey == null || apiKey.isBlank()) {
                 return;
             }
-            log.info("Обновление складов WB для кабинета (ID: {}, продавец: {})",
-                    cabinet.getId(), cabinet.getUser().getEmail());
+            log.info("Обновление складов WB для кабинета (ID: {}, продавец: {})", cabinetId, userEmail);
 
-            List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(cabinet.getApiKey());
+            List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(apiKey);
             warehouseService.saveOrUpdateWarehouses(warehouses);
 
-            log.info("Завершено обновление складов WB для кабинета (ID: {})", cabinet.getId());
+            log.info("Завершено обновление складов WB для кабинета (ID: {})", cabinetId);
         } catch (Exception e) {
-            log.warn("Не удалось обновить склады WB для кабинета {}: {}", cabinet.getId(), e.getMessage());
+            log.warn("Не удалось обновить склады WB для кабинета {}: {}", cabinetId, e.getMessage());
         }
     }
 
     /**
      * Кабинеты с заданным API-ключом и активным продавцом (для планировщика).
+     * Загружает User (join fetch), чтобы в асинхронных задачах не обращаться к lazy-прокси без сессии.
      */
     private List<Cabinet> findCabinetsWithApiKey() {
-        return cabinetRepository.findByApiKeyIsNotNullAndUser_IsActiveTrueAndUser_RoleOrderByIdAsc(Role.SELLER);
+        return cabinetRepository.findCabinetsWithApiKeyAndUser(Role.SELLER);
     }
 
     private DateRange calculateLastTwoWeeksPeriod() {

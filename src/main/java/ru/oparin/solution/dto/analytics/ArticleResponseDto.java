@@ -42,7 +42,12 @@ public class ArticleResponseDto {
      * Список рекламных кампаний, в которых участвует артикул.
      */
     private List<CampaignDto> campaigns;
-    
+
+    /**
+     * Участвует ли товар в акции WB (по скидке продавца), не путать с рекламными кампаниями.
+     */
+    private Boolean inWbPromotion;
+
     /**
      * Остатки товара на складах на текущий момент.
      */
