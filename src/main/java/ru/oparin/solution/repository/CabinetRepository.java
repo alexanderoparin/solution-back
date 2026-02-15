@@ -35,6 +35,12 @@ public interface CabinetRepository extends JpaRepository<Cabinet, Long> {
     }
 
     /**
+     * Кабинет по ID с загруженным User (для асинхронных методов, где нет сессии).
+     */
+    @Query("SELECT c FROM Cabinet c JOIN FETCH c.user WHERE c.id = :id")
+    Optional<Cabinet> findByIdWithUser(@Param("id") Long id);
+
+    /**
      * Все кабинеты с заданным API-ключом и активным продавцом (для планировщика загрузки данных).
      * Загружает User (join fetch), чтобы обращение к cabinet.getUser() не требовало сессии в другом потоке.
      */

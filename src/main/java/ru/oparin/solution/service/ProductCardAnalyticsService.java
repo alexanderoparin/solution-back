@@ -71,7 +71,7 @@ public class ProductCardAnalyticsService {
         long cabinetId = cabinet.getId();
         String apiKey = cabinet.getApiKey();
 
-        Cabinet managed = cabinetRepository.findById(cabinetId)
+        Cabinet managed = cabinetRepository.findByIdWithUser(cabinetId)
                 .orElseThrow(() -> new IllegalStateException("Кабинет не найден: " + cabinetId));
         managed.setLastDataUpdateAt(LocalDateTime.now());
         managed.setLastDataUpdateRequestedAt(null);
