@@ -21,6 +21,7 @@ import ru.oparin.solution.service.wb.*;
 import ru.oparin.solution.service.ProductStocksService;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -80,34 +81,42 @@ public class ProductCardAnalyticsService {
      */
     @Async("taskExecutor")
     public void updateCardsAndLoadAnalytics(Cabinet cabinet, LocalDate dateFrom, LocalDate dateTo) {
-        User seller = cabinet.getUser();
+        long cabinetId = cabinet.getId();
         String apiKey = cabinet.getApiKey();
+
+        Cabinet managed = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalStateException("Кабинет не найден: " + cabinetId));
+        managed.setLastDataUpdateAt(LocalDateTime.now());
+        managed.setLastDataUpdateRequestedAt(null);
+        cabinetRepository.save(managed);
+
+        User seller = managed.getUser();
         log.info("Начало обновления карточек, кампаний и загрузки аналитики для кабинета (ID: {}, продавец: {}) за период {} - {}",
-                cabinet.getId(), seller.getEmail(), dateFrom, dateTo);
+                cabinetId, seller.getEmail(), dateFrom, dateTo);
 
         CardsListResponse cardsResponse = fetchAllCards(apiKey);
-        productCardService.saveOrUpdateCards(cardsResponse, cabinet);
+        productCardService.saveOrUpdateCards(cardsResponse, managed);
 
-        updateProductPrices(cabinet, apiKey);
-        updateSppFromOrders(cabinet, apiKey);
-        updateProductStocks(cabinet, apiKey);
+        updateProductPrices(managed, apiKey);
+        updateSppFromOrders(managed, apiKey);
+        updateProductStocks(managed, apiKey);
 
-        List<Long> campaignIds = updatePromotionCampaigns(cabinet, apiKey);
+        List<Long> campaignIds = updatePromotionCampaigns(managed, apiKey);
 
         if (!campaignIds.isEmpty()) {
-            List<Long> nonFinishedCampaignIds = filterNonFinishedCampaigns(cabinet.getId(), campaignIds);
+            List<Long> nonFinishedCampaignIds = filterNonFinishedCampaigns(cabinetId, campaignIds);
             if (!nonFinishedCampaignIds.isEmpty()) {
                 updatePromotionCampaignStatistics(seller, apiKey, nonFinishedCampaignIds, dateFrom, dateTo);
             }
         }
 
-        List<ProductCard> productCards = productCardRepository.findByCabinet_Id(cabinet.getId());
+        List<ProductCard> productCards = productCardRepository.findByCabinet_Id(cabinetId);
         log.info("Найдено карточек для загрузки аналитики: {}", productCards.size());
 
         ProcessingResult result = loadAnalyticsForAllCards(productCards, apiKey, dateFrom, dateTo);
 
         log.info("Завершено обновление карточек, кампаний и загрузка аналитики для кабинета (ID: {}): успешно {}, ошибок {}",
-                cabinet.getId(), result.successCount(), result.errorCount());
+                cabinetId, result.successCount(), result.errorCount());
     }
 
     /**

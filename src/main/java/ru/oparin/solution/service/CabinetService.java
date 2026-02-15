@@ -153,6 +153,7 @@ public class CabinetService {
                     .lastValidatedAt(c.getLastValidatedAt())
                     .validationError(c.getValidationError())
                     .lastDataUpdateAt(c.getLastDataUpdateAt())
+                    .lastDataUpdateRequestedAt(c.getLastDataUpdateRequestedAt())
                     .build();
         }
         return CabinetDto.builder()

@@ -64,6 +64,13 @@ public class Cabinet {
     @Column(name = "last_data_update_at")
     private LocalDateTime lastDataUpdateAt;
 
+    /**
+     * Время запроса обновления (нажатие кнопки). Сбрасывается при реальном старте задачи.
+     * Нужно для блокировки повторных нажатий, пока задача в очереди.
+     */
+    @Column(name = "last_data_update_requested_at")
+    private LocalDateTime lastDataUpdateRequestedAt;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

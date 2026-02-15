@@ -39,5 +39,7 @@ public class CabinetDto {
         private LocalDateTime lastValidatedAt;
         private String validationError;
         private LocalDateTime lastDataUpdateAt;
+        /** Время запроса обновления (кнопка нажата, задача в очереди). Для блокировки кнопки до старта. */
+        private LocalDateTime lastDataUpdateRequestedAt;
     }
 }

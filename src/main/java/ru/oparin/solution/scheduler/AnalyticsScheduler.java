@@ -156,9 +156,6 @@ public class AnalyticsScheduler {
         log.info("Загрузка аналитики для кабинета (ID: {}, продавец: {})",
                 cabinet.getId(), cabinet.getUser().getEmail());
 
-        cabinet.setLastDataUpdateAt(LocalDateTime.now());
-        cabinetRepository.save(cabinet);
-
         analyticsService.updateCardsAndLoadAnalytics(cabinet, period.from(), period.to());
     }
 
@@ -185,8 +182,7 @@ public class AnalyticsScheduler {
 
             validateUpdateInterval(cabinet);
 
-            LocalDateTime now = LocalDateTime.now();
-            cabinet.setLastDataUpdateAt(now);
+            cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
             cabinetRepository.save(cabinet);
 
             DateRange period = calculateLastTwoWeeksPeriod();
@@ -213,14 +209,17 @@ public class AnalyticsScheduler {
      */
     private void validateUpdateInterval(Cabinet cabinet) {
         LocalDateTime lastUpdate = cabinet.getLastDataUpdateAt();
+        LocalDateTime lastRequested = cabinet.getLastDataUpdateRequestedAt();
+        LocalDateTime lastAction = lastUpdate != null && lastRequested != null
+                ? (lastUpdate.isAfter(lastRequested) ? lastUpdate : lastRequested)
+                : (lastUpdate != null ? lastUpdate : lastRequested);
 
-        if (lastUpdate == null) {
-            // Если обновление еще не запускалось, разрешаем
+        if (lastAction == null) {
             return;
         }
 
         LocalDateTime now = LocalDateTime.now();
-        long hoursSinceLastUpdate = java.time.Duration.between(lastUpdate, now).toHours();
+        long hoursSinceLastUpdate = java.time.Duration.between(lastAction, now).toHours();
 
         if (hoursSinceLastUpdate < MIN_UPDATE_INTERVAL_HOURS) {
             long remainingHours = MIN_UPDATE_INTERVAL_HOURS - hoursSinceLastUpdate;
