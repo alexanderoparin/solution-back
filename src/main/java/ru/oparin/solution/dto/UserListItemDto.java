@@ -1,10 +1,6 @@
 package ru.oparin.solution.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import ru.oparin.solution.model.Role;
 
 import java.time.LocalDateTime;
@@ -58,5 +54,10 @@ public class UserListItemDto {
      * Дата последнего обновления данных (для селлеров).
      */
     private LocalDateTime lastDataUpdateAt;
+
+    /**
+     * Время запроса обновления (кнопка нажата, задача в очереди). Для блокировки кнопки на Сводной.
+     */
+    private LocalDateTime lastDataUpdateRequestedAt;
 }
 

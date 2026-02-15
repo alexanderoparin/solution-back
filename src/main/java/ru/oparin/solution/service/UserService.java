@@ -391,15 +391,17 @@ public class UserService {
      * Преобразует User в UserListItemDto.
      */
     private UserListItemDto mapToUserListItemDto(User user) {
-        // Получаем lastDataUpdateAt из кабинета по умолчанию, если это селлер
         LocalDateTime lastDataUpdateAt = null;
+        LocalDateTime lastDataUpdateRequestedAt = null;
         if (user.getRole() == Role.SELLER) {
             Optional<Cabinet> cabinet = cabinetRepository.findDefaultByUserId(user.getId());
-            if (cabinet.isPresent() && cabinet.get().getLastDataUpdateAt() != null) {
-                lastDataUpdateAt = cabinet.get().getLastDataUpdateAt();
+            if (cabinet.isPresent()) {
+                Cabinet c = cabinet.get();
+                lastDataUpdateAt = c.getLastDataUpdateAt();
+                lastDataUpdateRequestedAt = c.getLastDataUpdateRequestedAt();
             }
         }
-        
+
         return UserListItemDto.builder()
                 .id(user.getId())
                 .email(user.getEmail())
@@ -409,6 +411,7 @@ public class UserService {
                 .createdAt(user.getCreatedAt())
                 .ownerEmail(user.getOwner() != null ? user.getOwner().getEmail() : null)
                 .lastDataUpdateAt(lastDataUpdateAt)
+                .lastDataUpdateRequestedAt(lastDataUpdateRequestedAt)
                 .build();
     }
 }
