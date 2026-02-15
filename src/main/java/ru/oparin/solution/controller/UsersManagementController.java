@@ -194,6 +194,29 @@ public class UsersManagementController {
     }
 
     /**
+     * Принудительный запуск обновления данных для указанного кабинета.
+     * Ограничение 6 ч и даты считаются по этому кабинету.
+     * Доступно для ADMIN и MANAGER (кабинет должен принадлежать селлеру, к которому есть доступ).
+     */
+    @PostMapping("/cabinets/{cabinetId}/trigger-update")
+    public ResponseEntity<MessageResponse> triggerCabinetDataUpdate(
+            @PathVariable Long cabinetId,
+            Authentication authentication
+    ) {
+        User currentUser = getCurrentUser(authentication);
+        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(MessageResponse.builder().message("Недостаточно прав").build());
+        }
+        cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
+        analyticsScheduler.triggerManualUpdateByCabinet(cabinetId);
+        return ResponseEntity.ok(MessageResponse.builder()
+                .message("Обновление данных запущено. Процесс выполняется в фоновом режиме. " +
+                        "Данные будут доступны через несколько минут.")
+                .build());
+    }
+
+    /**
      * Получает текущего пользователя из аутентификации.
      */
     private User getCurrentUser(Authentication authentication) {

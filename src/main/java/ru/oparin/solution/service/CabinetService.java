@@ -12,17 +12,7 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.PromotionCampaign;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.repository.ArticleNoteRepository;
-import ru.oparin.solution.repository.CabinetRepository;
-import ru.oparin.solution.repository.CampaignArticleRepository;
-import ru.oparin.solution.repository.ProductBarcodeRepository;
-import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
-import ru.oparin.solution.repository.ProductCardRepository;
-import ru.oparin.solution.repository.ProductPriceHistoryRepository;
-import ru.oparin.solution.repository.PromotionCampaignRepository;
-import ru.oparin.solution.repository.PromotionCampaignStatisticsRepository;
-import ru.oparin.solution.repository.ProductStockRepository;
-import ru.oparin.solution.repository.UserRepository;
+import ru.oparin.solution.repository.*;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -131,6 +121,33 @@ public class CabinetService {
         productCardRepository.deleteByCabinet_Id(cabinetId);
         articleNoteRepository.deleteByCabinetId(cabinetId);
         cabinetRepository.delete(cabinet);
+    }
+
+    /**
+     * Проверяет, что текущий пользователь (ADMIN или MANAGER) имеет право запускать обновление данных для кабинета.
+     * Кабинет должен принадлежать селлеру; для MANAGER — селлер должен быть в подчинении (owner = currentUser).
+     *
+     * @param cabinetId ID кабинета
+     * @param currentUser текущий пользователь (ADMIN или MANAGER)
+     * @throws UserException 404 если кабинет не найден, 403 если нет доступа
+     */
+    @Transactional(readOnly = true)
+    public void validateCabinetAccessForUpdate(Long cabinetId, User currentUser) {
+        Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
+                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+        User seller = cabinet.getUser();
+        if (seller.getRole() != Role.SELLER) {
+            throw new UserException("Кабинет не принадлежит селлеру", HttpStatus.FORBIDDEN);
+        }
+        if (currentUser.getRole() == Role.ADMIN) {
+            return;
+        }
+        if (currentUser.getRole() == Role.MANAGER) {
+            if (seller.getOwner() != null && seller.getOwner().getId().equals(currentUser.getId())) {
+                return;
+            }
+        }
+        throw new UserException("Нет доступа к данному кабинету", HttpStatus.FORBIDDEN);
     }
 
     /**

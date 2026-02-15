@@ -75,6 +75,8 @@ public class ProductCardAnalyticsService {
         String apiKey = managed.getApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("У кабинета (ID: {}) не задан API-ключ, обновление пропущено", cabinetId);
+            managed.setLastDataUpdateRequestedAt(null);
+            cabinetRepository.save(managed);
             return;
         }
 

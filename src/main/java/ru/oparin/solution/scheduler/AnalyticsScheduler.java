@@ -1,12 +1,12 @@
 package ru.oparin.solution.scheduler;
 
-import org.springframework.beans.factory.annotation.Qualifier;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import ru.oparin.solution.dto.wb.WbWarehouseResponse;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
@@ -14,7 +14,6 @@ import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.service.ProductCardAnalyticsService;
 import ru.oparin.solution.service.WbApiKeyService;
-import ru.oparin.solution.dto.wb.WbWarehouseResponse;
 import ru.oparin.solution.service.WbWarehouseService;
 import ru.oparin.solution.service.wb.WbWarehousesApiClient;
 
@@ -197,6 +196,40 @@ public class AnalyticsScheduler {
         } catch (Exception e) {
             log.error("Ошибка при ручном обновлении данных для продавца (ID: {}, email: {}): {}",
                     seller.getId(), seller.getEmail(), e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    /**
+     * Ручной запуск обновления данных для конкретного кабинета (по ID кабинета).
+     * Используется на Сводной, когда выбран конкретный кабинет — даты и ограничение считаются по этому кабинету.
+     * Права доступа к кабинету проверяются в контроллере до вызова.
+     *
+     * @param cabinetId ID кабинета для обновления
+     * @throws UserException если с последнего обновления прошло меньше 6 часов
+     */
+    @Transactional
+    public void triggerManualUpdateByCabinet(Long cabinetId) {
+        Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
+                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+        log.info("Ручной запуск обновления данных для кабинета (ID: {}, продавец: {})",
+                cabinet.getId(), cabinet.getUser().getEmail());
+
+        try {
+            validateUpdateInterval(cabinet);
+
+            cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
+            cabinetRepository.save(cabinet);
+
+            DateRange period = calculateLastTwoWeeksPeriod();
+            analyticsService.updateCardsAndLoadAnalytics(cabinet, period.from(), period.to());
+
+            log.info("Ручное обновление данных для кабинета (ID: {}) успешно запущено", cabinet.getId());
+        } catch (UserException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Ошибка при ручном обновлении данных для кабинета (ID: {}): {}",
+                    cabinet.getId(), e.getMessage(), e);
             throw e;
         }
     }
