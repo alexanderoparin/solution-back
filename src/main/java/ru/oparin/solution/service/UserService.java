@@ -18,7 +18,6 @@ import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -272,11 +271,8 @@ public class UserService {
         List<User> users;
 
         if (currentUser.getRole() == Role.ADMIN) {
-            // Админ видит всех менеджеров и всех селлеров, которых он создал
-            List<User> managers = userRepository.findByRole(Role.MANAGER);
-            List<User> sellers = userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId());
-            users = new ArrayList<>(managers);
-            users.addAll(sellers);
+            // Админ видит всех пользователей кроме других админов (менеджеры, селлеры, работники)
+            users = userRepository.findByRoleNot(Role.ADMIN);
         } else if (currentUser.getRole() == Role.MANAGER) {
             // Менеджер видит своих селлеров
             users = userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId());
@@ -352,13 +348,8 @@ public class UserService {
      */
     private void validateCanManageUser(User currentUser, User userToManage) {
         if (currentUser.getRole() == Role.ADMIN) {
-            // Админ может управлять менеджерами и селлерами, которых он создал
-            if (userToManage.getRole() != Role.MANAGER && userToManage.getRole() != Role.SELLER) {
-                throw new UserException("ADMIN может управлять только MANAGER или SELLER", HttpStatus.FORBIDDEN);
-            }
-            // Админ может управлять менеджерами и селлерами, у которых он владелец
-            if (userToManage.getOwner() == null || !currentUser.getId().equals(userToManage.getOwner().getId())) {
-                throw new UserException("ADMIN может управлять только своими MANAGER или SELLER", HttpStatus.FORBIDDEN);
+            if (userToManage.getRole() == Role.ADMIN) {
+                throw new UserException("ADMIN не может управлять другими администраторами", HttpStatus.FORBIDDEN);
             }
         } else if (currentUser.getRole() == Role.MANAGER) {
             // Менеджер может управлять только своими селлерами

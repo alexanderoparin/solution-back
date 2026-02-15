@@ -6,31 +6,18 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.wb.*;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.CampaignStatus;
-import ru.oparin.solution.model.ProductCard;
-import ru.oparin.solution.model.ProductCardAnalytics;
-import ru.oparin.solution.model.ProductPriceHistory;
-import ru.oparin.solution.model.PromotionCampaign;
-import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
 import ru.oparin.solution.service.wb.*;
-import ru.oparin.solution.service.ProductStocksService;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -126,27 +113,27 @@ public class ProductCardAnalyticsService {
      */
     private List<Long> updatePromotionCampaigns(User seller, String apiKey) {
         try {
-            log.info("Начало обновления рекламных кампаний для продавца (ID: {}, email: {})", 
+            log.info("Начало обновления рекламных кампаний для продавца (ID: {}, email: {})",
                     seller.getId(), seller.getEmail());
 
             // Получаем список кампаний по типам и статусам
             PromotionCountResponse countResponse = promotionApiClient.getPromotionCount(apiKey);
-            
+
             // Разделяем кампании по типам (8 и 9)
             CampaignIdsByType campaignsByType = separateCampaignsByType(countResponse);
-            
+
             List<Long> allCampaignIds = new ArrayList<>();
             allCampaignIds.addAll(campaignsByType.type8Ids());
             allCampaignIds.addAll(campaignsByType.type9Ids());
-            
+
             if (allCampaignIds.isEmpty()) {
-                log.info("У продавца (ID: {}, email: {}) нет рекламных кампаний типов 8 и 9", 
+                log.info("У продавца (ID: {}, email: {}) нет рекламных кампаний типов 8 и 9",
                         seller.getId(), seller.getEmail());
                 return allCampaignIds;
             }
 
-            log.info("Найдено {} рекламных кампаний для продавца (ID: {}, email: {}): тип 8 - {}, тип 9 - {}", 
-                    allCampaignIds.size(), seller.getId(), seller.getEmail(), 
+            log.info("Найдено {} рекламных кампаний для продавца (ID: {}, email: {}): тип 8 - {}, тип 9 - {}",
+                    allCampaignIds.size(), seller.getId(), seller.getEmail(),
                     campaignsByType.type8Ids().size(), campaignsByType.type9Ids().size());
 
             // Получаем детальную информацию о кампаниях типа 8 (Автоматическая РК)
@@ -167,7 +154,7 @@ public class ProductCardAnalyticsService {
             allCampaigns.addAll(type9Campaigns);
 
             if (allCampaigns.isEmpty()) {
-                log.info("Не удалось получить детальную информацию о кампаниях для продавца (ID: {}, email: {})", 
+                log.info("Не удалось получить детальную информацию о кампаниях для продавца (ID: {}, email: {})",
                         seller.getId(), seller.getEmail());
                 return allCampaignIds;
             }
@@ -306,10 +293,10 @@ public class ProductCardAnalyticsService {
     /**
      * Получает статистику кампаний батчами (максимум 50 кампаний за запрос).
      *
-     * @param apiKey API ключ продавца
+     * @param apiKey      API ключ продавца
      * @param campaignIds список ID всех кампаний
-     * @param dateFrom дата начала периода
-     * @param dateTo дата окончания периода
+     * @param dateFrom    дата начала периода
+     * @param dateTo      дата окончания периода
      * @return список всей статистики
      */
     private List<PromotionFullStatsResponse.CampaignStats> fetchStatisticsInBatches(
@@ -411,7 +398,7 @@ public class ProductCardAnalyticsService {
      * Фильтрует список ID кампаний, исключая завершенные.
      * Оставляет активные, на паузе и готовые к запуску кампании.
      *
-     * @param cabinetId ID кабинета
+     * @param cabinetId   ID кабинета
      * @param campaignIds список ID всех кампаний
      * @return список ID незавершенных кампаний
      */
@@ -451,8 +438,8 @@ public class ProductCardAnalyticsService {
      * Исключает кампании, у которых уже есть статистика за весь запрошенный период.
      *
      * @param campaignIds список ID кампаний
-     * @param dateFrom дата начала периода
-     * @param dateTo дата окончания периода
+     * @param dateFrom    дата начала периода
+     * @param dateTo      дата окончания периода
      * @return список ID кампаний, для которых нужно запросить статистику
      */
     private List<Long> filterCampaignsNeedingStatistics(
@@ -497,7 +484,7 @@ public class ProductCardAnalyticsService {
     private CampaignIdsByType separateCampaignsByType(PromotionCountResponse countResponse) {
         List<Long> type8Ids = new ArrayList<>();
         List<Long> type9Ids = new ArrayList<>();
-        
+
         if (countResponse == null || countResponse.getAdverts() == null) {
             return new CampaignIdsByType(type8Ids, type9Ids);
         }
@@ -507,17 +494,17 @@ public class ProductCardAnalyticsService {
             if (type == null || (type != 8 && type != 9)) {
                 continue;
             }
-            
+
             // Фильтруем только статусы 7 (Завершена), 9 (Активна), 11 (Пауза)
             Integer status = advertGroup.getStatus();
             if (status == null || (status != 7 && status != 9 && status != 11)) {
                 continue;
             }
-            
+
             if (advertGroup.getAdvertList() == null) {
                 continue;
             }
-            
+
             List<Long> targetList = type == 8 ? type8Ids : type9Ids;
             for (PromotionCountResponse.AdvertInfo advertInfo : advertGroup.getAdvertList()) {
                 if (advertInfo.getAdvertId() != null) {
@@ -528,25 +515,26 @@ public class ProductCardAnalyticsService {
 
         return new CampaignIdsByType(type8Ids, type9Ids);
     }
-    
+
     /**
      * Класс для хранения ID кампаний по типам.
      */
-    private record CampaignIdsByType(List<Long> type8Ids, List<Long> type9Ids) {}
+    private record CampaignIdsByType(List<Long> type8Ids, List<Long> type9Ids) {
+    }
 
     /**
      * Получает детальную информацию о кампаниях батчами (максимум 50 за запрос).
      *
-     * @param apiKey API ключ продавца
+     * @param apiKey      API ключ продавца
      * @param campaignIds список ID всех кампаний
      * @return список всех кампаний
      */
     private List<PromotionAdvertsResponse.Campaign> fetchCampaignsInBatches(String apiKey, List<Long> campaignIds, int campaignType) {
-            List<PromotionAdvertsResponse.Campaign> allCampaigns = new ArrayList<>();
+        List<PromotionAdvertsResponse.Campaign> allCampaigns = new ArrayList<>();
         int batchSize = 50;
         int totalBatches = (campaignIds.size() + batchSize - 1) / batchSize;
 
-        log.info("Загрузка детальной информации о {} кампаниях типа {} батчами по {} (всего батчей: {})", 
+        log.info("Загрузка детальной информации о {} кампаниях типа {} батчами по {} (всего батчей: {})",
                 campaignIds.size(), campaignType, batchSize, totalBatches);
 
         for (int i = 0; i < campaignIds.size(); i += batchSize) {
@@ -570,13 +558,13 @@ public class ProductCardAnalyticsService {
 
         return allCampaigns;
     }
-    
+
     private List<PromotionAdvertsResponse.Campaign> fetchAuctionCampaignsInBatches(String apiKey, List<Long> campaignIds) {
-            List<PromotionAdvertsResponse.Campaign> allCampaigns = new ArrayList<>();
+        List<PromotionAdvertsResponse.Campaign> allCampaigns = new ArrayList<>();
         int batchSize = 50; // Максимум 50 ID за запрос согласно документации API
         int totalBatches = (campaignIds.size() + batchSize - 1) / batchSize;
 
-        log.info("Загрузка детальной информации о {} аукционных кампаниях (тип 9) батчами по {} (всего батчей: {})", 
+        log.info("Загрузка детальной информации о {} аукционных кампаниях (тип 9) батчами по {} (всего батчей: {})",
                 campaignIds.size(), batchSize, totalBatches);
 
         for (int i = 0; i < campaignIds.size(); i += batchSize) {
@@ -598,7 +586,7 @@ public class ProductCardAnalyticsService {
                     }
                     log.info("Получено {} аукционных кампаний из батча {}/{}", batchResponse.getAdverts().size(), currentBatch, totalBatches);
                 }
-                
+
                 // Добавляем задержку между запросами (200 мс) для соблюдения лимита: 5 запросов в секунду
                 if (currentBatch < totalBatches) {
                     try {
@@ -620,7 +608,7 @@ public class ProductCardAnalyticsService {
     private CardsListResponse fetchAllCards(String apiKey) {
         CardsListRequest initialRequest = createInitialCardsRequest();
         CardsListResponse response = contentApiClient.getCardsList(apiKey, initialRequest);
-        
+
         if (response.getCards() == null) {
             response.setCards(new ArrayList<>());
         }
@@ -641,7 +629,7 @@ public class ProductCardAnalyticsService {
                 log.warn("Прервана задержка между запросами пагинации карточек");
                 break;
             }
-            
+
             CardsListRequest nextRequest = createNextPageRequest(response);
             CardsListResponse nextResponse = contentApiClient.getCardsList(apiKey, nextRequest);
 
@@ -654,14 +642,14 @@ public class ProductCardAnalyticsService {
             response.getCards().addAll(nextResponse.getCards());
             totalReceived += cardsOnPage;
             response.setCursor(nextResponse.getCursor());
-            
+
             Integer nextTotal = nextResponse.getCursor() != null ? nextResponse.getCursor().getTotal() : null;
-            log.info("Страница {}: получено {} карточек, total в ответе: {}, всего получено: {}", 
+            log.info("Страница {}: получено {} карточек, total в ответе: {}, всего получено: {}",
                     pageNumber, cardsOnPage, nextTotal, totalReceived);
-            
+
             // Согласно документации: если total в ответе меньше limit, значит это последняя страница
             if (nextTotal != null && nextTotal < CARDS_PAGE_LIMIT) {
-                log.info("Страница {}: total ({}) < limit ({}), это последняя страница", 
+                log.info("Страница {}: total ({}) < limit ({}), это последняя страница",
                         pageNumber, nextTotal, CARDS_PAGE_LIMIT);
                 break;
             }
@@ -696,15 +684,15 @@ public class ProductCardAnalyticsService {
             log.debug("hasMoreCards: cursor или total отсутствует, завершаем пагинацию");
             return false;
         }
-        
+
         Integer total = response.getCursor().getTotal();
         // Согласно документации: "повторяйте пункты 2 и 3, пока значение total в ответе не станет меньше чем значение limit в запросе"
         // Если total >= limit, значит есть еще страницы, продолжаем пагинацию
         boolean shouldContinue = total >= CARDS_PAGE_LIMIT;
-        
-        log.debug("hasMoreCards: total={}, limit={}, totalReceived={}, shouldContinue={}", 
+
+        log.debug("hasMoreCards: total={}, limit={}, totalReceived={}, shouldContinue={}",
                 total, CARDS_PAGE_LIMIT, totalReceived, shouldContinue);
-        
+
         return shouldContinue;
     }
 
@@ -712,11 +700,11 @@ public class ProductCardAnalyticsService {
         if (response.getCursor() == null) {
             throw new IllegalStateException("Cursor отсутствует в ответе для создания следующего запроса");
         }
-        
+
         CardsListResponse.Cursor cursor = response.getCursor();
-        log.debug("Создание запроса следующей страницы: nmID={}, updatedAt={}", 
+        log.debug("Создание запроса следующей страницы: nmID={}, updatedAt={}",
                 cursor.getNmID(), cursor.getUpdatedAt());
-        
+
         CardsListRequest.Cursor nextCursor = CardsListRequest.Cursor.builder()
                 .limit(CARDS_PAGE_LIMIT)
                 .nmID(cursor.getNmID())
@@ -739,9 +727,9 @@ public class ProductCardAnalyticsService {
     }
 
     private ProcessingResult loadAnalyticsForAllCards(
-            List<ProductCard> cards, 
-            String apiKey, 
-            LocalDate dateFrom, 
+            List<ProductCard> cards,
+            String apiKey,
+            LocalDate dateFrom,
             LocalDate dateTo
     ) {
         int successCount = 0;
@@ -754,7 +742,7 @@ public class ProductCardAnalyticsService {
                 loadAnalyticsForCard(card, apiKey, dateFromStr, dateToStr, dateFrom, dateTo);
                 successCount++;
             } catch (Exception e) {
-                log.error("Ошибка при загрузке аналитики для карточки nmID {}: {}", 
+                log.error("Ошибка при загрузке аналитики для карточки nmID {}: {}",
                         card.getNmId(), e.getMessage());
                 errorCount++;
             }
@@ -764,18 +752,18 @@ public class ProductCardAnalyticsService {
     }
 
     private void loadAnalyticsForCard(
-            ProductCard card, 
-            String apiKey, 
-            String dateFromStr, 
+            ProductCard card,
+            String apiKey,
+            String dateFromStr,
             String dateToStr,
-            LocalDate dateFrom, 
+            LocalDate dateFrom,
             LocalDate dateTo
     ) {
         Long cabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
         List<LocalDate> existingDates = getExistingAnalyticsDates(card.getNmId(), cabinetId, dateFrom, dateTo);
-        
+
         if (isAllDatesPresent(existingDates, dateFrom, dateTo)) {
-            log.info("Аналитика для nmID {} за период {} - {} уже присутствует в БД", 
+            log.info("Аналитика для nmID {} за период {} - {} уже присутствует в БД",
                     card.getNmId(), dateFrom, dateTo);
             return;
         }
@@ -788,9 +776,9 @@ public class ProductCardAnalyticsService {
         logMissingDatesInfo(card.getNmId(), existingDates, dateFrom, dateTo, requestRange);
 
         SaleFunnelResponse analyticsResponse = fetchAnalytics(
-                apiKey, 
-                card.getNmId(), 
-                requestRange.from(), 
+                apiKey,
+                card.getNmId(),
+                requestRange.from(),
                 requestRange.to()
         );
 
@@ -803,31 +791,31 @@ public class ProductCardAnalyticsService {
     }
 
     private void logMissingDatesInfo(
-            Long nmId, 
-            List<LocalDate> existingDates, 
-            LocalDate dateFrom, 
-            LocalDate dateTo, 
+            Long nmId,
+            List<LocalDate> existingDates,
+            LocalDate dateFrom,
+            LocalDate dateTo,
             DateRange requestRange
     ) {
         if (!existingDates.isEmpty()) {
             long totalDays = ChronoUnit.DAYS.between(dateFrom, dateTo) + 1;
-            log.info("Для nmID {} уже есть аналитика за {} из {} дней. Запрашиваем период {} - {}", 
+            log.info("Для nmID {} уже есть аналитика за {} из {} дней. Запрашиваем период {} - {}",
                     nmId, existingDates.size(), totalDays, requestRange.from(), requestRange.to());
         }
     }
 
     private SaleFunnelResponse fetchAnalytics(
-            String apiKey, 
-            Long nmId, 
-            LocalDate dateFrom, 
+            String apiKey,
+            Long nmId,
+            LocalDate dateFrom,
             LocalDate dateTo
     ) {
         // Задержка перед реальным запросом к API
         waitBeforeApiRequest();
-        
+
         String dateFromStr = dateFrom.format(DATE_FORMATTER);
         String dateToStr = dateTo.format(DATE_FORMATTER);
-        
+
         return analyticsApiClient.getSaleFunnelProduct(apiKey, nmId, dateFromStr, dateToStr);
     }
 
@@ -881,7 +869,7 @@ public class ProductCardAnalyticsService {
 
             try {
                 LocalDate date = LocalDate.parse(dailyData.getDt(), DATE_FORMATTER);
-                
+
                 if (!isDateInRange(date, dateFrom, dateTo)) {
                     continue;
                 }
@@ -894,7 +882,7 @@ public class ProductCardAnalyticsService {
                 itemsToSave.add(new AnalyticsSaveItem(card, dailyData, date));
 
             } catch (Exception e) {
-                log.error("Ошибка при подготовке аналитики для карточки nmID {} за дату {}: {}", 
+                log.error("Ошибка при подготовке аналитики для карточки nmID {} за дату {}: {}",
                         card.getNmId(), dailyData.getDt(), e.getMessage());
             }
         }
@@ -906,7 +894,7 @@ public class ProductCardAnalyticsService {
             updatedCount = batchResult.updatedCount();
         }
 
-        log.info("Аналитика для карточки nmID {}: создано {}, обновлено {}, пропущено {}", 
+        log.info("Аналитика для карточки nmID {}: создано {}, обновлено {}, пропущено {}",
                 card.getNmId(), savedCount, updatedCount, skippedCount);
     }
 
@@ -927,7 +915,7 @@ public class ProductCardAnalyticsService {
                     updatedCount++;
                 }
             } catch (Exception e) {
-                log.error("Ошибка при сохранении аналитики для карточки nmID {} за дату {}: {}", 
+                log.error("Ошибка при сохранении аналитики для карточки nmID {} за дату {}: {}",
                         item.card().getNmId(), item.date(), e.getMessage());
             }
         }
@@ -942,7 +930,8 @@ public class ProductCardAnalyticsService {
             ProductCard card,
             SaleFunnelResponse.DailyData dailyData,
             LocalDate date
-    ) {}
+    ) {
+    }
 
     /**
      * Результат батчевого сохранения.
@@ -950,15 +939,16 @@ public class ProductCardAnalyticsService {
     private record SaveBatchResult(
             int savedCount,
             int updatedCount
-    ) {}
+    ) {
+    }
 
     private boolean isDateInRange(LocalDate date, LocalDate dateFrom, LocalDate dateTo) {
         return !date.isBefore(dateFrom) && !date.isAfter(dateTo);
     }
 
     private SaveResult saveOrUpdateAnalytics(
-            ProductCard card, 
-            SaleFunnelResponse.DailyData dailyData, 
+            ProductCard card,
+            SaleFunnelResponse.DailyData dailyData,
             LocalDate date
     ) {
         Long cabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
@@ -1121,7 +1111,7 @@ public class ProductCardAnalyticsService {
                         Thread.sleep(PRICES_API_CALL_DELAY_MS);
                     }
                 } catch (Exception e) {
-                    log.error("Ошибка при загрузке цен для батча {}/{}: {}", 
+                    log.error("Ошибка при загрузке цен для батча {}/{}: {}",
                             i + 1, batches.size(), e.getMessage(), e);
                     // Продолжаем загрузку остальных батчей
                 }
@@ -1157,24 +1147,24 @@ public class ProductCardAnalyticsService {
             // СПП для всех покупателей для одного товара на дату должен быть одинаковый
             Map<Long, Integer> sppByNmId = new HashMap<>();
             Map<Long, Set<Integer>> sppValuesByNmId = new HashMap<>(); // Для проверки различий
-            
+
             for (OrdersResponse.Order order : orders) {
                 if (order.getNmId() != null && order.getSpp() != null) {
                     Long nmId = order.getNmId();
                     Integer spp = order.getSpp();
-                    
+
                     // Сохраняем все уникальные значения для проверки
                     sppValuesByNmId.computeIfAbsent(nmId, k -> new HashSet<>()).add(spp);
-                    
+
                     // Перезаписываем значение (должно быть одинаковое для всех заказов одного товара)
                     sppByNmId.put(nmId, spp);
                 }
             }
-            
+
             // Проверяем, есть ли товары с разными значениями СПП
             for (Map.Entry<Long, Set<Integer>> entry : sppValuesByNmId.entrySet()) {
                 if (entry.getValue().size() > 1) {
-                    log.warn("Обнаружены разные значения СПП для товара nmId={} за дату {}: {}. Используется последнее значение: {}", 
+                    log.warn("Обнаружены разные значения СПП для товара nmId={} за дату {}: {}. Используется последнее значение: {}",
                             entry.getKey(), yesterdayDate, entry.getValue(), sppByNmId.get(entry.getKey()));
                 }
             }

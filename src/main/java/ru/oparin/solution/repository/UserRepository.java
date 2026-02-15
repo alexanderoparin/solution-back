@@ -62,5 +62,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * @return список пользователей с указанной ролью
      */
     List<User> findByRole(Role role);
+
+    /**
+     * Поиск пользователей с ролью, отличной от указанной (для админа: все кроме админов).
+     *
+     * @param role роль для исключения
+     * @return список пользователей
+     */
+    List<User> findByRoleNot(Role role);
 }
 
