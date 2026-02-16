@@ -1,6 +1,9 @@
 package ru.oparin.solution.repository;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.ProductPriceHistory;
 
@@ -63,5 +66,11 @@ public interface ProductPriceHistoryRepository extends JpaRepository<ProductPric
     List<ProductPriceHistory> findByNmIdAndDateBetweenAndCabinet_Id(Long nmId, LocalDate dateFrom, LocalDate dateTo, Long cabinetId);
 
     void deleteByCabinet_Id(Long cabinetId);
+
+    /**
+     * Выборка только ID по кабинету пачкой (для пакетного удаления по ключам).
+     */
+    @Query("SELECT e.id FROM ProductPriceHistory e WHERE e.cabinet.id = :cabinetId")
+    List<Long> findIdByCabinet_Id(@Param("cabinetId") Long cabinetId, Pageable pageable);
 }
 

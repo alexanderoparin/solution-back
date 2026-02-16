@@ -2,6 +2,7 @@ package ru.oparin.solution.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -26,6 +27,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/users")
 @RequiredArgsConstructor
+@Slf4j
 public class UsersManagementController {
 
     private final UserService userService;
@@ -114,6 +116,27 @@ public class UsersManagementController {
         userService.toggleUserActive(userId, currentUser);
         return ResponseEntity.ok(MessageResponse.builder()
                 .message("Статус активности пользователя изменен")
+                .build());
+    }
+
+    /**
+     * Полное удаление пользователя и всех связанных записей из БД.
+     * Доступно только для ADMIN. Нельзя удалить себя или другого админа.
+     *
+     * @param userId ID пользователя для удаления
+     * @param authentication данные аутентификации
+     * @return сообщение об успешном удалении
+     */
+    @DeleteMapping("/{userId}")
+    public ResponseEntity<MessageResponse> deleteUser(
+            @PathVariable Long userId,
+            Authentication authentication
+    ) {
+        User currentUser = getCurrentUser(authentication);
+        log.info("[Удаление пользователя] Запрос: удалить userId={}, инициатор: {} ({}), роль: {}", userId, currentUser.getEmail(), currentUser.getId(), currentUser.getRole());
+        userService.deleteUser(userId, currentUser);
+        return ResponseEntity.ok(MessageResponse.builder()
+                .message("Удаление запущено. Выполняется в фоновом режиме.")
                 .build());
     }
 

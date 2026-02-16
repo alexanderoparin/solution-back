@@ -1,6 +1,9 @@
 package ru.oparin.solution.repository;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.ProductBarcode;
 
@@ -37,5 +40,11 @@ public interface ProductBarcodeRepository extends JpaRepository<ProductBarcode, 
     void deleteByNmId(Long nmId);
 
     void deleteByCabinet_Id(Long cabinetId);
+
+    /**
+     * Выборка только ключей (barcode) по кабинету пачкой (для пакетного удаления по ключам).
+     */
+    @Query("SELECT b.barcode FROM ProductBarcode b WHERE b.cabinet.id = :cabinetId")
+    List<String> findBarcodeByCabinet_Id(@Param("cabinetId") Long cabinetId, Pageable pageable);
 }
 

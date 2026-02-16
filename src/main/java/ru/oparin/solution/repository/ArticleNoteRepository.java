@@ -1,5 +1,6 @@
 package ru.oparin.solution.repository;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -63,5 +64,11 @@ public interface ArticleNoteRepository extends JpaRepository<ArticleNote, Long> 
     boolean existsByIdAndNmIdAndCabinetId(Long id, Long nmId, Long cabinetId);
 
     void deleteByCabinetId(Long cabinetId);
+
+    /**
+     * Выборка только ID по кабинету пачкой (для пакетного удаления по ключам).
+     */
+    @Query("SELECT n.id FROM ArticleNote n WHERE n.cabinetId = :cabinetId")
+    List<Long> findIdByCabinetId(@Param("cabinetId") Long cabinetId, Pageable pageable);
 }
 

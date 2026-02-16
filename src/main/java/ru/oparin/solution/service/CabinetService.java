@@ -1,6 +1,7 @@
 package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -9,10 +10,10 @@ import ru.oparin.solution.dto.cabinet.CreateCabinetRequest;
 import ru.oparin.solution.dto.cabinet.UpdateCabinetRequest;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.PromotionCampaign;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.repository.*;
+import ru.oparin.solution.repository.CabinetRepository;
+import ru.oparin.solution.repository.UserRepository;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -22,20 +23,13 @@ import java.util.stream.Collectors;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CabinetService {
 
     private final CabinetRepository cabinetRepository;
     private final UserRepository userRepository;
     private final WbApiKeyService wbApiKeyService;
-    private final PromotionCampaignStatisticsRepository promotionCampaignStatisticsRepository;
-    private final CampaignArticleRepository campaignArticleRepository;
-    private final PromotionCampaignRepository promotionCampaignRepository;
-    private final ProductPriceHistoryRepository productPriceHistoryRepository;
-    private final ProductStockRepository productStockRepository;
-    private final ProductBarcodeRepository productBarcodeRepository;
-    private final ProductCardAnalyticsRepository productCardAnalyticsRepository;
-    private final ProductCardRepository productCardRepository;
-    private final ArticleNoteRepository articleNoteRepository;
+    private final CabinetDeletionService cabinetDeletionService;
 
     /**
      * Список кабинетов пользователя (продавца), отсортированный по дате создания (новые первые).
@@ -102,25 +96,24 @@ public class CabinetService {
     }
 
     /**
-     * Удаление кабинета и всех связанных данных (остатки, баркоды, карточки, аналитика, кампании, заметки и т.д.).
+     * Удаление кабинета и всех связанных данных.
+     * Каждый шаг выполняется в своей транзакции (REQUIRES_NEW), чтобы не держать одну большую транзакцию.
      */
-    @Transactional
     public void delete(Long cabinetId, Long userId) {
         Cabinet cabinet = findCabinetByIdAndUserId(cabinetId, userId);
+        log.info("[Удаление кабинета] Начало: «{}» (cabinetId={})", cabinet.getName(), cabinetId);
 
-        List<PromotionCampaign> campaigns = promotionCampaignRepository.findByCabinet_Id(cabinetId);
-        for (PromotionCampaign campaign : campaigns) {
-            promotionCampaignStatisticsRepository.deleteByCampaign_AdvertId(campaign.getAdvertId());
-            campaignArticleRepository.deleteByCampaignId(campaign.getAdvertId());
-        }
-        promotionCampaignRepository.deleteByCabinet_Id(cabinetId);
-        productPriceHistoryRepository.deleteByCabinet_Id(cabinetId);
-        productStockRepository.deleteByCabinet_Id(cabinetId);
-        productBarcodeRepository.deleteByCabinet_Id(cabinetId);
-        productCardAnalyticsRepository.deleteByCabinet_Id(cabinetId);
-        productCardRepository.deleteByCabinet_Id(cabinetId);
-        articleNoteRepository.deleteByCabinetId(cabinetId);
-        cabinetRepository.delete(cabinet);
+        cabinetDeletionService.deleteStepStatisticsAndArticles(cabinetId);
+        cabinetDeletionService.deleteStepCampaigns(cabinetId);
+        cabinetDeletionService.deleteStepPriceHistory(cabinetId);
+        cabinetDeletionService.deleteStepStocks(cabinetId);
+        cabinetDeletionService.deleteStepBarcodes(cabinetId);
+        cabinetDeletionService.deleteStepCardAnalytics(cabinetId);
+        cabinetDeletionService.deleteStepProductCards(cabinetId);
+        cabinetDeletionService.deleteStepArticleNotes(cabinetId);
+        cabinetDeletionService.deleteStepCabinetRecord(cabinetId);
+
+        log.info("[Удаление кабинета] Готово: «{}» (cabinetId={})", cabinet.getName(), cabinetId);
     }
 
     /**

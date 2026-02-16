@@ -2,9 +2,13 @@ package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.CreateUserRequest;
 import ru.oparin.solution.dto.RegisterRequest;
@@ -32,7 +36,12 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
     private final PasswordEncoder passwordEncoder;
+
+    @Lazy
+    @Autowired
+    private UserService self;
 
     /**
      * Регистрация нового продавца (SELLER).
@@ -259,6 +268,77 @@ public class UserService {
 
         userToUpdate.setIsActive(!userToUpdate.getIsActive());
         return userRepository.save(userToUpdate);
+    }
+
+    /**
+     * Запуск удаления пользователя (только для ADMIN).
+     * Проверяет права и сразу возвращает управление; само удаление выполняется асинхронно в фоне.
+     * Каждый кабинет и запись пользователя удаляются в отдельной транзакции.
+     *
+     * @param userId ID пользователя для удаления
+     * @param currentUser текущий пользователь (должен быть ADMIN)
+     * @throws UserException если нет прав, попытка удалить себя или другого админа
+     */
+    public void deleteUser(Long userId, User currentUser) {
+        if (currentUser.getRole() != Role.ADMIN) {
+            throw new UserException("Только администратор может удалять пользователей", HttpStatus.FORBIDDEN);
+        }
+        if (currentUser.getId().equals(userId)) {
+            throw new UserException("Нельзя удалить самого себя", HttpStatus.BAD_REQUEST);
+        }
+        User userToDelete = findById(userId);
+        if (userToDelete.getRole() == Role.ADMIN) {
+            throw new UserException("Нельзя удалить другого администратора", HttpStatus.FORBIDDEN);
+        }
+        log.info("[Удаление пользователя] Запрос принят, запуск фонового удаления: {} (userId={})", userToDelete.getEmail(), userId);
+        self.runDeletionAsync(userId);
+    }
+
+    /**
+     * Фоновое удаление пользователя: подчинённые (рекурсивно), кабинеты (каждый в своей транзакции), затем запись пользователя (в своей транзакции).
+     */
+    @Async("userDeletionExecutor")
+    public void runDeletionAsync(Long userId) {
+        User userToDelete = userRepository.findById(userId).orElse(null);
+        if (userToDelete == null) {
+            log.warn("[Удаление пользователя] Пользователь userId={} уже удалён или не найден", userId);
+            return;
+        }
+        log.info("[Удаление пользователя] Начало фонового удаления: {} (userId={})", userToDelete.getEmail(), userId);
+
+        List<User> subordinates = userRepository.findByOwnerId(userId);
+        if (!subordinates.isEmpty()) {
+            log.info("[Удаление пользователя]   → Подчинённых: {} шт.", subordinates.size());
+        }
+        for (User sub : subordinates) {
+            log.info("[Удаление пользователя]   → Удаляю подчинённого: {} (userId={})", sub.getEmail(), sub.getId());
+            self.runDeletionAsync(sub.getId());
+        }
+
+        List<Cabinet> cabinets = cabinetRepository.findByUser_IdOrderByCreatedAtDesc(userId);
+        if (!cabinets.isEmpty()) {
+            log.info("[Удаление пользователя]   → Кабинетов: {} шт.", cabinets.size());
+        }
+        for (Cabinet cabinet : cabinets) {
+            log.info("[Удаление пользователя]   → Кабинет «{}» (cabinetId={})", cabinet.getName(), cabinet.getId());
+            cabinetService.delete(cabinet.getId(), userId);
+        }
+
+        self.deleteUserRecord(userId);
+        log.info("[Удаление пользователя] Готово: {} (userId={}) удалён", userToDelete.getEmail(), userId);
+    }
+
+    /**
+     * Удаление записи пользователя в БД в отдельной транзакции.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void deleteUserRecord(Long userId) {
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null) {
+            return;
+        }
+        log.info("[Удаление пользователя]   → Удаляю запись пользователя в БД: {} (userId={})", user.getEmail(), userId);
+        userRepository.delete(user);
     }
 
     /**

@@ -1,5 +1,6 @@
 package ru.oparin.solution.repository;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -112,5 +113,16 @@ public interface PromotionCampaignStatisticsRepository extends JpaRepository<Pro
     List<Long> findDistinctNmIdsByCampaignAdvertId(@Param("campaignId") Long campaignId);
 
     void deleteByCampaign_AdvertId(Long advertId);
+
+    /**
+     * Удаление всей статистики по списку кампаний (advertId).
+     */
+    void deleteByCampaign_AdvertIdIn(List<Long> advertIds);
+
+    /**
+     * Выборка только ID статистики по кабинету пачкой (для пакетного удаления по ключам).
+     */
+    @Query("SELECT s.id FROM PromotionCampaignStatistics s WHERE s.campaign.cabinet.id = :cabinetId")
+    List<Long> findIdByCampaign_Cabinet_Id(@Param("cabinetId") Long cabinetId, Pageable pageable);
 }
 
