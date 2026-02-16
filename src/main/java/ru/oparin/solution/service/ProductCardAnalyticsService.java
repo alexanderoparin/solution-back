@@ -118,7 +118,7 @@ public class ProductCardAnalyticsService {
             cabinetRepository.save(managed);
         } catch (HttpClientErrorException e) {
             HttpStatusCode code = e.getStatusCode();
-            if (code != null && code.value() == 401) {
+            if (code.value() == 401) {
                 log.warn("API-ключ кабинета (ID: {}) отклонён WB (401). Помечаем ключ как недействительный.", cabinetId);
                 managed.setIsValid(false);
                 managed.setValidationError("Ключ отклонён WB (401). Обновите ключ в настройках кабинета.");
