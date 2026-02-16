@@ -1,10 +1,6 @@
 package ru.oparin.solution.dto.analytics;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.util.List;
 
@@ -52,5 +48,10 @@ public class ArticleResponseDto {
      * Остатки товара на складах на текущий момент.
      */
     private List<StockDto> stocks;
+
+    /**
+     * Товары «в связке» (доп. товары для отображения рядом с артикулом).
+     */
+    private List<ArticleSummaryDto> bundleProducts;
 }
 

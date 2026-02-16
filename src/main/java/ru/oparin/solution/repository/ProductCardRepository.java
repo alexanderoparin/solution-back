@@ -33,6 +33,16 @@ public interface ProductCardRepository extends JpaRepository<ProductCard, Long> 
      */
     Optional<ProductCard> findByNmIdAndCabinet_Id(Long nmId, Long cabinetId);
 
+    /**
+     * Находит все карточки с заданным IMT ID в кабинете (товары «в связке»).
+     */
+    List<ProductCard> findByImtIdAndCabinet_Id(Long imtId, Long cabinetId);
+
+    /**
+     * Находит все карточки с заданным IMT ID у продавца (товары «в связке»).
+     */
+    List<ProductCard> findByImtIdAndSeller_Id(Long imtId, Long sellerId);
+
     void deleteByCabinet_Id(Long cabinetId);
 }
 

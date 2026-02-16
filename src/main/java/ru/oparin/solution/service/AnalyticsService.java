@@ -278,6 +278,7 @@ public class AnalyticsService {
 
         List<DailyDataDto> dailyData = getDailyData(nmId, cardCabinetId);
         Boolean inWbPromotion = computeInWbPromotion(dailyData);
+        List<ArticleSummaryDto> bundleProducts = getBundleProducts(card, cardCabinetId);
 
         return ArticleResponseDto.builder()
                 .article(mapToArticleDetail(card))
@@ -287,7 +288,24 @@ public class AnalyticsService {
                 .campaigns(getCampaigns(nmId, cardCabinetId))
                 .inWbPromotion(inWbPromotion)
                 .stocks(getStocks(nmId, cardCabinetId))
+                .bundleProducts(bundleProducts)
                 .build();
+    }
+
+    /**
+     * Товары «в связке» — другие артикулы с тем же IMT ID в карточке (тот же кабинет/продавец), без текущего nmId.
+     */
+    private List<ArticleSummaryDto> getBundleProducts(ProductCard card, Long cardCabinetId) {
+        if (card.getImtId() == null) {
+            return java.util.Collections.emptyList();
+        }
+        List<ProductCard> sameImt = cardCabinetId != null
+                ? productCardRepository.findByImtIdAndCabinet_Id(card.getImtId(), cardCabinetId)
+                : productCardRepository.findByImtIdAndSeller_Id(card.getImtId(), card.getSeller().getId());
+        return sameImt.stream()
+                .filter(c -> !c.getNmId().equals(card.getNmId()))
+                .map(this::mapToArticleSummary)
+                .collect(Collectors.toList());
     }
 
     /**
