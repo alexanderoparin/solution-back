@@ -1,37 +1,16 @@
 package ru.oparin.solution.service;
 
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.analytics.*;
-import ru.oparin.solution.model.ProductBarcode;
-import ru.oparin.solution.model.ProductCard;
-import ru.oparin.solution.model.ProductStock;
-import ru.oparin.solution.model.User;
-import ru.oparin.solution.model.WbWarehouse;
-import ru.oparin.solution.repository.CampaignArticleRepository;
-import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
-import ru.oparin.solution.repository.ProductCardRepository;
-import ru.oparin.solution.repository.ProductPriceHistoryRepository;
-import ru.oparin.solution.repository.ProductBarcodeRepository;
-import ru.oparin.solution.repository.ProductStockRepository;
-import ru.oparin.solution.repository.PromotionCampaignRepository;
-import ru.oparin.solution.repository.PromotionCampaignStatisticsRepository;
-import ru.oparin.solution.repository.WbWarehouseRepository;
-import ru.oparin.solution.model.CampaignArticle;
-import ru.oparin.solution.model.CampaignStatus;
-import ru.oparin.solution.model.ProductCardAnalytics;
-import ru.oparin.solution.model.ProductPriceHistory;
-import ru.oparin.solution.model.PromotionCampaign;
-import ru.oparin.solution.model.PromotionCampaignStatistics;
-import ru.oparin.solution.service.analytics.AdvertisingMetricsCalculator;
-import ru.oparin.solution.service.analytics.CampaignStatisticsAggregator;
-import ru.oparin.solution.service.analytics.FunnelMetricsCalculator;
-import ru.oparin.solution.service.analytics.MathUtils;
-import ru.oparin.solution.service.analytics.MetricNames;
-import ru.oparin.solution.service.analytics.MetricValueCalculator;
-import ru.oparin.solution.service.analytics.ProductCardFilter;
+import ru.oparin.solution.model.*;
+import ru.oparin.solution.repository.*;
+import ru.oparin.solution.service.analytics.*;
 import ru.oparin.solution.util.PeriodGenerator;
 
 import java.math.BigDecimal;
@@ -761,8 +740,8 @@ public class AnalyticsService {
                     
                     return StockDto.builder()
                             .warehouseName(warehouseName)
-                            .amount(aggregate.totalAmount)
-                            .updatedAt(aggregate.latestUpdate)
+                            .amount(aggregate.getTotalAmount())
+                            .updatedAt(aggregate.getLatestUpdate())
                             .build();
                 })
                 .sorted((a, b) -> b.getAmount().compareTo(a.getAmount())) // Сортируем по убыванию количества
@@ -876,7 +855,7 @@ public class AnalyticsService {
                     : (barcode.getTechSize() != null ? barcode.getTechSize() : "Неизвестно");
             StockSizeAggregate agg = allSizes.get(sizeKey);
             if (agg != null) {
-                agg.amount += stock.getAmount();
+                agg.setAmount(agg.getAmount() + stock.getAmount());
             } else {
                 allSizes.put(sizeKey, new StockSizeAggregate(
                         barcode.getTechSize(),
@@ -889,9 +868,9 @@ public class AnalyticsService {
         // Формируем список DTO (все размеры, включая с нулём)
         return allSizes.values().stream()
                 .map(agg -> StockSizeDto.builder()
-                        .techSize(agg.techSize)
-                        .wbSize(agg.wbSize)
-                        .amount(agg.amount)
+                        .techSize(agg.getTechSize())
+                        .wbSize(agg.getWbSize())
+                        .amount(agg.getAmount())
                         .build())
                 .sorted((a, b) -> {
                     // Сортируем по wbSize (числовому размеру), если есть
@@ -913,24 +892,22 @@ public class AnalyticsService {
     /**
      * Вспомогательный класс для агрегации остатков по складу.
      */
+    @Value
     private static class StockAggregate {
-        final int totalAmount;
-        final LocalDateTime latestUpdate;
-        
-        StockAggregate(int totalAmount, LocalDateTime latestUpdate) {
-            this.totalAmount = totalAmount;
-            this.latestUpdate = latestUpdate;
-        }
+        int totalAmount;
+        LocalDateTime latestUpdate;
     }
-    
+
     /**
      * Вспомогательный класс для агрегации остатков по размерам.
      */
+    @Getter
+    @Setter
     private static class StockSizeAggregate {
         String techSize;
         String wbSize;
         int amount;
-        
+
         StockSizeAggregate(String techSize, String wbSize, int amount) {
             this.techSize = techSize;
             this.wbSize = wbSize;

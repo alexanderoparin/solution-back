@@ -1,5 +1,6 @@
 package ru.oparin.solution.service;
 
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,8 @@ import java.util.Optional;
 public class ProductStocksService {
 
     private static final String STOCK_TYPE_WB = "wb";
+    /** Задержка между запросами остатков (лимит WB: 3 запроса в минуту). */
+    private static final long STOCKS_REQUEST_DELAY_MS = 20000;
     private static final String ORDER_FIELD_STOCK_COUNT = "stockCount";
     private static final String ORDER_MODE_ASC = "asc";
     private static final long DEFAULT_STOCK_COUNT = 0L;
@@ -63,6 +66,34 @@ public class ProductStocksService {
 
         saveWbStocksBySizes(nmId, response.getData().getSizes(), cabinet);
         return response;
+    }
+
+    /**
+     * Обновляет остатки по размерам на складах WB для всех указанных артикулов кабинета.
+     * Между запросами пауза 20 с (лимит API).
+     */
+    public void updateStocksForCabinet(Cabinet cabinet, String apiKey, java.util.List<Long> nmIds) {
+        if (nmIds == null || nmIds.isEmpty()) {
+            return;
+        }
+        log.info("Начало обновления остатков товаров на складах WB для кабинета (ID: {}), товаров: {}", cabinet.getId(), nmIds.size());
+        int count = 0;
+        for (Long nmId : nmIds) {
+            try {
+                getWbStocksBySizes(apiKey, nmId, cabinet);
+                count++;
+                if (count < nmIds.size()) {
+                    Thread.sleep(STOCKS_REQUEST_DELAY_MS);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.error("Прервано ожидание перед запросом остатков для артикула {}", nmId);
+                break;
+            } catch (Exception e) {
+                log.error("Ошибка при обновлении остатков для артикула {}: {}", nmId, e.getMessage(), e);
+            }
+        }
+        log.info("Завершено обновление остатков товаров на складах WB для кабинета (ID: {})", cabinet.getId());
     }
 
     /**
@@ -302,8 +333,9 @@ public class ProductStocksService {
     }
 
     /**
-     * Класс для подсчета статистики сохранения.
+     * Класс для подсчёта статистики сохранения.
      */
+    @Getter
     private static class SaveStatistics {
         private int saved = 0;
         private int updated = 0;
@@ -319,18 +351,6 @@ public class ProductStocksService {
 
         void incrementSkipped() {
             skipped++;
-        }
-
-        int getSaved() {
-            return saved;
-        }
-
-        int getUpdated() {
-            return updated;
-        }
-
-        int getSkipped() {
-            return skipped;
         }
     }
 }
