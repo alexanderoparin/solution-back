@@ -89,6 +89,6 @@ logging:
   logback:
     rollingpolicy:
       max-history: 30
-      total-size-cap: 300MB
-      max-file-size: 10MB
+      total-size-cap: 30MB
+      max-file-size: 7MB
 
