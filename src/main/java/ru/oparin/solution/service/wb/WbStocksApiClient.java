@@ -2,13 +2,10 @@ package ru.oparin.solution.service.wb;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.WbStocksSizesRequest;
 import ru.oparin.solution.dto.wb.WbStocksSizesResponse;
@@ -28,10 +25,13 @@ public class WbStocksApiClient extends AbstractWbApiClient {
 
     private static final int MAX_RETRIES_429 = 5;
     private static final long RETRY_DELAY_MS_429 = 20000; // 20 секунд
+    private static final int MAX_RETRIES_504 = 3; // 504 Gateway Timeout / stream timeout
+    private static final long RETRY_DELAY_MS_504 = 10000; // 10 секунд
 
     /**
      * Получение остатков товаров по размерам на складах WB.
-     * При ошибке 429 (Too Many Requests) выполняет повторные попытки с задержкой.
+     * При 429 (Too Many Requests) — до 5 повторов с задержкой 20 с.
+     * При 504 (Gateway Timeout / stream timeout) — до 3 повторов с задержкой 10 с.
      *
      * @param apiKey API ключ продавца (токен для категории "Аналитика")
      * @param request запрос с артикулом и параметрами
@@ -42,7 +42,7 @@ public class WbStocksApiClient extends AbstractWbApiClient {
     }
 
     /**
-     * Получение остатков товаров по размерам на складах WB с повторными попытками при 429.
+     * Получение остатков товаров по размерам на складах WB с повторными попытками при 429 и 504.
      *
      * @param apiKey API ключ продавца
      * @param request запрос с артикулом и параметрами
@@ -78,18 +78,22 @@ public class WbStocksApiClient extends AbstractWbApiClient {
 
                 return response.getBody();
 
+            } catch (HttpServerErrorException e) {
+                if (e.getStatusCode().value() == 504 && attempt < MAX_RETRIES_504) {
+                    log.warn("504 Gateway Timeout при запросе остатков для nmID {} (попытка {}/{}). Повтор через {} мс...",
+                            request.getNmID(), attempt, MAX_RETRIES_504, RETRY_DELAY_MS_504);
+                    sleep(RETRY_DELAY_MS_504);
+                    continue;
+                }
+                log.error("Ошибка от WB API: статус={}, сообщение={}", e.getStatusCode(), e.getMessage());
+                throw new RestClientException("Ошибка от WB API: " + e.getStatusCode() + " - " + e.getMessage(), e);
             } catch (HttpClientErrorException e) {
                 // Обрабатываем 429 ошибку
                 if (e.getStatusCode().value() == 429) {
                     if (attempt < maxRetries) {
                         log.warn("Получен 429 Too Many Requests (попытка {}/{}). Ожидание {} мс перед повторной попыткой...", 
                                 attempt, maxRetries, RETRY_DELAY_MS_429);
-                        try {
-                            Thread.sleep(RETRY_DELAY_MS_429);
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                            throw new RestClientException("Прервано ожидание перед повторной попыткой", ie);
-                        }
+                        sleep(RETRY_DELAY_MS_429);
                         continue; // Повторяем попытку
                     } else {
                         log.error("Получен 429 Too Many Requests после {} попыток", maxRetries);
@@ -104,12 +108,7 @@ public class WbStocksApiClient extends AbstractWbApiClient {
                 if (e.getMessage() != null && e.getMessage().contains("429") && attempt < maxRetries) {
                     log.warn("Ошибка 429 при попытке {}/{}. Повтор через {} мс...", 
                             attempt, maxRetries, RETRY_DELAY_MS_429);
-                    try {
-                        Thread.sleep(RETRY_DELAY_MS_429);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RestClientException("Прервано ожидание перед повторной попыткой", ie);
-                    }
+                    sleep(RETRY_DELAY_MS_429);
                     continue;
                 }
                 
@@ -125,16 +124,24 @@ public class WbStocksApiClient extends AbstractWbApiClient {
                 if (attempt == maxRetries) {
                     throw new RestClientException("Ошибка при получении остатков по размерам на складах WB: " + e.getMessage(), e);
                 }
-                // Для других ошибок тоже делаем retry
-                try {
-                    Thread.sleep(RETRY_DELAY_MS_429);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new RestClientException("Прервано ожидание перед повторной попыткой", ie);
+                // Для других ошибок (в т.ч. таймаут на стороне клиента) — retry с задержкой, если попытки остались
+                if (attempt < maxRetries) {
+                    sleep(RETRY_DELAY_MS_504);
+                    continue;
                 }
+                throw new RestClientException("Ошибка при получении остатков по размерам на складах WB: " + e.getMessage(), e);
             }
         }
 
         throw new RestClientException("Не удалось получить остатки по размерам после " + maxRetries + " попыток");
+    }
+
+    private static void sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new RestClientException("Прервано ожидание перед повторной попыткой", ie);
+        }
     }
 }
