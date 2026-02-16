@@ -178,6 +178,8 @@ public class CabinetService {
                 .name(c.getName())
                 .createdAt(c.getCreatedAt())
                 .updatedAt(c.getUpdatedAt())
+                .lastDataUpdateAt(c.getLastDataUpdateAt())
+                .lastDataUpdateRequestedAt(c.getLastDataUpdateRequestedAt())
                 .apiKey(apiKeyInfo)
                 .build();
     }

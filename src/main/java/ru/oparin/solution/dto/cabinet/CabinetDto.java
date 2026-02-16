@@ -1,10 +1,6 @@
 package ru.oparin.solution.dto.cabinet;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
@@ -22,6 +18,11 @@ public class CabinetDto {
     private String name;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    /** Дата последнего успешного обновления данных по кабинету. Всегда в ответе (для блокировки кнопки по кабинету). */
+    private LocalDateTime lastDataUpdateAt;
+    /** Время запроса обновления (кнопка нажата). Всегда в ответе. */
+    private LocalDateTime lastDataUpdateRequestedAt;
 
     /**
      * Информация о WB API ключе кабинета.

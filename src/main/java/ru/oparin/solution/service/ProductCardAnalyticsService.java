@@ -2,9 +2,11 @@ package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.dto.wb.*;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
@@ -80,7 +82,6 @@ public class ProductCardAnalyticsService {
             return;
         }
 
-        managed.setLastDataUpdateAt(LocalDateTime.now());
         managed.setLastDataUpdateRequestedAt(null);
         cabinetRepository.save(managed);
 
@@ -88,29 +89,43 @@ public class ProductCardAnalyticsService {
         log.info("Начало обновления карточек, кампаний и загрузки аналитики для кабинета (ID: {}, продавец: {}) за период {} - {}",
                 cabinetId, seller.getEmail(), dateFrom, dateTo);
 
-        CardsListResponse cardsResponse = fetchAllCards(apiKey);
-        productCardService.saveOrUpdateCards(cardsResponse, managed);
+        try {
+            CardsListResponse cardsResponse = fetchAllCards(apiKey);
+            productCardService.saveOrUpdateCards(cardsResponse, managed);
 
-        updateProductPrices(managed, apiKey);
-        updateSppFromOrders(managed, apiKey);
-        updateProductStocks(managed, apiKey);
+            updateProductPrices(managed, apiKey);
+            updateSppFromOrders(managed, apiKey);
+            updateProductStocks(managed, apiKey);
 
-        List<Long> campaignIds = updatePromotionCampaigns(managed, apiKey);
+            List<Long> campaignIds = updatePromotionCampaigns(managed, apiKey);
 
-        if (!campaignIds.isEmpty()) {
-            List<Long> nonFinishedCampaignIds = filterNonFinishedCampaigns(cabinetId, campaignIds);
-            if (!nonFinishedCampaignIds.isEmpty()) {
-                updatePromotionCampaignStatistics(seller, apiKey, nonFinishedCampaignIds, dateFrom, dateTo);
+            if (!campaignIds.isEmpty()) {
+                List<Long> nonFinishedCampaignIds = filterNonFinishedCampaigns(cabinetId, campaignIds);
+                if (!nonFinishedCampaignIds.isEmpty()) {
+                    updatePromotionCampaignStatistics(seller, apiKey, nonFinishedCampaignIds, dateFrom, dateTo);
+                }
             }
+
+            List<ProductCard> productCards = productCardRepository.findByCabinet_Id(cabinetId);
+            log.info("Найдено карточек для загрузки аналитики: {}", productCards.size());
+
+            ProcessingResult result = loadAnalyticsForAllCards(productCards, apiKey, dateFrom, dateTo);
+
+            log.info("Завершено обновление карточек, кампаний и загрузка аналитики для кабинета (ID: {}): успешно {}, ошибок {}",
+                    cabinetId, result.successCount(), result.errorCount());
+
+            managed.setLastDataUpdateAt(LocalDateTime.now());
+            cabinetRepository.save(managed);
+        } catch (HttpClientErrorException e) {
+            HttpStatusCode code = e.getStatusCode();
+            if (code != null && code.value() == 401) {
+                log.warn("API-ключ кабинета (ID: {}) отклонён WB (401). Помечаем ключ как недействительный.", cabinetId);
+                managed.setIsValid(false);
+                managed.setValidationError("Ключ отклонён WB (401). Обновите ключ в настройках кабинета.");
+                cabinetRepository.save(managed);
+            }
+            throw e;
         }
-
-        List<ProductCard> productCards = productCardRepository.findByCabinet_Id(cabinetId);
-        log.info("Найдено карточек для загрузки аналитики: {}", productCards.size());
-
-        ProcessingResult result = loadAnalyticsForAllCards(productCards, apiKey, dateFrom, dateTo);
-
-        log.info("Завершено обновление карточек, кампаний и загрузка аналитики для кабинета (ID: {}): успешно {}, ошибок {}",
-                cabinetId, result.successCount(), result.errorCount());
     }
 
     /**
