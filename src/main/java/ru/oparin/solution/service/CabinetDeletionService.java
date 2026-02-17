@@ -20,7 +20,7 @@ import java.util.List;
 @Slf4j
 public class CabinetDeletionService {
 
-    private static final int BATCH_SIZE = 20;
+    private static final int BATCH_SIZE = 50;
 
     private final PromotionCampaignStatisticsRepository promotionCampaignStatisticsRepository;
     private final CampaignArticleRepository campaignArticleRepository;
