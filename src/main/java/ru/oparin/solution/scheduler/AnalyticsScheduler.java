@@ -22,7 +22,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Планировщик задач для автоматической загрузки аналитики.
@@ -57,7 +56,7 @@ public class AnalyticsScheduler {
      * Запускается каждый день в 01:30. Для каждого кабинета загружаются карточки, кампании и аналитика.
      * Период: последние 14 дней (без текущих суток).
      */
-    @Scheduled(cron = "0 30 1 * * ?")
+    @Scheduled(cron = "0 15 0 * * ?")
     public void loadAnalyticsForAllActiveSellers() {
         log.info("Запуск автоматической загрузки аналитики по кабинетам");
 
@@ -72,26 +71,20 @@ public class AnalyticsScheduler {
         DateRange period = calculateLastTwoWeeksPeriod();
         log.info("Период для загрузки аналитики: {} - {}", period.from(), period.to());
 
-        AtomicInteger successCount = new AtomicInteger(0);
-        AtomicInteger errorCount = new AtomicInteger(0);
-
         List<CompletableFuture<Void>> futures = cabinetsWithKey.stream()
                 .map(cabinet -> CompletableFuture.runAsync(() -> {
                     try {
                         processCabinetAnalytics(cabinet, period);
-                        successCount.incrementAndGet();
                     } catch (Exception e) {
                         log.error("Ошибка при загрузке аналитики для кабинета (ID: {}, продавец: {}): {}",
                                 cabinet.getId(), cabinet.getUser().getEmail(), e.getMessage());
-                        errorCount.incrementAndGet();
                     }
                 }, cabinetUpdateExecutor))
                 .toList();
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
-        log.info("Завершена автоматическая загрузка аналитики по кабинетам (параллельно): успешно {}, ошибок {}",
-                successCount.get(), errorCount.get());
+        log.info("Запущена автоматическая загрузка аналитики по {} кабинетам (параллельно)", cabinetsWithKey.size());
     }
 
     /**
