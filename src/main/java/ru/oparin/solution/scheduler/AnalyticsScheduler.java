@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.dto.wb.WbWarehouseResponse;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
@@ -38,11 +39,11 @@ public class AnalyticsScheduler {
     private final Executor cabinetUpdateExecutor;
 
     public AnalyticsScheduler(WbApiKeyService wbApiKeyService,
-                             CabinetRepository cabinetRepository,
-                             ProductCardAnalyticsService analyticsService,
-                             WbWarehousesApiClient warehousesApiClient,
-                             WbWarehouseService warehouseService,
-                             @Qualifier("cabinetUpdateExecutor") Executor cabinetUpdateExecutor) {
+                              CabinetRepository cabinetRepository,
+                              ProductCardAnalyticsService analyticsService,
+                              WbWarehousesApiClient warehousesApiClient,
+                              WbWarehouseService warehouseService,
+                              @Qualifier("cabinetUpdateExecutor") Executor cabinetUpdateExecutor) {
         this.wbApiKeyService = wbApiKeyService;
         this.cabinetRepository = cabinetRepository;
         this.analyticsService = analyticsService;
@@ -123,6 +124,8 @@ public class AnalyticsScheduler {
             warehouseService.saveOrUpdateWarehouses(warehouses);
 
             log.info("Завершено обновление складов WB для кабинета (ID: {})", cabinetId);
+        } catch (HttpClientErrorException ex) {
+            log.warn("Не удалось обновить склады с кабинета {}, получили код ошибки {}", cabinetId, ex.getStatusCode());
         } catch (Exception e) {
             log.warn("Не удалось обновить склады WB для кабинета {}: {}", cabinetId, e.getMessage());
         }
