@@ -74,11 +74,15 @@ public class AnalyticsScheduler {
 
         List<CompletableFuture<Void>> futures = cabinetsWithKey.stream()
                 .map(cabinet -> CompletableFuture.runAsync(() -> {
+                    String prevName = Thread.currentThread().getName();
                     try {
+                        Thread.currentThread().setName("analytics-cabinet-" + cabinet.getId());
                         processCabinetAnalytics(cabinet, period);
                     } catch (Exception e) {
                         log.error("Ошибка при загрузке аналитики для кабинета (ID: {}, продавец: {}): {}",
                                 cabinet.getId(), cabinet.getUser().getEmail(), e.getMessage());
+                    } finally {
+                        Thread.currentThread().setName(prevName);
                     }
                 }, cabinetUpdateExecutor))
                 .toList();
