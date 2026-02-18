@@ -40,6 +40,7 @@ public class ProductCardAnalyticsService {
     private final ProductStocksService stocksService;
     private final PromotionCampaignSyncService campaignSyncService;
     private final ProductCardAnalyticsLoadService analyticsLoadService;
+    private final PromotionCalendarService promotionCalendarService;
 
     /**
      * Обновляет все карточки и загружает аналитику за указанный период (кабинет по умолчанию продавца).
@@ -110,6 +111,12 @@ public class ProductCardAnalyticsService {
 
             managed.setLastDataUpdateAt(LocalDateTime.now());
             cabinetRepository.save(managed);
+
+            try {
+                promotionCalendarService.syncPromotionsForCabinet(managed);
+            } catch (Exception e) {
+                log.warn("Синхронизация акций календаря для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
+            }
 
         } catch (HttpClientErrorException e) {
             HttpStatusCode code = e.getStatusCode();

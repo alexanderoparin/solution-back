@@ -16,6 +16,7 @@ import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.PromotionCalendarService;
 import ru.oparin.solution.service.UserService;
 
 import java.util.List;
@@ -33,6 +34,7 @@ public class UsersManagementController {
     private final UserService userService;
     private final CabinetService cabinetService;
     private final AnalyticsScheduler analyticsScheduler;
+    private final PromotionCalendarService promotionCalendarService;
 
     /**
      * Получение списка пользователей, которыми может управлять текущий пользователь.
@@ -236,6 +238,28 @@ public class UsersManagementController {
         return ResponseEntity.ok(MessageResponse.builder()
                 .message("Обновление данных запущено. Процесс выполняется в фоновом режиме. " +
                         "Данные будут доступны через несколько минут.")
+                .build());
+    }
+
+    /**
+     * Принудительный запуск обновления данных по акциям календаря WB для всех кабинетов.
+     * GET, тело не требуется. Доступно только для ADMIN.
+     *
+     * @param authentication данные аутентификации
+     * @return сообщение о запуске
+     */
+    @GetMapping("/trigger-promotions-update")
+    public ResponseEntity<MessageResponse> triggerPromotionsUpdate(Authentication authentication) {
+        User currentUser = getCurrentUser(authentication);
+        if (currentUser.getRole() != Role.ADMIN) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(MessageResponse.builder()
+                            .message("Доступно только для администратора")
+                            .build());
+        }
+        promotionCalendarService.syncPromotionsForAllCabinets();
+        return ResponseEntity.ok(MessageResponse.builder()
+                .message("Обновление данных по акциям календаря запущено и выполнено.")
                 .build());
     }
 

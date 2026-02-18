@@ -41,6 +41,7 @@ public class AnalyticsService {
     private final AdvertisingMetricsCalculator advertisingMetricsCalculator;
     private final MetricValueCalculator metricValueCalculator;
     private final CampaignStatisticsAggregator campaignStatisticsAggregator;
+    private final PromotionParticipationRepository promotionParticipationRepository;
 
 
     /**
@@ -277,7 +278,14 @@ public class AnalyticsService {
         Long cardCabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
 
         List<DailyDataDto> dailyData = getDailyData(nmId, cardCabinetId);
-        Boolean inWbPromotion = computeInWbPromotion(dailyData);
+        List<String> wbPromotionNames = cardCabinetId != null
+                ? promotionParticipationRepository.findByCabinet_IdAndNmId(cardCabinetId, nmId).stream()
+                        .map(PromotionParticipation::getWbPromotionName)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .collect(Collectors.toList())
+                : Collections.emptyList();
+        Boolean inWbPromotion = !wbPromotionNames.isEmpty();
         List<ArticleSummaryDto> bundleProducts = getBundleProducts(card, cardCabinetId);
 
         return ArticleResponseDto.builder()
@@ -287,6 +295,7 @@ public class AnalyticsService {
                 .dailyData(dailyData)
                 .campaigns(getCampaigns(nmId, cardCabinetId))
                 .inWbPromotion(inWbPromotion)
+                .wbPromotionNames(wbPromotionNames)
                 .stocks(getStocks(nmId, cardCabinetId))
                 .bundleProducts(bundleProducts)
                 .build();
