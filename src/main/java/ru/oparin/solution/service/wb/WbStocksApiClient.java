@@ -6,6 +6,7 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.WbStocksSizesRequest;
 import ru.oparin.solution.dto.wb.WbStocksSizesResponse;
@@ -31,7 +32,7 @@ public class WbStocksApiClient extends AbstractWbApiClient {
     /**
      * Получение остатков товаров по размерам на складах WB.
      * При 429 (Too Many Requests) — до 5 повторов с задержкой 20 с.
-     * При 504 (Gateway Timeout / stream timeout) — до 3 повторов с задержкой 10 с.
+     * При 504 (Gateway Timeout) и при таймауте/ошибке соединения — до 3 повторов с задержкой 10 с.
      *
      * @param apiKey API ключ продавца (токен для категории "Аналитика")
      * @param request запрос с артикулом и параметрами
@@ -104,17 +105,23 @@ public class WbStocksApiClient extends AbstractWbApiClient {
                 log.error("Ошибка от WB API: статус={}, сообщение={}", e.getStatusCode(), e.getMessage());
                 throw new RestClientException("Ошибка от WB API: " + e.getStatusCode() + " - " + e.getMessage(), e);
             } catch (RestClientException e) {
+                // Таймаут или ошибка соединения — ретраи как при 504
+                if (isTimeoutOrConnectionError(e) && attempt < MAX_RETRIES_504) {
+                    log.warn("Таймаут/ошибка соединения при запросе остатков для nmID {} (попытка {}/{}). Повтор через {} мс...",
+                            request.getNmID(), attempt, MAX_RETRIES_504, RETRY_DELAY_MS_504);
+                    sleep(RETRY_DELAY_MS_504);
+                    continue;
+                }
                 // Если это 429 и есть еще попытки, продолжаем цикл
                 if (e.getMessage() != null && e.getMessage().contains("429") && attempt < maxRetries) {
-                    log.warn("Ошибка 429 при попытке {}/{}. Повтор через {} мс...", 
+                    log.warn("Ошибка 429 при попытке {}/{}. Повтор через {} мс...",
                             attempt, maxRetries, RETRY_DELAY_MS_429);
                     sleep(RETRY_DELAY_MS_429);
                     continue;
                 }
-                
                 // Если это последняя попытка или другая ошибка, пробрасываем исключение
                 if (attempt == maxRetries) {
-                    log.error("Ошибка при получении остатков по размерам на складах WB после {} попыток: {}", 
+                    log.error("Ошибка при получении остатков по размерам на складах WB после {} попыток: {}",
                             maxRetries, e.getMessage(), e);
                 }
                 throw e;
@@ -134,6 +141,21 @@ public class WbStocksApiClient extends AbstractWbApiClient {
         }
 
         throw new RestClientException("Не удалось получить остатки по размерам после " + maxRetries + " попыток");
+    }
+
+    private static boolean isTimeoutOrConnectionError(Throwable e) {
+        if (e instanceof ResourceAccessException) {
+            return true;
+        }
+        String msg = e.getMessage();
+        if (msg != null) {
+            String lower = msg.toLowerCase();
+            if (lower.contains("timed out") || lower.contains("operation timed out")
+                    || lower.contains("connection") || lower.contains("connect")) {
+                return true;
+            }
+        }
+        return e.getCause() != null && isTimeoutOrConnectionError(e.getCause());
     }
 
     private static void sleep(long ms) {
