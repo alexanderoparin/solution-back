@@ -46,21 +46,67 @@ public class AnalyticsService {
 
     /**
      * Получает сводную аналитику для продавца (при cabinetId != null — только по выбранному кабинету).
+     * При указании page и size возвращается только страница артикулов и totalArticles; aggregatedMetrics не заполняются.
      */
     @Transactional(readOnly = true)
-    public SummaryResponseDto getSummary(User seller, Long cabinetId, List<PeriodDto> periods, List<Long> excludedNmIds) {
+    public SummaryResponseDto getSummary(
+            User seller,
+            Long cabinetId,
+            List<PeriodDto> periods,
+            List<Long> excludedNmIds,
+            Integer page,
+            Integer size,
+            String search,
+            List<Long> includedNmIds
+    ) {
         validatePeriods(periods);
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
 
         List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
+
+        boolean paginated = page != null && size != null && size > 0;
+        if (paginated) {
+            List<ProductCard> filtered = visibleCards;
+            if (includedNmIds != null && !includedNmIds.isEmpty()) {
+                var idSet = new java.util.HashSet<>(includedNmIds);
+                filtered = filtered.stream()
+                        .filter(c -> c.getNmId() != null && idSet.contains(c.getNmId()))
+                        .collect(Collectors.toList());
+            }
+            if (search != null && !search.isBlank()) {
+                filtered = filterCardsBySearch(filtered, search.trim());
+            }
+            int total = filtered.size();
+            int from = Math.min(page * size, total);
+            int to = Math.min(from + size, total);
+            List<ProductCard> pageCards = from < to ? filtered.subList(from, to) : List.of();
+            return SummaryResponseDto.builder()
+                    .periods(sortedPeriods)
+                    .articles(mapToArticleSummaries(pageCards))
+                    .aggregatedMetrics(null)
+                    .totalArticles((long) total)
+                    .build();
+        }
+
         Map<Integer, AggregatedMetricsDto> aggregatedMetrics = calculateAggregatedMetrics(
                 visibleCards, sortedPeriods, seller.getId(), cabinetId);
-
         return SummaryResponseDto.builder()
                 .periods(sortedPeriods)
                 .articles(mapToArticleSummaries(visibleCards))
                 .aggregatedMetrics(aggregatedMetrics)
+                .totalArticles(null)
                 .build();
+    }
+
+    private List<ProductCard> filterCardsBySearch(List<ProductCard> cards, String searchLower) {
+        String lower = searchLower.toLowerCase();
+        return cards.stream()
+                .filter(card ->
+                        (card.getTitle() != null && card.getTitle().toLowerCase().contains(lower))
+                                || (card.getVendorCode() != null && card.getVendorCode().toLowerCase().contains(lower))
+                                || (card.getNmId() != null && String.valueOf(card.getNmId()).contains(lower))
+                )
+                .collect(Collectors.toList());
     }
 
     /**

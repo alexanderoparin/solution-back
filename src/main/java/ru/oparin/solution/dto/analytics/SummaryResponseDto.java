@@ -1,10 +1,6 @@
 package ru.oparin.solution.dto.analytics;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.util.List;
 import java.util.Map;
@@ -31,7 +27,13 @@ public class SummaryResponseDto {
     
     /**
      * Агрегированные метрики по периодам. Ключ - идентификатор периода (periodId).
+     * При запросе с пагинацией (page/size) не заполняется.
      */
     private Map<Integer, AggregatedMetricsDto> aggregatedMetrics;
+
+    /**
+     * Общее количество артикулов (при пагинации — после применения поиска). Без пагинации — null.
+     */
+    private Long totalArticles;
 }
 

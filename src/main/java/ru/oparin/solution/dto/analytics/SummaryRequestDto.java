@@ -3,11 +3,7 @@ package ru.oparin.solution.dto.analytics;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,5 +43,26 @@ public class SummaryRequestDto {
      * Если не указан — кабинет по умолчанию (последний созданный).
      */
     private Long cabinetId;
+
+    /**
+     * Номер страницы для пагинации (0-based). Если null — возвращаются все артикулы (без пагинации).
+     */
+    private Integer page;
+
+    /**
+     * Размер страницы. Используется вместе с page. Если null — пагинация не применяется.
+     */
+    private Integer size;
+
+    /**
+     * Поиск по названию, артикулу WB (nmId) или артикулу продавца. При пагинации фильтрация на бэкенде.
+     */
+    private String search;
+
+    /**
+     * Если не пустой — при пагинации вернуть только артикулы с nmId из этого списка (фильтр по чипам).
+     */
+    @Builder.Default
+    private List<Long> includedNmIds = new ArrayList<>();
 }
 

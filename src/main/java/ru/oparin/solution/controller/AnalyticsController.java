@@ -4,11 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import ru.oparin.solution.dto.analytics.ArticleResponseDto;
-import ru.oparin.solution.dto.analytics.MetricGroupResponseDto;
-import ru.oparin.solution.dto.analytics.StockSizeDto;
-import ru.oparin.solution.dto.analytics.SummaryRequestDto;
-import ru.oparin.solution.dto.analytics.SummaryResponseDto;
+import ru.oparin.solution.dto.analytics.*;
 import ru.oparin.solution.service.AnalyticsService;
 import ru.oparin.solution.service.SellerContextService;
 
@@ -48,7 +44,11 @@ public class AnalyticsController {
                 context.user(),
                 context.cabinetId(),
                 request.getPeriods(),
-                request.getExcludedNmIds()
+                request.getExcludedNmIds(),
+                request.getPage(),
+                request.getSize(),
+                request.getSearch(),
+                request.getIncludedNmIds()
         );
         
         return ResponseEntity.ok(response);
