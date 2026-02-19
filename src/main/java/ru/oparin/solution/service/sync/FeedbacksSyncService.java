@@ -62,8 +62,9 @@ public class FeedbacksSyncService {
         }
         if (!cards.isEmpty()) {
             productCardRepository.saveAll(cards);
-            log.info("Обновлены рейтинг и отзывы для кабинета {}: карточек {}, уникальных nmId в отзывах {}",
-                    cabinetId, cards.size(), byNmId.size());
+            int updatedWithData = (int) cards.stream().filter(c -> byNmId.containsKey(c.getNmId())).count();
+            log.info("Обновлены рейтинг и отзывы для кабинета {}: обновлено карточек {}, из них с отзывами {}; в ответе API по продавцу встретилось nmId {}",
+                    cabinetId, cards.size(), updatedWithData, byNmId.size());
         }
     }
 
