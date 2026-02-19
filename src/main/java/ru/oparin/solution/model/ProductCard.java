@@ -1,15 +1,12 @@
 package ru.oparin.solution.model;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -96,5 +93,18 @@ public class ProductCard {
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    /**
+     * Средний рейтинг по обработанным отзывам WB (1–5).
+     * Заполняется синхронизацией с API отзывов (категория «Вопросы и отзывы»).
+     */
+    @Column(name = "rating", precision = 3, scale = 2)
+    private BigDecimal rating;
+
+    /**
+     * Количество обработанных отзывов по товару.
+     */
+    @Column(name = "reviews_count")
+    private Integer reviewsCount;
 }
 

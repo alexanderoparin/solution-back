@@ -12,10 +12,7 @@ import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
-import ru.oparin.solution.service.sync.ProductCardAnalyticsLoadService;
-import ru.oparin.solution.service.sync.ProductPricesSyncService;
-import ru.oparin.solution.service.sync.PromotionCampaignSyncService;
-import ru.oparin.solution.service.sync.WbCardsSyncService;
+import ru.oparin.solution.service.sync.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -41,6 +38,7 @@ public class ProductCardAnalyticsService {
     private final PromotionCampaignSyncService campaignSyncService;
     private final ProductCardAnalyticsLoadService analyticsLoadService;
     private final PromotionCalendarService promotionCalendarService;
+    private final FeedbacksSyncService feedbacksSyncService;
 
     /**
      * Обновляет все карточки и загружает аналитику за указанный период (кабинет по умолчанию продавца).
@@ -116,6 +114,16 @@ public class ProductCardAnalyticsService {
                 promotionCalendarService.syncPromotionsForCabinet(managed);
             } catch (Exception e) {
                 log.warn("Синхронизация акций календаря для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
+            }
+
+            try {
+                feedbacksSyncService.syncFeedbacksForCabinet(managed, apiKey);
+            } catch (Exception e) {
+                if (e instanceof HttpClientErrorException ex && ex.getStatusCode() != null && ex.getStatusCode().value() == 401) {
+                    log.warn("Кабинет {}: ключ не привязан к категории «Вопросы и отзывы», доступ к отзывам недоступен", cabinetId);
+                } else {
+                    log.warn("Синхронизация отзывов для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
+                }
             }
 
         } catch (HttpClientErrorException e) {

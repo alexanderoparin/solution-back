@@ -18,6 +18,7 @@ import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.PromotionCalendarService;
 import ru.oparin.solution.service.UserService;
+import ru.oparin.solution.service.sync.FeedbacksSyncService;
 
 import java.util.List;
 
@@ -35,6 +36,7 @@ public class UsersManagementController {
     private final CabinetService cabinetService;
     private final AnalyticsScheduler analyticsScheduler;
     private final PromotionCalendarService promotionCalendarService;
+    private final FeedbacksSyncService feedbacksSyncService;
 
     /**
      * Получение списка пользователей, которыми может управлять текущий пользователь.
@@ -260,6 +262,28 @@ public class UsersManagementController {
         promotionCalendarService.syncPromotionsForAllCabinets();
         return ResponseEntity.ok(MessageResponse.builder()
                 .message("Обновление данных по акциям календаря запущено и выполнено.")
+                .build());
+    }
+
+    /**
+     * Принудительный запуск синхронизации рейтинга и отзывов по товарам для всех кабинетов.
+     * GET, тело не требуется. Доступно только для ADMIN.
+     *
+     * @param authentication данные аутентификации
+     * @return сообщение о запуске
+     */
+    @GetMapping("/trigger-feedbacks-update")
+    public ResponseEntity<MessageResponse> triggerFeedbacksUpdate(Authentication authentication) {
+        User currentUser = getCurrentUser(authentication);
+        if (currentUser.getRole() != Role.ADMIN) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(MessageResponse.builder()
+                            .message("Доступно только для администратора")
+                            .build());
+        }
+        feedbacksSyncService.syncFeedbacksForAllCabinets();
+        return ResponseEntity.ok(MessageResponse.builder()
+                .message("Обновление рейтинга и отзывов по кабинетам запущено и выполнено.")
                 .build());
     }
 

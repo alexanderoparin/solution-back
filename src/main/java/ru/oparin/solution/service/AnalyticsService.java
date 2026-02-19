@@ -1019,6 +1019,8 @@ public class AnalyticsService {
                 .subjectName(card.getSubjectName())
                 .photoTm(card.getPhotoTm())
                 .vendorCode(card.getVendorCode())
+                .rating(card.getRating())
+                .reviewsCount(card.getReviewsCount())
                 .build();
     }
 
@@ -1031,8 +1033,8 @@ public class AnalyticsService {
                 .subjectName(card.getSubjectName())
                 .vendorCode(card.getVendorCode())
                 .photoTm(card.getPhotoTm())
-                .rating(null) // TODO: получить из API или БД
-                .reviewsCount(null) // TODO: получить из API или БД
+                .rating(card.getRating())
+                .reviewsCount(card.getReviewsCount())
                 .productUrl("https://www.wildberries.ru/catalog/" + card.getNmId() + "/detail.aspx")
                 .createdAt(card.getCreatedAt())
                 .updatedAt(card.getUpdatedAt())

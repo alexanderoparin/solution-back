@@ -1,11 +1,9 @@
 package ru.oparin.solution.dto.analytics;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
+
+import java.math.BigDecimal;
 
 /**
  * DTO для краткой информации об артикуле в сводной таблице.
@@ -46,5 +44,15 @@ public class ArticleSummaryDto {
      * Артикул продавца.
      */
     private String vendorCode;
+
+    /**
+     * Средний рейтинг по отзывам WB (1–5).
+     */
+    private BigDecimal rating;
+
+    /**
+     * Количество отзывов по товару.
+     */
+    private Integer reviewsCount;
 }
 

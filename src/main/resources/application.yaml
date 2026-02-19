@@ -62,6 +62,7 @@ wb:
     dp-calendar-base-url: https://dp-calendar-api.wildberries.ru
     marketplace-base-url: https://marketplace-api.wildberries.ru
     supplies-base-url: https://supplies-api.wildberries.ru
+    feedbacks-base-url: https://feedbacks-api.wildberries.ru
     timeout: 30000
 
 app:
