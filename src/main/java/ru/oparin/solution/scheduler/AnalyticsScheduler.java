@@ -14,6 +14,7 @@ import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.service.ProductCardAnalyticsService;
+import ru.oparin.solution.service.PromotionCalendarService;
 import ru.oparin.solution.service.WbApiKeyService;
 import ru.oparin.solution.service.WbWarehouseService;
 import ru.oparin.solution.service.wb.WbWarehousesApiClient;
@@ -34,6 +35,7 @@ public class AnalyticsScheduler {
     private final WbApiKeyService wbApiKeyService;
     private final CabinetRepository cabinetRepository;
     private final ProductCardAnalyticsService analyticsService;
+    private final PromotionCalendarService promotionCalendarService;
     private final WbWarehousesApiClient warehousesApiClient;
     private final WbWarehouseService warehouseService;
     private final Executor cabinetUpdateExecutor;
@@ -41,12 +43,14 @@ public class AnalyticsScheduler {
     public AnalyticsScheduler(WbApiKeyService wbApiKeyService,
                               CabinetRepository cabinetRepository,
                               ProductCardAnalyticsService analyticsService,
+                              PromotionCalendarService promotionCalendarService,
                               WbWarehousesApiClient warehousesApiClient,
                               WbWarehouseService warehouseService,
                               @Qualifier("cabinetUpdateExecutor") Executor cabinetUpdateExecutor) {
         this.wbApiKeyService = wbApiKeyService;
         this.cabinetRepository = cabinetRepository;
         this.analyticsService = analyticsService;
+        this.promotionCalendarService = promotionCalendarService;
         this.warehousesApiClient = warehousesApiClient;
         this.warehouseService = warehouseService;
         this.cabinetUpdateExecutor = cabinetUpdateExecutor;
@@ -89,7 +93,13 @@ public class AnalyticsScheduler {
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
-        log.info("Запущена автоматическая загрузка аналитики по {} кабинетам (параллельно)", cabinetsWithKey.size());
+        log.info("Завершена загрузка аналитики по {} кабинетам. Запуск обновления данных по акциям календаря.", cabinetsWithKey.size());
+        try {
+            promotionCalendarService.syncPromotionsForAllCabinets();
+            log.info("Обновление данных по акциям календаря завершено.");
+        } catch (Exception e) {
+            log.error("Ошибка при обновлении данных по акциям календаря после ночной загрузки: {}", e.getMessage(), e);
+        }
     }
 
     /**
