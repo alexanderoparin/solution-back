@@ -843,6 +843,10 @@ public class AnalyticsService {
         Map<Long, List<PromotionCampaignStatistics>> statsByCampaign = allStats.stream()
                 .collect(Collectors.groupingBy(s -> s.getCampaign().getAdvertId()));
 
+        List<Object[]> articleCounts = campaignArticleRepository.countByCampaignIdIn(campaignIds);
+        Map<Long, Integer> articlesCountByCampaign = articleCounts.stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> ((Number) row[1]).intValue()));
+
         return campaigns.stream()
                 .map(c -> {
                     List<PromotionCampaignStatistics> stats = statsByCampaign.getOrDefault(c.getAdvertId(), Collections.emptyList());
@@ -857,6 +861,7 @@ public class AnalyticsService {
                     }
                     BigDecimal ctr = MathUtils.calculatePercentage(clicks, views);
                     BigDecimal cpc = (clicks > 0 && sum != null) ? sum.divide(BigDecimal.valueOf(clicks), 2, RoundingMode.HALF_UP) : null;
+                    Integer articlesCount = articlesCountByCampaign.getOrDefault(c.getAdvertId(), 0);
                     return CampaignDto.builder()
                             .id(c.getAdvertId())
                             .name(c.getName())
@@ -864,6 +869,7 @@ public class AnalyticsService {
                             .status(c.getStatus() != null ? c.getStatus().getCode() : null)
                             .statusName(c.getStatus() != null ? c.getStatus().getDescription() : null)
                             .createdAt(c.getCreateTime())
+                            .articlesCount(articlesCount)
                             .views(views > 0 ? views : null)
                             .clicks(clicks > 0 ? clicks : null)
                             .ctr(ctr)

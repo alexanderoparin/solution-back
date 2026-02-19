@@ -49,5 +49,8 @@ public interface CampaignArticleRepository extends JpaRepository<CampaignArticle
      */
     @Query("SELECT new ru.oparin.solution.model.CampaignArticleId(c.campaignId, c.nmId) FROM CampaignArticle c WHERE c.campaign.cabinet.id = :cabinetId")
     List<CampaignArticleId> findIdByCampaign_Cabinet_Id(@Param("cabinetId") Long cabinetId, Pageable pageable);
+
+    @Query("SELECT c.campaignId, COUNT(c) FROM CampaignArticle c WHERE c.campaignId IN :ids GROUP BY c.campaignId")
+    List<Object[]> countByCampaignIdIn(@Param("ids") List<Long> ids);
 }
 
