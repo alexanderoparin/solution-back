@@ -31,6 +31,7 @@ public class CabinetDeletionService {
     private final ProductCardAnalyticsRepository productCardAnalyticsRepository;
     private final ProductCardRepository productCardRepository;
     private final ArticleNoteRepository articleNoteRepository;
+    private final CampaignNoteRepository campaignNoteRepository;
     private final CabinetRepository cabinetRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -90,6 +91,13 @@ public class CabinetDeletionService {
         deleteByIdBatches("Заметки по артикулам",
                 () -> articleNoteRepository.findIdByCabinetId(cabinetId, PageRequest.of(0, BATCH_SIZE)),
                 articleNoteRepository::deleteAllById);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void deleteStepCampaignNotes(Long cabinetId) {
+        deleteByIdBatches("Заметки по РК",
+                () -> campaignNoteRepository.findIdByCabinetId(cabinetId, PageRequest.of(0, BATCH_SIZE)),
+                campaignNoteRepository::deleteAllById);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

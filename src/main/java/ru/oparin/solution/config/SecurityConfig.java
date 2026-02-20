@@ -20,8 +20,8 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import ru.oparin.solution.model.Role;
-import ru.oparin.solution.security.JwtAuthenticationFilter;
 import ru.oparin.solution.security.CustomUserDetailsService;
+import ru.oparin.solution.security.JwtAuthenticationFilter;
 
 import java.util.Arrays;
 import java.util.List;
@@ -49,6 +49,7 @@ public class SecurityConfig {
     private static final String SELLER_ENDPOINTS = "/seller/**";
     private static final String WORKER_ENDPOINTS = "/worker/**";
     private static final String ANALYTICS_ENDPOINTS = "/analytics/**";
+    private static final String ADVERTISING_ENDPOINTS = "/advertising/**";
     private static final String USERS_MANAGEMENT_ENDPOINTS = "/users/**";
     private static final String CABINETS_ENDPOINTS = "/cabinets/**";
     public static final String ADMIN = Role.ADMIN.name();
@@ -137,6 +138,7 @@ public class SecurityConfig {
                 .requestMatchers(SELLER_ENDPOINTS).hasAnyRole(ADMIN, SELLER)
                 .requestMatchers(WORKER_ENDPOINTS).hasAnyRole(ADMIN, SELLER, WORKER)
                 .requestMatchers(ANALYTICS_ENDPOINTS).hasAnyRole(ADMIN, MANAGER, SELLER)
+                .requestMatchers(ADVERTISING_ENDPOINTS).hasAnyRole(ADMIN, MANAGER, SELLER)
                 .requestMatchers(USERS_MANAGEMENT_ENDPOINTS).hasAnyRole(ADMIN, MANAGER, SELLER)
                 .requestMatchers(CABINETS_ENDPOINTS).hasRole(SELLER)
                 .anyRequest().authenticated();

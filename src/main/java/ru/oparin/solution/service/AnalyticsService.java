@@ -881,7 +881,57 @@ public class AnalyticsService {
                 })
                 .collect(Collectors.toList());
     }
-    
+
+    /**
+     * Детали рекламной кампании (комбо): название, статус, список артикулов с фото и названием.
+     * Сначала поиск по кабинету; если не найдено — по продавцу (кампания может быть в другом кабинете того же продавца).
+     */
+    @Transactional(readOnly = true)
+    public CampaignDetailDto getCampaignDetail(Long campaignId, Long cabinetId, Long sellerId) {
+        PromotionCampaign campaign = null;
+        Long cabinetIdForArticles = cabinetId;
+
+        if (cabinetId != null) {
+            campaign = campaignRepository.findByAdvertIdAndCabinet_Id(campaignId, cabinetId).orElse(null);
+        }
+        if (campaign == null && sellerId != null) {
+            campaign = campaignRepository.findByAdvertIdAndSeller_Id(campaignId, sellerId).orElse(null);
+            if (campaign != null) {
+                cabinetIdForArticles = campaign.getCabinet() != null ? campaign.getCabinet().getId() : cabinetId;
+            }
+        }
+        if (campaign == null) {
+            return null;
+        }
+        if (cabinetIdForArticles == null) {
+            return null;
+        }
+        final Long finalCabinetId = cabinetIdForArticles;
+        List<CampaignArticle> campaignArticles = campaignArticleRepository.findByCampaignId(campaign.getAdvertId());
+        List<Long> nmIds = campaignArticles.stream()
+                .map(CampaignArticle::getNmId)
+                .distinct()
+                .collect(Collectors.toList());
+        List<ArticleSummaryDto> articles = nmIds.stream()
+                .map(nmId -> productCardRepository.findByNmIdAndCabinet_Id(nmId, finalCabinetId)
+                        .map(this::mapToArticleSummary)
+                        .orElseGet(() -> ArticleSummaryDto.builder()
+                                .nmId(nmId)
+                                .title("Артикул " + nmId)
+                                .photoTm(null)
+                                .build()))
+                .collect(Collectors.toList());
+        return CampaignDetailDto.builder()
+                .id(campaign.getAdvertId())
+                .name(campaign.getName())
+                .status(campaign.getStatus() != null ? campaign.getStatus().getCode() : null)
+                .statusName(campaign.getStatus() != null ? campaign.getStatus().getDescription() : null)
+                .articlesCount(articles.size())
+                .articles(articles)
+                .createdAt(campaign.getCreateTime())
+                .build();
+    }
+
     /**
      * Получает детализацию остатков по размерам для товара на конкретном складе.
      *

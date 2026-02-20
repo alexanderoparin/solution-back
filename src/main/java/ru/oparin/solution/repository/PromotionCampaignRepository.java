@@ -28,6 +28,11 @@ public interface PromotionCampaignRepository extends JpaRepository<PromotionCamp
     Optional<PromotionCampaign> findByAdvertIdAndSellerId(Long advertId, Long sellerId);
 
     /**
+     * Поиск кампании по advertId и id продавца (связь seller).
+     */
+    Optional<PromotionCampaign> findByAdvertIdAndSeller_Id(Long advertId, Long sellerId);
+
+    /**
      * Поиск всех кампаний продавца.
      *
      * @param sellerId ID продавца

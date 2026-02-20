@@ -111,6 +111,7 @@ public class CabinetService {
         cabinetDeletionService.deleteStepCardAnalytics(cabinetId);
         cabinetDeletionService.deleteStepProductCards(cabinetId);
         cabinetDeletionService.deleteStepArticleNotes(cabinetId);
+        cabinetDeletionService.deleteStepCampaignNotes(cabinetId);
         cabinetDeletionService.deleteStepCabinetRecord(cabinetId);
 
         log.info("[Удаление кабинета] Готово: «{}» (cabinetId={})", cabinet.getName(), cabinetId);
