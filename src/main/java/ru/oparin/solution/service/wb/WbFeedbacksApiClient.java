@@ -7,6 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.FeedbacksResponse;
@@ -60,6 +61,9 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             validateResponse(response);
             return objectMapper.readValue(response.getBody(), FeedbacksResponse.class);
+        } catch (HttpClientErrorException e) {
+            logWbApiError("получение отзывов WB", e);
+            throw new RestClientException("Ошибка при получении отзывов: " + e.getMessage(), e);
         } catch (RestClientException e) {
             throw e;
         } catch (Exception e) {

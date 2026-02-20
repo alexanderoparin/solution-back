@@ -7,6 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.OrdersResponse;
@@ -69,6 +70,9 @@ public class WbOrdersApiClient extends AbstractWbApiClient {
             log.info("Получено заказов: {}", orders != null ? orders.size() : 0);
             return orders != null ? orders : List.of();
 
+        } catch (HttpClientErrorException e) {
+            logWbApiError("получение заказов WB", e);
+            throw new RestClientException("Ошибка при получении заказов: " + e.getMessage(), e);
         } catch (Exception e) {
             log.error("Ошибка при получении заказов: {}", e.getMessage(), e);
             throw new RestClientException("Ошибка при получении заказов: " + e.getMessage(), e);

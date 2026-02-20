@@ -7,6 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.CalendarNomenclaturesResponse;
@@ -61,6 +62,9 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             validateResponse(response);
             return objectMapper.readValue(response.getBody(), CalendarPromotionsResponse.class);
+        } catch (HttpClientErrorException e) {
+            logWbApiError("список акций календаря WB", e);
+            throw new RestClientException("Ошибка при получении списка акций календаря: " + e.getMessage(), e);
         } catch (Exception e) {
             log.error("Ошибка при получении списка акций календаря: {}", e.getMessage());
             throw new RestClientException("Ошибка при получении списка акций календаря: " + e.getMessage(), e);
@@ -113,6 +117,9 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
                     break;
                 }
                 offset += PAGE_SIZE;
+            } catch (HttpClientErrorException e) {
+                logWbApiError("номенклатуры акции WB (promotionId=" + promotionId + ")", e);
+                throw new RestClientException("Ошибка при получении номенклатур акции: " + e.getMessage(), e);
             } catch (Exception e) {
                 log.error("Ошибка при получении номенклатур акции {} (offset {}): {}", promotionId, offset, e.getMessage());
                 throw new RestClientException("Ошибка при получении номенклатур акции: " + e.getMessage(), e);

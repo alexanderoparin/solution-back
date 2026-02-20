@@ -2,12 +2,9 @@ package ru.oparin.solution.service.wb;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.ProductPricesRequest;
 import ru.oparin.solution.dto.wb.ProductPricesResponse;
@@ -64,6 +61,9 @@ public class WbProductsApiClient extends AbstractWbApiClient {
 
             return pricesResponse;
 
+        } catch (HttpClientErrorException e) {
+            logWbApiError("получение цен товаров", e);
+            throw new RestClientException("Ошибка при получении цен товаров: " + e.getMessage(), e);
         } catch (Exception e) {
             log.error("Ошибка при получении цен товаров: {}", e.getMessage(), e);
             throw new RestClientException("Ошибка при получении цен товаров: " + e.getMessage(), e);

@@ -1,17 +1,14 @@
 package ru.oparin.solution.service.wb;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
-import com.fasterxml.jackson.core.type.TypeReference;
-import ru.oparin.solution.dto.wb.AuctionAdvertsResponse;
-import ru.oparin.solution.dto.wb.PromotionAdvertsResponse;
-import ru.oparin.solution.dto.wb.PromotionCountResponse;
-import ru.oparin.solution.dto.wb.PromotionFullStatsRequest;
-import ru.oparin.solution.dto.wb.PromotionFullStatsResponse;
+import ru.oparin.solution.dto.wb.*;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -66,6 +63,9 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
             return countResponse;
 
+        } catch (HttpClientErrorException e) {
+            logWbApiError("список кампаний WB", e);
+            throw new RestClientException("Ошибка при получении списка кампаний: " + e.getMessage(), e);
         } catch (Exception e) {
             log.error("Ошибка при получении списка кампаний: {}", e.getMessage(), e);
             throw new RestClientException("Ошибка при получении списка кампаний: " + e.getMessage(), e);
@@ -118,6 +118,9 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
             return advertsResponse;
 
+        } catch (HttpClientErrorException e) {
+            logWbApiError("детальная информация о кампаниях WB", e);
+            throw new RestClientException("Ошибка при получении детальной информации о кампаниях: " + e.getMessage(), e);
         } catch (Exception e) {
             log.error("Ошибка при получении детальной информации о кампаниях: {}", e.getMessage(), e);
             throw new RestClientException("Ошибка при получении детальной информации о кампаниях: " + e.getMessage(), e);
@@ -180,6 +183,9 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
             return statsResponse;
 
+        } catch (HttpClientErrorException e) {
+            logWbApiError("статистика кампаний WB", e);
+            throw new RestClientException("Ошибка при получении статистики кампаний: " + e.getMessage(), e);
         } catch (Exception e) {
             log.error("Ошибка при получении статистики кампаний: {}", e.getMessage(), e);
             throw new RestClientException("Ошибка при получении статистики кампаний: " + e.getMessage(), e);
@@ -236,6 +242,9 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
             return advertsResponse;
 
+        } catch (HttpClientErrorException e) {
+            logWbApiError("аукционные кампании WB", e);
+            throw new RestClientException("Ошибка при получении детальной информации об аукционных кампаниях: " + e.getMessage(), e);
         } catch (Exception e) {
             log.error("Ошибка при получении детальной информации об аукционных кампаниях: {}", e.getMessage(), e);
             throw new RestClientException("Ошибка при получении детальной информации об аукционных кампаниях: " + e.getMessage(), e);

@@ -3,13 +3,12 @@ package ru.oparin.solution.service.wb;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import ru.oparin.solution.dto.wb.WbApiProblemResponse;
+import ru.oparin.solution.dto.wb.WbApiSimpleErrorResponse;
 
 /**
  * Абстрактный базовый класс для клиентов WB API.
@@ -141,6 +140,53 @@ public abstract class AbstractWbApiClient {
      */
     private boolean is429Error(RestClientException e) {
         return e.getMessage() != null && e.getMessage().contains("429");
+    }
+
+    /**
+     * Логирует ошибку WB API (401, 403, 429, 400 и др.) без стектрейса:
+     * парсит тело ответа как application/problem+json (401, 429) или
+     * как data/error/errorText (400, 403) и пишет одну строку с сутью ошибки.
+     * Использовать во всех клиентах WB при перехвате HttpClientErrorException.
+     *
+     * @param context краткое описание операции (например, "получение цен товаров")
+     * @param e       исключение от RestTemplate
+     */
+    protected void logWbApiError(String context, HttpClientErrorException e) {
+        String body = e.getResponseBodyAsString();
+        int status = e.getStatusCode() != null ? e.getStatusCode().value() : 0;
+        String statusText = e.getStatusText();
+
+        if (body == null || body.isBlank()) {
+            log.error("WB API [{}]: {} {}", context, status, statusText);
+            return;
+        }
+
+        try {
+            if (body.contains("\"title\"") && body.contains("\"detail\"")) {
+                WbApiProblemResponse problem = objectMapper.readValue(body, WbApiProblemResponse.class);
+                log.error("WB API [{}]: {} {}; title={}, detail={}, requestId={}, origin={}",
+                        context, status, statusText,
+                        problem.getTitle(), problem.getDetail(),
+                        problem.getRequestId(), problem.getOrigin());
+                return;
+            }
+        } catch (Exception ignored) {
+            // не problem+json — пробуем простой формат
+        }
+
+        try {
+            WbApiSimpleErrorResponse simple = objectMapper.readValue(body, WbApiSimpleErrorResponse.class);
+            if (Boolean.TRUE.equals(simple.getError()) && simple.getErrorText() != null) {
+                log.error("WB API [{}]: {} {}; errorText={}, additionalErrors={}",
+                        context, status, statusText, simple.getErrorText(), simple.getAdditionalErrors());
+                return;
+            }
+        } catch (Exception ignored) {
+            // не удалось распарсить
+        }
+
+        String bodyShort = body.length() > 500 ? body.substring(0, 500) + "..." : body;
+        log.error("WB API [{}]: {} {}; тело ответа: {}", context, status, statusText, bodyShort);
     }
 }
 

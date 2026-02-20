@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.SaleFunnelHistoryRequest;
 import ru.oparin.solution.dto.wb.SaleFunnelHistoryResponse;
@@ -44,15 +45,19 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
         
         SaleFunnelHistoryRequest request = buildAnalyticsRequest(nmId, validatedFromDate, validatedToDate);
         
-        ResponseEntity<String> response = executeWithRetry(
-                fullUrl, 
-                apiKey, 
-                request, 
-                MAX_RETRIES_429, 
-                RETRY_DELAY_MS_429
-        );
-        
-        return parseAnalyticsResponse(response, nmId);
+        try {
+            ResponseEntity<String> response = executeWithRetry(
+                    fullUrl,
+                    apiKey,
+                    request,
+                    MAX_RETRIES_429,
+                    RETRY_DELAY_MS_429
+            );
+            return parseAnalyticsResponse(response, nmId);
+        } catch (HttpClientErrorException e) {
+            logWbApiError("аналитика воронки продаж WB", e);
+            throw new RestClientException("Ошибка при получении аналитики воронки продаж: " + e.getMessage(), e);
+        }
     }
 
     private LocalDate validateAndAdjustDateFrom(String dateFrom) {

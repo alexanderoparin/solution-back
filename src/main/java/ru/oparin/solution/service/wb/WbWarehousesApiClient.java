@@ -8,6 +8,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.WbWarehouseResponse;
 
@@ -56,6 +57,9 @@ public class WbWarehousesApiClient extends AbstractWbApiClient {
 
             return warehouses != null ? warehouses : List.of();
 
+        } catch (HttpClientErrorException e) {
+            logWbApiError("список складов WB", e);
+            throw new RestClientException("Ошибка при получении списка складов WB: " + e.getMessage(), e);
         } catch (Exception e) {
             log.error("Ошибка при получении списка складов WB: {}", e.getMessage(), e);
             throw new RestClientException("Ошибка при получении списка складов WB: " + e.getMessage(), e);

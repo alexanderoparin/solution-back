@@ -2,18 +2,17 @@ package ru.oparin.solution.dto.wb;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * DTO для ответа с ценами товаров от /api/v2/list/goods/filter.
+ * DTO для ответа с ценами товаров от POST /api/v2/list/goods/filter.
  * Содержит информацию о ценах, скидках и размерах товаров.
+ *
+ * @see <a href="https://dev.wildberries.ru/swagger/products">Swagger — WB API (Товары)</a>
+ * @see <a href="https://dev.wildberries.ru/docs/openapi/work-with-products">Документация: работа с товарами</a>
  */
 @Getter
 @Setter

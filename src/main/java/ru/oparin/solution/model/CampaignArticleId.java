@@ -3,6 +3,7 @@ package ru.oparin.solution.model;
 import lombok.AllArgsConstructor;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.io.Serializable;
 
@@ -12,6 +13,7 @@ import java.io.Serializable;
 @NoArgsConstructor
 @AllArgsConstructor
 @EqualsAndHashCode
+@ToString
 public class CampaignArticleId implements Serializable {
 
     private Long campaignId;

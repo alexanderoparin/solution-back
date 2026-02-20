@@ -2,12 +2,9 @@ package ru.oparin.solution.service.wb;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.CardsListRequest;
 import ru.oparin.solution.dto.wb.CardsListResponse;
@@ -40,9 +37,14 @@ public class WbContentApiClient extends AbstractWbApiClient {
         String url = contentBaseUrl + CARDS_LIST_ENDPOINT;
         
         log.info("Запрос списка карточек товаров: {}", url);
-        
-        ResponseEntity<String> response = executePostRequest(url, entity);
-        return parseCardsListResponse(response);
+
+        try {
+            ResponseEntity<String> response = executePostRequest(url, entity);
+            return parseCardsListResponse(response);
+        } catch (HttpClientErrorException e) {
+            logWbApiError("список карточек товаров WB", e);
+            throw new RestClientException("Ошибка при получении списка карточек товаров: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -56,19 +58,22 @@ public class WbContentApiClient extends AbstractWbApiClient {
         String url = contentBaseUrl + CARDS_TRASH_ENDPOINT;
         
         log.info("Запрос списка карточек из корзины: {}", url);
-        
-        ResponseEntity<CardsListResponse> response = restTemplate.exchange(
-                url,
-                HttpMethod.POST,
-                entity,
-                CardsListResponse.class
-        );
-        
-        if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
-            throw new RestClientException("Неожиданный ответ от WB API: " + response.getStatusCode());
+
+        try {
+            ResponseEntity<CardsListResponse> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.POST,
+                    entity,
+                    CardsListResponse.class
+            );
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                throw new RestClientException("Неожиданный ответ от WB API: " + response.getStatusCode());
+            }
+            return response.getBody();
+        } catch (HttpClientErrorException e) {
+            logWbApiError("список карточек из корзины WB", e);
+            throw new RestClientException("Ошибка при получении списка карточек из корзины: " + e.getMessage(), e);
         }
-        
-        return response.getBody();
     }
 
     /**
@@ -80,19 +85,22 @@ public class WbContentApiClient extends AbstractWbApiClient {
         String url = contentBaseUrl + PING_ENDPOINT;
         
         log.info("Запрос проверки подключения: {}", url);
-        
-        ResponseEntity<PingResponse> response = restTemplate.exchange(
-                url,
-                HttpMethod.GET,
-                entity,
-                PingResponse.class
-        );
-        
-        if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
-            throw new RestClientException("Неожиданный ответ от WB API: " + response.getStatusCode());
+
+        try {
+            ResponseEntity<PingResponse> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    entity,
+                    PingResponse.class
+            );
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                throw new RestClientException("Неожиданный ответ от WB API: " + response.getStatusCode());
+            }
+            return response.getBody();
+        } catch (HttpClientErrorException e) {
+            logWbApiError("ping WB API", e);
+            throw new RestClientException("Ошибка при проверке подключения к WB API: " + e.getMessage(), e);
         }
-        
-        return response.getBody();
     }
 
     private CardsListRequest buildCardsListRequestBody(CardsListRequest request) {

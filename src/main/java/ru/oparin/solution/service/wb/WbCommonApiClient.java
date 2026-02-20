@@ -6,6 +6,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.SellerInfoResponse;
 
@@ -27,19 +28,22 @@ public class WbCommonApiClient extends AbstractWbApiClient {
         HttpEntity<String> entity = new HttpEntity<>(headers);
         
         log.info("Запрос информации о продавце: {}", SELLER_INFO_URL);
-        
-        ResponseEntity<SellerInfoResponse> response = restTemplate.exchange(
-                SELLER_INFO_URL,
-                HttpMethod.GET,
-                entity,
-                SellerInfoResponse.class
-        );
-        
-        if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
-            throw new RestClientException("Неожиданный ответ от WB API: " + response.getStatusCode());
+
+        try {
+            ResponseEntity<SellerInfoResponse> response = restTemplate.exchange(
+                    SELLER_INFO_URL,
+                    HttpMethod.GET,
+                    entity,
+                    SellerInfoResponse.class
+            );
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                throw new RestClientException("Неожиданный ответ от WB API: " + response.getStatusCode());
+            }
+            return response.getBody();
+        } catch (HttpClientErrorException e) {
+            logWbApiError("информация о продавце WB", e);
+            throw new RestClientException("Ошибка при получении информации о продавце: " + e.getMessage(), e);
         }
-        
-        return response.getBody();
     }
 }
 

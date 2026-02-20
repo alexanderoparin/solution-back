@@ -101,8 +101,8 @@ public class WbStocksApiClient extends AbstractWbApiClient {
                         throw new RestClientException("429 Too Many Requests после " + maxRetries + " попыток");
                     }
                 }
-                // Для других HTTP ошибок клиента пробрасываем дальше
-                log.error("Ошибка от WB API: статус={}, сообщение={}", e.getStatusCode(), e.getMessage());
+                // Для других HTTP ошибок клиента (401, 403, 400 и др.) логируем структурированно и пробрасываем
+                logWbApiError("остатки по размерам на складах WB", e);
                 throw new RestClientException("Ошибка от WB API: " + e.getStatusCode() + " - " + e.getMessage(), e);
             } catch (RestClientException e) {
                 // Таймаут или ошибка соединения — ретраи как при 504
