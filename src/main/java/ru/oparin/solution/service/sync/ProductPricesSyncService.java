@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import ru.oparin.solution.dto.wb.OrdersResponse;
 import ru.oparin.solution.dto.wb.ProductPricesRequest;
 import ru.oparin.solution.dto.wb.ProductPricesResponse;
+import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.ProductPriceHistory;
@@ -147,6 +148,8 @@ public class ProductPricesSyncService {
             log.info("Найдено {} уникальных артикулов с данными СПП для обновления", sppByNmId.size());
             productPriceService.updateSppDiscount(sppByNmId, yesterdayDate, cabinet.getId());
             log.info("Завершено обновление СПП из заказов за дату {} для кабинета (ID: {})", yesterdayDate, cabinet.getId());
+        } catch (WbApiUnauthorizedScopeException e) {
+            log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinet.getId(), e.getCategory().getDisplayName());
         } catch (Exception e) {
             log.error("Ошибка при обновлении СПП из заказов для кабинета (ID: {}): {}", cabinet.getId(), e.getMessage(), e);
         }

@@ -1,10 +1,12 @@
 package ru.oparin.solution.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.dto.wb.CalendarPromotionsResponse;
+import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.PromotionParticipation;
 import ru.oparin.solution.model.Role;
@@ -23,7 +25,6 @@ import java.util.stream.Collectors;
  * Получает список акций на сегодня, по каждой — список nmId в акции, пересекает с товарами кабинета и сохраняет.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class PromotionCalendarService {
 
@@ -31,14 +32,28 @@ public class PromotionCalendarService {
     private final ProductCardRepository productCardRepository;
     private final PromotionParticipationRepository participationRepository;
     private final CabinetRepository cabinetRepository;
+    private final PromotionCalendarService self;
+
+    public PromotionCalendarService(WbCalendarApiClient calendarApiClient,
+                                    ProductCardRepository productCardRepository,
+                                    PromotionParticipationRepository participationRepository,
+                                    CabinetRepository cabinetRepository,
+                                    @Lazy PromotionCalendarService self) {
+        this.calendarApiClient = calendarApiClient;
+        this.productCardRepository = productCardRepository;
+        this.participationRepository = participationRepository;
+        this.cabinetRepository = cabinetRepository;
+        this.self = self;
+    }
 
     /**
-     * Синхронизирует данные об участии в акциях для одного кабинета.
+     * Синхронизирует данные об участии в акциях для одного кабинета (своя транзакция).
      * Берет акции на «сегодня» (UTC), по каждой запрашивает номенклатуры inAction=true,
      * пересекает с nmId кабинета и сохраняет в promotion_participations (старые по кабинету удаляются).
      *
      * @param cabinet кабинет с заполненным apiKey
      */
+    @Transactional
     public void syncPromotionsForCabinet(Cabinet cabinet) {
         Long cabinetId = cabinet.getId();
         String apiKey = cabinet.getApiKey();
@@ -108,6 +123,9 @@ public class PromotionCalendarService {
                 participationRepository.saveAll(toSave);
             }
             log.info("Кабинет {}: синхронизация акций завершена, участий: {}", cabinetId, toSave.size());
+        } catch (WbApiUnauthorizedScopeException e) {
+            log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
+            throw e;
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode().value() == 401) {
                 log.warn("Кабинет {}: API-ключ отклонён при запросе календаря акций (401)", cabinetId);
@@ -119,14 +137,15 @@ public class PromotionCalendarService {
     }
 
     /**
-     * Запускает синхронизацию акций для всех кабинетов с API-ключом (активные селлеры).
+     * Синхронизация акций для всех кабинетов с API-ключом (активные селлеры).
+     * Для каждого кабинета вызывается syncPromotionsForCabinet через прокси — своя транзакция.
      */
     public void syncPromotionsForAllCabinets() {
         List<Cabinet> cabinets = cabinetRepository.findCabinetsWithApiKeyAndUser(Role.SELLER);
         log.info("Запуск синхронизации акций для {} кабинетов", cabinets.size());
         for (Cabinet cabinet : cabinets) {
             try {
-                syncPromotionsForCabinet(cabinet);
+                self.syncPromotionsForCabinet(cabinet);
             } catch (Exception e) {
                 log.error("Ошибка синхронизации акций для кабинета {}: {}", cabinet.getId(), e.getMessage(), e);
             }

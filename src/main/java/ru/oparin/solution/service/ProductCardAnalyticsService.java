@@ -5,8 +5,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.dto.wb.CardsListResponse;
+import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
@@ -52,14 +54,28 @@ public class ProductCardAnalyticsService {
 
     /**
      * Обновляет карточки и загружает аналитику для указанного кабинета (ключ берётся из кабинета).
-     * Выполняется асинхронно.
+     * Выполняется асинхронно. Включает синхронизацию акций календаря (для ручного/одиночного запуска).
      */
     @Async("taskExecutor")
     public void updateCardsAndLoadAnalytics(Cabinet cabinet, LocalDate dateFrom, LocalDate dateTo) {
-        long cabinetId = cabinet.getId();
+        Cabinet managed = cabinetRepository.findByIdWithUser(cabinet.getId())
+                .orElseThrow(() -> new IllegalStateException("Кабинет не найден: " + cabinet.getId()));
+        doUpdateCabinetAnalytics(managed, dateFrom, dateTo, true);
+    }
 
-        Cabinet managed = cabinetRepository.findByIdWithUser(cabinetId)
-                .orElseThrow(() -> new IllegalStateException("Кабинет не найден: " + cabinetId));
+    /**
+     * Обновление аналитики одного кабинета в одной транзакции.
+     * Вызывается только из оркестратора полного обновления; синхронизацию акций оркестратор вызывает отдельно.
+     */
+    @Transactional
+    public void updateCabinetAnalyticsInTransaction(Cabinet cabinet, LocalDate dateFrom, LocalDate dateTo) {
+        Cabinet managed = cabinetRepository.findByIdWithUser(cabinet.getId())
+                .orElseThrow(() -> new IllegalStateException("Кабинет не найден: " + cabinet.getId()));
+        doUpdateCabinetAnalytics(managed, dateFrom, dateTo, false);
+    }
+
+    private void doUpdateCabinetAnalytics(Cabinet managed, LocalDate dateFrom, LocalDate dateTo, boolean syncPromotion) {
+        long cabinetId = managed.getId();
         String apiKey = managed.getApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("У кабинета (ID: {}) не задан API-ключ, обновление пропущено", cabinetId);
@@ -76,11 +92,23 @@ public class ProductCardAnalyticsService {
                 cabinetId, seller.getEmail(), dateFrom, dateTo);
 
         try {
-            CardsListResponse cardsResponse = wbCardsSyncService.fetchAllCards(apiKey);
-            productCardService.saveOrUpdateCards(cardsResponse, managed);
+            try {
+                CardsListResponse cardsResponse = wbCardsSyncService.fetchAllCards(apiKey);
+                productCardService.saveOrUpdateCards(cardsResponse, managed);
+            } catch (WbApiUnauthorizedScopeException e) {
+                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
+            }
 
-            productPricesSyncService.updateProductPrices(managed, apiKey);
-            productPricesSyncService.updateSppFromOrders(managed, apiKey);
+            try {
+                productPricesSyncService.updateProductPrices(managed, apiKey);
+            } catch (WbApiUnauthorizedScopeException e) {
+                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
+            }
+            try {
+                productPricesSyncService.updateSppFromOrders(managed, apiKey);
+            } catch (WbApiUnauthorizedScopeException e) {
+                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
+            }
 
             List<ProductCard> productCards = productCardRepository.findByCabinet_Id(cabinetId);
             List<Long> nmIds = productCards.stream()
@@ -88,42 +116,55 @@ public class ProductCardAnalyticsService {
                     .filter(Objects::nonNull)
                     .distinct()
                     .collect(Collectors.toList());
-            if (!nmIds.isEmpty()) {
-                stocksService.updateStocksForCabinet(managed, apiKey, nmIds);
+            try {
+                if (!nmIds.isEmpty()) {
+                    stocksService.updateStocksForCabinet(managed, apiKey, nmIds);
+                }
+            } catch (WbApiUnauthorizedScopeException e) {
+                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
             }
 
-            List<Long> campaignIds = campaignSyncService.updateCampaigns(managed, apiKey);
-            if (!campaignIds.isEmpty()) {
-                List<Long> nonFinishedIds = campaignSyncService.filterNonFinishedCampaigns(cabinetId, campaignIds);
-                if (!nonFinishedIds.isEmpty()) {
-                    campaignSyncService.updateStatistics(seller, apiKey, nonFinishedIds, cabinetId, dateFrom, dateTo);
+            try {
+                List<Long> campaignIds = campaignSyncService.updateCampaigns(managed, apiKey);
+                if (!campaignIds.isEmpty()) {
+                    List<Long> nonFinishedIds = campaignSyncService.filterNonFinishedCampaigns(cabinetId, campaignIds);
+                    if (!nonFinishedIds.isEmpty()) {
+                        campaignSyncService.updateStatistics(seller, apiKey, nonFinishedIds, cabinetId, dateFrom, dateTo);
+                    }
                 }
+            } catch (WbApiUnauthorizedScopeException e) {
+                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
             }
 
             log.info("Найдено карточек для загрузки аналитики: {}", productCards.size());
-            ProductCardAnalyticsLoadService.ProcessingResult result =
-                    analyticsLoadService.loadAnalyticsForAllCards(productCards, apiKey, dateFrom, dateTo);
-
-            log.info("Завершено обновление карточек, кампаний и загрузка аналитики для кабинета (ID: {}): успешно {}, ошибок {}",
-                    cabinetId, result.successCount(), result.errorCount());
+            try {
+                ProductCardAnalyticsLoadService.ProcessingResult result =
+                        analyticsLoadService.loadAnalyticsForAllCards(productCards, apiKey, dateFrom, dateTo);
+                log.info("Завершено обновление карточек, кампаний и загрузка аналитики для кабинета (ID: {}): успешно {}, ошибок {}",
+                        cabinetId, result.successCount(), result.errorCount());
+            } catch (WbApiUnauthorizedScopeException e) {
+                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
+            }
 
             managed.setLastDataUpdateAt(LocalDateTime.now());
             cabinetRepository.save(managed);
 
-            try {
-                promotionCalendarService.syncPromotionsForCabinet(managed);
-            } catch (Exception e) {
-                log.warn("Синхронизация акций календаря для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
+            if (syncPromotion) {
+                try {
+                    promotionCalendarService.syncPromotionsForCabinet(managed);
+                } catch (WbApiUnauthorizedScopeException e) {
+                    log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
+                } catch (Exception e) {
+                    log.warn("Синхронизация акций календаря для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
+                }
             }
 
             try {
                 feedbacksSyncService.syncFeedbacksForCabinet(managed, apiKey);
+            } catch (WbApiUnauthorizedScopeException e) {
+                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
             } catch (Exception e) {
-                if (e instanceof HttpClientErrorException ex && ex.getStatusCode() != null && ex.getStatusCode().value() == 401) {
-                    log.warn("Кабинет {}: ключ не привязан к категории «Вопросы и отзывы», доступ к отзывам недоступен", cabinetId);
-                } else {
-                    log.warn("Синхронизация отзывов для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
-                }
+                log.warn("Синхронизация отзывов для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
             }
 
         } catch (HttpClientErrorException e) {

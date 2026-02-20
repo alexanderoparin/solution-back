@@ -13,10 +13,16 @@ import ru.oparin.solution.dto.wb.SellerInfoResponse;
 /**
  * Клиент для работы с Common API Wildberries.
  * Эндпоинты: информация о продавце.
+ * Категория WB API: Тарифы, новости, информация о продавце.
  */
 @Service
 @Slf4j
 public class WbCommonApiClient extends AbstractWbApiClient {
+
+    @Override
+    protected WbApiCategory getApiCategory() {
+        return WbApiCategory.COMMON;
+    }
 
     private static final String SELLER_INFO_URL = "https://common-api.wildberries.ru/api/v1/seller-info";
 
@@ -27,7 +33,7 @@ public class WbCommonApiClient extends AbstractWbApiClient {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
         
-        log.info("Запрос информации о продавце: {}", SELLER_INFO_URL);
+        logWbApiCall(SELLER_INFO_URL, "информация о продавце");
 
         try {
             ResponseEntity<SellerInfoResponse> response = restTemplate.exchange(
@@ -41,6 +47,7 @@ public class WbCommonApiClient extends AbstractWbApiClient {
             }
             return response.getBody();
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("информация о продавце WB", e);
             throw new RestClientException("Ошибка при получении информации о продавце: " + e.getMessage(), e);
         }

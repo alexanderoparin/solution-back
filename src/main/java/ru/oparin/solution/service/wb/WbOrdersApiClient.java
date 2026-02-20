@@ -19,10 +19,16 @@ import java.util.List;
 /**
  * Клиент для работы с Statistics API Wildberries.
  * Эндпоинты: заказы продавца.
+ * Категория WB API: Статистика.
  */
 @Service
 @Slf4j
 public class WbOrdersApiClient extends AbstractWbApiClient {
+
+    @Override
+    protected WbApiCategory getApiCategory() {
+        return WbApiCategory.STATISTICS;
+    }
 
     private static final String ORDERS_ENDPOINT = "https://statistics-api.wildberries.ru/api/v1/supplier/orders";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
@@ -47,7 +53,7 @@ public class WbOrdersApiClient extends AbstractWbApiClient {
         }
 
         String url = uriBuilder.toUriString();
-        log.info("Запрос заказов: {} (dateFrom: {}, flag: {})", url, dateFrom, flag);
+        logWbApiCall(url, "заказы продавца (СПП)");
 
         try {
             ResponseEntity<String> response = restTemplate.exchange(
@@ -71,6 +77,7 @@ public class WbOrdersApiClient extends AbstractWbApiClient {
             return orders != null ? orders : List.of();
 
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("получение заказов WB", e);
             throw new RestClientException("Ошибка при получении заказов: " + e.getMessage(), e);
         } catch (Exception e) {

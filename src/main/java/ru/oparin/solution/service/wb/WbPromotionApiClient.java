@@ -14,12 +14,18 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Клиент для работы с Promotion API Wildberries.
+ * Клиент для работы с Promotion API Wildberries (advert-api).
  * Эндпоинты: списки кампаний, детальная информация о кампаниях.
+ * Категория WB API: Продвижение.
  */
 @Service
 @Slf4j
 public class WbPromotionApiClient extends AbstractWbApiClient {
+
+    @Override
+    protected WbApiCategory getApiCategory() {
+        return WbApiCategory.PROMOTION;
+    }
 
     private static final String PROMOTION_COUNT_ENDPOINT = "/adv/v1/promotion/count";
     private static final String PROMOTION_ADVERTS_ENDPOINT = "/adv/v1/promotion/adverts";
@@ -39,8 +45,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
         String url = promotionBaseUrl + PROMOTION_COUNT_ENDPOINT;
-
-        log.info("Запрос списка кампаний: {}", url);
+        logWbApiCall(url, "количество кампаний по типам");
 
         try {
             ResponseEntity<String> response = restTemplate.exchange(
@@ -64,6 +69,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             return countResponse;
 
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("список кампаний WB", e);
             throw new RestClientException("Ошибка при получении списка кампаний: " + e.getMessage(), e);
         } catch (Exception e) {
@@ -86,9 +92,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         // API ожидает массив ID напрямую, а не объект с полем id
         HttpEntity<List<Long>> entity = new HttpEntity<>(campaignIds, headers);
         String url = promotionBaseUrl + PROMOTION_ADVERTS_ENDPOINT;
-
-        log.info("Запрос детальной информации о кампаниях: {}", url);
-        log.info("Количество кампаний в запросе: {}", campaignIds != null ? campaignIds.size() : 0);
+        logWbApiCall(url, "детали кампаний (тип 8)");
 
         try {
             ResponseEntity<String> response = restTemplate.exchange(
@@ -119,6 +123,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             return advertsResponse;
 
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("детальная информация о кампаниях WB", e);
             throw new RestClientException("Ошибка при получении детальной информации о кампаниях: " + e.getMessage(), e);
         } catch (Exception e) {
@@ -145,12 +150,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         addQueryParameters(uriBuilder, request);
         
         String url = uriBuilder.toUriString();
-
-        log.info("Запрос статистики кампаний: {} кампаний за период {} - {}",
-                request.getAdvertId() != null ? request.getAdvertId().size() : 0,
-                request.getDateFrom(), request.getDateTo());
-        
-        log.info("URL запроса статистики: {}", url);
+        logWbApiCall(url, "статистика кампаний за период");
 
         try {
             ResponseEntity<String> response = restTemplate.exchange(
@@ -184,6 +184,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             return statsResponse;
 
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("статистика кампаний WB", e);
             throw new RestClientException("Ошибка при получении статистики кампаний: " + e.getMessage(), e);
         } catch (Exception e) {
@@ -217,9 +218,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             uriBuilder.queryParam("ids", idsParam);
         }
         String url = uriBuilder.toUriString();
-
-        log.info("Запрос детальной информации об аукционных кампаниях: {}", url);
-        log.info("Количество кампаний в запросе: {}", campaignIds != null ? campaignIds.size() : 0);
+        logWbApiCall(url, "аукционные кампании (тип 9)");
 
         try {
             ResponseEntity<String> response = restTemplate.exchange(
@@ -243,6 +242,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             return advertsResponse;
 
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("аукционные кампании WB", e);
             throw new RestClientException("Ошибка при получении детальной информации об аукционных кампаниях: " + e.getMessage(), e);
         } catch (Exception e) {

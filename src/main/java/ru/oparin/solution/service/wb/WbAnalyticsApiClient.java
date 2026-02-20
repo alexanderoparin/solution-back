@@ -19,10 +19,16 @@ import java.util.List;
 /**
  * Клиент для работы с Analytics API Wildberries.
  * Эндпоинты: аналитика воронки продаж.
+ * Категория WB API: Аналитика.
  */
 @Service
 @Slf4j
 public class WbAnalyticsApiClient extends AbstractWbApiClient {
+
+    @Override
+    protected WbApiCategory getApiCategory() {
+        return WbApiCategory.ANALYTICS;
+    }
 
     private static final String SALE_FUNNEL_PRODUCT_HISTORY_ENDPOINT = "/api/analytics/v3/sales-funnel/products/history";
     private static final int MAX_RETRIES_429 = 5;
@@ -37,9 +43,8 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
      */
     public SaleFunnelResponse getSaleFunnelProduct(String apiKey, Long nmId, String dateFrom, String dateTo) {
         String fullUrl = analyticsBaseUrl + SALE_FUNNEL_PRODUCT_HISTORY_ENDPOINT;
-        
-        log.info("Запрос аналитики воронки продаж: {}", fullUrl);
-        
+        logWbApiCall(fullUrl, "воронка продаж по карточке");
+
         LocalDate validatedFromDate = validateAndAdjustDateFrom(dateFrom);
         LocalDate validatedToDate = validateAndAdjustDateTo(dateTo);
         
@@ -55,6 +60,7 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
             );
             return parseAnalyticsResponse(response, nmId);
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("аналитика воронки продаж WB", e);
             throw new RestClientException("Ошибка при получении аналитики воронки продаж: " + e.getMessage(), e);
         }

@@ -15,12 +15,18 @@ import ru.oparin.solution.dto.wb.WbWarehouseResponse;
 import java.util.List;
 
 /**
- * Клиент для работы с API складов WB.
+ * Клиент для работы с API складов WB (supplies-api).
  * Эндпоинты: список складов WB.
+ * Категория WB API: Поставки (или Маркетплейс — склады продавца по доке).
  */
 @Service
 @Slf4j
 public class WbWarehousesApiClient extends AbstractWbApiClient {
+
+    @Override
+    protected WbApiCategory getApiCategory() {
+        return WbApiCategory.MARKETPLACE;
+    }
 
     private static final String WAREHOUSES_ENDPOINT = "/api/v1/warehouses";
 
@@ -35,7 +41,7 @@ public class WbWarehousesApiClient extends AbstractWbApiClient {
         HttpEntity<String> entity = new HttpEntity<>(headers);
         String url = suppliesBaseUrl + WAREHOUSES_ENDPOINT;
 
-        log.info("Запрос списка складов WB: {}", url);
+        logWbApiCall(url, "список складов WB");
 
         try {
             ResponseEntity<String> response = restTemplate.exchange(
@@ -58,6 +64,7 @@ public class WbWarehousesApiClient extends AbstractWbApiClient {
             return warehouses != null ? warehouses : List.of();
 
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("список складов WB", e);
             throw new RestClientException("Ошибка при получении списка складов WB: " + e.getMessage(), e);
         } catch (Exception e) {

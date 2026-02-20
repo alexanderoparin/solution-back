@@ -15,12 +15,16 @@ import ru.oparin.solution.dto.wb.FeedbacksResponse;
 /**
  * Клиент API отзывов WB (feedbacks-api).
  * Токен должен иметь категорию «Вопросы и отзывы».
- * Документация: https://dev.wildberries.ru/docs/openapi/user-communication#tag/Otzyvy
- * Лимит: 3 запроса в секунду.
+ * Категория WB API: Вопросы и отзывы.
  */
 @Service
 @Slf4j
 public class WbFeedbacksApiClient extends AbstractWbApiClient {
+
+    @Override
+    protected WbApiCategory getApiCategory() {
+        return WbApiCategory.FEEDBACKS_AND_QUESTIONS;
+    }
 
     private static final String FEEDBACKS_ENDPOINT = "/api/v1/feedbacks";
     /** Максимум отзывов в одном ответе по документации. */
@@ -55,13 +59,14 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
         HttpHeaders headers = createAuthHeadersWithBearer(apiKey);
         HttpEntity<Void> entity = new HttpEntity<>(headers);
 
-        log.debug("GET feedbacks: isAnswered={}, nmId={}, take={}, skip={}", isAnswered, nmId, take, skip);
+        logWbApiCall(url, "отзывы");
 
         try {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             validateResponse(response);
             return objectMapper.readValue(response.getBody(), FeedbacksResponse.class);
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("получение отзывов WB", e);
             throw new RestClientException("Ошибка при получении отзывов: " + e.getMessage(), e);
         } catch (RestClientException e) {

@@ -16,9 +16,11 @@ import java.util.concurrent.ThreadPoolExecutor;
 @EnableAsync
 public class AsyncConfig {
 
+    public static final int MIN_POOL_SIZE = 2;
+    public static final int MAX_POOL_SIZE = 5;
+
     /**
      * Пул потоков для асинхронных задач.
-     * Максимум 5 параллельных задач для предотвращения превышения лимитов WB API.
      * 
      * При переполнении очереди задачи выполняются в потоке планировщика (CallerRunsPolicy),
      * что замедляет добавление новых задач, но гарантирует их выполнение.
@@ -26,8 +28,8 @@ public class AsyncConfig {
     @Bean(name = "taskExecutor")
     public Executor taskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(1); // Минимум 1 потока
-        executor.setMaxPoolSize(2); // Максимум 2 потоков
+        executor.setCorePoolSize(MIN_POOL_SIZE); // Минимум потоков
+        executor.setMaxPoolSize(MAX_POOL_SIZE); // Максимум потоков
         executor.setQueueCapacity(500); // Очередь на 500 задач (для поддержки большого количества селлеров)
         executor.setThreadNamePrefix("analytics-async-");
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy()); // Выполнение в текущем потоке при переполнении
@@ -39,13 +41,12 @@ public class AsyncConfig {
 
     /**
      * Пул для параллельного обновления кабинетов по расписанию.
-     * До 4 кабинетов одновременно (с учётом лимитов WB API).
      */
     @Bean(name = "cabinetUpdateExecutor")
     public Executor cabinetUpdateExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(2);
-        executor.setMaxPoolSize(4);
+        executor.setCorePoolSize(MIN_POOL_SIZE);
+        executor.setMaxPoolSize(MAX_POOL_SIZE);
         executor.setQueueCapacity(100);
         executor.setThreadNamePrefix("cabinet-update-");
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
@@ -62,8 +63,8 @@ public class AsyncConfig {
     @Bean(name = "userDeletionExecutor")
     public Executor userDeletionExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(1);
-        executor.setMaxPoolSize(2);
+        executor.setCorePoolSize(MIN_POOL_SIZE);
+        executor.setMaxPoolSize(MAX_POOL_SIZE);
         executor.setQueueCapacity(50);
         executor.setThreadNamePrefix("user-deletion-");
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());

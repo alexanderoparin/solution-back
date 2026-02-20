@@ -13,10 +13,16 @@ import ru.oparin.solution.dto.wb.PingResponse;
 /**
  * Клиент для работы с Content API Wildberries.
  * Эндпоинты: карточки товаров, корзина, ping.
+ * Категория WB API: Контент.
  */
 @Service
 @Slf4j
 public class WbContentApiClient extends AbstractWbApiClient {
+
+    @Override
+    protected WbApiCategory getApiCategory() {
+        return WbApiCategory.CONTENT;
+    }
 
     private static final String CARDS_LIST_ENDPOINT = "/content/v2/get/cards/list";
     private static final String CARDS_TRASH_ENDPOINT = "/content/v2/get/cards/trash";
@@ -35,13 +41,13 @@ public class WbContentApiClient extends AbstractWbApiClient {
         CardsListRequest requestBody = buildCardsListRequestBody(request);
         HttpEntity<CardsListRequest> entity = new HttpEntity<>(requestBody, headers);
         String url = contentBaseUrl + CARDS_LIST_ENDPOINT;
-        
-        log.info("Запрос списка карточек товаров: {}", url);
+        logWbApiCall(url, "список карточек товаров");
 
         try {
             ResponseEntity<String> response = executePostRequest(url, entity);
             return parseCardsListResponse(response);
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("список карточек товаров WB", e);
             throw new RestClientException("Ошибка при получении списка карточек товаров: " + e.getMessage(), e);
         }
@@ -56,8 +62,7 @@ public class WbContentApiClient extends AbstractWbApiClient {
         CardsListRequest requestBody = buildTrashRequestBody(request);
         HttpEntity<CardsListRequest> entity = new HttpEntity<>(requestBody, headers);
         String url = contentBaseUrl + CARDS_TRASH_ENDPOINT;
-        
-        log.info("Запрос списка карточек из корзины: {}", url);
+        logWbApiCall(url, "карточки из корзины");
 
         try {
             ResponseEntity<CardsListResponse> response = restTemplate.exchange(
@@ -71,6 +76,7 @@ public class WbContentApiClient extends AbstractWbApiClient {
             }
             return response.getBody();
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("список карточек из корзины WB", e);
             throw new RestClientException("Ошибка при получении списка карточек из корзины: " + e.getMessage(), e);
         }
@@ -83,8 +89,7 @@ public class WbContentApiClient extends AbstractWbApiClient {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
         String url = contentBaseUrl + PING_ENDPOINT;
-        
-        log.info("Запрос проверки подключения: {}", url);
+        logWbApiCall(url, "проверка подключения (ping)");
 
         try {
             ResponseEntity<PingResponse> response = restTemplate.exchange(
@@ -98,6 +103,7 @@ public class WbContentApiClient extends AbstractWbApiClient {
             }
             return response.getBody();
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("ping WB API", e);
             throw new RestClientException("Ошибка при проверке подключения к WB API: " + e.getMessage(), e);
         }

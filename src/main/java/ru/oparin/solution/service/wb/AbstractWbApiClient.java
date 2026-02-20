@@ -3,19 +3,28 @@ package ru.oparin.solution.service.wb;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.http.*;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import ru.oparin.solution.dto.wb.WbApiProblemResponse;
 import ru.oparin.solution.dto.wb.WbApiSimpleErrorResponse;
+import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 
 /**
  * Абстрактный базовый класс для клиентов WB API.
  * Содержит общие методы для работы с HTTP запросами.
+ * Каждый клиент задаёт категорию WB API для сообщений при 401 (token scope not allowed).
  */
 @Slf4j
 public abstract class AbstractWbApiClient {
+
+    /**
+     * Категория WB API, к которой относятся эндпоинты этого клиента.
+     * Используется при 401 «token scope not allowed» для лога «для кабинета X нет доступа к категории Y».
+     */
+    protected abstract WbApiCategory getApiCategory();
 
     protected static final String BEARER_PREFIX = "Bearer ";
 
@@ -29,6 +38,15 @@ public abstract class AbstractWbApiClient {
                 DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,
                 false
         );
+    }
+
+    /**
+     * Логирует вызов WB API: эндпоинт, назначение, кабинет (из MDC).
+     * Вызывать перед каждым запросом к WB API для прослеживания порядка выполнения.
+     */
+    protected void logWbApiCall(String url, String purpose) {
+        String cabinetId = MDC.get("cabinetId");
+        log.info("WB API [кабинет {}]: {} — {}", cabinetId != null ? cabinetId : "—", url, purpose);
     }
 
     /**
@@ -140,6 +158,19 @@ public abstract class AbstractWbApiClient {
      */
     private boolean is429Error(RestClientException e) {
         return e.getMessage() != null && e.getMessage().contains("429");
+    }
+
+    /**
+     * При 401 с «token scope not allowed» пробрасывает {@link WbApiUnauthorizedScopeException}
+     * с категорией этого клиента. Вызывать в catch (HttpClientErrorException) до logWbApiError.
+     */
+    protected void throwIf401ScopeNotAllowed(HttpClientErrorException e) {
+        if (e.getStatusCode() != null && e.getStatusCode().value() == 401) {
+            String body = e.getResponseBodyAsString();
+            if (body != null && (body.contains("scope not allowed") || body.contains("token scope not allowed"))) {
+                throw new WbApiUnauthorizedScopeException(e, getApiCategory());
+            }
+        }
     }
 
     /**

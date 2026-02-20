@@ -10,12 +10,18 @@ import ru.oparin.solution.dto.wb.ProductPricesRequest;
 import ru.oparin.solution.dto.wb.ProductPricesResponse;
 
 /**
- * Клиент для работы с Products API Wildberries.
+ * Клиент для работы с Products API Wildberries (discounts-prices).
  * Эндпоинты: цены и скидки товаров.
+ * Категория WB API: Цены и скидки.
  */
 @Service
 @Slf4j
 public class WbProductsApiClient extends AbstractWbApiClient {
+
+    @Override
+    protected WbApiCategory getApiCategory() {
+        return WbApiCategory.PRICES_AND_DISCOUNTS;
+    }
 
     private static final String PRODUCT_PRICES_ENDPOINT = "/api/v2/list/goods/filter";
 
@@ -30,9 +36,7 @@ public class WbProductsApiClient extends AbstractWbApiClient {
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<ProductPricesRequest> entity = new HttpEntity<>(request, headers);
         String url = discountsPricesBaseUrl + PRODUCT_PRICES_ENDPOINT;
-
-        log.info("Запрос цен товаров: {} ({} товаров)", url, 
-                request.getNmList() != null ? request.getNmList().size() : 0);
+        logWbApiCall(url, "цены и скидки товаров");
 
         try {
             ResponseEntity<String> response = restTemplate.exchange(
@@ -62,6 +66,7 @@ public class WbProductsApiClient extends AbstractWbApiClient {
             return pricesResponse;
 
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("получение цен товаров", e);
             throw new RestClientException("Ошибка при получении цен товаров: " + e.getMessage(), e);
         } catch (Exception e) {

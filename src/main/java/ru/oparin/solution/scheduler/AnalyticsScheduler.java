@@ -13,8 +13,8 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.CabinetRepository;
+import ru.oparin.solution.service.FullUpdateOrchestrator;
 import ru.oparin.solution.service.ProductCardAnalyticsService;
-import ru.oparin.solution.service.PromotionCalendarService;
 import ru.oparin.solution.service.WbApiKeyService;
 import ru.oparin.solution.service.WbWarehouseService;
 import ru.oparin.solution.service.wb.WbWarehousesApiClient;
@@ -34,23 +34,23 @@ public class AnalyticsScheduler {
 
     private final WbApiKeyService wbApiKeyService;
     private final CabinetRepository cabinetRepository;
+    private final FullUpdateOrchestrator fullUpdateOrchestrator;
     private final ProductCardAnalyticsService analyticsService;
-    private final PromotionCalendarService promotionCalendarService;
     private final WbWarehousesApiClient warehousesApiClient;
     private final WbWarehouseService warehouseService;
     private final Executor cabinetUpdateExecutor;
 
     public AnalyticsScheduler(WbApiKeyService wbApiKeyService,
                               CabinetRepository cabinetRepository,
+                              FullUpdateOrchestrator fullUpdateOrchestrator,
                               ProductCardAnalyticsService analyticsService,
-                              PromotionCalendarService promotionCalendarService,
                               WbWarehousesApiClient warehousesApiClient,
                               WbWarehouseService warehouseService,
                               @Qualifier("cabinetUpdateExecutor") Executor cabinetUpdateExecutor) {
         this.wbApiKeyService = wbApiKeyService;
         this.cabinetRepository = cabinetRepository;
+        this.fullUpdateOrchestrator = fullUpdateOrchestrator;
         this.analyticsService = analyticsService;
-        this.promotionCalendarService = promotionCalendarService;
         this.warehousesApiClient = warehousesApiClient;
         this.warehouseService = warehouseService;
         this.cabinetUpdateExecutor = cabinetUpdateExecutor;
@@ -58,48 +58,22 @@ public class AnalyticsScheduler {
 
     /**
      * Автоматическая загрузка аналитики для всех кабинетов с привязанным API-ключом (активные продавцы).
-     * Запускается каждый день в 01:30. Для каждого кабинета загружаются карточки, кампании и аналитика.
-     * Период: последние 14 дней (без текущих суток).
+     * Запускается каждый день по расписанию. Для каждого кабинета загружаются карточки, кампании и аналитика.
+     * Период: последние 14 дней (без текущих суток). После кабинетов — синхронизация акций календаря.
+     * Публичный метод также вызывается из AdminController для ручного «обновить всё».
      */
     @Scheduled(cron = "0 15 0 * * ?")
     public void loadAnalyticsForAllActiveSellers() {
-        log.info("Запуск автоматической загрузки аналитики по кабинетам");
+        runFullAnalyticsUpdate();
+    }
 
-        List<Cabinet> cabinetsWithKey = findCabinetsWithApiKey();
-        log.info("Найдено кабинетов с API-ключом: {}", cabinetsWithKey.size());
-
-        if (cabinetsWithKey.isEmpty()) {
-            log.info("Кабинетов с ключом не найдено, загрузка аналитики пропущена");
-            return;
-        }
-
-        DateRange period = calculateLastTwoWeeksPeriod();
-        log.info("Период для загрузки аналитики: {} - {}", period.from(), period.to());
-
-        List<CompletableFuture<Void>> futures = cabinetsWithKey.stream()
-                .map(cabinet -> CompletableFuture.runAsync(() -> {
-                    String prevName = Thread.currentThread().getName();
-                    try {
-                        Thread.currentThread().setName("analytics-cabinet-" + cabinet.getId());
-                        processCabinetAnalytics(cabinet, period);
-                    } catch (Exception e) {
-                        log.error("Ошибка при загрузке аналитики для кабинета (ID: {}, продавец: {}): {}",
-                                cabinet.getId(), cabinet.getUser().getEmail(), e.getMessage());
-                    } finally {
-                        Thread.currentThread().setName(prevName);
-                    }
-                }, cabinetUpdateExecutor))
-                .toList();
-
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-
-        log.info("Завершена загрузка аналитики по {} кабинетам. Запуск обновления данных по акциям календаря.", cabinetsWithKey.size());
-        try {
-            promotionCalendarService.syncPromotionsForAllCabinets();
-            log.info("Обновление данных по акциям календаря завершено.");
-        } catch (Exception e) {
-            log.error("Ошибка при обновлении данных по акциям календаря после ночной загрузки: {}", e.getMessage(), e);
-        }
+    /**
+     * Полное обновление по всем кабинетам (как ночной шедулер).
+     * Вызывается по расписанию и из админ-эндпоинта POST /admin/run-analytics-all.
+     * Вся логика — в оркестраторе: для каждого кабинета свой сервис в своей транзакции.
+     */
+    public void runFullAnalyticsUpdate() {
+        fullUpdateOrchestrator.runFullUpdate();
     }
 
     /**
@@ -159,13 +133,6 @@ public class AnalyticsScheduler {
         LocalDate twoWeeksAgo = yesterday.minusDays(13);
 
         return new DateRange(twoWeeksAgo, yesterday);
-    }
-
-    private void processCabinetAnalytics(Cabinet cabinet, DateRange period) {
-        log.info("Загрузка аналитики для кабинета (ID: {}, продавец: {})",
-                cabinet.getId(), cabinet.getUser().getEmail());
-
-        analyticsService.updateCardsAndLoadAnalytics(cabinet, period.from(), period.to());
     }
 
     /**

@@ -21,11 +21,16 @@ import java.util.List;
 /**
  * Клиент для Календаря акций WB (dp-calendar-api).
  * Токен должен иметь категорию «Цены и скидки».
- * Документация: https://dev.wildberries.ru/docs/openapi/promotion#tag/Kalendar-akcij
+ * Категория WB API: Цены и скидки.
  */
 @Service
 @Slf4j
 public class WbCalendarApiClient extends AbstractWbApiClient {
+
+    @Override
+    protected WbApiCategory getApiCategory() {
+        return WbApiCategory.PRICES_AND_DISCOUNTS;
+    }
 
     private static final String PROMOTIONS_ENDPOINT = "/api/v1/calendar/promotions";
     private static final String NOMENCLATURES_ENDPOINT = "/api/v1/calendar/promotions/nomenclatures";
@@ -56,13 +61,14 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
         HttpHeaders headers = createAuthHeadersWithBearer(apiKey);
         HttpEntity<Void> entity = new HttpEntity<>(headers);
 
-        log.debug("Запрос списка акций календаря: {} - {}", startDateTime, endDateTime);
+        logWbApiCall(url, "список акций календаря за период");
 
         try {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             validateResponse(response);
             return objectMapper.readValue(response.getBody(), CalendarPromotionsResponse.class);
         } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
             logWbApiError("список акций календаря WB", e);
             throw new RestClientException("Ошибка при получении списка акций календаря: " + e.getMessage(), e);
         } catch (Exception e) {
@@ -94,7 +100,7 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
             HttpHeaders headers = createAuthHeadersWithBearer(apiKey);
             HttpEntity<Void> entity = new HttpEntity<>(headers);
 
-            log.debug("GET nomenclatures: {}", url);
+            logWbApiCall(url, "номенклатуры в акции (promotionId=" + promotionId + ")");
 
             try {
                 ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
@@ -118,6 +124,7 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
                 }
                 offset += PAGE_SIZE;
             } catch (HttpClientErrorException e) {
+                throwIf401ScopeNotAllowed(e);
                 logWbApiError("номенклатуры акции WB (promotionId=" + promotionId + ")", e);
                 throw new RestClientException("Ошибка при получении номенклатур акции: " + e.getMessage(), e);
             } catch (Exception e) {

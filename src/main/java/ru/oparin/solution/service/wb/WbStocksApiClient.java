@@ -12,12 +12,18 @@ import ru.oparin.solution.dto.wb.WbStocksSizesRequest;
 import ru.oparin.solution.dto.wb.WbStocksSizesResponse;
 
 /**
- * Клиент для работы с API остатков товаров.
+ * Клиент для работы с API остатков товаров (analytics-api).
  * Эндпоинты: получение остатков товаров по размерам на складах WB.
+ * Категория WB API: Аналитика.
  */
 @Service
 @Slf4j
 public class WbStocksApiClient extends AbstractWbApiClient {
+
+    @Override
+    protected WbApiCategory getApiCategory() {
+        return WbApiCategory.ANALYTICS;
+    }
 
     private static final String STOCKS_SIZES_ENDPOINT = "/api/v2/stocks-report/products/sizes";
 
@@ -55,8 +61,7 @@ public class WbStocksApiClient extends AbstractWbApiClient {
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<WbStocksSizesRequest> entity = new HttpEntity<>(request, headers);
         String url = analyticsBaseUrl + STOCKS_SIZES_ENDPOINT;
-
-        log.debug("Запрос остатков по размерам на складах WB для nmID: {}", request.getNmID());
+        logWbApiCall(url, "остатки по размерам на складах WB");
 
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
@@ -101,7 +106,7 @@ public class WbStocksApiClient extends AbstractWbApiClient {
                         throw new RestClientException("429 Too Many Requests после " + maxRetries + " попыток");
                     }
                 }
-                // Для других HTTP ошибок клиента (401, 403, 400 и др.) логируем структурированно и пробрасываем
+                throwIf401ScopeNotAllowed(e);
                 logWbApiError("остатки по размерам на складах WB", e);
                 throw new RestClientException("Ошибка от WB API: " + e.getStatusCode() + " - " + e.getMessage(), e);
             } catch (RestClientException e) {
