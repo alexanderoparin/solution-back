@@ -59,7 +59,7 @@ public class FullUpdateOrchestrator {
                     String prevName = Thread.currentThread().getName();
                     try {
                         Thread.currentThread().setName("full-update-cabinet-" + cabinet.getId());
-                        MDC.put("cabinetId", String.valueOf(cabinet.getId()));
+                        MDC.put("cabinetTag", "[cabinet:" + cabinet.getId() + "]");
                         productCardAnalyticsService.updateCabinetAnalyticsInTransaction(cabinet, from, to);
                         promotionCalendarService.syncPromotionsForCabinet(cabinet);
                     } catch (Exception e) {
@@ -67,7 +67,7 @@ public class FullUpdateOrchestrator {
                                 cabinet.getId(), cabinet.getUser().getEmail(), e.getMessage());
                     } finally {
                         Thread.currentThread().setName(prevName);
-                        MDC.remove("cabinetId");
+                        MDC.remove("cabinetTag");
                     }
                 }, cabinetUpdateExecutor))
                 .toList();

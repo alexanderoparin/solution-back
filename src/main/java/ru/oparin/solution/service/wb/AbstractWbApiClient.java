@@ -3,7 +3,6 @@ package ru.oparin.solution.service.wb;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
 import org.springframework.http.*;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
@@ -41,12 +40,10 @@ public abstract class AbstractWbApiClient {
     }
 
     /**
-     * Логирует вызов WB API: эндпоинт, назначение, кабинет (из MDC).
-     * Вызывать перед каждым запросом к WB API для прослеживания порядка выполнения.
+     * Логирует вызов WB API: эндпоинт и назначение. Кабинет выводится форматом лога из MDC [cabinet:id].
      */
     protected void logWbApiCall(String url, String purpose) {
-        String cabinetId = MDC.get("cabinetId");
-        log.info("WB API [кабинет {}]: {} — {}", cabinetId != null ? cabinetId : "—", url, purpose);
+        log.info("WB API: {} — {}", url, purpose);
     }
 
     /**
