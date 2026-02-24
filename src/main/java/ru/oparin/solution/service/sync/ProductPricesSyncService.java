@@ -94,12 +94,17 @@ public class ProductPricesSyncService {
                     if (i < batches.size() - 1) {
                         SyncDelayUtil.sleep(PRICES_API_CALL_DELAY_MS);
                     }
+                } catch (WbApiUnauthorizedScopeException e) {
+                    log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinet.getId(), e.getCategory().getDisplayName());
+                    break;
                 } catch (Exception e) {
                     log.error("Ошибка при загрузке цен для батча {}/{}: {}", i + 1, batches.size(), e.getMessage(), e);
                 }
             }
 
             log.info("Завершена загрузка цен товаров за дату {} для кабинета (ID: {})", yesterdayDate, cabinet.getId());
+        } catch (WbApiUnauthorizedScopeException e) {
+            log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinet.getId(), e.getCategory().getDisplayName());
         } catch (Exception e) {
             log.error("Ошибка при загрузке цен товаров для кабинета (ID: {}): {}", cabinet.getId(), e.getMessage(), e);
         }

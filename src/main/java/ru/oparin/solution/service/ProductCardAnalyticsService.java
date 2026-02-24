@@ -2,6 +2,7 @@ package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -58,9 +59,14 @@ public class ProductCardAnalyticsService {
      */
     @Async("taskExecutor")
     public void updateCardsAndLoadAnalytics(Cabinet cabinet, LocalDate dateFrom, LocalDate dateTo) {
-        Cabinet managed = cabinetRepository.findByIdWithUser(cabinet.getId())
-                .orElseThrow(() -> new IllegalStateException("Кабинет не найден: " + cabinet.getId()));
-        doUpdateCabinetAnalytics(managed, dateFrom, dateTo, true);
+        MDC.put("cabinetTag", "[cabinet:" + cabinet.getId() + "]");
+        try {
+            Cabinet managed = cabinetRepository.findByIdWithUser(cabinet.getId())
+                    .orElseThrow(() -> new IllegalStateException("Кабинет не найден: " + cabinet.getId()));
+            doUpdateCabinetAnalytics(managed, dateFrom, dateTo, true);
+        } finally {
+            MDC.remove("cabinetTag");
+        }
     }
 
     /**
@@ -79,12 +85,12 @@ public class ProductCardAnalyticsService {
         String apiKey = managed.getApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("У кабинета (ID: {}) не задан API-ключ, обновление пропущено", cabinetId);
-            managed.setLastDataUpdateRequestedAt(null);
             cabinetRepository.save(managed);
             return;
         }
 
-        managed.setLastDataUpdateRequestedAt(null);
+        // Фиксируем время запуска обновления (ночной шедулер или ручной запуск)
+        managed.setLastDataUpdateRequestedAt(LocalDateTime.now());
         cabinetRepository.save(managed);
 
         User seller = managed.getUser();

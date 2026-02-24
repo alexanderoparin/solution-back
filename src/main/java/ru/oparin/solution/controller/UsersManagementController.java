@@ -211,8 +211,9 @@ public class UsersManagementController {
                             .build());
         }
         
-        // Запускаем обновление асинхронно
-        analyticsScheduler.triggerManualUpdate(seller);
+        // Запускаем обновление асинхронно (для админа и менеджера — без ограничения 6 часов)
+        boolean skipIntervalCheck = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER;
+        analyticsScheduler.triggerManualUpdate(seller, skipIntervalCheck);
         
         return ResponseEntity.ok(MessageResponse.builder()
                 .message("Обновление данных запущено. Процесс выполняется в фоновом режиме. " +
@@ -236,7 +237,8 @@ public class UsersManagementController {
                     .body(MessageResponse.builder().message("Недостаточно прав").build());
         }
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
-        analyticsScheduler.triggerManualUpdateByCabinet(cabinetId);
+        boolean skipIntervalCheck = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER;
+        analyticsScheduler.triggerManualUpdateByCabinet(cabinetId, skipIntervalCheck);
         return ResponseEntity.ok(MessageResponse.builder()
                 .message("Обновление данных запущено. Процесс выполняется в фоновом режиме. " +
                         "Данные будут доступны через несколько минут.")

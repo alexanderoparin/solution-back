@@ -143,20 +143,23 @@ public class AnalyticsScheduler {
     /**
      * Ручной запуск обновления данных для конкретного продавца.
      * Используется для принудительного обновления без ожидания ночного шедулера.
-     * Обновление можно запускать не чаще одного раза в 6 часов.
+     * Обновление можно запускать не чаще одного раза в 6 часов (для админа и менеджера ограничение не действует).
      *
      * @param seller продавец, для которого нужно обновить данные
+     * @param skipIntervalCheck если true, проверка 6 часов не выполняется (для ADMIN и MANAGER)
      * @throws UserException если с последнего обновления прошло меньше 6 часов
      */
     @Transactional
-    public void triggerManualUpdate(User seller) {
+    public void triggerManualUpdate(User seller, boolean skipIntervalCheck) {
         log.info("Ручной запуск обновления данных для продавца (ID: {}, email: {})",
                 seller.getId(), seller.getEmail());
 
         try {
             Cabinet cabinet = wbApiKeyService.findDefaultCabinetByUserId(seller.getId());
 
-            validateUpdateInterval(cabinet);
+            if (!skipIntervalCheck) {
+                validateUpdateInterval(cabinet);
+            }
 
             cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
             cabinetRepository.save(cabinet);
@@ -178,22 +181,34 @@ public class AnalyticsScheduler {
     }
 
     /**
+     * Ручной запуск обновления данных для продавца (с проверкой интервала 6 часов).
+     * Вызов из UserController (селлер обновляет себя).
+     */
+    public void triggerManualUpdate(User seller) {
+        triggerManualUpdate(seller, false);
+    }
+
+    /**
      * Ручной запуск обновления данных для конкретного кабинета (по ID кабинета).
      * Используется на Сводной, когда выбран конкретный кабинет — даты и ограничение считаются по этому кабинету.
      * Права доступа к кабинету проверяются в контроллере до вызова.
+     * Для админа и менеджера ограничение 6 часов не действует.
      *
      * @param cabinetId ID кабинета для обновления
+     * @param skipIntervalCheck если true, проверка 6 часов не выполняется (для ADMIN и MANAGER)
      * @throws UserException если с последнего обновления прошло меньше 6 часов
      */
     @Transactional
-    public void triggerManualUpdateByCabinet(Long cabinetId) {
+    public void triggerManualUpdateByCabinet(Long cabinetId, boolean skipIntervalCheck) {
         Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
                 .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
         log.info("Ручной запуск обновления данных для кабинета (ID: {}, продавец: {})",
                 cabinet.getId(), cabinet.getUser().getEmail());
 
         try {
-            validateUpdateInterval(cabinet);
+            if (!skipIntervalCheck) {
+                validateUpdateInterval(cabinet);
+            }
 
             cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
             cabinetRepository.save(cabinet);
@@ -209,6 +224,13 @@ public class AnalyticsScheduler {
                     cabinet.getId(), e.getMessage(), e);
             throw e;
         }
+    }
+
+    /**
+     * Ручной запуск обновления данных для кабинета (с проверкой интервала 6 часов).
+     */
+    public void triggerManualUpdateByCabinet(Long cabinetId) {
+        triggerManualUpdateByCabinet(cabinetId, false);
     }
 
     /**

@@ -158,15 +158,14 @@ public abstract class AbstractWbApiClient {
     }
 
     /**
-     * При 401 с «token scope not allowed» пробрасывает {@link WbApiUnauthorizedScopeException}
-     * с категорией этого клиента. Вызывать в catch (HttpClientErrorException) до logWbApiError.
+     * При 401 пробрасывает {@link WbApiUnauthorizedScopeException} с категорией этого клиента.
+     * WB может вернуть 401 при отсутствии доступа к категории (scope) или с пустым телом —
+     * в обоих случаях показываем шаблонное сообщение «нет доступа к категории WB API».
+     * Вызывать в catch (HttpClientErrorException) до logWbApiError.
      */
     protected void throwIf401ScopeNotAllowed(HttpClientErrorException e) {
         if (e.getStatusCode() != null && e.getStatusCode().value() == 401) {
-            String body = e.getResponseBodyAsString();
-            if (body != null && (body.contains("scope not allowed") || body.contains("token scope not allowed"))) {
-                throw new WbApiUnauthorizedScopeException(e, getApiCategory());
-            }
+            throw new WbApiUnauthorizedScopeException(e, getApiCategory());
         }
     }
 

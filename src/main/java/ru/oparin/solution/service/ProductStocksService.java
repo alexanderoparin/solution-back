@@ -52,8 +52,6 @@ public class ProductStocksService {
 
     @Transactional
     public WbStocksSizesResponse getWbStocksBySizes(String apiKey, Long nmId, Cabinet cabinet) {
-        log.info("Начало загрузки остатков по размерам на складах WB для артикула {}", nmId);
-
         WbStocksSizesRequest request = buildStocksRequest(nmId);
         WbStocksSizesResponse response = stocksApiClient.getWbStocksBySizes(apiKey, request);
 
