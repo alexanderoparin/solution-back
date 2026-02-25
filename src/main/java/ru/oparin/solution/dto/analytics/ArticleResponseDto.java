@@ -2,6 +2,7 @@ package ru.oparin.solution.dto.analytics;
 
 import lombok.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -58,5 +59,11 @@ public class ArticleResponseDto {
      * Товары «в связке» (доп. товары для отображения рядом с артикулом).
      */
     private List<ArticleSummaryDto> bundleProducts;
+
+    /**
+     * Дата-время последнего запуска обновления остатков по кабинету (для кнопки «Обновить остатки»).
+     * null, если кабинет не выбран или запуск ещё не выполнялся.
+     */
+    private LocalDateTime lastStocksUpdateTriggeredAt;
 }
 

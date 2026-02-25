@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.ProductStock;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,7 +24,7 @@ public interface ProductStockRepository extends JpaRepository<ProductStock, Long
             Long nmId, Long warehouseId, String barcode
     );
 
-    Optional<ProductStock> findByNmIdAndWarehouseIdAndBarcodeAndCabinet_Id(
+    Optional<ProductStock> findByNmIdAndWarehouseIdAndBarcodeAndCabinetId(
             Long nmId, Long warehouseId, String barcode, Long cabinetId
     );
 
@@ -70,5 +71,12 @@ public interface ProductStockRepository extends JpaRepository<ProductStock, Long
      */
     @Query("SELECT s.id FROM ProductStock s WHERE s.cabinet.id = :cabinetId")
     List<Long> findIdByCabinet_Id(@Param("cabinetId") Long cabinetId, Pageable pageable);
+
+    /**
+     * Минимальная дата обновления остатков по кабинету (самая старая среди всех остатков).
+     * Используется для ограничения частоты ручного обновления: кулдаун считается по самой старой записи.
+     */
+    @Query("SELECT MIN(s.updatedAt) FROM ProductStock s WHERE s.cabinet.id = :cabinetId")
+    Optional<LocalDateTime> findMinUpdatedAtByCabinet_Id(@Param("cabinetId") Long cabinetId);
 }
 

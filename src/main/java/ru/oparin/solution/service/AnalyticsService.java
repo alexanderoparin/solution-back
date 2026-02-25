@@ -42,6 +42,7 @@ public class AnalyticsService {
     private final MetricValueCalculator metricValueCalculator;
     private final CampaignStatisticsAggregator campaignStatisticsAggregator;
     private final PromotionParticipationRepository promotionParticipationRepository;
+    private final CabinetRepository cabinetRepository;
 
 
     /**
@@ -317,9 +318,12 @@ public class AnalyticsService {
 
     /**
      * Получает детальную информацию по артикулу.
+     * @param campaignDateFrom начало периода для метрик РК (опционально)
+     * @param campaignDateTo конец периода для метрик РК (опционально)
      */
     @Transactional(readOnly = true)
-    public ArticleResponseDto getArticle(User seller, Long cabinetId, Long nmId, List<PeriodDto> periods) {
+    public ArticleResponseDto getArticle(User seller, Long cabinetId, Long nmId, List<PeriodDto> periods,
+                                         LocalDate campaignDateFrom, LocalDate campaignDateTo) {
         ProductCard card = findCardBySeller(nmId, seller.getId(), cabinetId);
         Long cardCabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
 
@@ -333,17 +337,21 @@ public class AnalyticsService {
                 : Collections.emptyList();
         Boolean inWbPromotion = !wbPromotionNames.isEmpty();
         List<ArticleSummaryDto> bundleProducts = getBundleProducts(card, cardCabinetId);
+        LocalDateTime lastStocksUpdateTriggeredAt = cardCabinetId != null
+                ? cabinetRepository.findById(cardCabinetId).map(Cabinet::getLastStocksUpdateRequestedAt).orElse(null)
+                : null;
 
         return ArticleResponseDto.builder()
                 .article(mapToArticleDetail(card))
                 .periods(periods)
                 .metrics(calculateAllMetrics(card, periods, seller.getId(), cardCabinetId))
                 .dailyData(dailyData)
-                .campaigns(getCampaigns(nmId, cardCabinetId))
+                .campaigns(getCampaigns(nmId, cardCabinetId, campaignDateFrom, campaignDateTo))
                 .inWbPromotion(inWbPromotion)
                 .wbPromotionNames(wbPromotionNames)
                 .stocks(getStocks(nmId, cardCabinetId))
                 .bundleProducts(bundleProducts)
+                .lastStocksUpdateTriggeredAt(lastStocksUpdateTriggeredAt)
                 .build();
     }
 
@@ -746,22 +754,63 @@ public class AnalyticsService {
             BigDecimal drr
     ) {}
 
-    private List<CampaignDto> getCampaigns(Long nmId, Long cabinetId) {
+    private List<CampaignDto> getCampaigns(Long nmId, Long cabinetId, LocalDate campaignDateFrom, LocalDate campaignDateTo) {
         List<CampaignArticle> campaignArticles = campaignArticleRepository.findByNmId(nmId);
 
-        return campaignArticles.stream()
+        List<PromotionCampaign> campaigns = campaignArticles.stream()
                 .map(CampaignArticle::getCampaign)
                 .filter(Objects::nonNull)
                 .filter(campaign -> campaign.getStatus() != CampaignStatus.FINISHED)
                 .filter(campaign -> cabinetId == null || (campaign.getCabinet() != null && campaign.getCabinet().getId().equals(cabinetId)))
-                .map(c -> CampaignDto.builder()
-                        .id(c.getAdvertId())
-                        .name(c.getName())
-                        .type(c.getType() != null ? c.getType().getDescription() : null)
-                        .status(c.getStatus() != null ? c.getStatus().getCode() : null)
-                        .statusName(c.getStatus() != null ? c.getStatus().getDescription() : null)
-                        .createdAt(c.getCreateTime())
-                        .build())
+                .distinct()
+                .collect(Collectors.toList());
+
+        if (campaigns.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        boolean withMetrics = campaignDateFrom != null && campaignDateTo != null && !campaignDateFrom.isAfter(campaignDateTo);
+        Map<Long, List<PromotionCampaignStatistics>> statsByCampaign = new HashMap<>();
+        if (withMetrics) {
+            List<Long> campaignIds = campaigns.stream().map(PromotionCampaign::getAdvertId).collect(Collectors.toList());
+            List<PromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
+                    campaignIds, campaignDateFrom, campaignDateTo);
+            statsByCampaign = allStats.stream().collect(Collectors.groupingBy(s -> s.getCampaign().getAdvertId()));
+        }
+
+        final Map<Long, List<PromotionCampaignStatistics>> statsByCampaignFinal = statsByCampaign;
+        return campaigns.stream()
+                .map(c -> {
+                    CampaignDto.CampaignDtoBuilder b = CampaignDto.builder()
+                            .id(c.getAdvertId())
+                            .name(c.getName())
+                            .type(c.getType() != null ? c.getType().getDescription() : null)
+                            .status(c.getStatus() != null ? c.getStatus().getCode() : null)
+                            .statusName(c.getStatus() != null ? c.getStatus().getDescription() : null)
+                            .createdAt(c.getCreateTime());
+                    if (withMetrics) {
+                        List<PromotionCampaignStatistics> stats = statsByCampaignFinal.getOrDefault(c.getAdvertId(), Collections.emptyList());
+                        int views = 0, clicks = 0, orders = 0, cart = 0;
+                        BigDecimal sum = BigDecimal.ZERO;
+                        for (PromotionCampaignStatistics s : stats) {
+                            if (s.getViews() != null) views += s.getViews();
+                            if (s.getClicks() != null) clicks += s.getClicks();
+                            if (s.getSum() != null) sum = sum.add(s.getSum());
+                            if (s.getOrders() != null) orders += s.getOrders();
+                            if (s.getAtbs() != null) cart += s.getAtbs();
+                        }
+                        BigDecimal ctr = MathUtils.calculatePercentage(clicks, views);
+                        BigDecimal cpc = (clicks > 0 && sum != null) ? sum.divide(BigDecimal.valueOf(clicks), 2, RoundingMode.HALF_UP) : null;
+                        b.views(views > 0 ? views : null)
+                                .clicks(clicks > 0 ? clicks : null)
+                                .ctr(ctr)
+                                .cpc(cpc)
+                                .costs(sum != null && sum.compareTo(BigDecimal.ZERO) > 0 ? sum : null)
+                                .cart(cart > 0 ? cart : null)
+                                .orders(orders > 0 ? orders : null);
+                    }
+                    return b.build();
+                })
                 .collect(Collectors.toList());
     }
 

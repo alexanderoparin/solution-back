@@ -3,12 +3,14 @@ package ru.oparin.solution.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.dto.wb.CardsListResponse;
+import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductCard;
@@ -17,6 +19,7 @@ import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.service.sync.*;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,6 +34,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class ProductCardAnalyticsService {
+
+    private static final int STOCKS_UPDATE_MIN_INTERVAL_HOURS = 1;
 
     private final CabinetRepository cabinetRepository;
     private final ProductCardRepository productCardRepository;
@@ -182,6 +187,72 @@ public class ProductCardAnalyticsService {
                 cabinetRepository.save(managed);
             }
             throw e;
+        }
+    }
+
+    /**
+     * Проверка возможности запуска обновления остатков: не чаще одного раза в час по полю кабинета lastStocksUpdateRequestedAt.
+     *
+     * @param cabinetId ID кабинета
+     * @throws UserException если с последнего запуска прошло меньше часа
+     */
+    public void validateStocksUpdateInterval(Long cabinetId) {
+        Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
+                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+
+        LocalDateTime lastRequested = cabinet.getLastStocksUpdateRequestedAt();
+        if (lastRequested == null) return;
+
+        long hoursSince = Duration.between(lastRequested, LocalDateTime.now()).toHours();
+        if (hoursSince < STOCKS_UPDATE_MIN_INTERVAL_HOURS) {
+            long remaining = STOCKS_UPDATE_MIN_INTERVAL_HOURS - hoursSince;
+            String word = remaining == 1 ? "час" : (remaining >= 2 && remaining <= 4 ? "часа" : "часов");
+            throw new UserException(
+                    "Обновление остатков доступно не чаще раза в час. Следующее обновление через " + remaining + " " + word + ".",
+                    HttpStatus.TOO_MANY_REQUESTS
+            );
+        }
+    }
+
+    /**
+     * Сохраняет дату-время запуска обновления остатков по кабинету (вызывать после validate, перед runStocksUpdateOnly).
+     */
+    @Transactional
+    public void recordStocksUpdateTriggered(Long cabinetId) {
+        Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
+                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+        cabinet.setLastStocksUpdateRequestedAt(LocalDateTime.now());
+        cabinetRepository.save(cabinet);
+    }
+
+    /**
+     * Асинхронное обновление только остатков по кабинету.
+     */
+    @Async("taskExecutor")
+    public void runStocksUpdateOnly(Long cabinetId) {
+        MDC.put("cabinetTag", "[cabinet:" + cabinetId + "]");
+        try {
+            Cabinet managed = cabinetRepository.findByIdWithUser(cabinetId)
+                    .orElseThrow(() -> new IllegalStateException("Кабинет не найден: " + cabinetId));
+            String apiKey = managed.getApiKey();
+            if (apiKey == null || apiKey.isBlank()) {
+                log.warn("У кабинета (ID: {}) не задан API-ключ, обновление остатков пропущено", cabinetId);
+                return;
+            }
+            List<Long> nmIds = productCardRepository.findByCabinet_Id(cabinetId).stream()
+                    .map(ProductCard::getNmId)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+            if (nmIds.isEmpty()) {
+                log.info("У кабинета (ID: {}) нет карточек, обновление остатков пропущено", cabinetId);
+                return;
+            }
+            stocksService.updateStocksForCabinet(managed, apiKey, nmIds);
+        } catch (WbApiUnauthorizedScopeException e) {
+            log.warn("Для кабинета {} нет доступа к категории WB API: {}", cabinetId, e.getCategory().getDisplayName());
+        } finally {
+            MDC.remove("cabinetTag");
         }
     }
 }

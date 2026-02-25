@@ -67,6 +67,13 @@ public class Cabinet {
     @Column(name = "last_data_update_requested_at")
     private LocalDateTime lastDataUpdateRequestedAt;
 
+    /**
+     * Время последнего запуска обновления только остатков по кабинету (кнопка «Обновить остатки»).
+     * Используется для ограничения «не чаще раза в час» и для отображения на фронте.
+     */
+    @Column(name = "last_stocks_update_requested_at")
+    private LocalDateTime lastStocksUpdateRequestedAt;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

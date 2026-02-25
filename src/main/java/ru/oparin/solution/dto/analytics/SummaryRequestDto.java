@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -64,5 +65,16 @@ public class SummaryRequestDto {
      */
     @Builder.Default
     private List<Long> includedNmIds = new ArrayList<>();
+
+    /**
+     * Начало периода для метрик РК в блоке «Список РК» (опционально).
+     * Если заданы оба — campaigns в ответе заполняются views, clicks, ctr, cpc, costs, cart, orders за этот период.
+     */
+    private LocalDate campaignDateFrom;
+
+    /**
+     * Окончание периода для метрик РК в блоке «Список РК» (опционально).
+     */
+    private LocalDate campaignDateTo;
 }
 

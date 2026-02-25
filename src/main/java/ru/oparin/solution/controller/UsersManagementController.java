@@ -16,6 +16,7 @@ import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.ProductCardAnalyticsService;
 import ru.oparin.solution.service.PromotionCalendarService;
 import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.sync.FeedbacksSyncService;
@@ -35,6 +36,7 @@ public class UsersManagementController {
     private final UserService userService;
     private final CabinetService cabinetService;
     private final AnalyticsScheduler analyticsScheduler;
+    private final ProductCardAnalyticsService productCardAnalyticsService;
     private final PromotionCalendarService promotionCalendarService;
     private final FeedbacksSyncService feedbacksSyncService;
 
@@ -242,6 +244,26 @@ public class UsersManagementController {
         return ResponseEntity.ok(MessageResponse.builder()
                 .message("Обновление данных запущено. Процесс выполняется в фоновом режиме. " +
                         "Данные будут доступны через несколько минут.")
+                .build());
+    }
+
+    /**
+     * Запуск только обновления остатков по кабинету.
+     * Доступно владельцу кабинета (SELLER), ADMIN и MANAGER (с доступом к кабинету).
+     * Ограничение: не чаще одного раза в час.
+     */
+    @PostMapping("/cabinets/{cabinetId}/trigger-stocks-update")
+    public ResponseEntity<MessageResponse> triggerCabinetStocksUpdate(
+            @PathVariable Long cabinetId,
+            Authentication authentication
+    ) {
+        User currentUser = getCurrentUser(authentication);
+        cabinetService.validateCabinetAccessForStocksUpdate(cabinetId, currentUser);
+        productCardAnalyticsService.validateStocksUpdateInterval(cabinetId);
+        productCardAnalyticsService.recordStocksUpdateTriggered(cabinetId);
+        productCardAnalyticsService.runStocksUpdateOnly(cabinetId);
+        return ResponseEntity.ok(MessageResponse.builder()
+                .message("Обновление остатков запущено. Данные обновятся в фоне в течение нескольких минут.")
                 .build());
     }
 

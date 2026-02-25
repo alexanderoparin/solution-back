@@ -145,6 +145,32 @@ public class CabinetService {
     }
 
     /**
+     * Проверяет право запуска обновления остатков по кабинету.
+     * Разрешено: владелец кабинета (SELLER), ADMIN или MANAGER (с доступом к селлеру).
+     */
+    @Transactional(readOnly = true)
+    public void validateCabinetAccessForStocksUpdate(Long cabinetId, User currentUser) {
+        Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
+                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+        User seller = cabinet.getUser();
+        if (currentUser.getRole() == Role.SELLER) {
+            if (seller.getId().equals(currentUser.getId())) {
+                return;
+            }
+            throw new UserException("Нет доступа к данному кабинету", HttpStatus.FORBIDDEN);
+        }
+        if (currentUser.getRole() == Role.ADMIN) {
+            return;
+        }
+        if (currentUser.getRole() == Role.MANAGER) {
+            if (seller.getOwner() != null && seller.getOwner().getId().equals(currentUser.getId())) {
+                return;
+            }
+        }
+        throw new UserException("Нет доступа к данному кабинету", HttpStatus.FORBIDDEN);
+    }
+
+    /**
      * Возвращает кабинет по ID, если он принадлежит пользователю.
      */
     public Cabinet findCabinetByIdAndUserId(Long cabinetId, Long userId) {

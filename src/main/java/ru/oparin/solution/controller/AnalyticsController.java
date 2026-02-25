@@ -111,7 +111,9 @@ public class AnalyticsController {
                 context.user(),
                 context.cabinetId(),
                 nmId,
-                request.getPeriods()
+                request.getPeriods(),
+                request.getCampaignDateFrom(),
+                request.getCampaignDateTo()
         );
         
         return ResponseEntity.ok(response);

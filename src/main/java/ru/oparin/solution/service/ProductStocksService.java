@@ -15,6 +15,7 @@ import ru.oparin.solution.repository.ProductStockRepository;
 import ru.oparin.solution.service.wb.WbStocksApiClient;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -178,6 +179,7 @@ public class ProductStocksService {
      */
     private void updateExistingStock(ProductStock stock, Long stockCount) {
         stock.setAmount(stockCount.intValue());
+        stock.setUpdatedAt(LocalDateTime.now());
         stockRepository.save(stock);
     }
 
@@ -312,7 +314,7 @@ public class ProductStocksService {
     }
 
     private Optional<ProductStock> findExistingStock(Long nmId, Long warehouseId, String barcode, Long cabinetId) {
-        return stockRepository.findByNmIdAndWarehouseIdAndBarcodeAndCabinet_Id(nmId, warehouseId, barcode, cabinetId);
+        return stockRepository.findByNmIdAndWarehouseIdAndBarcodeAndCabinetId(nmId, warehouseId, barcode, cabinetId);
     }
 
     /**
