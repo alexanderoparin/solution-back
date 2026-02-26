@@ -47,7 +47,13 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
 
         LocalDate validatedFromDate = validateAndAdjustDateFrom(dateFrom);
         LocalDate validatedToDate = validateAndAdjustDateTo(dateTo);
-        
+        if (validatedFromDate.isAfter(validatedToDate)) {
+            // Весь запрошенный период старше разрешённого — обрезаем до последних 7 дней
+            validatedToDate = LocalDate.now().minusDays(1);
+            validatedFromDate = validatedToDate.minusDays(MAX_ANALYTICS_PERIOD_DAYS - 1);
+            log.warn("Период выходит за пределы допустимого API (макс. последние 7 дней). Обрезаем до {} - {}",
+                    validatedFromDate, validatedToDate);
+        }
         SaleFunnelHistoryRequest request = buildAnalyticsRequest(nmId, validatedFromDate, validatedToDate);
         
         try {
@@ -66,8 +72,19 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
         }
     }
 
+    /**
+     * API отдаёт данные максимум за последнюю неделю (7 дней).
+     * Дата начала не может быть раньше (вчера − 6 дней).
+     */
     private LocalDate validateAndAdjustDateFrom(String dateFrom) {
-        return LocalDate.parse(dateFrom);
+        LocalDate from = LocalDate.parse(dateFrom);
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+        LocalDate earliestAllowed = yesterday.minusDays(MAX_ANALYTICS_PERIOD_DAYS - 1); // 6 дней назад = 7 дней с вчера
+        if (from.isBefore(earliestAllowed)) {
+            log.warn("Дата начала {} раньше допустимой для API (макс. последние 7 дней). Ограничиваем до {}", from, earliestAllowed);
+            return earliestAllowed;
+        }
+        return from;
     }
 
     private LocalDate validateAndAdjustDateTo(String dateTo) {

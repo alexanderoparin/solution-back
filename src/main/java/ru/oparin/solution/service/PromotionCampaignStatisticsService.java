@@ -15,7 +15,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -115,6 +117,8 @@ public class PromotionCampaignStatisticsService {
 
     /**
      * Обрабатывает статистику за один день, извлекая данные по всем артикулам.
+     * Данные по одному nm_id могут приходить из нескольких приложений (appType);
+     * агрегируем их в одну запись по каждому артикулу за день.
      */
     private ProcessingCounters processDayStats(
             Long advertId,
@@ -129,26 +133,93 @@ public class PromotionCampaignStatisticsService {
             return new ProcessingCounters(saved, updated, skipped);
         }
 
-        for (PromotionFullStatsResponse.CampaignStats.DayStats.AppStats appStats : dayStats.getApps()) {
-            if (appStats.getNms() == null || appStats.getNms().isEmpty()) {
+        Map<Long, List<PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats>> byNmId = groupArticleStatsByNmId(dayStats);
+
+        for (Map.Entry<Long, List<PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats>> entry : byNmId.entrySet()) {
+            Optional<PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats> aggregated = aggregateArticleStats(entry.getValue());
+            if (aggregated.isEmpty()) {
+                skipped++;
                 continue;
             }
-
-            for (PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats articleStats : appStats.getNms()) {
-                Optional<SaveResult> result = processArticleStats(advertId, dayStats, articleStats, seller);
-                if (result.isPresent()) {
-                    if (result.get().isNew()) {
-                        saved++;
-                    } else {
-                        updated++;
-                    }
+            Optional<SaveResult> result = processArticleStats(advertId, dayStats, aggregated.get(), seller);
+            if (result.isPresent()) {
+                if (result.get().isNew()) {
+                    saved++;
                 } else {
-                    skipped++;
+                    updated++;
                 }
+            } else {
+                skipped++;
             }
         }
 
         return new ProcessingCounters(saved, updated, skipped);
+    }
+
+    /**
+     * Группирует статистику по артикулам (nm_id) из всех приложений за день.
+     */
+    private Map<Long, List<PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats>> groupArticleStatsByNmId(
+            PromotionFullStatsResponse.CampaignStats.DayStats dayStats
+    ) {
+        List<PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats> all = new ArrayList<>();
+        for (PromotionFullStatsResponse.CampaignStats.DayStats.AppStats appStats : dayStats.getApps()) {
+            if (appStats.getNms() != null && !appStats.getNms().isEmpty()) {
+                all.addAll(appStats.getNms());
+            }
+        }
+        return all.stream()
+                .filter(a -> a != null && a.getNmId() != null)
+                .collect(Collectors.groupingBy(PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats::getNmId));
+    }
+
+    /**
+     * Суммирует статистику по одному артикулу из нескольких приложений (appType).
+     * CTR, CR, CPC, CPA пересчитываются по суммарным показам/кликам/заказам/расходам.
+     */
+    private Optional<PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats> aggregateArticleStats(
+            List<PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats> list
+    ) {
+        if (list == null || list.isEmpty()) {
+            return Optional.empty();
+        }
+        PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats first = list.get(0);
+        int views = list.stream().mapToInt(a -> a.getViews() != null ? a.getViews() : 0).sum();
+        int clicks = list.stream().mapToInt(a -> a.getClicks() != null ? a.getClicks() : 0).sum();
+        int orders = list.stream().mapToInt(a -> a.getOrders() != null ? a.getOrders() : 0).sum();
+        int atbs = list.stream().mapToInt(a -> a.getAtbs() != null ? a.getAtbs() : 0).sum();
+        int canceled = list.stream().mapToInt(a -> a.getCanceled() != null ? a.getCanceled() : 0).sum();
+        int shks = list.stream().mapToInt(a -> a.getShks() != null ? a.getShks() : 0).sum();
+        BigDecimal sum = list.stream()
+                .map(a -> a.getSum() != null ? a.getSum() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal sumPrice = list.stream()
+                .map(a -> a.getSumPrice() != null ? a.getSumPrice() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats aggregated = new PromotionFullStatsResponse.CampaignStats.DayStats.ArticleStats();
+        aggregated.setNmId(first.getNmId());
+        aggregated.setName(first.getName());
+        aggregated.setViews(views);
+        aggregated.setClicks(clicks);
+        aggregated.setOrders(orders);
+        aggregated.setAtbs(atbs);
+        aggregated.setCanceled(canceled);
+        aggregated.setShks(shks);
+        aggregated.setSum(sum);
+        aggregated.setSumPrice(sumPrice);
+
+        if (views > 0 && clicks >= 0) {
+            aggregated.setCtr(BigDecimal.valueOf(clicks * 100.0 / views).setScale(4, RoundingMode.HALF_UP));
+        }
+        if (clicks > 0 && orders >= 0) {
+            aggregated.setCr(BigDecimal.valueOf(orders * 100.0 / clicks).setScale(4, RoundingMode.HALF_UP));
+        }
+        if (clicks > 0 && sum.compareTo(BigDecimal.ZERO) >= 0) {
+            aggregated.setCpc(sum.divide(BigDecimal.valueOf(clicks), 4, RoundingMode.HALF_UP));
+        }
+
+        return Optional.of(aggregated);
     }
 
     private boolean isValidCampaignStats(PromotionFullStatsResponse.CampaignStats statsDto) {
