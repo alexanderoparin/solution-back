@@ -10,6 +10,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import ru.oparin.solution.config.SubscriptionProperties;
 import ru.oparin.solution.dto.CreateUserRequest;
 import ru.oparin.solution.dto.RegisterRequest;
 import ru.oparin.solution.dto.UpdateUserRequest;
@@ -17,8 +18,10 @@ import ru.oparin.solution.dto.UserListItemDto;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
+import ru.oparin.solution.model.Subscription;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.CabinetRepository;
+import ru.oparin.solution.repository.SubscriptionRepository;
 import ru.oparin.solution.repository.UserRepository;
 
 import java.time.LocalDateTime;
@@ -38,6 +41,8 @@ public class UserService {
     private final CabinetRepository cabinetRepository;
     private final CabinetService cabinetService;
     private final PasswordEncoder passwordEncoder;
+    private final SubscriptionRepository subscriptionRepository;
+    private final SubscriptionProperties subscriptionProperties;
 
     @Lazy
     @Autowired
@@ -56,8 +61,11 @@ public class UserService {
         
         String encodedPassword = encodePassword(request.getPassword());
         User user = createSellerUser(request.getEmail(), encodedPassword);
-        
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+
+        createTrialSubscriptionForUser(saved);
+
+        return saved;
     }
 
     /**
@@ -139,6 +147,32 @@ public class UserService {
                 .role(Role.SELLER)
                 .isActive(true)
                 .build();
+    }
+
+    /**
+     * Создаёт триал-подписку для нового самостоятельного селлера.
+     */
+    private void createTrialSubscriptionForUser(User user) {
+        // Для клиентов агентства (owner != null) триал не нужен
+        if (user.getOwner() != null) {
+            return;
+        }
+
+        int trialDays = Math.max(0, subscriptionProperties.getTrialDays());
+        if (trialDays <= 0) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        Subscription subscription = Subscription.builder()
+                .user(user)
+                .plan(null)
+                .status("trial")
+                .startedAt(now)
+                .expiresAt(now.plusDays(trialDays))
+                .build();
+
+        subscriptionRepository.save(subscription);
     }
 
     /**

@@ -70,6 +70,18 @@ app:
     directory: ${UPLOADS_DIRECTORY:/app/uploads}
     max-file-size: ${MAX_FILE_SIZE:31457280}  # 30 MB по умолчанию
 
+subscription:
+  trial-days: 14
+
+robokassa:
+  merchant-login: "wb-solution.ru"
+  password1: ${ROBOKASSA_PASSWORD1:}
+  password2: ${ROBOKASSA_PASSWORD2:}
+  test: ${ROBOKASSA_TEST:true}
+  success-url: "https://wb-solution.ru/subscription?payment=success"
+  fail-url: "https://wb-solution.ru/subscription?payment=fail"
+  result-url: "https://wb-solution.ru/api/subscription/payment/result"
+
 logging:
   level:
     root: ${LOGGING_LEVEL_ROOT:INFO}

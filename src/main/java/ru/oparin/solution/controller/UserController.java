@@ -5,15 +5,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import ru.oparin.solution.dto.ChangePasswordRequest;
-import ru.oparin.solution.dto.MessageResponse;
-import ru.oparin.solution.dto.UpdateApiKeyRequest;
-import ru.oparin.solution.dto.UserProfileResponse;
+import ru.oparin.solution.dto.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
+import ru.oparin.solution.service.SubscriptionAccessService;
 import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.WbApiKeyService;
 
@@ -28,6 +26,7 @@ public class UserController {
     private final UserService userService;
     private final WbApiKeyService wbApiKeyService;
     private final AnalyticsScheduler analyticsScheduler;
+    private final SubscriptionAccessService subscriptionAccessService;
 
     /**
      * Обновление WB API ключа пользователя.
@@ -124,6 +123,27 @@ public class UserController {
                 "Обновление данных запущено. Процесс выполняется в фоновом режиме. " +
                 "Данные будут доступны через несколько минут."
         ));
+    }
+
+    /**
+     * Статус доступа текущего пользователя.
+     */
+    @GetMapping("/access")
+    public ResponseEntity<AccessStatusResponse> getAccessStatus(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        boolean hasAccess = subscriptionAccessService.hasAccess(user);
+        boolean agencyClient = user.getOwner() != null;
+
+        var activeSubscription = subscriptionAccessService.getActiveSubscription(user);
+
+        AccessStatusResponse response = AccessStatusResponse.builder()
+                .hasAccess(hasAccess)
+                .agencyClient(agencyClient)
+                .subscriptionStatus(activeSubscription != null ? activeSubscription.getStatus() : null)
+                .subscriptionExpiresAt(activeSubscription != null ? activeSubscription.getExpiresAt() : null)
+                .build();
+
+        return ResponseEntity.ok(response);
     }
 
     /**

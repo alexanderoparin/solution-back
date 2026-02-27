@@ -52,6 +52,8 @@ public class SecurityConfig {
     private static final String ADVERTISING_ENDPOINTS = "/advertising/**";
     private static final String USERS_MANAGEMENT_ENDPOINTS = "/users/**";
     private static final String CABINETS_ENDPOINTS = "/cabinets/**";
+    private static final String SUBSCRIPTION_PAYMENT_RESULT = "/subscription/payment/result";
+    private static final String SUBSCRIPTION_PLANS = "/subscription/plans";
     public static final String ADMIN = Role.ADMIN.name();
     public static final String MANAGER = Role.MANAGER.name();
     public static final String SELLER = Role.SELLER.name();
@@ -106,7 +108,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> configureAuthorization(auth))
+                .authorizeHttpRequests(this::configureAuthorization)
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -134,6 +136,7 @@ public class SecurityConfig {
     ) {
         auth
                 .requestMatchers(AUTH_ENDPOINTS, HEALTH_ENDPOINT).permitAll()
+                .requestMatchers(SUBSCRIPTION_PAYMENT_RESULT, SUBSCRIPTION_PLANS).permitAll()
                 .requestMatchers(ADMIN_ENDPOINTS).hasRole(ADMIN)
                 .requestMatchers(SELLER_ENDPOINTS).hasAnyRole(ADMIN, SELLER)
                 .requestMatchers(WORKER_ENDPOINTS).hasAnyRole(ADMIN, SELLER, WORKER)
