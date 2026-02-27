@@ -78,8 +78,9 @@ robokassa:
   password1: ${ROBOKASSA_PASSWORD1:}
   password2: ${ROBOKASSA_PASSWORD2:}
   test: ${ROBOKASSA_TEST:true}
-  success-url: "https://wb-solution.ru/subscription?payment=success"
-  fail-url: "https://wb-solution.ru/subscription?payment=fail"
+  # Два разных адреса на фронте — без query-параметров, Робокасса принимает
+  success-url: "https://wb-solution.ru/subscription/success"
+  fail-url: "https://wb-solution.ru/subscription/fail"
   result-url: "https://wb-solution.ru/api/subscription/payment/result"
 
 logging:
