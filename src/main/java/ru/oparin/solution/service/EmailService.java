@@ -20,7 +20,7 @@ public class EmailService {
     @Value("${app.mail.from}")
     private String fromEmail;
 
-    @Value("${app.frontend-url:https://wb-solution.ru}")
+    @Value("${app.frontend-url}")
     private String frontendUrl;
 
     /**
@@ -52,8 +52,42 @@ public class EmailService {
         }
     }
 
+    /**
+     * Отправляет письмо со ссылкой для подтверждения email.
+     *
+     * @param toEmail email получателя
+     * @param token   токен подтверждения (подставляется в ссылку)
+     */
+    public void sendEmailConfirmationEmail(String toEmail, String token) {
+        String confirmLink = buildConfirmEmailLink(token);
+        String subject = "Подтверждение email — WB-Solution";
+        String text = "Здравствуйте!\n\n"
+                + "Подтвердите, что это ваш email, перейдя по ссылке:\n\n"
+                + confirmLink + "\n\n"
+                + "Ссылка действительна 24 часа. Если вы не регистрировались в WB-Solution, проигнорируйте это письмо.\n\n"
+                + "— WB-Solution";
+
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromEmail);
+            message.setTo(toEmail);
+            message.setSubject(subject);
+            message.setText(text);
+            mailSender.send(message);
+            log.info("Письмо для подтверждения email отправлено на {}", toEmail);
+        } catch (Exception e) {
+            log.error("Ошибка отправки письма на {}: {}", toEmail, e.getMessage(), e);
+            throw new RuntimeException("Не удалось отправить письмо. Попробуйте позже.", e);
+        }
+    }
+
     private String buildResetLink(String token) {
         String base = frontendUrl.replaceAll("/$", "");
         return base + "/reset-password?token=" + token;
+    }
+
+    private String buildConfirmEmailLink(String token) {
+        String base = frontendUrl.replaceAll("/$", "");
+        return base + "/confirm-email?token=" + token;
     }
 }

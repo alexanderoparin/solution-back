@@ -11,6 +11,7 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
+import ru.oparin.solution.service.EmailConfirmationService;
 import ru.oparin.solution.service.SubscriptionAccessService;
 import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.WbApiKeyService;
@@ -27,6 +28,7 @@ public class UserController {
     private final WbApiKeyService wbApiKeyService;
     private final AnalyticsScheduler analyticsScheduler;
     private final SubscriptionAccessService subscriptionAccessService;
+    private final EmailConfirmationService emailConfirmationService;
 
     /**
      * Обновление WB API ключа пользователя.
@@ -84,6 +86,19 @@ public class UserController {
         UserProfileResponse profile = buildUserProfile(user);
 
         return ResponseEntity.ok(profile);
+    }
+
+    /**
+     * Отправка письма для подтверждения email (только для сторонних селлеров, не чаще 1 раза в 24 ч).
+     *
+     * @param authentication данные аутентификации
+     * @return сообщение об успехе или ошибка (429 если письмо уже отправлялось недавно)
+     */
+    @PostMapping("/send-email-confirmation")
+    public ResponseEntity<MessageResponse> sendEmailConfirmation(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        emailConfirmationService.sendConfirmationEmail(user);
+        return ResponseEntity.ok(createSuccessMessage("Письмо для подтверждения отправлено на вашу почту."));
     }
 
     /**

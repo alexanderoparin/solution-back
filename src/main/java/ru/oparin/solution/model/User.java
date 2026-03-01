@@ -6,6 +6,7 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 /**
@@ -82,6 +83,12 @@ public class User {
     @Column(name = "is_agency_client", nullable = false)
     @Builder.Default
     private Boolean isAgencyClient = false;
+
+    /**
+     * Когда последний раз отправляли письмо для подтверждения почты (повтор не чаще 1 раза в 24 ч).
+     */
+    @Column(name = "last_email_confirmation_sent_at")
+    private Instant lastEmailConfirmationSentAt;
 
     /**
      * Дата создания записи.

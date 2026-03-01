@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import ru.oparin.solution.dto.*;
 import ru.oparin.solution.service.AuthService;
+import ru.oparin.solution.service.EmailConfirmationService;
 import ru.oparin.solution.service.PasswordResetService;
 import ru.oparin.solution.service.UserService;
 
@@ -26,6 +27,7 @@ public class AuthController {
     private final AuthService authService;
     private final UserService userService;
     private final PasswordResetService passwordResetService;
+    private final EmailConfirmationService emailConfirmationService;
 
     /**
      * Регистрация нового продавца.
@@ -82,6 +84,19 @@ public class AuthController {
         log.info("Сброс пароля по токену");
         passwordResetService.resetPassword(request.getToken(), request.getNewPassword());
         return ResponseEntity.ok(createSuccessMessage("Пароль успешно изменён. Войдите с новым паролем."));
+    }
+
+    /**
+     * Подтверждение email по токену из ссылки (публичный эндпоинт).
+     *
+     * @param request токен из ссылки
+     * @return сообщение об успехе
+     */
+    @PostMapping("/confirm-email")
+    public ResponseEntity<MessageResponse> confirmEmail(@Valid @RequestBody ConfirmEmailRequest request) {
+        log.info("Подтверждение email по токену");
+        emailConfirmationService.confirmEmail(request.getToken());
+        return ResponseEntity.ok(createSuccessMessage("Email успешно подтверждён. Можете войти в профиль."));
     }
 
     /**

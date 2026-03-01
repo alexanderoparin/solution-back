@@ -77,12 +77,12 @@ wb:
     timeout: 30000
 
 app:
-  frontend-url: ${FRONTEND_URL:https://wb-solution.ru}
+  frontend-url: "https://wb-solution.ru"
   mail:
     from: support@wb-solution.ru
   uploads:
-    directory: ${UPLOADS_DIRECTORY:/app/uploads}
-    max-file-size: ${MAX_FILE_SIZE:31457280}  # 30 MB по умолчанию
+    directory: /app/uploads
+    max-file-size: 31457280  # 30 MB по умолчанию
 
 subscription:
   trial-days: 14
