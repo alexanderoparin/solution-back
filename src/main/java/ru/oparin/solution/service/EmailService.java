@@ -3,6 +3,7 @@ package ru.oparin.solution.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.MailAuthenticationException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
@@ -46,6 +47,9 @@ public class EmailService {
             message.setText(text);
             mailSender.send(message);
             log.info("Письмо для сброса пароля отправлено на {}", toEmail);
+        } catch (MailAuthenticationException e) {
+            log.error("Ошибка SMTP-аутентификации при отправке на {}: {}. Проверьте MAIL_PASSWORD и настройки почты (smtp.timeweb.ru).", toEmail, e.getMessage());
+            throw new RuntimeException("Не удалось отправить письмо. Попробуйте позже.", e);
         } catch (Exception e) {
             log.error("Ошибка отправки письма на {}: {}", toEmail, e.getMessage(), e);
             throw new RuntimeException("Не удалось отправить письмо. Попробуйте позже.", e);
@@ -75,6 +79,9 @@ public class EmailService {
             message.setText(text);
             mailSender.send(message);
             log.info("Письмо для подтверждения email отправлено на {}", toEmail);
+        } catch (MailAuthenticationException e) {
+            log.error("Ошибка SMTP-аутентификации при отправке на {}: {}. Проверьте MAIL_PASSWORD и настройки почты (smtp.timeweb.ru).", toEmail, e.getMessage());
+            throw new RuntimeException("Не удалось отправить письмо. Попробуйте позже.", e);
         } catch (Exception e) {
             log.error("Ошибка отправки письма на {}: {}", toEmail, e.getMessage(), e);
             throw new RuntimeException("Не удалось отправить письмо. Попробуйте позже.", e);
