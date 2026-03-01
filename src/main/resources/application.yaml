@@ -4,6 +4,17 @@ server:
     context-path: /api
 
 spring:
+  mail:
+    host: smtp.timeweb.ru
+    port: 587
+    username: support@wb-solution.ru
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:postgres}?currentSchema=solution
     username: ${DB_USERNAME:postgres}
@@ -66,6 +77,9 @@ wb:
     timeout: 30000
 
 app:
+  frontend-url: ${FRONTEND_URL:https://wb-solution.ru}
+  mail:
+    from: support@wb-solution.ru
   uploads:
     directory: ${UPLOADS_DIRECTORY:/app/uploads}
     max-file-size: ${MAX_FILE_SIZE:31457280}  # 30 MB по умолчанию

@@ -235,6 +235,19 @@ public class UserService {
     }
 
     /**
+     * Устанавливает новый пароль пользователю по ID (используется при сбросе пароля по токену).
+     *
+     * @param userId      ID пользователя
+     * @param newPassword новый пароль (в открытом виде)
+     */
+    @Transactional
+    public void setPassword(Long userId, String newPassword) {
+        User user = findById(userId);
+        updateUserPassword(user, newPassword);
+        userRepository.save(user);
+    }
+
+    /**
      * Создание нового пользователя с проверкой прав доступа.
      *
      * @param request данные для создания пользователя
