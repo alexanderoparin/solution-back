@@ -146,6 +146,8 @@ public class UserService {
                 .password(encodedPassword)
                 .role(Role.SELLER)
                 .isActive(true)
+                .emailConfirmed(false)
+                .isAgencyClient(false)
                 .build();
     }
 
@@ -261,13 +263,16 @@ public class UserService {
         validateEmailNotExists(request.getEmail());
 
         String encodedPassword = encodePassword(request.getPassword());
+        User owner = getOwnerForNewUser(currentUser, request.getRole());
+        boolean isAgencyClient = request.getRole() == Role.SELLER && owner != null;
         User newUser = User.builder()
                 .email(request.getEmail())
                 .password(encodedPassword)
                 .role(request.getRole())
                 .isActive(true)
                 .isTemporaryPassword(true)
-                .owner(getOwnerForNewUser(currentUser, request.getRole()))
+                .owner(owner)
+                .isAgencyClient(isAgencyClient)
                 .build();
 
         return userRepository.save(newUser);

@@ -179,7 +179,9 @@ public class UserController {
                 .id(user.getId())
                 .email(user.getEmail())
                 .role(user.getRole())
-                .isActive(user.getIsActive());
+                .isActive(user.getIsActive())
+                .emailConfirmed(user.getEmailConfirmed())
+                .isAgencyClient(user.getIsAgencyClient());
 
         if (user.getRole() == Role.SELLER) {
             builder.apiKey(buildApiKeyInfo(user.getId()));

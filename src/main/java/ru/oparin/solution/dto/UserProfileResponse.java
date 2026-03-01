@@ -1,10 +1,6 @@
 package ru.oparin.solution.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import ru.oparin.solution.model.Role;
 
 import java.time.LocalDateTime;
@@ -37,6 +33,16 @@ public class UserProfileResponse {
      * Флаг активности пользователя.
      */
     private Boolean isActive;
+
+    /**
+     * Почта подтверждена (актуально для сторонних селлеров; у клиентов агентства не используется).
+     */
+    private Boolean emailConfirmed;
+
+    /**
+     * Селлер является клиентом агентства (создан менеджером, привязан к owner).
+     */
+    private Boolean isAgencyClient;
 
     /**
      * Информация о WB API ключе (только для SELLER).

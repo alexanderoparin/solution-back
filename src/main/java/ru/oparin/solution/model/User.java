@@ -1,11 +1,7 @@
 package ru.oparin.solution.model;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -72,6 +68,20 @@ public class User {
     @Column(name = "is_temporary_password", nullable = false)
     @Builder.Default
     private Boolean isTemporaryPassword = false;
+
+    /**
+     * Почта подтверждена (true только после явного подтверждения по ссылке; для клиентов агентства не используется).
+     */
+    @Column(name = "email_confirmed", nullable = false)
+    @Builder.Default
+    private Boolean emailConfirmed = false;
+
+    /**
+     * Селлер является клиентом агентства (создан менеджером/админом, привязан к owner).
+     */
+    @Column(name = "is_agency_client", nullable = false)
+    @Builder.Default
+    private Boolean isAgencyClient = false;
 
     /**
      * Дата создания записи.
