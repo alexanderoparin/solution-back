@@ -1,5 +1,6 @@
 package ru.oparin.solution.service;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +24,16 @@ public class EmailService {
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
+
+    @Value("${spring.mail.password:}")
+    private String mailPassword;
+
+    @PostConstruct
+    public void checkMailPassword() {
+        if (mailPassword == null || mailPassword.isBlank()) {
+            log.warn("MAIL_PASSWORD (spring.mail.password) не задан — отправка писем (подтверждение почты, сброс пароля) будет падать с ошибкой аутентификации SMTP.");
+        }
+    }
 
     /**
      * Отправляет письмо со ссылкой для сброса пароля.
