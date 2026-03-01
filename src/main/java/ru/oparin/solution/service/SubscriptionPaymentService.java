@@ -58,7 +58,7 @@ public class SubscriptionPaymentService {
         payment = paymentRepository.save(payment);
 
         String invId = payment.getId().toString();
-        String description = "Подписка: " + plan.getName();
+        String description = String.format("Подписка: тариф '%s' доступ на %d дней", plan.getDescription(), plan.getPeriodDays());
         String paymentUrl = robokassaService.buildPaymentUrl(plan.getPriceRub(), invId, description);
 
         log.info("Создан платёж {} для user {} plan {}", payment.getId(), user.getId(), planId);
