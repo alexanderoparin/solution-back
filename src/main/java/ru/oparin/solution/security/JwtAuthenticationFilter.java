@@ -57,8 +57,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             
             if (isValidJwtToken(jwt)) {
                 setAuthenticationInContext(request, jwt);
-            } else {
-                logger.debug("JWT токен не найден или невалиден для запроса: " + request.getMethod() + " " + requestURI);
             }
         } catch (ExpiredJwtException ex) {
             // Истекший токен - это нормальная ситуация, логируем как debug
