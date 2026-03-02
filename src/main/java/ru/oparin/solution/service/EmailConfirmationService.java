@@ -29,6 +29,7 @@ public class EmailConfirmationService {
     private final UserRepository userRepository;
     private final EmailConfirmationTokenRepository tokenRepository;
     private final EmailService emailService;
+    private final UserService userService;
 
     /**
      * Отправляет письмо для подтверждения email текущему пользователю.
@@ -104,6 +105,7 @@ public class EmailConfirmationService {
         User user = confirmationToken.getUser();
         user.setEmailConfirmed(true);
         userRepository.save(user);
+        userService.createTrialSubscriptionForUser(user);
         tokenRepository.delete(confirmationToken);
         log.info("Email подтверждён для пользователя {}", user.getEmail());
     }

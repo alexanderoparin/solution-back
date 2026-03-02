@@ -29,6 +29,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static java.lang.Boolean.TRUE;
+
 /**
  * Сервис для работы с пользователями.
  */
@@ -61,11 +63,7 @@ public class UserService {
         
         String encodedPassword = encodePassword(request.getPassword());
         User user = createSellerUser(request.getEmail(), encodedPassword);
-        User saved = userRepository.save(user);
-
-        createTrialSubscriptionForUser(saved);
-
-        return saved;
+        return userRepository.save(user);
     }
 
     /**
@@ -154,18 +152,23 @@ public class UserService {
     /**
      * Создаёт триал-подписку для нового самостоятельного селлера.
      */
-    private void createTrialSubscriptionForUser(User user) {
-        // Для клиентов агентства (owner != null) триал не нужен
-        if (user.getOwner() != null) {
+    void createTrialSubscriptionForUser(User user) {
+        // Для клиентов агентства триал не нужен
+        if (TRUE.equals(user.getIsAgencyClient())) {
             return;
         }
 
-        int trialDays = Math.max(0, subscriptionProperties.getTrialDays());
-        if (trialDays <= 0) {
-            return;
-        }
-
+        int trialDays = subscriptionProperties.getTrialDays();
         LocalDateTime now = LocalDateTime.now();
+        // Если уже есть активная или триальная подписка, триал больше не выдаём
+        List<String> activeStatuses = List.of("active", "trial");
+        boolean hasActive = subscriptionRepository
+                .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(user.getId(), activeStatuses, now)
+                .isPresent();
+        if (hasActive) {
+            return;
+        }
+
         Subscription subscription = Subscription.builder()
                 .user(user)
                 .plan(null)
@@ -440,7 +443,7 @@ public class UserService {
             // Менеджер видит только своих активных селлеров
             List<User> allSellers = userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId());
             sellers = allSellers.stream()
-                    .filter(user -> Boolean.TRUE.equals(user.getIsActive()))
+                    .filter(user -> TRUE.equals(user.getIsActive()))
                     .collect(Collectors.toList());
         } else {
             // Только ADMIN и MANAGER могут просматривать аналитику селлеров

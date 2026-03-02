@@ -21,6 +21,8 @@ import ru.oparin.solution.service.WbApiKeyService;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static java.lang.Boolean.TRUE;
+
 /**
  * Контроллер для работы с профилем пользователя.
  */
@@ -70,7 +72,7 @@ public class UserController {
         wbApiKeyService.validateApiKey(user.getId());
 
         Cabinet cabinet = wbApiKeyService.findDefaultCabinetByUserId(user.getId());
-        if (Boolean.TRUE.equals(cabinet.getIsValid())) {
+        if (TRUE.equals(cabinet.getIsValid())) {
             return ResponseEntity.ok(createSuccessMessage("API ключ валиден"));
         } else {
             String errorMsg = cabinet.getValidationError() != null
@@ -153,7 +155,7 @@ public class UserController {
     public ResponseEntity<AccessStatusResponse> getAccessStatus(Authentication authentication) {
         User user = getCurrentUser(authentication);
         boolean hasAccess = subscriptionAccessService.hasAccess(user);
-        boolean agencyClient = user.getOwner() != null;
+        boolean agencyClient = TRUE.equals(user.getIsAgencyClient());
 
         var activeSubscription = subscriptionAccessService.getActiveSubscription(user);
 
