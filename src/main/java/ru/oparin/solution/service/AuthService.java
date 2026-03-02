@@ -10,6 +10,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.dto.AuthResponse;
 import ru.oparin.solution.dto.LoginRequest;
+import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.security.JwtTokenProvider;
 
@@ -47,7 +48,11 @@ public class AuthService {
             log.error("Ошибка аутентификации: email={}", request.getEmail());
             throw e;
         } catch (Exception e) {
-            log.error("Ошибка при аутентификации пользователя {}: {}", request.getEmail(), e.getMessage(), e);
+            if (isUserNotFound(e)) {
+                log.error("Ошибка при аутентификации пользователя {}: {}", request.getEmail(), e.getMessage());
+            } else {
+                log.error("Ошибка при аутентификации пользователя {}: {}", request.getEmail(), e.getMessage(), e);
+            }
             throw e;
         }
     }
@@ -73,6 +78,21 @@ public class AuthService {
                 user.getId(),
                 user.getRole().name()
         );
+    }
+
+    /**
+     * Проверяет, что исключение связано с «пользователь не найден» (не логируем стектрейс).
+     */
+    private static boolean isUserNotFound(Throwable e) {
+        Throwable t = e;
+        while (t != null) {
+            if (t instanceof UserException && t.getMessage() != null
+                    && t.getMessage().contains("Пользователь не найден")) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
     }
 
     /**

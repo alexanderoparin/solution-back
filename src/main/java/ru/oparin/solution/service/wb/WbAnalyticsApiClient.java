@@ -43,16 +43,16 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
      */
     public SaleFunnelResponse getSaleFunnelProduct(String apiKey, Long nmId, String dateFrom, String dateTo) {
         String fullUrl = analyticsBaseUrl + SALE_FUNNEL_PRODUCT_HISTORY_ENDPOINT;
-        logWbApiCall(fullUrl, "воронка продаж по карточке");
+        logWbApiCall(fullUrl, "воронка продаж по карточке", nmId);
 
-        LocalDate validatedFromDate = validateAndAdjustDateFrom(dateFrom);
-        LocalDate validatedToDate = validateAndAdjustDateTo(dateTo);
+        LocalDate validatedFromDate = validateAndAdjustDateFrom(dateFrom, nmId);
+        LocalDate validatedToDate = validateAndAdjustDateTo(dateTo, nmId);
         if (validatedFromDate.isAfter(validatedToDate)) {
             // Весь запрошенный период старше разрешённого — обрезаем до последних 7 дней
             validatedToDate = LocalDate.now().minusDays(1);
             validatedFromDate = validatedToDate.minusDays(MAX_ANALYTICS_PERIOD_DAYS - 1);
-            log.warn("Период выходит за пределы допустимого API (макс. последние 7 дней). Обрезаем до {} - {}",
-                    validatedFromDate, validatedToDate);
+            log.warn("Период выходит за пределы допустимого API (макс. последние 7 дней). Обрезаем до {} - {} nmID={}",
+                    validatedFromDate, validatedToDate, nmId);
         }
         SaleFunnelHistoryRequest request = buildAnalyticsRequest(nmId, validatedFromDate, validatedToDate);
         
@@ -67,7 +67,7 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
             return parseAnalyticsResponse(response, nmId);
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
-            logWbApiError("аналитика воронки продаж WB", e);
+            logWbApiError("аналитика воронки продаж WB nmID=" + nmId, e);
             throw new RestClientException("Ошибка при получении аналитики воронки продаж: " + e.getMessage(), e);
         }
     }
@@ -76,24 +76,24 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
      * API отдаёт данные максимум за последнюю неделю (7 дней).
      * Дата начала не может быть раньше (вчера − 6 дней).
      */
-    private LocalDate validateAndAdjustDateFrom(String dateFrom) {
+    private LocalDate validateAndAdjustDateFrom(String dateFrom, Long nmId) {
         LocalDate from = LocalDate.parse(dateFrom);
         LocalDate yesterday = LocalDate.now().minusDays(1);
         LocalDate earliestAllowed = yesterday.minusDays(MAX_ANALYTICS_PERIOD_DAYS - 1); // 6 дней назад = 7 дней с вчера
         if (from.isBefore(earliestAllowed)) {
-            log.warn("Дата начала {} раньше допустимой для API (макс. последние 7 дней). Ограничиваем до {}", from, earliestAllowed);
+            log.warn("Дата начала {} раньше допустимой для API (макс. последние 7 дней). Ограничиваем до {} nmID={}", from, earliestAllowed, nmId);
             return earliestAllowed;
         }
         return from;
     }
 
-    private LocalDate validateAndAdjustDateTo(String dateTo) {
+    private LocalDate validateAndAdjustDateTo(String dateTo, Long nmId) {
         LocalDate toDate = LocalDate.parse(dateTo);
         // API позволяет получать данные максимум до вчера
         LocalDate yesterday = LocalDate.now().minusDays(1);
         
         if (toDate.isAfter(yesterday)) {
-            log.warn("Дата окончания {} в будущем или сегодня, ограничиваем до вчера ({})", toDate, yesterday);
+            log.warn("Дата окончания {} в будущем или сегодня, ограничиваем до вчера ({}) nmID={}", toDate, yesterday, nmId);
             return yesterday;
         }
         
@@ -106,8 +106,8 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
         long daysBetween = ChronoUnit.DAYS.between(fromDate, toDate);
         
         if (daysBetween >= MAX_ANALYTICS_PERIOD_DAYS) {
-            log.warn("Период превышает {} дней ({} дней между датами, что означает больше {} дней включая обе даты), ограничиваем дату начала", 
-                    MAX_ANALYTICS_PERIOD_DAYS, daysBetween, MAX_ANALYTICS_PERIOD_DAYS);
+            log.warn("Период превышает {} дней ({} дней между датами), ограничиваем дату начала nmID={}", 
+                    MAX_ANALYTICS_PERIOD_DAYS, daysBetween, nmId);
             // minusDays(6) даст 7 дней включая обе даты (например, с 1 по 7 января)
             fromDate = toDate.minusDays(MAX_ANALYTICS_PERIOD_DAYS - 1);
         }

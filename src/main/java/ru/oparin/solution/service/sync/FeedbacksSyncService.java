@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.dto.wb.FeedbackItem;
@@ -36,6 +37,15 @@ public class FeedbacksSyncService {
     private final WbFeedbacksApiClient feedbacksApiClient;
     private final ProductCardRepository productCardRepository;
     private final CabinetRepository cabinetRepository;
+
+    /**
+     * Синхронизирует отзывы в отдельной транзакции. Вызывать из полного обновления кабинета,
+     * чтобы 401 (нет доступа к категории «Вопросы и отзывы») не помечал основную транзакцию как rollback-only.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void syncFeedbacksForCabinetInNewTransaction(Cabinet cabinet, String apiKey) {
+        syncFeedbacksForCabinet(cabinet, apiKey);
+    }
 
     /**
      * Синхронизирует рейтинг и количество отзывов для всех карточек кабинета.

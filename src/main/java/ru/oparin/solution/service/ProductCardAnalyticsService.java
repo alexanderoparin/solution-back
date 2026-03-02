@@ -171,7 +171,7 @@ public class ProductCardAnalyticsService {
             }
 
             try {
-                feedbacksSyncService.syncFeedbacksForCabinet(managed, apiKey);
+                feedbacksSyncService.syncFeedbacksForCabinetInNewTransaction(managed, apiKey);
             } catch (WbApiUnauthorizedScopeException e) {
                 log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
             } catch (Exception e) {

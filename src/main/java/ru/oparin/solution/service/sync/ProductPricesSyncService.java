@@ -3,6 +3,7 @@ package ru.oparin.solution.service.sync;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResourceAccessException;
 import ru.oparin.solution.dto.wb.OrdersResponse;
 import ru.oparin.solution.dto.wb.ProductPricesRequest;
 import ru.oparin.solution.dto.wb.ProductPricesResponse;
@@ -15,6 +16,7 @@ import ru.oparin.solution.service.ProductPriceService;
 import ru.oparin.solution.service.wb.WbOrdersApiClient;
 import ru.oparin.solution.service.wb.WbProductsApiClient;
 
+import java.net.UnknownHostException;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -97,6 +99,12 @@ public class ProductPricesSyncService {
                 } catch (WbApiUnauthorizedScopeException e) {
                     log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinet.getId(), e.getCategory().getDisplayName());
                     break;
+                } catch (ResourceAccessException e) {
+                    if (e.getCause() instanceof UnknownHostException) {
+                        log.error("Ошибка при загрузке цен для батча {}/{}: не удалось разрешить хост WB API (DNS). Проверьте доступность discounts-prices-api.wildberries.ru и настройки DNS на сервере.", i + 1, batches.size());
+                    } else {
+                        log.error("Ошибка при загрузке цен для батча {}/{}: {}", i + 1, batches.size(), e.getMessage(), e);
+                    }
                 } catch (Exception e) {
                     log.error("Ошибка при загрузке цен для батча {}/{}: {}", i + 1, batches.size(), e.getMessage(), e);
                 }
@@ -105,6 +113,12 @@ public class ProductPricesSyncService {
             log.info("Завершена загрузка цен товаров за дату {} для кабинета (ID: {})", yesterdayDate, cabinet.getId());
         } catch (WbApiUnauthorizedScopeException e) {
             log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinet.getId(), e.getCategory().getDisplayName());
+        } catch (ResourceAccessException e) {
+            if (e.getCause() instanceof UnknownHostException) {
+                log.error("Ошибка при загрузке цен товаров для кабинета (ID: {}): не удалось разрешить хост WB API (DNS). Проверьте доступность discounts-prices-api.wildberries.ru и настройки DNS на сервере.", cabinet.getId());
+            } else {
+                log.error("Ошибка при загрузке цен товаров для кабинета (ID: {}): {}", cabinet.getId(), e.getMessage(), e);
+            }
         } catch (Exception e) {
             log.error("Ошибка при загрузке цен товаров для кабинета (ID: {}): {}", cabinet.getId(), e.getMessage(), e);
         }

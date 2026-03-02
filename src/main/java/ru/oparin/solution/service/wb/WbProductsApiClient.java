@@ -29,7 +29,7 @@ public class WbProductsApiClient extends AbstractWbApiClient {
     private String discountsPricesBaseUrl;
 
     /**
-     * Получение цен и скидок товаров по артикулам.
+     * Получение цен и скидок товаров по артикулам. Ретраи при таймауте/ошибке соединения/DNS — в базовом клиенте.
      */
     public ProductPricesResponse getProductPrices(String apiKey, ProductPricesRequest request) {
         HttpHeaders headers = createAuthHeaders(apiKey);
@@ -38,41 +38,46 @@ public class WbProductsApiClient extends AbstractWbApiClient {
         String url = discountsPricesBaseUrl + PRODUCT_PRICES_ENDPOINT;
         logWbApiCall(url, "цены и скидки товаров");
 
-        try {
-            ResponseEntity<String> response = restTemplate.exchange(
-                    url,
-                    HttpMethod.POST,
-                    entity,
-                    String.class
-            );
+        return executeWithConnectionRetry("запрос цен товаров", () -> {
+            try {
+                ResponseEntity<String> response = restTemplate.exchange(
+                        url,
+                        HttpMethod.POST,
+                        entity,
+                        String.class
+                );
 
-            validateResponse(response);
+                validateResponse(response);
 
-            ProductPricesResponse pricesResponse = objectMapper.readValue(
-                    response.getBody(), 
-                    ProductPricesResponse.class
-            );
+                ProductPricesResponse pricesResponse = objectMapper.readValue(
+                        response.getBody(),
+                        ProductPricesResponse.class
+                );
 
-            if (pricesResponse.getError() != null && pricesResponse.getError()) {
-                log.error("Ошибка от WB API при получении цен: {}", pricesResponse.getErrorText());
-                throw new RestClientException("Ошибка от WB API: " + pricesResponse.getErrorText());
+                if (pricesResponse.getError() != null && pricesResponse.getError()) {
+                    log.error("Ошибка от WB API при получении цен: {}", pricesResponse.getErrorText());
+                    throw new RestClientException("Ошибка от WB API: " + pricesResponse.getErrorText());
+                }
+
+                int goodsCount = pricesResponse.getData() != null && pricesResponse.getData().getListGoods() != null
+                        ? pricesResponse.getData().getListGoods().size()
+                        : 0;
+                log.info("Получено товаров с ценами: {}", goodsCount);
+
+                return pricesResponse;
+
+            } catch (HttpClientErrorException e) {
+                throwIf401ScopeNotAllowed(e);
+                logWbApiError("получение цен товаров", e);
+                throw new RestClientException("Ошибка при получении цен товаров: " + e.getMessage(), e);
+            } catch (Exception e) {
+                if (e instanceof RestClientException) {
+                    throw (RestClientException) e;
+                }
+                log.error("Ошибка при получении цен товаров: {}", e.getMessage(), e);
+                throw new RestClientException("Ошибка при получении цен товаров: " + e.getMessage(), e);
             }
-
-            int goodsCount = pricesResponse.getData() != null && pricesResponse.getData().getListGoods() != null
-                    ? pricesResponse.getData().getListGoods().size()
-                    : 0;
-            log.info("Получено товаров с ценами: {}", goodsCount);
-
-            return pricesResponse;
-
-        } catch (HttpClientErrorException e) {
-            throwIf401ScopeNotAllowed(e);
-            logWbApiError("получение цен товаров", e);
-            throw new RestClientException("Ошибка при получении цен товаров: " + e.getMessage(), e);
-        } catch (Exception e) {
-            log.error("Ошибка при получении цен товаров: {}", e.getMessage(), e);
-            throw new RestClientException("Ошибка при получении цен товаров: " + e.getMessage(), e);
-        }
+        });
     }
 }
 

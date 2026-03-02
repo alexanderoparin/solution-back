@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.ResourceAccessException;
 import ru.oparin.solution.dto.wb.WbStocksSizesRequest;
 import ru.oparin.solution.dto.wb.WbStocksSizesResponse;
 import ru.oparin.solution.model.Cabinet;
@@ -14,6 +15,7 @@ import ru.oparin.solution.repository.ProductBarcodeRepository;
 import ru.oparin.solution.repository.ProductStockRepository;
 import ru.oparin.solution.service.wb.WbStocksApiClient;
 
+import java.net.UnknownHostException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -57,11 +59,11 @@ public class ProductStocksService {
         WbStocksSizesResponse response = stocksApiClient.getWbStocksBySizes(apiKey, request);
 
         if (isEmptyResponse(response)) {
-            log.warn("Не получено остатков по размерам на складах WB для артикула {}", nmId);
+            log.warn("Не получено остатков по размерам на складах WB для nmID {}", nmId);
             return createEmptyResponse();
         }
 
-        log.info("Получено {} размеров с остатками на складах WB для артикула {}", response.getData().getSizes().size(), nmId);
+        log.info("Получено {} размеров с остатками на складах WB для nmID {}", response.getData().getSizes().size(), nmId);
 
         saveWbStocksBySizes(nmId, response.getData().getSizes(), cabinet);
         return response;
@@ -88,6 +90,12 @@ public class ProductStocksService {
                 Thread.currentThread().interrupt();
                 log.error("Прервано ожидание перед запросом остатков для артикула {}", nmId);
                 break;
+            } catch (ResourceAccessException e) {
+                if (e.getCause() instanceof UnknownHostException) {
+                    log.error("Ошибка при обновлении остатков для nmID {}: не удалось разрешить хост WB API (DNS). Проверьте доступность seller-analytics-api.wildberries.ru и настройки DNS на сервере.", nmId);
+                } else {
+                    log.error("Ошибка при обновлении остатков для артикула {}: {}", nmId, e.getMessage(), e);
+                }
             } catch (Exception e) {
                 log.error("Ошибка при обновлении остатков для артикула {}: {}", nmId, e.getMessage(), e);
             }
