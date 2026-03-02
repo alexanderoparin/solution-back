@@ -32,9 +32,6 @@ COPY --from=build /app/target/solution_back-1.0.0.jar app.jar
 # Меняем владельца JAR файла
 RUN chown spring:spring app.jar
 
-# Переключаемся на пользователя spring
-USER spring:spring
-
 # Настройка JVM (можно переопределить через переменные окружения)
 ENV JAVA_OPTS="-Xmx512m -Xms256m -XX:+UseContainerSupport"
 
@@ -45,6 +42,13 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:8080/api/health || exit 1
 
-# Запуск приложения
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+# su-exec для переключения на пользователя spring после chown
+RUN apk add --no-cache su-exec
+
+# Entrypoint: при монтировании томов каталоги на хосте часто с владельцем root — даём права spring
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh && chown root:root /entrypoint.sh
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]
 
