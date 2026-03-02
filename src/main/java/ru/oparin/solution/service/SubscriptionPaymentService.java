@@ -17,6 +17,7 @@ import ru.oparin.solution.repository.PaymentRepository;
 import ru.oparin.solution.repository.PlanRepository;
 import ru.oparin.solution.repository.SubscriptionRepository;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -47,10 +48,11 @@ public class SubscriptionPaymentService {
         if (!Boolean.TRUE.equals(plan.getIsActive())) {
             throw new UserException("План недоступен для оплаты", HttpStatus.BAD_REQUEST);
         }
+        BigDecimal priceRub = plan.getPriceRub();
 
         Payment payment = Payment.builder()
                 .user(user)
-                .amount(plan.getPriceRub())
+                .amount(priceRub)
                 .currency("RUB")
                 .status("pending")
                 .metadata(metadataWithPlanId(planId))
@@ -58,10 +60,10 @@ public class SubscriptionPaymentService {
         payment = paymentRepository.save(payment);
 
         String invId = payment.getId().toString();
-        String description = String.format("Подписка: тариф '%s' доступ на %d дней", plan.getDescription(), plan.getPeriodDays());
-        String paymentUrl = robokassaService.buildPaymentUrl(plan.getPriceRub(), invId, description);
+        String description = String.format("Подписка: тариф '%s'", plan.getDescription());
+        String paymentUrl = robokassaService.buildPaymentUrl(priceRub, invId, description);
 
-        log.info("Создан платёж {} для user {} plan {}", payment.getId(), user.getId(), planId);
+        log.info("Создан платёж №{} для пользователя с ID={} и email '{}', сумма платежа {}", payment.getId(), user.getId(), user.getEmail(), priceRub);
         return InitiatePaymentResponse.builder()
                 .paymentUrl(paymentUrl)
                 .paymentId(payment.getId())

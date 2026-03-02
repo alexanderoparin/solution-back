@@ -10,6 +10,7 @@ import ru.oparin.solution.dto.payment.ReceiptDto;
 import ru.oparin.solution.dto.payment.ReceiptItemDto;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -35,10 +36,16 @@ public class RobokassaService {
      * @param description описание платежа
      * @return полный URL для редиректа
      */
+    /** Формат суммы для Робокассы: всегда два знака после запятой (иначе подпись не совпадает). */
+    private static String formatSum(BigDecimal amount) {
+        return amount.setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
     public String buildPaymentUrl(BigDecimal outSum, String invId, String description) {
+        String outSumStr = formatSum(outSum);
         ReceiptDto receipt = createDefaultReceipt(description, outSum);
-        String signature = createSignature(outSum, invId, receipt);
-        return buildUrl(outSum, invId, description, signature, receipt);
+        String signature = createSignature(outSumStr, invId, receipt);
+        return buildUrl(outSumStr, invId, description, signature, receipt);
     }
 
     /**
@@ -61,13 +68,13 @@ public class RobokassaService {
         return valid;
     }
 
-    private String createSignature(BigDecimal amount, String invId, ReceiptDto receipt) {
+    private String createSignature(String outSumStr, String invId, ReceiptDto receipt) {
         try {
             String receiptJson = objectMapper.writeValueAsString(receipt);
             String receiptEncoded = URLEncoder.encode(receiptJson, StandardCharsets.UTF_8);
             String checkString = String.format("%s:%s:%s:%s:%s",
                     properties.getMerchantLogin(),
-                    amount.toString(),
+                    outSumStr,
                     invId,
                     receiptEncoded,
                     properties.getPassword1());
@@ -78,11 +85,11 @@ public class RobokassaService {
         }
     }
 
-    private String buildUrl(BigDecimal amount, String invId, String description, String signature, ReceiptDto receipt) {
+    private String buildUrl(String outSumStr, String invId, String description, String signature, ReceiptDto receipt) {
         StringBuilder url = new StringBuilder();
         url.append("https://auth.robokassa.ru/Merchant/Index.aspx");
         url.append("?MerchantLogin=").append(properties.getMerchantLogin());
-        url.append("&OutSum=").append(amount.toString());
+        url.append("&OutSum=").append(outSumStr);
         url.append("&InvId=").append(invId);
         url.append("&Description=").append(URLEncoder.encode(description, StandardCharsets.UTF_8));
         url.append("&SignatureValue=").append(signature);
