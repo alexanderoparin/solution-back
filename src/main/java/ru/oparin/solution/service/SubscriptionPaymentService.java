@@ -9,10 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.InitiatePaymentResponse;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.Payment;
-import ru.oparin.solution.model.Plan;
-import ru.oparin.solution.model.Subscription;
-import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.PaymentRepository;
 import ru.oparin.solution.repository.PlanRepository;
 import ru.oparin.solution.repository.SubscriptionRepository;
@@ -55,7 +52,7 @@ public class SubscriptionPaymentService {
                 .user(user)
                 .amount(priceRub)
                 .currency("RUB")
-                .status("pending")
+                .status(PaymentStatus.PENDING.getDbValue())
                 .description(description)
                 .metadata(metadataWithPlanId(planId))
                 .build();
@@ -89,7 +86,7 @@ public class SubscriptionPaymentService {
             return false;
         }
 
-        if ("success".equals(payment.getStatus())) {
+        if (PaymentStatus.SUCCESS.getDbValue().equalsIgnoreCase(payment.getStatus())) {
             log.info("Платёж {} уже обработан", paymentId);
             return true;
         }
@@ -108,7 +105,7 @@ public class SubscriptionPaymentService {
 
         User user = payment.getUser();
         Subscription subscription = createOrExtendSubscription(user, plan);
-        payment.setStatus("success");
+        payment.setStatus(PaymentStatus.SUCCESS.getDbValue());
         payment.setPaidAt(LocalDateTime.now());
         payment.setSubscription(subscription);
         payment.setExternalId(invId);
