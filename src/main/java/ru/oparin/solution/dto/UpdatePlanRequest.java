@@ -1,24 +1,23 @@
 package ru.oparin.solution.dto;
 
+import jakarta.validation.constraints.DecimalMin;
 import lombok.*;
 
 import java.math.BigDecimal;
 
 @Getter
 @Setter
-@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class PlanDto {
+@Builder
+public class UpdatePlanRequest {
 
-    private Long id;
     private String name;
     private String description;
+    @DecimalMin("0")
     private BigDecimal priceRub;
     private Integer periodDays;
     private Integer maxCabinets;
-    /** Порядок сортировки (для админки). */
     private Integer sortOrder;
-    /** Активен ли план (для админки). */
     private Boolean isActive;
 }

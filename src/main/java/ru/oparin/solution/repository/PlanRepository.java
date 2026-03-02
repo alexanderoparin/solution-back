@@ -10,5 +10,7 @@ import java.util.List;
 public interface PlanRepository extends JpaRepository<Plan, Long> {
 
     List<Plan> findByIsActiveTrueOrderBySortOrderAsc();
+
+    List<Plan> findAllByOrderBySortOrderAsc();
 }
 

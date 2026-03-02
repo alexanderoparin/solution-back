@@ -8,13 +8,18 @@ import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.Payment;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.repository.PaymentRepository;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.EmailConfirmationService;
 import ru.oparin.solution.service.SubscriptionAccessService;
 import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.WbApiKeyService;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Контроллер для работы с профилем пользователя.
@@ -29,6 +34,7 @@ public class UserController {
     private final AnalyticsScheduler analyticsScheduler;
     private final SubscriptionAccessService subscriptionAccessService;
     private final EmailConfirmationService emailConfirmationService;
+    private final PaymentRepository paymentRepository;
 
     /**
      * Обновление WB API ключа пользователя.
@@ -159,6 +165,30 @@ public class UserController {
                 .build();
 
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Список платежей текущего пользователя (для ЛК).
+     */
+    @GetMapping("/payments")
+    public ResponseEntity<List<PaymentDto>> getMyPayments(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        List<PaymentDto> list = paymentRepository.findByUser_IdOrderByCreatedAtDesc(user.getId())
+                .stream()
+                .map(this::toPaymentDto)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(list);
+    }
+
+    private PaymentDto toPaymentDto(Payment p) {
+        return PaymentDto.builder()
+                .id(p.getId())
+                .amount(p.getAmount())
+                .currency(p.getCurrency())
+                .status(p.getStatus())
+                .paidAt(p.getPaidAt())
+                .createdAt(p.getCreatedAt())
+                .build();
     }
 
     /**

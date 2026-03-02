@@ -30,6 +30,7 @@ public class CabinetService {
     private final UserRepository userRepository;
     private final WbApiKeyService wbApiKeyService;
     private final CabinetDeletionService cabinetDeletionService;
+    private final SubscriptionAccessService subscriptionAccessService;
 
     /**
      * Список кабинетов пользователя (продавца), отсортированный по дате создания (новые первые).
@@ -58,6 +59,9 @@ public class CabinetService {
                 .orElseThrow(() -> new UserException("Пользователь не найден", HttpStatus.NOT_FOUND));
         if (user.getRole() != Role.SELLER) {
             throw new UserException("Только продавец может создавать кабинеты", HttpStatus.FORBIDDEN);
+        }
+        if (Boolean.FALSE.equals(user.getIsAgencyClient()) && !subscriptionAccessService.hasAccess(user)) {
+            throw new UserException("Оформите подписку для создания кабинета", HttpStatus.FORBIDDEN);
         }
 
         Cabinet cabinet = Cabinet.builder()

@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.Subscription;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -15,5 +16,7 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
             java.util.Collection<String> statuses,
             LocalDateTime now
     );
+
+    List<Subscription> findByUser_IdOrderByExpiresAtDesc(Long userId);
 }
 

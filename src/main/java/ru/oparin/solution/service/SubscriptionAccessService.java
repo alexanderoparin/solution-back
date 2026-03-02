@@ -3,6 +3,7 @@ package ru.oparin.solution.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.Subscription;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.SubscriptionRepository;
@@ -24,7 +25,7 @@ public class SubscriptionAccessService {
 
     /**
      * Проверяет, есть ли у пользователя доступ к продукту.
-     * Клиенты агентства (owner != null) всегда имеют доступ.
+     * ADMIN и MANAGER всегда имеют доступ. Клиенты агентства (owner != null) всегда имеют доступ.
      *
      * @param user пользователь
      * @return true, если доступ разрешён
@@ -32,6 +33,10 @@ public class SubscriptionAccessService {
     public boolean hasAccess(User user) {
         if (user == null) {
             return false;
+        }
+
+        if (user.getRole() == Role.ADMIN || user.getRole() == Role.MANAGER) {
+            return true;
         }
 
         if (user.getOwner() != null) {
