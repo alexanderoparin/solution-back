@@ -18,6 +18,7 @@ public class PaymentDto {
     private Long id;
     private BigDecimal amount;
     private String currency;
+    private String description;
     private String status;
     private LocalDateTime paidAt;
     private LocalDateTime createdAt;

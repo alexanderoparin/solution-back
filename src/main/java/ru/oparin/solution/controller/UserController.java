@@ -185,6 +185,7 @@ public class UserController {
                 .id(p.getId())
                 .amount(p.getAmount())
                 .currency(p.getCurrency())
+                .description(p.getDescription())
                 .status(p.getStatus())
                 .paidAt(p.getPaidAt())
                 .createdAt(p.getCreatedAt())

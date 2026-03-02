@@ -50,17 +50,18 @@ public class SubscriptionPaymentService {
         }
         BigDecimal priceRub = plan.getPriceRub();
 
+        String description = String.format("Тариф '%s'. %s", plan.getName(), plan.getDescription());
         Payment payment = Payment.builder()
                 .user(user)
                 .amount(priceRub)
                 .currency("RUB")
                 .status("pending")
+                .description(description)
                 .metadata(metadataWithPlanId(planId))
                 .build();
         payment = paymentRepository.save(payment);
 
         String invId = payment.getId().toString();
-        String description = String.format("Подписка: тариф '%s'", plan.getDescription());
         String paymentUrl = robokassaService.buildPaymentUrl(priceRub, invId, description);
 
         log.info("Создан платёж №{} для пользователя с ID={} и email '{}', сумма платежа {}", payment.getId(), user.getId(), user.getEmail(), priceRub);

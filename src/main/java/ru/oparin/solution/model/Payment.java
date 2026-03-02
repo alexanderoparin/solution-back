@@ -45,6 +45,9 @@ public class Payment {
     @Column(name = "external_id")
     private String externalId;
 
+    @Column(name = "description", columnDefinition = "TEXT")
+    private String description;
+
     @Column(name = "status", nullable = false, length = 20)
     private String status;
 
