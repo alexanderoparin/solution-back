@@ -123,7 +123,7 @@ public class AnalyticsService {
     ) {
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
         if (isAdvertisingMetric(metricName)) {
-            return getAdvertisingMetricGroup(seller, cabinetId, metricName, sortedPeriods);
+            return getAdvertisingMetricGroup(seller, cabinetId, metricName, sortedPeriods, excludedNmIds);
         } else {
             return getFunnelMetricGroup(seller, cabinetId, metricName, sortedPeriods, excludedNmIds);
         }
@@ -154,67 +154,90 @@ public class AnalyticsService {
             User seller,
             Long cabinetId,
             String metricName,
-            List<PeriodDto> periods
+            List<PeriodDto> periods,
+            List<Long> excludedNmIds
     ) {
-        List<PromotionCampaign> campaigns = cabinetId != null
-                ? campaignRepository.findByCabinet_Id(cabinetId)
-                : campaignRepository.findBySellerId(seller.getId());
-        
-        List<CampaignMetricDto> campaignMetrics = new ArrayList<>();
-        
-        for (PromotionCampaign campaign : campaigns) {
-            // Получаем артикулы для кампании
-            List<CampaignArticle> campaignArticles = campaignArticleRepository.findByCampaignId(campaign.getAdvertId());
-            List<Long> articleIds = campaignArticles.stream()
-                    .map(CampaignArticle::getNmId)
-                    .collect(Collectors.toList());
-            
-            // Если нет артикулов, пропускаем кампанию
-            if (articleIds.isEmpty()) {
+        List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
+        List<Long> campaignIds = getCampaignIdsForCabinet(seller.getId(), cabinetId);
+
+        Map<PeriodDto, Map<Long, CampaignStatisticsAggregator.AdvertisingStats>> statsByPeriodByArticle = new HashMap<>();
+        for (PeriodDto period : periods) {
+            statsByPeriodByArticle.put(period, campaignStatisticsAggregator.aggregateStatsByArticle(campaignIds, period));
+        }
+
+        List<ArticleMetricDto> articleMetrics = new ArrayList<>();
+        CampaignStatisticsAggregator.AdvertisingStats emptyStats = new CampaignStatisticsAggregator.AdvertisingStats(
+                0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO);
+
+        for (ProductCard card : visibleCards) {
+            Long nmId = card.getNmId();
+            if (nmId == null) {
                 continue;
             }
-            
-            // Рассчитываем метрику для каждого периода
+
             List<PeriodMetricValueDto> periodValues = new ArrayList<>();
-            boolean hasAnyData = false;
-            
             for (PeriodDto period : periods) {
-                CampaignStatisticsAggregator.AdvertisingStats stats = 
-                        campaignStatisticsAggregator.aggregateStatsForCampaign(campaign.getAdvertId(), period);
-                
+                CampaignStatisticsAggregator.AdvertisingStats stats = statsByPeriodByArticle
+                        .getOrDefault(period, Collections.emptyMap())
+                        .getOrDefault(nmId, emptyStats);
                 Object value = calculateAdvertisingMetricValue(metricName, stats);
-                BigDecimal changePercent = calculateCampaignChangePercent(
-                        campaign.getAdvertId(), metricName, period, periods);
-                
-                // Проверяем, есть ли данные (не null и не 0)
-                if (value != null && !isZero(value)) {
-                    hasAnyData = true;
-                }
-                
+                BigDecimal changePercent = calculateArticleAdvertisingChangePercent(
+                        nmId, metricName, period, periods, statsByPeriodByArticle);
+
                 periodValues.add(PeriodMetricValueDto.builder()
                         .periodId(period.getId())
                         .value(value)
                         .changePercent(changePercent)
                         .build());
             }
-            
-            // Добавляем кампанию только если есть данные хотя бы по одному периоду
-            if (hasAnyData) {
-                campaignMetrics.add(CampaignMetricDto.builder()
-                        .campaignId(campaign.getAdvertId())
-                        .campaignName(campaign.getName())
-                        .articles(articleIds)
-                        .periods(periodValues)
-                        .build());
-            }
+
+            articleMetrics.add(ArticleMetricDto.builder()
+                    .nmId(nmId)
+                    .photoTm(card.getPhotoTm())
+                    .periods(periodValues)
+                    .build());
         }
 
         return MetricGroupResponseDto.builder()
                 .metricName(metricName)
                 .metricNameRu(MetricNames.getRussianName(metricName))
                 .category(getMetricCategory(metricName))
-                .campaigns(campaignMetrics)
+                .articles(articleMetrics)
+                .campaigns(Collections.emptyList())
                 .build();
+    }
+
+    private List<Long> getCampaignIdsForCabinet(Long sellerId, Long cabinetId) {
+        List<PromotionCampaign> campaigns = cabinetId != null
+                ? campaignRepository.findByCabinet_Id(cabinetId)
+                : campaignRepository.findBySellerId(sellerId);
+        return campaigns.stream().map(PromotionCampaign::getAdvertId).collect(Collectors.toList());
+    }
+
+    private BigDecimal calculateArticleAdvertisingChangePercent(
+            Long nmId,
+            String metricName,
+            PeriodDto period,
+            List<PeriodDto> allPeriodsSortedByDate,
+            Map<PeriodDto, Map<Long, CampaignStatisticsAggregator.AdvertisingStats>> statsByPeriodByArticle
+    ) {
+        PeriodDto previousPeriod = findPreviousPeriodByDateOrder(period, allPeriodsSortedByDate);
+        if (previousPeriod == null) {
+            return null;
+        }
+        CampaignStatisticsAggregator.AdvertisingStats currentStats = statsByPeriodByArticle
+                .getOrDefault(period, Collections.emptyMap())
+                .getOrDefault(nmId, new CampaignStatisticsAggregator.AdvertisingStats(0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO));
+        CampaignStatisticsAggregator.AdvertisingStats previousStats = statsByPeriodByArticle
+                .getOrDefault(previousPeriod, Collections.emptyMap())
+                .getOrDefault(nmId, new CampaignStatisticsAggregator.AdvertisingStats(0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO));
+        Object currentValue = calculateAdvertisingMetricValue(metricName, currentStats);
+        Object previousValue = calculateAdvertisingMetricValue(metricName, previousStats);
+        if (MetricNames.isPercentageMetric(metricName)) {
+            return calculatePercentageDifference(currentValue, previousValue);
+        } else {
+            return calculatePercentageChange(currentValue, previousValue);
+        }
     }
 
     private Object calculateAdvertisingMetricValue(String metricName, CampaignStatisticsAggregator.AdvertisingStats stats) {
@@ -406,11 +429,15 @@ public class AnalyticsService {
             Long cabinetId
     ) {
         Map<Integer, AggregatedMetricsDto> result = new HashMap<>();
+        Set<Long> nmIdsFilter = cards.stream()
+                .map(ProductCard::getNmId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
 
         for (PeriodDto period : periods) {
             AggregatedMetricsDto metrics = new AggregatedMetricsDto();
             funnelMetricsCalculator.calculateFunnelMetrics(metrics, cards, period);
-            advertisingMetricsCalculator.calculateAdvertisingMetrics(metrics, sellerId, cabinetId, period);
+            advertisingMetricsCalculator.calculateAdvertisingMetrics(metrics, sellerId, cabinetId, period, nmIdsFilter);
             result.put(period.getId(), metrics);
         }
 

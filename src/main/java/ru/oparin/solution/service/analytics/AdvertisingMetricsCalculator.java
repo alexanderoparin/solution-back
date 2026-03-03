@@ -9,6 +9,8 @@ import ru.oparin.solution.repository.PromotionCampaignRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Калькулятор метрик рекламы.
@@ -30,9 +32,44 @@ public class AdvertisingMetricsCalculator {
             Long cabinetId,
             PeriodDto period
     ) {
-        List<Long> campaignIds = getCampaignIds(sellerId, cabinetId);
-        CampaignStatisticsAggregator.AdvertisingStats stats = statisticsAggregator.aggregateStats(campaignIds, period);
+        calculateAdvertisingMetrics(metrics, sellerId, cabinetId, period, null);
+    }
 
+    /**
+     * Рассчитывает метрики рекламы для периода с учётом фильтра по артикулам.
+     * Если nmIdsFilter не пустой — суммируются только данные по указанным артикулам (для сводной с фильтром).
+     */
+    public void calculateAdvertisingMetrics(
+            AggregatedMetricsDto metrics,
+            Long sellerId,
+            Long cabinetId,
+            PeriodDto period,
+            Set<Long> nmIdsFilter
+    ) {
+        List<Long> campaignIds = getCampaignIds(sellerId, cabinetId);
+        CampaignStatisticsAggregator.AdvertisingStats stats;
+        if (nmIdsFilter != null && !nmIdsFilter.isEmpty()) {
+            Map<Long, CampaignStatisticsAggregator.AdvertisingStats> byArticle =
+                    statisticsAggregator.aggregateStatsByArticle(campaignIds, period);
+            int views = 0;
+            int clicks = 0;
+            BigDecimal sum = BigDecimal.ZERO;
+            int orders = 0;
+            BigDecimal ordersSum = BigDecimal.ZERO;
+            for (Long nmId : nmIdsFilter) {
+                CampaignStatisticsAggregator.AdvertisingStats s = byArticle.get(nmId);
+                if (s != null) {
+                    views += s.views();
+                    clicks += s.clicks();
+                    sum = sum.add(s.sum());
+                    orders += s.orders();
+                    ordersSum = ordersSum.add(s.ordersSum());
+                }
+            }
+            stats = new CampaignStatisticsAggregator.AdvertisingStats(views, clicks, sum, orders, ordersSum);
+        } else {
+            stats = statisticsAggregator.aggregateStats(campaignIds, period);
+        }
         setBasicMetrics(metrics, stats);
         calculateDerivedMetrics(metrics, stats);
     }

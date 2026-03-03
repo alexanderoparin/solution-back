@@ -9,6 +9,8 @@ import ru.oparin.solution.repository.PromotionCampaignStatisticsRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Агрегатор статистики рекламных кампаний.
@@ -45,6 +47,22 @@ public class CampaignStatisticsAggregator {
         );
         
         return aggregateCampaignStatistics(stats);
+    }
+
+    /**
+     * Агрегирует статистику по артикулам (nmId) за период: по каждому артикулу суммируются данные
+     * по всем кампаниям из campaignIds.
+     */
+    public Map<Long, AdvertisingStats> aggregateStatsByArticle(List<Long> campaignIds, PeriodDto period) {
+        List<PromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
+                campaignIds,
+                period.getDateFrom(),
+                period.getDateTo()
+        );
+        return allStats.stream()
+                .collect(Collectors.groupingBy(PromotionCampaignStatistics::getNmId))
+                .entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> aggregateCampaignStatistics(e.getValue())));
     }
 
     private AdvertisingStats aggregateCampaignStatistics(List<PromotionCampaignStatistics> stats) {
