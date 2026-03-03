@@ -67,6 +67,12 @@ public class SummaryRequestDto {
     private List<Long> includedNmIds = new ArrayList<>();
 
     /**
+     * Если true — при пагинации вернуть 0 артикулов (пользователь снял все галочки в фильтре).
+     * Отдельный флаг, т.к. при отсутствии includedNmIds в теле запроса DTO подставляет пустой список.
+     */
+    private Boolean filterToNone;
+
+    /**
      * Начало периода для метрик РК в блоке «Список РК» (опционально).
      * Если заданы оба — campaigns в ответе заполняются views, clicks, ctr, cpc, costs, cart, orders за этот период.
      */

@@ -48,7 +48,8 @@ public class AnalyticsController {
                 request.getPage(),
                 request.getSize(),
                 request.getSearch(),
-                request.getIncludedNmIds()
+                request.getIncludedNmIds(),
+                request.getFilterToNone()
         );
         
         return ResponseEntity.ok(response);

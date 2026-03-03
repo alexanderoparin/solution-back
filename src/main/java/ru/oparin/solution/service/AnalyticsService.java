@@ -58,7 +58,8 @@ public class AnalyticsService {
             Integer page,
             Integer size,
             String search,
-            List<Long> includedNmIds
+            List<Long> includedNmIds,
+            Boolean filterToNone
     ) {
         validatePeriods(periods);
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
@@ -68,7 +69,9 @@ public class AnalyticsService {
         boolean paginated = page != null && size != null && size > 0;
         if (paginated) {
             List<ProductCard> filtered = visibleCards;
-            if (includedNmIds != null && !includedNmIds.isEmpty()) {
+            if (Boolean.TRUE.equals(filterToNone)) {
+                filtered = List.of();
+            } else if (includedNmIds != null && !includedNmIds.isEmpty()) {
                 var idSet = new java.util.HashSet<>(includedNmIds);
                 filtered = filtered.stream()
                         .filter(c -> c.getNmId() != null && idSet.contains(c.getNmId()))
