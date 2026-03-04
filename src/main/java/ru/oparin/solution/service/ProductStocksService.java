@@ -30,7 +30,7 @@ import java.util.Optional;
 public class ProductStocksService {
 
     private static final String STOCK_TYPE_WB = "wb";
-    /** Задержка между запросами остатков (лимит WB: 3 запроса в минуту). */
+    /** Задержка между запросами остатков: лимит WB API — 3 запроса/мин, интервал 20 сек (см. dev.wildberries.ru/swagger/analytics). */
     private static final long STOCKS_REQUEST_DELAY_MS = 20000;
     private static final String ORDER_FIELD_STOCK_COUNT = "stockCount";
     private static final String ORDER_MODE_ASC = "asc";
@@ -63,9 +63,10 @@ public class ProductStocksService {
             return createEmptyResponse();
         }
 
-        log.info("Получено {} размеров с остатками на складах WB для nmID {}", response.getData().getSizes().size(), nmId);
+        List<WbStocksSizesResponse.SizeItem> sizeItems = getSizeItemsFromResponse(response);
+        log.info("Получено {} размеров/складов с остатками на складах WB для nmID {}", sizeItems.size(), nmId);
 
-        saveWbStocksBySizes(nmId, response.getData().getSizes(), cabinet);
+        saveWbStocksBySizes(nmId, sizeItems, cabinet);
         return response;
     }
 
@@ -255,13 +256,38 @@ public class ProductStocksService {
     }
 
     /**
+     * Возвращает список размеров для сохранения.
+     * Если API вернул data.sizes — используем его; если только data.offices — один «синтетический» размер с этими складами.
+     */
+    private List<WbStocksSizesResponse.SizeItem> getSizeItemsFromResponse(WbStocksSizesResponse response) {
+        WbStocksSizesResponse.Data data = response.getData();
+        if (data.getSizes() != null && !data.getSizes().isEmpty()) {
+            return data.getSizes();
+        }
+        if (data.getOffices() != null && !data.getOffices().isEmpty()) {
+            WbStocksSizesResponse.SizeItem synthetic = WbStocksSizesResponse.SizeItem.builder()
+                    .name(null)
+                    .chrtID(null)
+                    .offices(data.getOffices())
+                    .metrics(null)
+                    .build();
+            return List.of(synthetic);
+        }
+        return List.of();
+    }
+
+    /**
      * Проверяет, является ли ответ пустым.
+     * Учитывает оба формата API: data.sizes (по размерам) и data.offices (только по складам).
      */
     private boolean isEmptyResponse(WbStocksSizesResponse response) {
-        return response == null
-                || response.getData() == null
-                || response.getData().getSizes() == null
-                || response.getData().getSizes().isEmpty();
+        if (response == null || response.getData() == null) {
+            return true;
+        }
+        WbStocksSizesResponse.Data data = response.getData();
+        boolean hasSizes = data.getSizes() != null && !data.getSizes().isEmpty();
+        boolean hasOffices = data.getOffices() != null && !data.getOffices().isEmpty();
+        return !hasSizes && !hasOffices;
     }
 
     /**

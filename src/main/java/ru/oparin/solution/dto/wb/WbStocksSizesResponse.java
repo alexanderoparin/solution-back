@@ -8,6 +8,16 @@ import java.util.List;
 
 /**
  * DTO для ответа с остатками по размерам от /api/v2/stocks-report/products/sizes.
+ * Документация: <a href="https://dev.wildberries.ru/swagger/analytics">WB API Аналитика</a>.
+ * <p>
+ * Формат ответа зависит от товара и includeOffice:
+ * <ul>
+ *   <li>Товар с размерами + includeOffice true → data.sizes (остатки по размерам с детализацией по складам)</li>
+ *   <li>Товар с размерами + includeOffice false → data.sizes (без детализации по складам)</li>
+ *   <li>Товар без размера (techSize="0", hasSizes=false) + includeOffice true → data.offices (только по складам)</li>
+ *   <li>Товар без размера + includeOffice false → пустое тело ответа</li>
+ * </ul>
+ * Склады продавца приходят агрегированно: regionName="Маркетплейс", officeName="".
  */
 @Getter
 @Setter
@@ -30,10 +40,24 @@ public class WbStocksSizesResponse {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Data {
         /**
-         * Массив размеров с остатками.
+         * Остатки по размерам (когда у товара есть размеры).
+         * При includeOffice=true у каждого размера есть вложенная детализация по складам.
          */
         @JsonProperty("sizes")
         private List<SizeItem> sizes;
+
+        /**
+         * Детализация по складам без разбивки по размерам (когда у товара нет размера — единственный techSize="0").
+         * См. документацию WB API Аналитика.
+         */
+        @JsonProperty("offices")
+        private List<OfficeStock> offices;
+
+        /**
+         * Валюта (например, "RUB").
+         */
+        @JsonProperty("currency")
+        private String currency;
     }
 
     @Getter
