@@ -1,5 +1,8 @@
 server:
   port: 8080
+  # Слушать только localhost — порт 8080 недоступен снаружи, nginx проксирует на 127.0.0.1:8080.
+  # Для локальной разработки с доступа с другого устройства: SERVER_ADDRESS=0.0.0.0
+  address: ${SERVER_ADDRESS:127.0.0.1}
   servlet:
     context-path: /api
 
