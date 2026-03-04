@@ -9,6 +9,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import ru.oparin.solution.dto.ErrorResponse;
 
 import java.util.HashMap;
@@ -108,6 +109,20 @@ public class GlobalExceptionHandler {
         }
         // Возвращаем пустой ответ, так как соединение уже разорвано
         return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    /**
+     * Обработка запросов к несуществующим путям (например /auth/login без префикса /api).
+     * Возвращаем 404 вместо 500, без полного stack trace в логах.
+     *
+     * @param ex исключение
+     * @return ответ 404
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(NoResourceFoundException ex) {
+        log.debug("Обращение к несуществующему ресурсу: {}", ex.getResourcePath());
+        ErrorResponse error = createErrorResponse("Ресурс не найден.");
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
     }
 
     /**

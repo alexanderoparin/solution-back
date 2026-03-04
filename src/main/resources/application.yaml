@@ -108,7 +108,7 @@ logging:
     org.springframework.security.authentication: DEBUG
     org.springframework.security.web.FilterChainProxy: INFO
     org.springframework.security.web.authentication.AnonymousAuthenticationFilter: INFO
-    org.springframework.security.web.access.Http403ForbiddenEntryPoint: INFO
+    org.springframework.security.web.access.Http403ForbiddenEntryPoint: WARN
     org.hibernate.SQL: INFO
     org.hibernate.type.descriptor.sql.BasicBinder: INFO
   file:
