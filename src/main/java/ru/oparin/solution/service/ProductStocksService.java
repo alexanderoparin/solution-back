@@ -95,10 +95,10 @@ public class ProductStocksService {
                 if (e.getCause() instanceof UnknownHostException) {
                     log.error("Ошибка при обновлении остатков для nmID {}: не удалось разрешить хост WB API (DNS). Проверьте доступность seller-analytics-api.wildberries.ru и настройки DNS на сервере.", nmId);
                 } else {
-                    log.error("Ошибка при обновлении остатков для артикула {}: {}", nmId, e.getMessage(), e);
+                    log.error("Ошибка при обновлении остатков для артикула {}: {}", nmId, e.getMessage());
                 }
             } catch (Exception e) {
-                log.error("Ошибка при обновлении остатков для артикула {}: {}", nmId, e.getMessage(), e);
+                log.error("Ошибка при обновлении остатков для артикула {}: {}", nmId, e.getMessage());
             }
         }
         log.info("Завершено обновление остатков товаров на складах WB для кабинета (ID: {})", cabinet.getId());
