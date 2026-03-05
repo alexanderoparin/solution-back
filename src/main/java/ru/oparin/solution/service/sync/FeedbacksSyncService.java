@@ -12,8 +12,8 @@ import ru.oparin.solution.dto.wb.FeedbacksResponse;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.Role;
-import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
+import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.wb.WbFeedbacksApiClient;
 
 import java.math.BigDecimal;
@@ -36,7 +36,7 @@ public class FeedbacksSyncService {
 
     private final WbFeedbacksApiClient feedbacksApiClient;
     private final ProductCardRepository productCardRepository;
-    private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
 
     /**
      * Синхронизирует отзывы в отдельной транзакции. Вызывать из полного обновления кабинета,
@@ -83,7 +83,7 @@ public class FeedbacksSyncService {
      * Вызывается по эндпоинту (ADMIN) и после ночной загрузки аналитики.
      */
     public void syncFeedbacksForAllCabinets() {
-        List<Cabinet> cabinets = cabinetRepository.findCabinetsWithApiKeyAndUser(Role.SELLER);
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
         log.info("Запуск синхронизации отзывов для {} кабинетов", cabinets.size());
         for (Cabinet cabinet : cabinets) {
             String apiKey = cabinet.getApiKey();

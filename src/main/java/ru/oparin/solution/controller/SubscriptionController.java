@@ -63,7 +63,7 @@ public class SubscriptionController {
     }
 
     /**
-     * Callback Result URL от Робокассы (вызывается сервером Робокассы).
+     * URL результата callback от Робокассы (вызывается сервером Робокассы).
      * Ответ в формате OK[InvId] при успехе — по документации Робокассы.
      */
     @GetMapping("/payment/result")

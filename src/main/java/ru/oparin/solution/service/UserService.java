@@ -20,7 +20,6 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.Subscription;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.SubscriptionRepository;
 import ru.oparin.solution.repository.UserRepository;
 
@@ -40,7 +39,6 @@ import static java.lang.Boolean.TRUE;
 public class UserService {
 
     private final UserRepository userRepository;
-    private final CabinetRepository cabinetRepository;
     private final CabinetService cabinetService;
     private final PasswordEncoder passwordEncoder;
     private final SubscriptionRepository subscriptionRepository;
@@ -91,12 +89,12 @@ public class UserService {
      */
     @Transactional
     public void updateApiKey(Long userId, String newApiKey) {
-        Cabinet cabinet = cabinetRepository.findDefaultByUserId(userId)
+        Cabinet cabinet = cabinetService.findDefaultByUserId(userId)
                 .orElseGet(() -> createNewCabinet(userId));
 
         resetApiKeyValidation(cabinet);
         cabinet.setApiKey(newApiKey);
-        cabinetRepository.save(cabinet);
+        cabinetService.save(cabinet);
     }
 
     /**
@@ -372,7 +370,7 @@ public class UserService {
             self.runDeletionAsync(sub.getId());
         }
 
-        List<Cabinet> cabinets = cabinetRepository.findByUser_IdOrderByCreatedAtDesc(userId);
+        List<Cabinet> cabinets = cabinetService.findCabinetsByUserId(userId);
         if (!cabinets.isEmpty()) {
             log.info("[Удаление пользователя]   → Кабинетов: {} шт.", cabinets.size());
         }
@@ -454,7 +452,7 @@ public class UserService {
 
         // Фильтруем только селлеров с кабинетами
         List<User> sellersWithCabinets = sellers.stream()
-                .filter(seller -> cabinetRepository.findDefaultByUserId(seller.getId()).isPresent())
+                .filter(seller -> cabinetService.findDefaultByUserId(seller.getId()).isPresent())
                 .toList();
 
         return sellersWithCabinets.stream()
@@ -531,7 +529,7 @@ public class UserService {
         LocalDateTime lastDataUpdateAt = null;
         LocalDateTime lastDataUpdateRequestedAt = null;
         if (user.getRole() == Role.SELLER) {
-            Optional<Cabinet> cabinet = cabinetRepository.findDefaultByUserId(user.getId());
+            Optional<Cabinet> cabinet = cabinetService.findDefaultByUserId(user.getId());
             if (cabinet.isPresent()) {
                 Cabinet c = cabinet.get();
                 lastDataUpdateAt = c.getLastDataUpdateAt();

@@ -65,7 +65,7 @@ public class SecurityConfig {
     /**
      * Bean для кодирования паролей (BCrypt).
      *
-     * @return password encoder
+     * @return кодировщик паролей
      */
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -75,7 +75,7 @@ public class SecurityConfig {
     /**
      * Провайдер аутентификации.
      *
-     * @return authentication provider
+     * @return провайдер аутентификации
      */
     @Bean
     public DaoAuthenticationProvider authenticationProvider() {
@@ -89,7 +89,7 @@ public class SecurityConfig {
      * Менеджер аутентификации.
      *
      * @param authConfig конфигурация аутентификации
-     * @return authentication manager
+     * @return менеджер аутентификации
      */
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
@@ -99,8 +99,8 @@ public class SecurityConfig {
     /**
      * Цепочка фильтров безопасности.
      *
-     * @param http HTTP security
-     * @return security filter chain
+     * @param http конфигурация HTTP-безопасности
+     * @return цепочка фильтров безопасности
      */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -118,7 +118,7 @@ public class SecurityConfig {
     /**
      * Конфигурация CORS.
      *
-     * @return CORS configuration source
+     * @return источник конфигурации CORS
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {

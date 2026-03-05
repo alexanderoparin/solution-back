@@ -9,7 +9,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.service.wb.WbContentApiClient;
 
 import java.time.LocalDateTime;
@@ -23,7 +22,7 @@ import java.time.LocalDateTime;
 @Slf4j
 public class WbApiKeyService {
 
-    private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
     private final WbContentApiClient contentApiClient;
 
     /**
@@ -34,7 +33,7 @@ public class WbApiKeyService {
      * @throws UserException если кабинет не найден
      */
     public Cabinet findDefaultCabinetByUserId(Long userId) {
-        return cabinetRepository.findDefaultByUserId(userId)
+        return cabinetService.findDefaultByUserId(userId)
                 .orElseThrow(() -> new UserException(
                         "Кабинет не найден для пользователя с ID: " + userId,
                         HttpStatus.NOT_FOUND
@@ -45,7 +44,7 @@ public class WbApiKeyService {
      * Кабинет по умолчанию для пользователя (Optional).
      */
     public java.util.Optional<Cabinet> findDefaultCabinetByUserIdOptional(Long userId) {
-        return cabinetRepository.findDefaultByUserId(userId);
+        return cabinetService.findDefaultByUserId(userId);
     }
 
     /**
@@ -116,7 +115,7 @@ public class WbApiKeyService {
         cabinet.setIsValid(isValid);
         cabinet.setLastValidatedAt(LocalDateTime.now());
         cabinet.setValidationError(isValid ? null : getErrorMessage(errorMessage));
-        cabinetRepository.save(cabinet);
+        cabinetService.save(cabinet);
     }
 
     private String getErrorMessage(String errorMessage) {

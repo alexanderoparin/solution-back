@@ -5,19 +5,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import ru.oparin.solution.dto.wb.AnalyticsRequest;
-import ru.oparin.solution.dto.wb.CardsListRequest;
-import ru.oparin.solution.dto.wb.CardsListResponse;
-import ru.oparin.solution.dto.wb.PingResponse;
-import ru.oparin.solution.dto.wb.SellerInfoResponse;
-import ru.oparin.solution.dto.wb.WbStocksSizesResponse;
-import ru.oparin.solution.dto.wb.WbWarehouseResponse;
-import ru.oparin.solution.service.CardsListRequestBuilder;
-import ru.oparin.solution.service.ProductCardAnalyticsService;
-import ru.oparin.solution.service.ProductCardService;
-import ru.oparin.solution.service.ProductStocksService;
-import ru.oparin.solution.service.SellerContextService;
-import ru.oparin.solution.service.WbWarehouseService;
+import ru.oparin.solution.dto.wb.*;
+import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.wb.WbCommonApiClient;
 import ru.oparin.solution.service.wb.WbContentApiClient;
 import ru.oparin.solution.service.wb.WbWarehousesApiClient;
@@ -118,7 +107,6 @@ public class WbApiController {
         
         analyticsService.updateCardsAndLoadAnalytics(
                 context.user(),
-                context.apiKey(),
                 request.getDateFrom(),
                 request.getDateTo()
         );

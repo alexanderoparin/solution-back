@@ -5,15 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.wb.PromotionAdvertsResponse;
-import ru.oparin.solution.model.BidType;
-import ru.oparin.solution.model.CampaignStatus;
-import ru.oparin.solution.model.CampaignType;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.CampaignArticle;
-import ru.oparin.solution.model.ProductCard;
-import ru.oparin.solution.model.PromotionCampaign;
-import ru.oparin.solution.model.User;
-import ru.oparin.solution.repository.CabinetRepository;
+import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CampaignArticleRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
@@ -38,7 +30,7 @@ public class PromotionCampaignService {
     private final CampaignArticleRepository campaignArticleRepository;
     private final ProductCardRepository productCardRepository;
     private final PromotionCampaignStatisticsRepository campaignStatisticsRepository;
-    private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
 
     /**
      * Сохраняет или обновляет кампании из ответа WB API (кабинет по умолчанию для продавца).
@@ -49,8 +41,7 @@ public class PromotionCampaignService {
             log.info("Ответ со списком кампаний пуст, сохранение/обновление не требуется.");
             return;
         }
-        Cabinet cabinet = cabinetRepository.findDefaultByUserId(seller.getId())
-                .orElseThrow(() -> new IllegalStateException("У продавца нет кабинета по умолчанию"));
+        Cabinet cabinet = cabinetService.findDefaultByUserIdOrThrow(seller.getId());
         saveOrUpdateCampaigns(response, cabinet);
     }
 

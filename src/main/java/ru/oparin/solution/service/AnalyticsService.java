@@ -42,7 +42,7 @@ public class AnalyticsService {
     private final MetricValueCalculator metricValueCalculator;
     private final CampaignStatisticsAggregator campaignStatisticsAggregator;
     private final PromotionParticipationRepository promotionParticipationRepository;
-    private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
 
 
     /**
@@ -364,7 +364,7 @@ public class AnalyticsService {
         Boolean inWbPromotion = !wbPromotionNames.isEmpty();
         List<ArticleSummaryDto> bundleProducts = getBundleProducts(card, cardCabinetId);
         LocalDateTime lastStocksUpdateTriggeredAt = cardCabinetId != null
-                ? cabinetRepository.findById(cardCabinetId).map(Cabinet::getLastStocksUpdateRequestedAt).orElse(null)
+                ? cabinetService.findById(cardCabinetId).map(Cabinet::getLastStocksUpdateRequestedAt).orElse(null)
                 : null;
 
         return ArticleResponseDto.builder()

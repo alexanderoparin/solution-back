@@ -15,7 +15,6 @@ import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.service.sync.*;
 
@@ -36,8 +35,9 @@ import java.util.stream.Collectors;
 public class ProductCardAnalyticsService {
 
     private static final int STOCKS_UPDATE_MIN_INTERVAL_HOURS = 1;
+    private static final String MSG_SCOPE_ACCESS_DENIED =
+            "Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.";
 
-    private final CabinetRepository cabinetRepository;
     private final ProductCardRepository productCardRepository;
     private final WbCardsSyncService wbCardsSyncService;
     private final ProductCardService productCardService;
@@ -47,14 +47,17 @@ public class ProductCardAnalyticsService {
     private final ProductCardAnalyticsLoadService analyticsLoadService;
     private final PromotionCalendarService promotionCalendarService;
     private final FeedbacksSyncService feedbacksSyncService;
+    private final CabinetService cabinetService;
+
+    // --- Публичный API (асинхронные вызовы, транзакции, валидация) ---
 
     /**
      * Обновляет все карточки и загружает аналитику за указанный период (кабинет по умолчанию продавца).
+     * API-ключ берётся из кабинета.
      */
     @Async("taskExecutor")
-    public void updateCardsAndLoadAnalytics(User seller, String apiKey, LocalDate dateFrom, LocalDate dateTo) {
-        Cabinet cabinet = cabinetRepository.findDefaultByUserId(seller.getId())
-                .orElseThrow(() -> new IllegalStateException("У продавца нет кабинета по умолчанию"));
+    public void updateCardsAndLoadAnalytics(User seller, LocalDate dateFrom, LocalDate dateTo) {
+        Cabinet cabinet = cabinetService.findDefaultByUserIdOrThrow(seller.getId());
         updateCardsAndLoadAnalytics(cabinet, dateFrom, dateTo);
     }
 
@@ -66,8 +69,7 @@ public class ProductCardAnalyticsService {
     public void updateCardsAndLoadAnalytics(Cabinet cabinet, LocalDate dateFrom, LocalDate dateTo) {
         MDC.put("cabinetTag", "[cabinet:" + cabinet.getId() + "]");
         try {
-            Cabinet managed = cabinetRepository.findByIdWithUser(cabinet.getId())
-                    .orElseThrow(() -> new IllegalStateException("Кабинет не найден: " + cabinet.getId()));
+            Cabinet managed = findManagedCabinet(cabinet.getId());
             doUpdateCabinetAnalytics(managed, dateFrom, dateTo, true);
         } finally {
             MDC.remove("cabinetTag");
@@ -80,114 +82,8 @@ public class ProductCardAnalyticsService {
      */
     @Transactional
     public void updateCabinetAnalyticsInTransaction(Cabinet cabinet, LocalDate dateFrom, LocalDate dateTo) {
-        Cabinet managed = cabinetRepository.findByIdWithUser(cabinet.getId())
-                .orElseThrow(() -> new IllegalStateException("Кабинет не найден: " + cabinet.getId()));
+        Cabinet managed = findManagedCabinet(cabinet.getId());
         doUpdateCabinetAnalytics(managed, dateFrom, dateTo, false);
-    }
-
-    private void doUpdateCabinetAnalytics(Cabinet managed, LocalDate dateFrom, LocalDate dateTo, boolean syncPromotion) {
-        long cabinetId = managed.getId();
-        String apiKey = managed.getApiKey();
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("У кабинета (ID: {}) не задан API-ключ, обновление пропущено", cabinetId);
-            cabinetRepository.save(managed);
-            return;
-        }
-
-        // Фиксируем время запуска обновления (ночной шедулер или ручной запуск)
-        managed.setLastDataUpdateRequestedAt(LocalDateTime.now());
-        cabinetRepository.save(managed);
-
-        User seller = managed.getUser();
-        log.info("Начало обновления карточек, кампаний и загрузки аналитики для кабинета (ID: {}, продавец: {}) за период {} - {}",
-                cabinetId, seller.getEmail(), dateFrom, dateTo);
-
-        try {
-            try {
-                CardsListResponse cardsResponse = wbCardsSyncService.fetchAllCards(apiKey);
-                productCardService.saveOrUpdateCards(cardsResponse, managed);
-            } catch (WbApiUnauthorizedScopeException e) {
-                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
-            }
-
-            try {
-                productPricesSyncService.updateProductPrices(managed, apiKey);
-            } catch (WbApiUnauthorizedScopeException e) {
-                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
-            }
-            try {
-                productPricesSyncService.updateSppFromOrders(managed, apiKey);
-            } catch (WbApiUnauthorizedScopeException e) {
-                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
-            }
-
-            List<ProductCard> productCards = productCardRepository.findByCabinet_Id(cabinetId);
-            List<Long> nmIds = productCards.stream()
-                    .map(ProductCard::getNmId)
-                    .filter(Objects::nonNull)
-                    .distinct()
-                    .collect(Collectors.toList());
-
-            try {
-                List<Long> campaignIds = campaignSyncService.updateCampaigns(managed, apiKey);
-                if (!campaignIds.isEmpty()) {
-                    List<Long> nonFinishedIds = campaignSyncService.filterNonFinishedCampaigns(cabinetId, campaignIds);
-                    if (!nonFinishedIds.isEmpty()) {
-                        campaignSyncService.updateStatistics(seller, apiKey, nonFinishedIds, cabinetId, dateFrom, dateTo);
-                    }
-                }
-            } catch (WbApiUnauthorizedScopeException e) {
-                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
-            }
-
-            log.info("Найдено карточек для загрузки аналитики: {}", productCards.size());
-            try {
-                ProductCardAnalyticsLoadService.ProcessingResult result =
-                        analyticsLoadService.loadAnalyticsForAllCards(productCards, apiKey, dateFrom, dateTo);
-                log.info("Завершено обновление карточек, кампаний и загрузка аналитики для кабинета (ID: {}): успешно {}, ошибок {}",
-                        cabinetId, result.successCount(), result.errorCount());
-            } catch (WbApiUnauthorizedScopeException e) {
-                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
-            }
-
-            managed.setLastDataUpdateAt(LocalDateTime.now());
-            cabinetRepository.save(managed);
-
-            if (syncPromotion) {
-                try {
-                    promotionCalendarService.syncPromotionsForCabinet(managed);
-                } catch (WbApiUnauthorizedScopeException e) {
-                    log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
-                } catch (Exception e) {
-                    log.warn("Синхронизация акций календаря для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
-                }
-            }
-
-            try {
-                feedbacksSyncService.syncFeedbacksForCabinetInNewTransaction(managed, apiKey);
-            } catch (WbApiUnauthorizedScopeException e) {
-                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
-            } catch (Exception e) {
-                log.warn("Синхронизация отзывов для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
-            }
-
-            try {
-                if (!nmIds.isEmpty()) {
-                    stocksService.updateStocksForCabinet(managed, apiKey, nmIds);
-                }
-            } catch (WbApiUnauthorizedScopeException e) {
-                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
-            }
-        } catch (HttpClientErrorException e) {
-            HttpStatusCode code = e.getStatusCode();
-            if (code.value() == 401) {
-                log.warn("API-ключ кабинета (ID: {}) отклонён WB (401). Помечаем ключ как недействительный.", cabinetId);
-                managed.setIsValid(false);
-                managed.setValidationError("Ключ отклонён WB (401). Обновите ключ в настройках кабинета.");
-                cabinetRepository.save(managed);
-            }
-            throw e;
-        }
     }
 
     /**
@@ -197,8 +93,7 @@ public class ProductCardAnalyticsService {
      * @throws UserException если с последнего запуска прошло меньше часа
      */
     public void validateStocksUpdateInterval(Long cabinetId) {
-        Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
-                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
 
         LocalDateTime lastRequested = cabinet.getLastStocksUpdateRequestedAt();
         if (lastRequested == null) return;
@@ -206,9 +101,8 @@ public class ProductCardAnalyticsService {
         long hoursSince = Duration.between(lastRequested, LocalDateTime.now()).toHours();
         if (hoursSince < STOCKS_UPDATE_MIN_INTERVAL_HOURS) {
             long remaining = STOCKS_UPDATE_MIN_INTERVAL_HOURS - hoursSince;
-            String word = remaining == 1 ? "час" : (remaining >= 2 && remaining <= 4 ? "часа" : "часов");
             throw new UserException(
-                    "Обновление остатков доступно не чаще раза в час. Следующее обновление через " + remaining + " " + word + ".",
+                    "Обновление остатков доступно не чаще раза в час. Следующее обновление через " + remaining + " " + formatHoursWord(remaining) + ".",
                     HttpStatus.TOO_MANY_REQUESTS
             );
         }
@@ -219,10 +113,9 @@ public class ProductCardAnalyticsService {
      */
     @Transactional
     public void recordStocksUpdateTriggered(Long cabinetId) {
-        Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
-                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
         cabinet.setLastStocksUpdateRequestedAt(LocalDateTime.now());
-        cabinetRepository.save(cabinet);
+        cabinetService.save(cabinet);
     }
 
     /**
@@ -232,27 +125,185 @@ public class ProductCardAnalyticsService {
     public void runStocksUpdateOnly(Long cabinetId) {
         MDC.put("cabinetTag", "[cabinet:" + cabinetId + "]");
         try {
-            Cabinet managed = cabinetRepository.findByIdWithUser(cabinetId)
-                    .orElseThrow(() -> new IllegalStateException("Кабинет не найден: " + cabinetId));
+            Cabinet managed = cabinetService.findByIdWithUserOrThrow(cabinetId);
             String apiKey = managed.getApiKey();
             if (apiKey == null || apiKey.isBlank()) {
                 log.warn("У кабинета (ID: {}) не задан API-ключ, обновление остатков пропущено", cabinetId);
                 return;
             }
-            List<Long> nmIds = productCardRepository.findByCabinet_Id(cabinetId).stream()
-                    .map(ProductCard::getNmId)
-                    .filter(Objects::nonNull)
-                    .distinct()
-                    .collect(Collectors.toList());
+            List<Long> nmIds = collectNmIdsFromCabinet(cabinetId);
             if (nmIds.isEmpty()) {
                 log.info("У кабинета (ID: {}) нет карточек, обновление остатков пропущено", cabinetId);
                 return;
             }
             stocksService.updateStocksForCabinet(managed, apiKey, nmIds);
         } catch (WbApiUnauthorizedScopeException e) {
-            log.warn("Для кабинета {} нет доступа к категории WB API: {}", cabinetId, e.getCategory().getDisplayName());
+            logScopeAccessDenied(cabinetId, e);
         } finally {
             MDC.remove("cabinetTag");
         }
+    }
+
+    // --- Основной поток: один уровень абстракции ---
+
+    private void doUpdateCabinetAnalytics(Cabinet managed, LocalDate dateFrom, LocalDate dateTo, boolean syncPromotion) {
+        long cabinetId = managed.getId();
+        if (skipIfNoApiKey(managed, cabinetId)) return;
+
+        markUpdateRequested(managed);
+        User seller = managed.getUser();
+        log.info("Начало обновления карточек, кампаний и загрузки аналитики для кабинета (ID: {}, продавец: {}) за период {} - {}",
+                cabinetId, seller.getEmail(), dateFrom, dateTo);
+
+        try {
+            runWithScopeGuard(cabinetId, () -> syncCards(managed, managed.getApiKey()));
+            runWithScopeGuard(cabinetId, () -> syncPricesAndSpp(managed, managed.getApiKey()));
+
+            List<ProductCard> productCards = productCardRepository.findByCabinet_Id(cabinetId);
+            List<Long> nmIds = collectNmIds(productCards);
+
+            runWithScopeGuard(cabinetId, () -> syncCampaignsAndStatistics(managed, managed.getApiKey(), cabinetId, seller, dateFrom, dateTo));
+
+            log.info("Найдено карточек для загрузки аналитики: {}", productCards.size());
+            runWithScopeGuard(cabinetId, () -> syncAnalytics(managed, cabinetId, productCards, dateFrom, dateTo));
+
+            markUpdateCompleted(managed);
+
+            if (syncPromotion) {
+                syncPromotionCalendarWithGuard(managed, cabinetId);
+            }
+            syncFeedbacksWithGuard(managed, cabinetId);
+            runWithScopeGuard(cabinetId, () -> syncStocks(managed, nmIds));
+
+        } catch (HttpClientErrorException e) {
+            handle401AndInvalidateKey(managed, e);
+            throw e;
+        }
+    }
+
+    // --- Шаги обновления (одна ответственность на метод) ---
+
+    private Cabinet findManagedCabinet(Long cabinetId) {
+        return cabinetService.findByIdWithUserOrThrow(cabinetId);
+    }
+
+    private boolean skipIfNoApiKey(Cabinet managed, long cabinetId) {
+        String apiKey = managed.getApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("У кабинета (ID: {}) не задан API-ключ, обновление пропущено", cabinetId);
+            cabinetService.save(managed);
+            return true;
+        }
+        return false;
+    }
+
+    private void markUpdateRequested(Cabinet managed) {
+        managed.setLastDataUpdateRequestedAt(LocalDateTime.now());
+        cabinetService.save(managed);
+    }
+
+    private void markUpdateCompleted(Cabinet managed) {
+        managed.setLastDataUpdateAt(LocalDateTime.now());
+        cabinetService.save(managed);
+    }
+
+    private void syncCards(Cabinet managed, String apiKey) {
+        CardsListResponse cardsResponse = wbCardsSyncService.fetchAllCards(apiKey);
+        productCardService.saveOrUpdateCards(cardsResponse, managed);
+    }
+
+    private void syncPricesAndSpp(Cabinet managed, String apiKey) {
+        productPricesSyncService.updateProductPrices(managed, apiKey);
+        productPricesSyncService.updateSppFromOrders(managed, apiKey);
+    }
+
+    private void syncCampaignsAndStatistics(Cabinet managed, String apiKey, long cabinetId, User seller,
+                                            LocalDate dateFrom, LocalDate dateTo) {
+        List<Long> campaignIds = campaignSyncService.updateCampaigns(managed, apiKey);
+        if (campaignIds.isEmpty()) return;
+
+        List<Long> nonFinishedIds = campaignSyncService.filterNonFinishedCampaigns(cabinetId, campaignIds);
+        if (nonFinishedIds.isEmpty()) return;
+
+        campaignSyncService.updateStatistics(seller, apiKey, nonFinishedIds, cabinetId, dateFrom, dateTo);
+    }
+
+    private void syncAnalytics(Cabinet managed, long cabinetId, List<ProductCard> productCards,
+                               LocalDate dateFrom, LocalDate dateTo) {
+        String apiKey = managed.getApiKey();
+        ProductCardAnalyticsLoadService.ProcessingResult result =
+                analyticsLoadService.loadAnalyticsForAllCards(productCards, apiKey, dateFrom, dateTo);
+        log.info("Завершено обновление карточек, кампаний и загрузка аналитики для кабинета (ID: {}): успешно {}, ошибок {}",
+                cabinetId, result.successCount(), result.errorCount());
+    }
+
+    private void syncPromotionCalendarWithGuard(Cabinet managed, long cabinetId) {
+        try {
+            promotionCalendarService.syncPromotionsForCabinet(managed);
+        } catch (WbApiUnauthorizedScopeException e) {
+            logScopeAccessDenied(cabinetId, e);
+        } catch (Exception e) {
+            log.warn("Синхронизация акций календаря для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
+        }
+    }
+
+    private void syncFeedbacksWithGuard(Cabinet managed, long cabinetId) {
+        try {
+            feedbacksSyncService.syncFeedbacksForCabinetInNewTransaction(managed, managed.getApiKey());
+        } catch (WbApiUnauthorizedScopeException e) {
+            logScopeAccessDenied(cabinetId, e);
+        } catch (Exception e) {
+            log.warn("Синхронизация отзывов для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
+        }
+    }
+
+    private void syncStocks(Cabinet managed, List<Long> nmIds) {
+        if (nmIds.isEmpty()) return;
+        stocksService.updateStocksForCabinet(managed, managed.getApiKey(), nmIds);
+    }
+
+    // --- Обработка ошибок ---
+
+    private void runWithScopeGuard(long cabinetId, Runnable action) {
+        try {
+            action.run();
+        } catch (WbApiUnauthorizedScopeException e) {
+            logScopeAccessDenied(cabinetId, e);
+        }
+    }
+
+    private void logScopeAccessDenied(long cabinetId, WbApiUnauthorizedScopeException e) {
+        log.warn(MSG_SCOPE_ACCESS_DENIED, cabinetId, e.getCategory().getDisplayName());
+    }
+
+    private void handle401AndInvalidateKey(Cabinet managed, HttpClientErrorException e) {
+        HttpStatusCode code = e.getStatusCode();
+        if (code.value() == 401) {
+            log.warn("API-ключ кабинета (ID: {}) отклонён WB (401). Помечаем ключ как недействительный.", managed.getId());
+            managed.setIsValid(false);
+            managed.setValidationError("Ключ отклонён WB (401). Обновите ключ в настройках кабинета.");
+            cabinetService.save(managed);
+        }
+    }
+
+    // --- Вспомогательные методы ---
+
+    private List<Long> collectNmIds(List<ProductCard> productCards) {
+        return productCards.stream()
+                .map(ProductCard::getNmId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private List<Long> collectNmIdsFromCabinet(long cabinetId) {
+        List<ProductCard> cards = productCardRepository.findByCabinet_Id(cabinetId);
+        return collectNmIds(cards);
+    }
+
+    private static String formatHoursWord(long hours) {
+        if (hours == 1) return "час";
+        if (hours >= 2 && hours <= 4) return "часа";
+        return "часов";
     }
 }

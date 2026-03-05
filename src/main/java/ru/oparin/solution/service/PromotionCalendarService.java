@@ -10,7 +10,6 @@ import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.PromotionParticipation;
 import ru.oparin.solution.model.Role;
-import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.PromotionParticipationRepository;
 import ru.oparin.solution.service.wb.WbCalendarApiClient;
@@ -31,18 +30,18 @@ public class PromotionCalendarService {
     private final WbCalendarApiClient calendarApiClient;
     private final ProductCardRepository productCardRepository;
     private final PromotionParticipationRepository participationRepository;
-    private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
     private final PromotionCalendarService self;
 
     public PromotionCalendarService(WbCalendarApiClient calendarApiClient,
                                     ProductCardRepository productCardRepository,
                                     PromotionParticipationRepository participationRepository,
-                                    CabinetRepository cabinetRepository,
+                                    CabinetService cabinetService,
                                     @Lazy PromotionCalendarService self) {
         this.calendarApiClient = calendarApiClient;
         this.productCardRepository = productCardRepository;
         this.participationRepository = participationRepository;
-        this.cabinetRepository = cabinetRepository;
+        this.cabinetService = cabinetService;
         this.self = self;
     }
 
@@ -141,7 +140,7 @@ public class PromotionCalendarService {
      * Для каждого кабинета вызывается syncPromotionsForCabinet через прокси — своя транзакция.
      */
     public void syncPromotionsForAllCabinets() {
-        List<Cabinet> cabinets = cabinetRepository.findCabinetsWithApiKeyAndUser(Role.SELLER);
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
         log.info("Запуск синхронизации акций для {} кабинетов", cabinets.size());
         for (Cabinet cabinet : cabinets) {
             try {

@@ -12,11 +12,7 @@ import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.repository.CabinetRepository;
-import ru.oparin.solution.service.FullUpdateOrchestrator;
-import ru.oparin.solution.service.ProductCardAnalyticsService;
-import ru.oparin.solution.service.WbApiKeyService;
-import ru.oparin.solution.service.WbWarehouseService;
+import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.wb.WbWarehousesApiClient;
 
 import java.time.LocalDate;
@@ -33,7 +29,7 @@ import java.util.concurrent.Executor;
 public class AnalyticsScheduler {
 
     private final WbApiKeyService wbApiKeyService;
-    private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
     private final FullUpdateOrchestrator fullUpdateOrchestrator;
     private final ProductCardAnalyticsService analyticsService;
     private final WbWarehousesApiClient warehousesApiClient;
@@ -41,14 +37,14 @@ public class AnalyticsScheduler {
     private final Executor cabinetUpdateExecutor;
 
     public AnalyticsScheduler(WbApiKeyService wbApiKeyService,
-                              CabinetRepository cabinetRepository,
+                              CabinetService cabinetService,
                               FullUpdateOrchestrator fullUpdateOrchestrator,
                               ProductCardAnalyticsService analyticsService,
                               WbWarehousesApiClient warehousesApiClient,
                               WbWarehouseService warehouseService,
                               @Qualifier("cabinetUpdateExecutor") Executor cabinetUpdateExecutor) {
         this.wbApiKeyService = wbApiKeyService;
-        this.cabinetRepository = cabinetRepository;
+        this.cabinetService = cabinetService;
         this.fullUpdateOrchestrator = fullUpdateOrchestrator;
         this.analyticsService = analyticsService;
         this.warehousesApiClient = warehousesApiClient;
@@ -124,7 +120,7 @@ public class AnalyticsScheduler {
      * Загружает User (join fetch), чтобы в асинхронных задачах не обращаться к lazy-прокси без сессии.
      */
     private List<Cabinet> findCabinetsWithApiKey() {
-        return cabinetRepository.findCabinetsWithApiKeyAndUser(Role.SELLER);
+        return cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
     }
 
     private DateRange calculateLastTwoWeeksPeriod() {
@@ -162,7 +158,7 @@ public class AnalyticsScheduler {
             }
 
             cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
-            cabinetRepository.save(cabinet);
+            cabinetService.save(cabinet);
 
             DateRange period = calculateLastTwoWeeksPeriod();
 
@@ -200,8 +196,7 @@ public class AnalyticsScheduler {
      */
     @Transactional
     public void triggerManualUpdateByCabinet(Long cabinetId, boolean skipIntervalCheck) {
-        Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
-                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
         log.info("Ручной запуск обновления данных для кабинета (ID: {}, продавец: {})",
                 cabinet.getId(), cabinet.getUser().getEmail());
 
@@ -211,7 +206,7 @@ public class AnalyticsScheduler {
             }
 
             cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
-            cabinetRepository.save(cabinet);
+            cabinetService.save(cabinet);
 
             DateRange period = calculateLastTwoWeeksPeriod();
             analyticsService.updateCardsAndLoadAnalytics(cabinet, period.from(), period.to());

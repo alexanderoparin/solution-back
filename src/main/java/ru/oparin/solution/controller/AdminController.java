@@ -9,11 +9,11 @@ import ru.oparin.solution.dto.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Plan;
-import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.PlanRepository;
 import ru.oparin.solution.repository.SubscriptionRepository;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.AdminSubscriptionService;
+import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.ProductCardAnalyticsService;
 
 import java.time.LocalDate;
@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
 @RequestMapping("/admin")
 public class AdminController {
 
-    private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
     private final ProductCardAnalyticsService productCardAnalyticsService;
     private final AnalyticsScheduler analyticsScheduler;
     private final Executor taskExecutor;
@@ -38,14 +38,14 @@ public class AdminController {
     private final SubscriptionRepository subscriptionRepository;
     private final AdminSubscriptionService adminSubscriptionService;
 
-    public AdminController(CabinetRepository cabinetRepository,
+    public AdminController(CabinetService cabinetService,
                            ProductCardAnalyticsService productCardAnalyticsService,
                            AnalyticsScheduler analyticsScheduler,
                            @Qualifier("taskExecutor") Executor taskExecutor,
                            PlanRepository planRepository,
                            SubscriptionRepository subscriptionRepository,
                            AdminSubscriptionService adminSubscriptionService) {
-        this.cabinetRepository = cabinetRepository;
+        this.cabinetService = cabinetService;
         this.productCardAnalyticsService = productCardAnalyticsService;
         this.analyticsScheduler = analyticsScheduler;
         this.taskExecutor = taskExecutor;
@@ -68,8 +68,7 @@ public class AdminController {
             @RequestParam(required = false) LocalDate dateFrom,
             @RequestParam(required = false) LocalDate dateTo
     ) {
-        Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
-                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
 
         LocalDate to = dateTo != null ? dateTo : LocalDate.now().minusDays(1);
         LocalDate from = dateFrom != null ? dateFrom : to.minusDays(13);

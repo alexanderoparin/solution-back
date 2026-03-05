@@ -16,6 +16,7 @@ import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -37,8 +38,29 @@ public class CabinetService {
      */
     @Transactional(readOnly = true)
     public List<CabinetDto> listByUserId(Long userId) {
-        List<Cabinet> cabinets = cabinetRepository.findByUser_IdOrderByCreatedAtDesc(userId);
+        List<Cabinet> cabinets = findCabinetsByUserId(userId);
         return cabinets.stream().map(this::toDto).collect(Collectors.toList());
+    }
+
+    /**
+     * Список сущностей кабинетов пользователя (для внутреннего использования в других сервисах).
+     */
+    @Transactional(readOnly = true)
+    public List<Cabinet> findCabinetsByUserId(Long userId) {
+        return cabinetRepository.findByUser_IdOrderByCreatedAtDesc(userId);
+    }
+
+    /**
+     * Находит кабинет по ID с подгруженным пользователем.
+     *
+     * @param cabinetId ID кабинета
+     * @return кабинет
+     * @throws UserException 404 если кабинет не найден
+     */
+    @Transactional(readOnly = true)
+    public Cabinet findByIdWithUserOrThrow(Long cabinetId) {
+        return cabinetRepository.findByIdWithUser(cabinetId)
+                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
     }
 
     /**
@@ -116,7 +138,8 @@ public class CabinetService {
         cabinetDeletionService.deleteStepProductCards(cabinetId);
         cabinetDeletionService.deleteStepArticleNotes(cabinetId);
         cabinetDeletionService.deleteStepCampaignNotes(cabinetId);
-        cabinetDeletionService.deleteStepCabinetRecord(cabinetId);
+        log.info("[Удаление кабинета]   Запись кабинета");
+        deleteCabinet(cabinet);
 
         log.info("[Удаление кабинета] Готово: «{}» (cabinetId={})", cabinet.getName(), cabinetId);
     }
@@ -131,8 +154,7 @@ public class CabinetService {
      */
     @Transactional(readOnly = true)
     public void validateCabinetAccessForUpdate(Long cabinetId, User currentUser) {
-        Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
-                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+        Cabinet cabinet = findByIdWithUserOrThrow(cabinetId);
         User seller = cabinet.getUser();
         if (seller.getRole() != Role.SELLER) {
             throw new UserException("Кабинет не принадлежит селлеру", HttpStatus.FORBIDDEN);
@@ -154,8 +176,7 @@ public class CabinetService {
      */
     @Transactional(readOnly = true)
     public void validateCabinetAccessForStocksUpdate(Long cabinetId, User currentUser) {
-        Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
-                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+        Cabinet cabinet = findByIdWithUserOrThrow(cabinetId);
         User seller = cabinet.getUser();
         if (currentUser.getRole() == Role.SELLER) {
             if (seller.getId().equals(currentUser.getId())) {
@@ -172,6 +193,65 @@ public class CabinetService {
             }
         }
         throw new UserException("Нет доступа к данному кабинету", HttpStatus.FORBIDDEN);
+    }
+
+    /**
+     * Кабинет по умолчанию для пользователя (последний созданный).
+     */
+    @Transactional(readOnly = true)
+    public Optional<Cabinet> findDefaultByUserId(Long userId) {
+        return cabinetRepository.findDefaultByUserId(userId);
+    }
+
+    /**
+     * Кабинет по умолчанию для пользователя или исключение.
+     *
+     * @throws IllegalStateException если кабинет не найден
+     */
+    @Transactional(readOnly = true)
+    public Cabinet findDefaultByUserIdOrThrow(Long userId) {
+        return cabinetRepository.findDefaultByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("У продавца нет кабинета по умолчанию"));
+    }
+
+    /**
+     * Все кабинеты с API-ключом и активным продавцем указанной роли (для планировщиков и синхронизации).
+     */
+    @Transactional(readOnly = true)
+    public List<Cabinet> findCabinetsWithApiKeyAndUser(Role role) {
+        return cabinetRepository.findCabinetsWithApiKeyAndUser(role);
+    }
+
+    /**
+     * Сохраняет кабинет (создание или обновление).
+     */
+    @Transactional
+    public Cabinet save(Cabinet cabinet) {
+        return cabinetRepository.save(cabinet);
+    }
+
+    /**
+     * Находит кабинет по ID (без проверки владельца).
+     */
+    @Transactional(readOnly = true)
+    public Optional<Cabinet> findById(Long cabinetId) {
+        return cabinetRepository.findById(cabinetId);
+    }
+
+    /**
+     * Проверяет, что кабинет принадлежит пользователю.
+     */
+    @Transactional(readOnly = true)
+    public boolean existsByIdAndUser_Id(Long cabinetId, Long userId) {
+        return cabinetRepository.existsByIdAndUser_Id(cabinetId, userId);
+    }
+
+    /**
+     * Удаляет запись кабинета из БД (вызывается после очистки связанных данных).
+     */
+    @Transactional
+    public void deleteCabinet(Cabinet cabinet) {
+        cabinetRepository.delete(cabinet);
     }
 
     /**

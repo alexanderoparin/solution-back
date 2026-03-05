@@ -8,7 +8,6 @@ import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
 
 import java.util.List;
@@ -23,7 +22,7 @@ public class SellerContextService {
     private final UserService userService;
     private final WbApiKeyService wbApiKeyService;
     private final UserRepository userRepository;
-    private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
 
     /**
      * Создает контекст продавца из данных аутентификации.
@@ -74,8 +73,8 @@ public class SellerContextService {
      * Кабинет: если cabinetId передан и принадлежит селлеру — этот кабинет, иначе кабинет по умолчанию.
      */
     private Cabinet resolveCabinet(Long sellerId, Long cabinetId) {
-        if (cabinetId != null && cabinetRepository.existsByIdAndUser_Id(cabinetId, sellerId)) {
-            return cabinetRepository.findById(cabinetId)
+        if (cabinetId != null && cabinetService.existsByIdAndUser_Id(cabinetId, sellerId)) {
+            return cabinetService.findById(cabinetId)
                     .orElseGet(() -> wbApiKeyService.findDefaultCabinetByUserId(sellerId));
         }
         return wbApiKeyService.findDefaultCabinetByUserId(sellerId);
@@ -113,7 +112,7 @@ public class SellerContextService {
 
         // Фильтруем только селлеров с кабинетами
         List<User> sellersWithCabinets = sellers.stream()
-                .filter(seller -> cabinetRepository.findDefaultByUserId(seller.getId()).isPresent())
+                .filter(seller -> cabinetService.findDefaultByUserId(seller.getId()).isPresent())
                 .toList();
 
         // Возвращаем последнего добавленного (по createdAt DESC)

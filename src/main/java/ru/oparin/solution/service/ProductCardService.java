@@ -10,7 +10,6 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductBarcode;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.ProductBarcodeRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 
@@ -27,7 +26,7 @@ public class ProductCardService {
 
     private final ProductCardRepository productCardRepository;
     private final ProductBarcodeRepository barcodeRepository;
-    private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
 
     /**
      * Сохраняет или обновляет карточки товаров из ответа WB API (кабинет по умолчанию для продавца).
@@ -37,8 +36,7 @@ public class ProductCardService {
         if (isEmptyResponse(response)) {
             return;
         }
-        Cabinet cabinet = cabinetRepository.findDefaultByUserId(seller.getId())
-                .orElseThrow(() -> new IllegalStateException("У продавца нет кабинета по умолчанию"));
+        Cabinet cabinet = cabinetService.findDefaultByUserIdOrThrow(seller.getId());
         saveOrUpdateCards(response, cabinet);
     }
 

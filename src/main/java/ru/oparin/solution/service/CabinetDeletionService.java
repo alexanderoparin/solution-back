@@ -6,7 +6,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.repository.*;
 
 import java.util.List;
@@ -32,7 +31,6 @@ public class CabinetDeletionService {
     private final ProductCardRepository productCardRepository;
     private final ArticleNoteRepository articleNoteRepository;
     private final CampaignNoteRepository campaignNoteRepository;
-    private final CabinetRepository cabinetRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void deleteStepStatisticsAndArticles(Long cabinetId) {
@@ -98,15 +96,6 @@ public class CabinetDeletionService {
         deleteByIdBatches("Заметки по РК",
                 () -> campaignNoteRepository.findIdByCabinetId(cabinetId, PageRequest.of(0, BATCH_SIZE)),
                 campaignNoteRepository::deleteAllById);
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void deleteStepCabinetRecord(Long cabinetId) {
-        log.info("[Удаление кабинета]   Запись кабинета");
-        Cabinet cabinet = cabinetRepository.findById(cabinetId).orElse(null);
-        if (cabinet != null) {
-            cabinetRepository.delete(cabinet);
-        }
     }
 
     /**

@@ -17,7 +17,6 @@ import ru.oparin.solution.model.ArticleNoteFile;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.ArticleNoteFileRepository;
 import ru.oparin.solution.repository.ArticleNoteRepository;
-import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.service.SellerContextService.SellerContext;
 
 import java.io.IOException;
@@ -40,7 +39,7 @@ public class ArticleNoteService {
     private final ArticleNoteRepository noteRepository;
     private final ArticleNoteFileRepository fileRepository;
     private final UserService userService;
-    private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
 
     @Value("${app.uploads.directory:/app/uploads/article-notes}")
     private String uploadsDirectory;
@@ -303,7 +302,7 @@ public class ArticleNoteService {
      * Определяет ID кабинета по умолчанию для контекста продавца.
      */
     private long resolveCabinetId(SellerContext context) {
-        return cabinetRepository.findDefaultByUserId(context.user().getId())
+        return cabinetService.findDefaultByUserId(context.user().getId())
                 .orElseThrow(() -> new UserException(
                         "У продавца нет кабинета по умолчанию",
                         HttpStatus.BAD_REQUEST

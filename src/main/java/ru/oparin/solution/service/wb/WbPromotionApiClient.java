@@ -164,7 +164,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
     /**
      * Получение статистики по кампаниям.
-     * GET /adv/v3/fullstats - параметры передаются через query string.
+     * GET /adv/v3/fullstats — параметры передаются в строке запроса.
      *
      * @param apiKey API ключ продавца
      * @param request запрос статистики

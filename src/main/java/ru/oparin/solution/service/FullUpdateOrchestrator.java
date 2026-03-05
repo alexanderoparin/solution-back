@@ -6,7 +6,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
-import ru.oparin.solution.repository.CabinetRepository;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -22,16 +21,16 @@ import java.util.concurrent.Executor;
 @Slf4j
 public class FullUpdateOrchestrator {
 
-    private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
     private final ProductCardAnalyticsService productCardAnalyticsService;
     private final PromotionCalendarService promotionCalendarService;
     private final Executor cabinetUpdateExecutor;
 
-    public FullUpdateOrchestrator(CabinetRepository cabinetRepository,
+    public FullUpdateOrchestrator(CabinetService cabinetService,
                                   ProductCardAnalyticsService productCardAnalyticsService,
                                   PromotionCalendarService promotionCalendarService,
                                   @Qualifier("cabinetUpdateExecutor") Executor cabinetUpdateExecutor) {
-        this.cabinetRepository = cabinetRepository;
+        this.cabinetService = cabinetService;
         this.productCardAnalyticsService = productCardAnalyticsService;
         this.promotionCalendarService = promotionCalendarService;
         this.cabinetUpdateExecutor = cabinetUpdateExecutor;
@@ -42,7 +41,7 @@ public class FullUpdateOrchestrator {
      * затем синхронизация акций календаря (своя транзакция). Кабинеты обрабатываются параллельно.
      */
     public void runFullUpdate() {
-        List<Cabinet> cabinets = cabinetRepository.findCabinetsWithApiKeyAndUser(Role.SELLER);
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
         log.info("Запуск полного обновления по кабинетам. Найдено кабинетов с API-ключом: {}", cabinets.size());
 
         if (cabinets.isEmpty()) {
