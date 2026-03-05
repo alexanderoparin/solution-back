@@ -16,6 +16,7 @@ import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.UserService;
+import ru.oparin.solution.service.WbApiKeyService;
 
 import java.util.List;
 
@@ -28,6 +29,7 @@ import java.util.List;
 public class CabinetController {
 
     private final CabinetService cabinetService;
+    private final WbApiKeyService wbApiKeyService;
     private final UserService userService;
 
     /**
@@ -101,7 +103,7 @@ public class CabinetController {
     ) {
         User user = userService.findByEmail(authentication.getName());
         validateSellerRole(user);
-        cabinetService.validateApiKey(id, user.getId());
+        wbApiKeyService.validateApiKey(id, user.getId());
         Cabinet cabinet = cabinetService.findCabinetByIdAndUserId(id, user.getId());
         String message = Boolean.TRUE.equals(cabinet.getIsValid())
                 ? "API ключ валиден"

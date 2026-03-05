@@ -29,7 +29,6 @@ public class CabinetService {
 
     private final CabinetRepository cabinetRepository;
     private final UserRepository userRepository;
-    private final WbApiKeyService wbApiKeyService;
     private final CabinetDeletionService cabinetDeletionService;
     private final SubscriptionAccessService subscriptionAccessService;
 
@@ -105,7 +104,7 @@ public class CabinetService {
             cabinet.setName(request.getName().trim());
         }
         if (request.getApiKey() != null) {
-            wbApiKeyService.resetValidationAndSetApiKey(cabinet, request.getApiKey());
+            resetValidationAndSetApiKey(cabinet, request.getApiKey());
         }
 
         cabinet = cabinetRepository.save(cabinet);
@@ -113,12 +112,13 @@ public class CabinetService {
     }
 
     /**
-     * Запуск валидации API ключа кабинета.
+     * Сбрасывает статус валидации и устанавливает новый API ключ кабинета.
      */
-    @Transactional
-    public void validateApiKey(Long cabinetId, Long userId) {
-        Cabinet cabinet = findCabinetByIdAndUserId(cabinetId, userId);
-        wbApiKeyService.validateApiKeyByCabinet(cabinet);
+    public void resetValidationAndSetApiKey(Cabinet cabinet, String apiKey) {
+        cabinet.setIsValid(null);
+        cabinet.setValidationError(null);
+        cabinet.setLastValidatedAt(null);
+        cabinet.setApiKey(apiKey != null ? apiKey.trim() : null);
     }
 
     /**

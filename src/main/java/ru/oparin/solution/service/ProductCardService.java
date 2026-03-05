@@ -41,6 +41,14 @@ public class ProductCardService {
     }
 
     /**
+     * Возвращает список карточек товаров кабинета (для загрузки аналитики, остатков и т.д.).
+     */
+    @Transactional(readOnly = true)
+    public List<ProductCard> findByCabinetId(Long cabinetId) {
+        return productCardRepository.findByCabinet_Id(cabinetId);
+    }
+
+    /**
      * Сохраняет или обновляет карточки товаров из ответа WB API для указанного кабинета.
      */
     @Transactional

@@ -59,6 +59,15 @@ public class WbApiKeyService {
     }
 
     /**
+     * Запуск валидации API ключа кабинета.
+     */
+    @Transactional
+    public void validateApiKey(Long cabinetId, Long userId) {
+        Cabinet cabinet = cabinetService.findCabinetByIdAndUserId(cabinetId, userId);
+        validateApiKeyByCabinet(cabinet);
+    }
+
+    /**
      * Валидация WB API ключа указанного кабинета.
      *
      * @param cabinet кабинет с ключом для проверки
@@ -83,17 +92,6 @@ public class WbApiKeyService {
             updateValidationStatus(cabinet, false, errorMessage);
             log.error("Ошибка при валидации WB API ключа для кабинета {}", cabinet.getId(), e);
         }
-    }
-
-    /**
-     * Сбрасывает статус валидации и устанавливает новый API ключ кабинета.
-     */
-    @Transactional
-    public void resetValidationAndSetApiKey(Cabinet cabinet, String apiKey) {
-        cabinet.setIsValid(null);
-        cabinet.setValidationError(null);
-        cabinet.setLastValidatedAt(null);
-        cabinet.setApiKey(apiKey != null ? apiKey.trim() : null);
     }
 
     private String extractUserFriendlyErrorMessage(HttpClientErrorException e) {

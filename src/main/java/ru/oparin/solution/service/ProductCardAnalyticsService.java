@@ -15,7 +15,6 @@ import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.service.sync.*;
 
 import java.time.Duration;
@@ -38,7 +37,6 @@ public class ProductCardAnalyticsService {
     private static final String MSG_SCOPE_ACCESS_DENIED =
             "Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.";
 
-    private final ProductCardRepository productCardRepository;
     private final WbCardsSyncService wbCardsSyncService;
     private final ProductCardService productCardService;
     private final ProductPricesSyncService productPricesSyncService;
@@ -159,7 +157,7 @@ public class ProductCardAnalyticsService {
             runWithScopeGuard(cabinetId, () -> syncCards(managed, managed.getApiKey()));
             runWithScopeGuard(cabinetId, () -> syncPricesAndSpp(managed, managed.getApiKey()));
 
-            List<ProductCard> productCards = productCardRepository.findByCabinet_Id(cabinetId);
+            List<ProductCard> productCards = productCardService.findByCabinetId(cabinetId);
             List<Long> nmIds = collectNmIds(productCards);
 
             runWithScopeGuard(cabinetId, () -> syncCampaignsAndStatistics(managed, managed.getApiKey(), cabinetId, seller, dateFrom, dateTo));
@@ -297,7 +295,7 @@ public class ProductCardAnalyticsService {
     }
 
     private List<Long> collectNmIdsFromCabinet(long cabinetId) {
-        List<ProductCard> cards = productCardRepository.findByCabinet_Id(cabinetId);
+        List<ProductCard> cards = productCardService.findByCabinetId(cabinetId);
         return collectNmIds(cards);
     }
 
