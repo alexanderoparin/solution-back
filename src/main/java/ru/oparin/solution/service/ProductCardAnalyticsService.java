@@ -127,13 +127,6 @@ public class ProductCardAnalyticsService {
                     .filter(Objects::nonNull)
                     .distinct()
                     .collect(Collectors.toList());
-            try {
-                if (!nmIds.isEmpty()) {
-                    stocksService.updateStocksForCabinet(managed, apiKey, nmIds);
-                }
-            } catch (WbApiUnauthorizedScopeException e) {
-                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
-            }
 
             try {
                 List<Long> campaignIds = campaignSyncService.updateCampaigns(managed, apiKey);
@@ -178,6 +171,13 @@ public class ProductCardAnalyticsService {
                 log.warn("Синхронизация отзывов для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
             }
 
+            try {
+                if (!nmIds.isEmpty()) {
+                    stocksService.updateStocksForCabinet(managed, apiKey, nmIds);
+                }
+            } catch (WbApiUnauthorizedScopeException e) {
+                log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
+            }
         } catch (HttpClientErrorException e) {
             HttpStatusCode code = e.getStatusCode();
             if (code.value() == 401) {

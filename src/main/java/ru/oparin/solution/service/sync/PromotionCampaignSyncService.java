@@ -3,7 +3,10 @@ package ru.oparin.solution.service.sync;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import ru.oparin.solution.dto.wb.*;
+import ru.oparin.solution.dto.wb.PromotionAdvertsResponse;
+import ru.oparin.solution.dto.wb.PromotionCountResponse;
+import ru.oparin.solution.dto.wb.PromotionFullStatsRequest;
+import ru.oparin.solution.dto.wb.PromotionFullStatsResponse;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CampaignStatus;
 import ru.oparin.solution.model.PromotionCampaign;
@@ -63,16 +66,7 @@ public class PromotionCampaignSyncService {
                 return allCampaignIds;
             }
 
-            List<PromotionAdvertsResponse.Campaign> type8Campaigns = campaignsByType.type8Ids().isEmpty()
-                    ? List.of()
-                    : fetchCampaignsInBatches(apiKey, campaignsByType.type8Ids(), 8);
-            List<PromotionAdvertsResponse.Campaign> type9Campaigns = campaignsByType.type9Ids().isEmpty()
-                    ? List.of()
-                    : fetchAuctionCampaignsInBatches(apiKey, campaignsByType.type9Ids());
-
-            List<PromotionAdvertsResponse.Campaign> allCampaigns = new ArrayList<>();
-            allCampaigns.addAll(type8Campaigns);
-            allCampaigns.addAll(type9Campaigns);
+            List<PromotionAdvertsResponse.Campaign> allCampaigns = fetchAdvertsV2InBatches(apiKey, allCampaignIds);
 
             if (allCampaigns.isEmpty()) {
                 log.info("Не удалось получить детальную информацию о кампаниях для кабинета (ID: {})", cabinet.getId());
@@ -183,37 +177,14 @@ public class PromotionCampaignSyncService {
         return new CampaignIdsByType(type8Ids, type9Ids);
     }
 
-    private List<PromotionAdvertsResponse.Campaign> fetchCampaignsInBatches(String apiKey, List<Long> campaignIds, int campaignType) {
+    /**
+     * Загрузка деталей кампаний через GET /api/advert/v2/adverts батчами по 50 ID.
+     */
+    private List<PromotionAdvertsResponse.Campaign> fetchAdvertsV2InBatches(String apiKey, List<Long> campaignIds) {
         List<PromotionAdvertsResponse.Campaign> allCampaigns = new ArrayList<>();
         int totalBatches = (campaignIds.size() + CAMPAIGNS_BATCH_SIZE - 1) / CAMPAIGNS_BATCH_SIZE;
 
-        log.info("Загрузка детальной информации о {} кампаниях типа {} батчами по {} (всего батчей: {})",
-                campaignIds.size(), campaignType, CAMPAIGNS_BATCH_SIZE, totalBatches);
-
-        for (int i = 0; i < campaignIds.size(); i += CAMPAIGNS_BATCH_SIZE) {
-            int endIndex = Math.min(i + CAMPAIGNS_BATCH_SIZE, campaignIds.size());
-            List<Long> batch = campaignIds.subList(i, endIndex);
-            int currentBatch = (i / CAMPAIGNS_BATCH_SIZE) + 1;
-
-            try {
-                log.info("Загрузка батча {}/{}: {} кампаний типа {}", currentBatch, totalBatches, batch.size(), campaignType);
-                PromotionAdvertsResponse batchResponse = promotionApiClient.getPromotionAdverts(apiKey, batch);
-                if (batchResponse != null && batchResponse.getAdverts() != null) {
-                    allCampaigns.addAll(batchResponse.getAdverts());
-                    log.info("Получено {} кампаний из батча {}/{}", batchResponse.getAdverts().size(), currentBatch, totalBatches);
-                }
-            } catch (Exception e) {
-                log.error("Ошибка при загрузке батча {}/{} кампаний типа {}: {}", currentBatch, totalBatches, campaignType, e.getMessage(), e);
-            }
-        }
-        return allCampaigns;
-    }
-
-    private List<PromotionAdvertsResponse.Campaign> fetchAuctionCampaignsInBatches(String apiKey, List<Long> campaignIds) {
-        List<PromotionAdvertsResponse.Campaign> allCampaigns = new ArrayList<>();
-        int totalBatches = (campaignIds.size() + CAMPAIGNS_BATCH_SIZE - 1) / CAMPAIGNS_BATCH_SIZE;
-
-        log.info("Загрузка детальной информации о {} аукционных кампаниях (тип 9) батчами по {} (всего батчей: {})",
+        log.info("Загрузка детальной информации о {} кампаниях (v2) батчами по {} (всего батчей: {})",
                 campaignIds.size(), CAMPAIGNS_BATCH_SIZE, totalBatches);
 
         for (int i = 0; i < campaignIds.size(); i += CAMPAIGNS_BATCH_SIZE) {
@@ -222,20 +193,17 @@ public class PromotionCampaignSyncService {
             int currentBatch = (i / CAMPAIGNS_BATCH_SIZE) + 1;
 
             try {
-                log.info("Загрузка батча {}/{}: {} аукционных кампаний", currentBatch, totalBatches, batch.size());
-                AuctionAdvertsResponse batchResponse = promotionApiClient.getAuctionAdverts(apiKey, batch);
+                log.info("Загрузка батча {}/{}: {} кампаний", currentBatch, totalBatches, batch.size());
+                PromotionAdvertsResponse batchResponse = promotionApiClient.getAdvertsV2(apiKey, batch);
                 if (batchResponse != null && batchResponse.getAdverts() != null) {
-                    for (AuctionAdvertsResponse.AuctionCampaign ac : batchResponse.getAdverts()) {
-                        PromotionAdvertsResponse.Campaign campaign = promotionApiClient.convertAuctionToPromotionCampaign(ac);
-                        if (campaign != null) allCampaigns.add(campaign);
-                    }
-                    log.info("Получено {} аукционных кампаний из батча {}/{}", batchResponse.getAdverts().size(), currentBatch, totalBatches);
+                    allCampaigns.addAll(batchResponse.getAdverts());
+                    log.info("Получено {} кампаний из батча {}/{}", batchResponse.getAdverts().size(), currentBatch, totalBatches);
                 }
                 if (currentBatch < totalBatches) {
                     SyncDelayUtil.sleep(AUCTION_ADVERTS_DELAY_MS);
                 }
             } catch (Exception e) {
-                log.error("Ошибка при загрузке батча {}/{} аукционных кампаний: {}", currentBatch, totalBatches, e.getMessage(), e);
+                log.error("Ошибка при загрузке батча {}/{} кампаний (v2): {}", currentBatch, totalBatches, e.getMessage(), e);
             }
         }
         return allCampaigns;

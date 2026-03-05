@@ -3,13 +3,18 @@ package ru.oparin.solution.service.wb;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.*;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -28,9 +33,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     }
 
     private static final String PROMOTION_COUNT_ENDPOINT = "/adv/v1/promotion/count";
-    private static final String PROMOTION_ADVERTS_ENDPOINT = "/adv/v1/promotion/adverts";
-    private static final String AUCTION_ADVERTS_ENDPOINT = "/adv/v0/auction/adverts";
+    /** Актуальный эндпоинт деталей кампаний (типы 8 и 9). Устаревшие: /adv/v1/promotion/adverts, /adv/v0/auction/adverts */
+    private static final String ADVERTS_V2_ENDPOINT = "/api/advert/v2/adverts";
     private static final String PROMOTION_FULLSTATS_ENDPOINT = "/adv/v3/fullstats";
+    private static final int ADVERTS_V2_BATCH_SIZE = 50;
 
     @Value("${wb.api.promotion-base-url}")
     private String promotionBaseUrl;
@@ -79,49 +85,47 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     }
 
     /**
-     * Получение детальной информации о кампаниях.
+     * Получение детальной информации о кампаниях (GET /api/advert/v2/adverts).
+     * Поддерживаются кампании с единой и ручной ставкой (типы 8 и 9). Максимум 50 ID за запрос.
      *
      * @param apiKey API ключ продавца
-     * @param campaignIds список ID кампаний
-     * @return детальная информация о кампаниях
+     * @param campaignIds список ID кампаний (рекомендуется не более 50)
+     * @return детальная информация о кампаниях в формате PromotionAdvertsResponse
      */
-    public PromotionAdvertsResponse getPromotionAdverts(String apiKey, List<Long> campaignIds) {
+    public PromotionAdvertsResponse getAdvertsV2(String apiKey, List<Long> campaignIds) {
+        if (campaignIds == null || campaignIds.isEmpty()) {
+            return PromotionAdvertsResponse.builder().adverts(Collections.emptyList()).build();
+        }
+        List<Long> batch = campaignIds.size() > ADVERTS_V2_BATCH_SIZE
+                ? campaignIds.subList(0, ADVERTS_V2_BATCH_SIZE)
+                : campaignIds;
+
         HttpHeaders headers = createAuthHeaders(apiKey);
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        
-        // API ожидает массив ID напрямую, а не объект с полем id
-        HttpEntity<List<Long>> entity = new HttpEntity<>(campaignIds, headers);
-        String url = promotionBaseUrl + PROMOTION_ADVERTS_ENDPOINT;
-        logWbApiCall(url, "детали кампаний (тип 8)");
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(promotionBaseUrl + ADVERTS_V2_ENDPOINT)
+                .queryParam("ids", batch.stream().map(String::valueOf).collect(Collectors.joining(",")));
+        String url = uriBuilder.toUriString();
+        logWbApiCall(url, "детали кампаний (v2)");
 
         try {
             ResponseEntity<String> response = restTemplate.exchange(
                     url,
-                    HttpMethod.POST,
+                    HttpMethod.GET,
                     entity,
                     String.class
             );
-
             validateResponse(response);
 
-            // API возвращает массив кампаний напрямую, а не объект с полем adverts
-            List<PromotionAdvertsResponse.Campaign> campaigns = objectMapper.readValue(
-                    response.getBody(),
-                    objectMapper.getTypeFactory().constructCollectionType(
-                            List.class,
-                            PromotionAdvertsResponse.Campaign.class
-                    )
-            );
+            AdvertsV2Response v2Response = objectMapper.readValue(response.getBody(), AdvertsV2Response.class);
+            List<PromotionAdvertsResponse.Campaign> campaigns = v2Response.getAdverts() == null
+                    ? Collections.emptyList()
+                    : v2Response.getAdverts().stream()
+                            .map(this::convertV2AdvertToCampaign)
+                            .filter(java.util.Objects::nonNull)
+                            .collect(Collectors.toList());
 
-            PromotionAdvertsResponse advertsResponse = PromotionAdvertsResponse.builder()
-                    .adverts(campaigns)
-                    .build();
-
-            log.info("Получено кампаний: {}", 
-                    campaigns != null ? campaigns.size() : 0);
-
-            return advertsResponse;
-
+            log.info("Получено кампаний: {}", campaigns.size());
+            return PromotionAdvertsResponse.builder().adverts(campaigns).build();
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("детальная информация о кампаниях WB", e);
@@ -130,6 +134,32 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             log.error("Ошибка при получении детальной информации о кампаниях: {}", e.getMessage(), e);
             throw new RestClientException("Ошибка при получении детальной информации о кампаниях: " + e.getMessage(), e);
         }
+    }
+
+    private PromotionAdvertsResponse.Campaign convertV2AdvertToCampaign(AdvertsV2Response.Advert v2) {
+        if (v2 == null || v2.getId() == null) return null;
+        // bid_type: unified -> type 8 (AUTOMATIC), manual -> type 9 (AUCTION); bidType: unified->2, manual->1
+        int type = "unified".equalsIgnoreCase(v2.getBidType()) ? 8 : 9;
+        Integer bidTypeCode = "unified".equalsIgnoreCase(v2.getBidType()) ? 2 : 1;
+        String name = v2.getSettings() != null ? v2.getSettings().getName() : null;
+        AdvertsV2Response.Timestamps ts = v2.getTimestamps();
+        List<Long> nmIds = v2.getNmSettings() == null ? new ArrayList<>()
+                : v2.getNmSettings().stream()
+                        .map(AdvertsV2Response.NmSetting::getNmId)
+                        .filter(java.util.Objects::nonNull)
+                        .collect(Collectors.toList());
+        return PromotionAdvertsResponse.Campaign.builder()
+                .advertId(v2.getId())
+                .name(name)
+                .type(type)
+                .status(v2.getStatus())
+                .bidType(bidTypeCode)
+                .startTime(ts != null ? ts.getStarted() : null)
+                .endTime(ts != null ? ts.getDeleted() : null)
+                .createTime(ts != null ? ts.getCreated() : null)
+                .changeTime(ts != null ? ts.getUpdated() : null)
+                .nmIds(nmIds)
+                .build();
     }
 
     /**
@@ -191,104 +221,6 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             log.error("Ошибка при получении статистики кампаний: {}", e.getMessage(), e);
             throw new RestClientException("Ошибка при получении статистики кампаний: " + e.getMessage(), e);
         }
-    }
-
-    /**
-     * Получение детальной информации об аукционных кампаниях (тип 9).
-     * Использует GET запрос с query параметром ids (максимум 50 ID за запрос).
-     *
-     * @param apiKey API ключ продавца
-     * @param campaignIds список ID кампаний (максимум 50)
-     * @return детальная информация о кампаниях в формате AuctionAdvertsResponse
-     */
-    public AuctionAdvertsResponse getAuctionAdverts(String apiKey, List<Long> campaignIds) {
-        HttpHeaders headers = createAuthHeaders(apiKey);
-        HttpEntity<String> entity = new HttpEntity<>(headers);
-        
-        // Формируем URL с query параметром ids
-        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(promotionBaseUrl + AUCTION_ADVERTS_ENDPOINT);
-        if (campaignIds != null && !campaignIds.isEmpty()) {
-            // Максимум 50 ID за запрос
-            List<Long> idsToRequest = campaignIds.size() > 50 
-                    ? campaignIds.subList(0, 50) 
-                    : campaignIds;
-            String idsParam = idsToRequest.stream()
-                    .map(String::valueOf)
-                    .collect(Collectors.joining(","));
-            uriBuilder.queryParam("ids", idsParam);
-        }
-        String url = uriBuilder.toUriString();
-        logWbApiCall(url, "аукционные кампании (тип 9)");
-
-        try {
-            ResponseEntity<String> response = restTemplate.exchange(
-                    url,
-                    HttpMethod.GET,
-                    entity,
-                    String.class
-            );
-
-            validateResponse(response);
-
-            // API возвращает объект с полем adverts, содержащим массив кампаний
-            AuctionAdvertsResponse advertsResponse = objectMapper.readValue(
-                    response.getBody(),
-                    AuctionAdvertsResponse.class
-            );
-
-            log.info("Получено {} аукционных кампаний", 
-                    advertsResponse.getAdverts() != null ? advertsResponse.getAdverts().size() : 0);
-
-            return advertsResponse;
-
-        } catch (HttpClientErrorException e) {
-            throwIf401ScopeNotAllowed(e);
-            logWbApiError("аукционные кампании WB", e);
-            throw new RestClientException("Ошибка при получении детальной информации об аукционных кампаниях: " + e.getMessage(), e);
-        } catch (Exception e) {
-            log.error("Ошибка при получении детальной информации об аукционных кампаниях: {}", e.getMessage(), e);
-            throw new RestClientException("Ошибка при получении детальной информации об аукционных кампаниях: " + e.getMessage(), e);
-        }
-    }
-    
-    /**
-     * Конвертирует аукционную кампанию в формат PromotionAdvertsResponse.Campaign.
-     *
-     * @param auctionCampaign аукционная кампания
-     * @return кампания в формате PromotionAdvertsResponse.Campaign
-     */
-    public PromotionAdvertsResponse.Campaign convertAuctionToPromotionCampaign(AuctionAdvertsResponse.AuctionCampaign auctionCampaign) {
-        if (auctionCampaign == null) {
-            return null;
-        }
-        
-        // Извлекаем nmIds из nm_settings
-        List<Long> nmIds = null;
-        if (auctionCampaign.getNmSettings() != null) {
-            nmIds = auctionCampaign.getNmSettings().stream()
-                    .map(AuctionAdvertsResponse.NmSetting::getNmId)
-                    .filter(java.util.Objects::nonNull)
-                    .collect(Collectors.toList());
-        }
-        
-        // Определяем bidType (unified -> 2, manual -> 1)
-        Integer bidType = null;
-        if (auctionCampaign.getBidType() != null) {
-            bidType = "unified".equals(auctionCampaign.getBidType()) ? 2 : 1;
-        }
-        
-        return PromotionAdvertsResponse.Campaign.builder()
-                .advertId(auctionCampaign.getId())
-                .name(auctionCampaign.getSettings() != null ? auctionCampaign.getSettings().getName() : null)
-                .type(9) // Тип 9 для аукционных кампаний
-                .status(auctionCampaign.getStatus()) // Статус из корня объекта кампании
-                .bidType(bidType)
-                .startTime(auctionCampaign.getTimestamps() != null ? auctionCampaign.getTimestamps().getStarted() : null)
-                .endTime(null) // В аукционных кампаниях нет endTime
-                .createTime(auctionCampaign.getTimestamps() != null ? auctionCampaign.getTimestamps().getCreated() : null)
-                .changeTime(auctionCampaign.getTimestamps() != null ? auctionCampaign.getTimestamps().getUpdated() : null)
-                .nmIds(nmIds)
-                .build();
     }
 
     private void addQueryParameters(UriComponentsBuilder uriBuilder, PromotionFullStatsRequest request) {
