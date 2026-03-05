@@ -91,6 +91,13 @@ public class User {
     private Instant lastEmailConfirmationSentAt;
 
     /**
+     * Согласие на получение информационных и маркетинговых сообщений (при регистрации).
+     */
+    @Column(name = "marketing_consent", nullable = false)
+    @Builder.Default
+    private Boolean marketingConsent = false;
+
+    /**
      * Дата создания записи.
      */
     @CreatedDate

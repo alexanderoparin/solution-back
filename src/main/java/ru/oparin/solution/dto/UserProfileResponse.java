@@ -3,6 +3,7 @@ package ru.oparin.solution.dto;
 import lombok.*;
 import ru.oparin.solution.model.Role;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 /**
@@ -43,6 +44,11 @@ public class UserProfileResponse {
      * Селлер является клиентом агентства (создан менеджером, привязан к owner).
      */
     private Boolean isAgencyClient;
+
+    /**
+     * Дата и время последней отправки письма для подтверждения почты (повтор не чаще 1 раза в 24 ч).
+     */
+    private Instant lastEmailConfirmationSentAt;
 
     /**
      * Информация о WB API ключе (только для SELLER).

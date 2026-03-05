@@ -60,9 +60,10 @@ public class UserService {
     @Transactional
     public User registerSeller(RegisterRequest request) {
         validateEmailNotExists(request.getEmail());
-        
+
         String encodedPassword = encodePassword(request.getPassword());
-        User user = createSellerUser(request.getEmail(), encodedPassword);
+        boolean marketingConsent = Boolean.TRUE.equals(request.getMarketingConsent());
+        User user = createSellerUser(request.getEmail(), encodedPassword, marketingConsent);
         return userRepository.save(user);
     }
 
@@ -138,7 +139,7 @@ public class UserService {
     /**
      * Создает нового пользователя-продавца.
      */
-    private User createSellerUser(String email, String encodedPassword) {
+    private User createSellerUser(String email, String encodedPassword, boolean marketingConsent) {
         return User.builder()
                 .email(email)
                 .password(encodedPassword)
@@ -146,6 +147,7 @@ public class UserService {
                 .isActive(true)
                 .emailConfirmed(false)
                 .isAgencyClient(false)
+                .marketingConsent(marketingConsent)
                 .build();
     }
 
