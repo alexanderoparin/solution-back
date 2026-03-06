@@ -16,7 +16,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 @EnableAsync
 public class AsyncConfig {
 
-    public static final int MIN_POOL_SIZE = 2;
+    public static final int MIN_POOL_SIZE = 3;
     public static final int MAX_POOL_SIZE = 5;
 
     /**
