@@ -150,17 +150,16 @@ public class UserService {
     }
 
     /**
-     * Создаёт триал-подписку для нового самостоятельного селлера.
+     * Создаёт подписку для нового самостоятельного селлера после подтверждения почты.
+     * При выключенной оплате — бессрочная активная подписка (до 100 лет), чтобы при включении оплаты доступ сохранился.
+     * При включённой оплате — триал на trialDays дней.
      */
     void createTrialSubscriptionForUser(User user) {
-        // Для клиентов агентства триал не нужен
         if (TRUE.equals(user.getIsAgencyClient())) {
             return;
         }
 
-        int trialDays = subscriptionProperties.getTrialDays();
         LocalDateTime now = LocalDateTime.now();
-        // Если уже есть активная или триальная подписка, триал больше не выдаём
         List<String> activeStatuses = List.of("active", "trial");
         boolean hasActive = subscriptionRepository
                 .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(user.getId(), activeStatuses, now)
@@ -169,12 +168,22 @@ public class UserService {
             return;
         }
 
+        String status;
+        LocalDateTime expiresAt;
+        if (!subscriptionProperties.isBillingEnabled()) {
+            status = "active";
+            expiresAt = now.plusYears(100);
+        } else {
+            status = "trial";
+            expiresAt = now.plusDays(subscriptionProperties.getTrialDays());
+        }
+
         Subscription subscription = Subscription.builder()
                 .user(user)
                 .plan(null)
-                .status("trial")
+                .status(status)
                 .startedAt(now)
-                .expiresAt(now.plusDays(trialDays))
+                .expiresAt(expiresAt)
                 .build();
 
         subscriptionRepository.save(subscription);

@@ -288,10 +288,10 @@ public class ProductCardAnalyticsService {
 
     private List<Long> collectNmIds(List<ProductCard> productCards) {
         return productCards.stream()
-                .map(ProductCard::getNmId)
+                    .map(ProductCard::getNmId)
                 .filter(Objects::nonNull)
-                .distinct()
-                .collect(Collectors.toList());
+                    .distinct()
+                    .collect(Collectors.toList());
     }
 
     private List<Long> collectNmIdsFromCabinet(long cabinetId) {

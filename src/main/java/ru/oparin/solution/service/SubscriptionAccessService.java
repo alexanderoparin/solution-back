@@ -3,6 +3,7 @@ package ru.oparin.solution.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import ru.oparin.solution.config.SubscriptionProperties;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.Subscription;
 import ru.oparin.solution.model.User;
@@ -22,10 +23,13 @@ public class SubscriptionAccessService {
     private static final List<String> ACTIVE_STATUSES = List.of("active", "trial");
 
     private final SubscriptionRepository subscriptionRepository;
+    private final SubscriptionProperties subscriptionProperties;
 
     /**
      * Проверяет, есть ли у пользователя доступ к продукту.
      * ADMIN и MANAGER всегда имеют доступ. Клиенты агентства (owner != null) всегда имеют доступ.
+     * Обычные селлеры (не из агентства) должны подтвердить почту — иначе доступа нет.
+     * При выключенной оплате (billingEnabled=false) селлеры без владельца имеют доступ без проверки подписки.
      *
      * @param user пользователь
      * @return true, если доступ разрешён
@@ -43,6 +47,14 @@ public class SubscriptionAccessService {
             return true;
         }
 
+        if (user.getRole() == Role.SELLER && !Boolean.TRUE.equals(user.getEmailConfirmed())) {
+            return false;
+        }
+
+        if (!subscriptionProperties.isBillingEnabled()) {
+            return true;
+        }
+
         LocalDateTime now = LocalDateTime.now();
         return subscriptionRepository
                 .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
@@ -55,9 +67,13 @@ public class SubscriptionAccessService {
 
     /**
      * Возвращает активную подписку пользователя, если она есть.
+     * При выключенной оплате возвращает null (фронту не нужны даты подписки).
      */
     public Subscription getActiveSubscription(User user) {
         if (user == null) {
+            return null;
+        }
+        if (!subscriptionProperties.isBillingEnabled()) {
             return null;
         }
         LocalDateTime now = LocalDateTime.now();

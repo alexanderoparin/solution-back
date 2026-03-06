@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.oparin.solution.config.SubscriptionProperties;
 import ru.oparin.solution.dto.InitiatePaymentResponse;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
@@ -34,12 +35,16 @@ public class SubscriptionPaymentService {
     private final SubscriptionRepository subscriptionRepository;
     private final RobokassaService robokassaService;
     private final ObjectMapper objectMapper;
+    private final SubscriptionProperties subscriptionProperties;
 
     /**
      * Инициирует платёж: создаёт запись в БД и возвращает URL для редиректа в Робокассу.
      */
     @Transactional
     public InitiatePaymentResponse initiatePayment(User user, Long planId) {
+        if (!subscriptionProperties.isBillingEnabled()) {
+            throw new UserException("Оплата временно отключена", HttpStatus.BAD_REQUEST);
+        }
         Plan plan = planRepository.findById(planId)
                 .orElseThrow(() -> new UserException("План не найден: " + planId, HttpStatus.NOT_FOUND));
         if (!Boolean.TRUE.equals(plan.getIsActive())) {

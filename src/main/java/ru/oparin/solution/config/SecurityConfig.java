@@ -21,6 +21,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.security.CustomUserDetailsService;
+import ru.oparin.solution.security.EmailConfirmationAccessFilter;
 import ru.oparin.solution.security.JwtAuthenticationFilter;
 
 import java.util.Arrays;
@@ -54,6 +55,7 @@ public class SecurityConfig {
     private static final String CABINETS_ENDPOINTS = "/cabinets/**";
     private static final String SUBSCRIPTION_PAYMENT_RESULT = "/subscription/payment/result";
     private static final String SUBSCRIPTION_PLANS = "/subscription/plans";
+    private static final String SUBSCRIPTION_STATUS = "/subscription/status";
     public static final String ADMIN = Role.ADMIN.name();
     public static final String MANAGER = Role.MANAGER.name();
     public static final String SELLER = Role.SELLER.name();
@@ -61,6 +63,7 @@ public class SecurityConfig {
 
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final EmailConfirmationAccessFilter emailConfirmationAccessFilter;
 
     /**
      * Bean для кодирования паролей (BCrypt).
@@ -110,7 +113,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(this::configureAuthorization)
                 .authenticationProvider(authenticationProvider())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(emailConfirmationAccessFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }
@@ -136,7 +140,7 @@ public class SecurityConfig {
     ) {
         auth
                 .requestMatchers(AUTH_ENDPOINTS, HEALTH_ENDPOINT).permitAll()
-                .requestMatchers(SUBSCRIPTION_PAYMENT_RESULT, SUBSCRIPTION_PLANS).permitAll()
+                .requestMatchers(SUBSCRIPTION_PAYMENT_RESULT, SUBSCRIPTION_PLANS, SUBSCRIPTION_STATUS).permitAll()
                 .requestMatchers(ADMIN_ENDPOINTS).hasRole(ADMIN)
                 .requestMatchers(SELLER_ENDPOINTS).hasAnyRole(ADMIN, SELLER)
                 .requestMatchers(WORKER_ENDPOINTS).hasAnyRole(ADMIN, SELLER, WORKER)

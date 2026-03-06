@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import ru.oparin.solution.config.SubscriptionProperties;
 import ru.oparin.solution.dto.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
@@ -35,6 +36,7 @@ public class UserController {
     private final WbApiKeyService wbApiKeyService;
     private final AnalyticsScheduler analyticsScheduler;
     private final SubscriptionAccessService subscriptionAccessService;
+    private final SubscriptionProperties subscriptionProperties;
     private final EmailConfirmationService emailConfirmationService;
     private final PaymentRepository paymentRepository;
 
@@ -162,6 +164,8 @@ public class UserController {
         AccessStatusResponse response = AccessStatusResponse.builder()
                 .hasAccess(hasAccess)
                 .agencyClient(agencyClient)
+                .emailConfirmed(Boolean.TRUE.equals(user.getEmailConfirmed()))
+                .billingEnabled(subscriptionProperties.isBillingEnabled())
                 .subscriptionStatus(activeSubscription != null ? activeSubscription.getStatus() : null)
                 .subscriptionExpiresAt(activeSubscription != null ? activeSubscription.getExpiresAt() : null)
                 .build();

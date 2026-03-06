@@ -3,12 +3,16 @@ package ru.oparin.solution.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import ru.oparin.solution.config.SubscriptionProperties;
 import ru.oparin.solution.dto.InitiatePaymentRequest;
 import ru.oparin.solution.dto.InitiatePaymentResponse;
 import ru.oparin.solution.dto.PlanDto;
+import ru.oparin.solution.dto.SubscriptionStatusResponse;
+import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.PlanRepository;
 import ru.oparin.solution.service.SubscriptionPaymentService;
@@ -29,12 +33,16 @@ public class SubscriptionController {
     private final SubscriptionPaymentService subscriptionPaymentService;
     private final PlanRepository planRepository;
     private final UserService userService;
+    private final SubscriptionProperties subscriptionProperties;
 
     /**
      * Список активных тарифных планов.
      */
     @GetMapping("/plans")
     public ResponseEntity<List<PlanDto>> getPlans() {
+        if (!subscriptionProperties.isBillingEnabled()) {
+            return ResponseEntity.ok(List.of());
+        }
         List<PlanDto> list = planRepository.findByIsActiveTrueOrderBySortOrderAsc()
                 .stream()
                 .map(p -> PlanDto.builder()
@@ -50,13 +58,29 @@ public class SubscriptionController {
     }
 
     /**
+     * Статус модуля оплаты (для фронта).
+     */
+    @GetMapping("/status")
+    public ResponseEntity<SubscriptionStatusResponse> getStatus() {
+        return ResponseEntity.ok(
+                SubscriptionStatusResponse.builder()
+                        .billingEnabled(subscriptionProperties.isBillingEnabled())
+                        .build()
+        );
+    }
+
+    /**
      * Инициация оплаты выбранного плана. Возвращает URL для редиректа в Робокассу.
+     * При выключенной оплате возвращает 400.
      */
     @PostMapping("/initiate")
     public ResponseEntity<InitiatePaymentResponse> initiatePayment(
             @Valid @RequestBody InitiatePaymentRequest request,
             Authentication authentication
     ) {
+        if (!subscriptionProperties.isBillingEnabled()) {
+            throw new UserException("Оплата временно отключена", HttpStatus.BAD_REQUEST);
+        }
         User user = userService.findByEmail(authentication.getName());
         InitiatePaymentResponse response = subscriptionPaymentService.initiatePayment(user, request.getPlanId());
         return ResponseEntity.ok(response);

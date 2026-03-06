@@ -85,6 +85,7 @@ app:
     max-file-size: 31457280  # 30 MB по умолчанию
 
 subscription:
+  billing-enabled: false  # true — тарифы и Робокасса; false — бесплатный доступ для селлеров
   trial-days: 14
 
 robokassa:
