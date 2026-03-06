@@ -143,13 +143,14 @@ public class AnalyticsService {
             Long cabinetId,
             String metricName,
             List<PeriodDto> periods,
-            List<Long> excludedNmIds
+            List<Long> excludedNmIds,
+            Boolean onlyWithPhoto
     ) {
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
         if (isAdvertisingMetric(metricName)) {
-            return getAdvertisingMetricGroup(seller, cabinetId, metricName, sortedPeriods, excludedNmIds);
+            return getAdvertisingMetricGroup(seller, cabinetId, metricName, sortedPeriods, excludedNmIds, onlyWithPhoto);
         } else {
-            return getFunnelMetricGroup(seller, cabinetId, metricName, sortedPeriods, excludedNmIds);
+            return getFunnelMetricGroup(seller, cabinetId, metricName, sortedPeriods, excludedNmIds, onlyWithPhoto);
         }
     }
 
@@ -158,9 +159,15 @@ public class AnalyticsService {
             Long cabinetId,
             String metricName,
             List<PeriodDto> periods,
-            List<Long> excludedNmIds
+            List<Long> excludedNmIds,
+            Boolean onlyWithPhoto
     ) {
         List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
+        if (Boolean.TRUE.equals(onlyWithPhoto)) {
+            visibleCards = visibleCards.stream()
+                    .filter(c -> c.getPhotoTm() != null && !c.getPhotoTm().isBlank())
+                    .collect(Collectors.toList());
+        }
 
         List<ArticleMetricDto> articleMetrics = visibleCards.stream()
                 .map(card -> calculateArticleMetric(card, metricName, periods, seller.getId(), cabinetId, null))
@@ -179,9 +186,15 @@ public class AnalyticsService {
             Long cabinetId,
             String metricName,
             List<PeriodDto> periods,
-            List<Long> excludedNmIds
+            List<Long> excludedNmIds,
+            Boolean onlyWithPhoto
     ) {
         List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
+        if (Boolean.TRUE.equals(onlyWithPhoto)) {
+            visibleCards = visibleCards.stream()
+                    .filter(c -> c.getPhotoTm() != null && !c.getPhotoTm().isBlank())
+                    .collect(Collectors.toList());
+        }
         List<Long> campaignIds = getCampaignIdsForCabinet(seller.getId(), cabinetId);
 
         Map<PeriodDto, Map<Long, CampaignStatisticsAggregator.AdvertisingStats>> statsByPeriodByArticle = new HashMap<>();

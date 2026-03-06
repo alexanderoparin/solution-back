@@ -113,7 +113,8 @@ public class AnalyticsController {
                 context.cabinetId(),
                 decodedMetricName,
                 request.getPeriods(),
-                request.getExcludedNmIds()
+                request.getExcludedNmIds(),
+                request.getOnlyWithPhoto()
         );
         
         return ResponseEntity.ok(response);
