@@ -35,6 +35,7 @@ public class AnalyticsController {
     public ResponseEntity<List<ArticleSummaryDto>> getArticles(
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
+            @RequestParam(required = false) Boolean onlyWithPhoto,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(
@@ -45,7 +46,8 @@ public class AnalyticsController {
 
         List<ArticleSummaryDto> response = analyticsService.getArticleList(
                 context.user(),
-                context.cabinetId()
+                context.cabinetId(),
+                onlyWithPhoto
         );
         return ResponseEntity.ok(response);
     }
@@ -77,7 +79,8 @@ public class AnalyticsController {
                 request.getSize(),
                 request.getSearch(),
                 request.getIncludedNmIds(),
-                request.getFilterToNone()
+                request.getFilterToNone(),
+                request.getOnlyWithPhoto()
         );
         
         return ResponseEntity.ok(response);

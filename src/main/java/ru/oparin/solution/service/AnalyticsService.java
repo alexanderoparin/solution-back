@@ -59,12 +59,18 @@ public class AnalyticsService {
             Integer size,
             String search,
             List<Long> includedNmIds,
-            Boolean filterToNone
+            Boolean filterToNone,
+            Boolean onlyWithPhoto
     ) {
         validatePeriods(periods);
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
 
         List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
+        if (Boolean.TRUE.equals(onlyWithPhoto)) {
+            visibleCards = visibleCards.stream()
+                    .filter(c -> c.getPhotoTm() != null && !c.getPhotoTm().isBlank())
+                    .collect(Collectors.toList());
+        }
 
         boolean paginated = page != null && size != null && size > 0;
         if (paginated) {
@@ -103,11 +109,17 @@ public class AnalyticsService {
     }
 
     /**
-     * Список артикулов кабинета/продавца без фильтра — только справочная информация для попапа фильтра.
+     * Список артикулов кабинета/продавца — только справочная информация для попапа фильтра.
+     * Если onlyWithPhoto == true — только артикулы с заполненным фото.
      */
     @Transactional(readOnly = true)
-    public List<ArticleSummaryDto> getArticleList(User seller, Long cabinetId) {
+    public List<ArticleSummaryDto> getArticleList(User seller, Long cabinetId, Boolean onlyWithPhoto) {
         List<ProductCard> allCards = getVisibleCards(seller.getId(), cabinetId, null);
+        if (Boolean.TRUE.equals(onlyWithPhoto)) {
+            allCards = allCards.stream()
+                    .filter(c -> c.getPhotoTm() != null && !c.getPhotoTm().isBlank())
+                    .collect(Collectors.toList());
+        }
         return mapToArticleSummaries(allCards);
     }
 
@@ -431,7 +443,9 @@ public class AnalyticsService {
         List<ProductCard> allCards = cabinetId != null
                 ? productCardRepository.findByCabinet_Id(cabinetId)
                 : productCardRepository.findBySellerId(sellerId);
-        return ProductCardFilter.filterVisibleCards(allCards, excludedNmIds);
+        return ProductCardFilter.filterVisibleCards(allCards, excludedNmIds).stream()
+                .sorted(Comparator.comparing(ProductCard::getNmId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .collect(Collectors.toList());
     }
 
     private Map<Integer, AggregatedMetricsDto> calculateAggregatedMetrics(

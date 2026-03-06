@@ -73,6 +73,11 @@ public class SummaryRequestDto {
     private Boolean filterToNone;
 
     /**
+     * Если true — вернуть только артикулы, у которых заполнено фото (photoTm).
+     */
+    private Boolean onlyWithPhoto;
+
+    /**
      * Начало периода для метрик РК в блоке «Список РК» (опционально).
      * Если заданы оба — campaigns в ответе заполняются views, clicks, ctr, cpc, costs, cart, orders за этот период.
      */
