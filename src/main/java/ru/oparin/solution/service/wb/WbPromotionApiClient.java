@@ -165,62 +165,63 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     /**
      * Получение статистики по кампаниям.
      * GET /adv/v3/fullstats — параметры передаются в строке запроса.
+     * При таймауте, ошибке соединения или DNS (в т.ч. UnknownHostException) выполняются ретраи.
      *
      * @param apiKey API ключ продавца
      * @param request запрос статистики
      * @return статистика по кампаниям
      */
     public PromotionFullStatsResponse getPromotionFullStats(String apiKey, PromotionFullStatsRequest request) {
-        HttpHeaders headers = createAuthHeaders(apiKey);
-        HttpEntity<String> entity = new HttpEntity<>(headers);
+        return executeWithConnectionRetry("статистика кампаний за период", () -> {
+            HttpHeaders headers = createAuthHeaders(apiKey);
+            HttpEntity<String> entity = new HttpEntity<>(headers);
 
-        // Формируем URL с query параметрами через UriComponentsBuilder
-        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(promotionBaseUrl + PROMOTION_FULLSTATS_ENDPOINT);
-        
-        addQueryParameters(uriBuilder, request);
-        
-        String url = uriBuilder.toUriString();
-        logWbApiCall(url, "статистика кампаний за период");
+            UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(promotionBaseUrl + PROMOTION_FULLSTATS_ENDPOINT);
+            addQueryParameters(uriBuilder, request);
+            String url = uriBuilder.toUriString();
+            logWbApiCall(url, "статистика кампаний за период");
 
-        try {
-            ResponseEntity<String> response = restTemplate.exchange(
-                    url,
-                    HttpMethod.GET,
-                    entity,
-                    String.class
-            );
+            try {
+                ResponseEntity<String> response = restTemplate.exchange(
+                        url,
+                        HttpMethod.GET,
+                        entity,
+                        String.class
+                );
 
-            validateResponse(response);
+                validateResponse(response);
 
-            // API возвращает массив статистики по кампаниям напрямую
-            List<PromotionFullStatsResponse.CampaignStats> statsList = objectMapper.readValue(
-                    response.getBody(),
-                    new TypeReference<List<PromotionFullStatsResponse.CampaignStats>>() {}
-            );
+                List<PromotionFullStatsResponse.CampaignStats> statsList = objectMapper.readValue(
+                        response.getBody(),
+                        new TypeReference<List<PromotionFullStatsResponse.CampaignStats>>() {}
+                );
 
-            PromotionFullStatsResponse statsResponse = PromotionFullStatsResponse.builder()
-                    .adverts(statsList)
-                    .build();
+                PromotionFullStatsResponse statsResponse = PromotionFullStatsResponse.builder()
+                        .adverts(statsList)
+                        .build();
 
-            int totalDays = statsList != null 
-                    ? statsList.stream()
-                            .mapToInt(campaign -> campaign.getDays() != null ? campaign.getDays().size() : 0)
-                            .sum()
-                    : 0;
+                int totalDays = statsList != null
+                        ? statsList.stream()
+                                .mapToInt(campaign -> campaign.getDays() != null ? campaign.getDays().size() : 0)
+                                .sum()
+                        : 0;
 
-            log.info("Получено кампаний: {}, всего дней статистики: {}",
-                    statsList != null ? statsList.size() : 0, totalDays);
+                log.info("Получено кампаний: {}, всего дней статистики: {}",
+                        statsList != null ? statsList.size() : 0, totalDays);
 
-            return statsResponse;
+                return statsResponse;
 
-        } catch (HttpClientErrorException e) {
-            throwIf401ScopeNotAllowed(e);
-            logWbApiError("статистика кампаний WB", e);
-            throw new RestClientException("Ошибка при получении статистики кампаний: " + e.getMessage(), e);
-        } catch (Exception e) {
-            log.error("Ошибка при получении статистики кампаний: {}", e.getMessage(), e);
-            throw new RestClientException("Ошибка при получении статистики кампаний: " + e.getMessage(), e);
-        }
+            } catch (HttpClientErrorException e) {
+                throwIf401ScopeNotAllowed(e);
+                logWbApiError("статистика кампаний WB", e);
+                throw e;
+            } catch (RestClientException e) {
+                throw e;
+            } catch (Exception e) {
+                log.error("Ошибка при получении статистики кампаний: {}", e.getMessage(), e);
+                throw new RestClientException("Ошибка при получении статистики кампаний: " + e.getMessage(), e);
+            }
+        });
     }
 
     private void addQueryParameters(UriComponentsBuilder uriBuilder, PromotionFullStatsRequest request) {
