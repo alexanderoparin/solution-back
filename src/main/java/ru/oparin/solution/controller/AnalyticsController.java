@@ -10,6 +10,7 @@ import ru.oparin.solution.service.SellerContextService;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /**
  * Контроллер для работы с аналитикой.
@@ -21,6 +22,33 @@ public class AnalyticsController {
 
     private final AnalyticsService analyticsService;
     private final SellerContextService sellerContextService;
+
+    /**
+     * Получает список артикулов кабинета/продавца (только справочная информация для фильтра).
+     *
+     * @param sellerId ID продавца (опционально, для ADMIN/MANAGER)
+     * @param cabinetId ID кабинета (опционально)
+     * @param authentication данные аутентификации
+     * @return список артикулов с полями nmId, title, brand, subjectName, photoTm и т.д.
+     */
+    @GetMapping("/articles")
+    public ResponseEntity<List<ArticleSummaryDto>> getArticles(
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                sellerId,
+                cabinetId
+        );
+
+        List<ArticleSummaryDto> response = analyticsService.getArticleList(
+                context.user(),
+                context.cabinetId()
+        );
+        return ResponseEntity.ok(response);
+    }
 
     /**
      * Получает сводную аналитику для продавца.
@@ -130,7 +158,7 @@ public class AnalyticsController {
      * @return список остатков по размерам
      */
     @GetMapping("/article/{nmId}/stocks/{warehouseName}/sizes")
-    public ResponseEntity<java.util.List<StockSizeDto>> getStockSizes(
+    public ResponseEntity<List<StockSizeDto>> getStockSizes(
             @PathVariable Long nmId,
             @PathVariable String warehouseName,
             @RequestParam(required = false) Long sellerId,
@@ -146,7 +174,7 @@ public class AnalyticsController {
         // Проверяем, что артикул принадлежит продавцу
         analyticsService.findCardBySeller(nmId, context.user().getId());
         
-        java.util.List<StockSizeDto> response = analyticsService.getStockSizes(nmId, warehouseName);
+        List<StockSizeDto> response = analyticsService.getStockSizes(nmId, warehouseName);
         
         return ResponseEntity.ok(response);
     }

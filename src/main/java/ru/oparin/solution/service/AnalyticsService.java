@@ -102,6 +102,15 @@ public class AnalyticsService {
                 .build();
     }
 
+    /**
+     * Список артикулов кабинета/продавца без фильтра — только справочная информация для попапа фильтра.
+     */
+    @Transactional(readOnly = true)
+    public List<ArticleSummaryDto> getArticleList(User seller, Long cabinetId) {
+        List<ProductCard> allCards = getVisibleCards(seller.getId(), cabinetId, null);
+        return mapToArticleSummaries(allCards);
+    }
+
     private List<ProductCard> filterCardsBySearch(List<ProductCard> cards, String searchLower) {
         String lower = searchLower.toLowerCase();
         return cards.stream()

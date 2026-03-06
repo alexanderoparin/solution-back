@@ -21,7 +21,7 @@ public class SummaryResponseDto {
     private List<PeriodDto> periods;
     
     /**
-     * Список артикулов с краткой информацией.
+     * Список артикулов с краткой информацией (после применения фильтра excludedNmIds).
      */
     private List<ArticleSummaryDto> articles;
     
