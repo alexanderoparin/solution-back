@@ -51,6 +51,11 @@ public class ArticleResponseDto {
     private List<String> wbPromotionNames;
 
     /**
+     * Типы акций в том же порядке, что и wbPromotionNames: "regular", "auto" и т.д.
+     */
+    private List<String> wbPromotionTypes;
+
+    /**
      * Остатки товара на складах на текущий момент.
      */
     private List<StockDto> stocks;

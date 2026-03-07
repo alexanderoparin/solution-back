@@ -36,4 +36,8 @@ public class PromotionParticipation {
 
     @Column(name = "wb_promotion_name", length = 500)
     private String wbPromotionName;
+
+    /** Тип акции из ответа WB: "regular", "auto" и т.д. */
+    @Column(name = "wb_promotion_type", length = 50)
+    private String wbPromotionType;
 }

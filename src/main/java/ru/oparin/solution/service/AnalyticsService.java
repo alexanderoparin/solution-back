@@ -388,13 +388,17 @@ public class AnalyticsService {
         Long cardCabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
 
         List<DailyDataDto> dailyData = getDailyData(nmId, cardCabinetId);
-        List<String> wbPromotionNames = cardCabinetId != null
-                ? promotionParticipationRepository.findByCabinet_IdAndNmId(cardCabinetId, nmId).stream()
-                        .map(PromotionParticipation::getWbPromotionName)
-                        .filter(Objects::nonNull)
-                        .distinct()
-                        .collect(Collectors.toList())
+        List<PromotionParticipation> participations = cardCabinetId != null
+                ? promotionParticipationRepository.findByCabinet_IdAndNmId(cardCabinetId, nmId)
                 : Collections.emptyList();
+        List<String> wbPromotionNames = participations.stream()
+                .map(PromotionParticipation::getWbPromotionName)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        List<String> wbPromotionTypes = participations.stream()
+                .map(PromotionParticipation::getWbPromotionType)
+                .map(t -> t != null ? t : "")
+                .collect(Collectors.toList());
         Boolean inWbPromotion = !wbPromotionNames.isEmpty();
         List<ArticleSummaryDto> bundleProducts = getBundleProducts(card, cardCabinetId);
         LocalDateTime lastStocksUpdateTriggeredAt = cardCabinetId != null
@@ -409,6 +413,7 @@ public class AnalyticsService {
                 .campaigns(getCampaigns(nmId, cardCabinetId, campaignDateFrom, campaignDateTo))
                 .inWbPromotion(inWbPromotion)
                 .wbPromotionNames(wbPromotionNames)
+                .wbPromotionTypes(wbPromotionTypes)
                 .stocks(getStocks(nmId, cardCabinetId))
                 .bundleProducts(bundleProducts)
                 .lastStocksUpdateTriggeredAt(lastStocksUpdateTriggeredAt)

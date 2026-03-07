@@ -91,12 +91,18 @@ public class PromotionCalendarService {
             for (CalendarPromotionsResponse.CalendarPromotionItem promo : response.getData().getPromotions()) {
                 Long promoId = promo.getId();
                 String promoName = promo.getName() != null ? promo.getName() : "";
+                String promoType = promo.getType() != null ? promo.getType() : "";
+                // Метод nomenclatures неприменим для автоакций (документация WB).
+                if ("auto".equalsIgnoreCase(promoType)) {
+                    log.debug("Кабинет {}: акция {} (type=auto) — метод nomenclatures не поддерживается, пропуск", cabinetId, promoId);
+                    continue;
+                }
                 List<Long> inPromotion;
                 try {
                     inPromotion = calendarApiClient.getAllNomenclatureIdsInPromotion(apiKey, promoId, true);
                 } catch (HttpClientErrorException e) {
                     if (e.getStatusCode().value() == 422) {
-                        log.warn("Кабинет {}: акция {} — 422 (автоакция или номенклатуры недоступны), пропуск", cabinetId, promoId);
+                        log.warn("Кабинет {}: акция {} — 422 (номенклатуры недоступны), пропуск", cabinetId, promoId);
                         continue;
                     }
                     throw e;
@@ -108,6 +114,7 @@ public class PromotionCalendarService {
                                 .nmId(nmId)
                                 .wbPromotionId(promoId)
                                 .wbPromotionName(promoName)
+                                .wbPromotionType(promoType)
                                 .build());
                     }
                 }
