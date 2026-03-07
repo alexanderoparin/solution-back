@@ -13,6 +13,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.CalendarNomenclaturesResponse;
 import ru.oparin.solution.dto.wb.CalendarPromotionsResponse;
 
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -35,7 +36,7 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
     private static final String PROMOTIONS_ENDPOINT = "/api/v1/calendar/promotions";
     private static final String NOMENCLATURES_ENDPOINT = "/api/v1/calendar/promotions/nomenclatures";
     private static final int PAGE_SIZE = 1000;
-    private static final DateTimeFormatter ISO_OFFSET = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
+    private static final DateTimeFormatter WB_CALENDAR_DATETIME = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
 
     @Value("${wb.api.dp-calendar-base-url}")
     private String dpCalendarBaseUrl;
@@ -137,16 +138,16 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
     }
 
     /**
-     * Форматирует начало дня в UTC для WB API.
+     * Форматирует начало дня в UTC для WB API (формат YYYY-MM-DDTHH:MM:SSZ).
      */
     public static String startOfDayUtc(ZonedDateTime day) {
-        return day.toLocalDate().atStartOfDay(day.getZone()).format(ISO_OFFSET);
+        return day.withZoneSameInstant(ZoneOffset.UTC).toLocalDate().atStartOfDay(ZoneOffset.UTC).format(WB_CALENDAR_DATETIME);
     }
 
     /**
-     * Форматирует конец дня в UTC для WB API (23:59:59).
+     * Форматирует конец дня в UTC для WB API (23:59:59), формат YYYY-MM-DDTHH:MM:SSZ.
      */
     public static String endOfDayUtc(ZonedDateTime day) {
-        return day.toLocalDate().atTime(23, 59, 59).atZone(day.getZone()).format(ISO_OFFSET);
+        return day.withZoneSameInstant(ZoneOffset.UTC).toLocalDate().atTime(23, 59, 59).atZone(ZoneOffset.UTC).format(WB_CALENDAR_DATETIME);
     }
 }
