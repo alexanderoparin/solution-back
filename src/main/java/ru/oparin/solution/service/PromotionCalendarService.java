@@ -89,10 +89,6 @@ public class PromotionCalendarService {
             List<PromotionParticipation> toSave = new ArrayList<>();
 
             for (CalendarPromotionsResponse.CalendarPromotionItem promo : response.getData().getPromotions()) {
-                if ("auto".equalsIgnoreCase(promo.getType())) {
-                    log.debug("Кабинет {}: акция {} (type=auto) — метод nomenclatures не поддерживается, пропуск", cabinetId, promo.getId());
-                    continue;
-                }
                 Long promoId = promo.getId();
                 String promoName = promo.getName() != null ? promo.getName() : "";
                 List<Long> inPromotion;
