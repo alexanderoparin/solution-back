@@ -12,6 +12,7 @@ import ru.oparin.solution.model.PromotionParticipation;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.PromotionParticipationRepository;
+import ru.oparin.solution.service.wb.WbApiCategory;
 import ru.oparin.solution.service.wb.WbCalendarApiClient;
 
 import java.time.ZoneOffset;
@@ -31,17 +32,20 @@ public class PromotionCalendarService {
     private final ProductCardRepository productCardRepository;
     private final PromotionParticipationRepository participationRepository;
     private final CabinetService cabinetService;
+    private final CabinetScopeStatusService cabinetScopeStatusService;
     private final PromotionCalendarService self;
 
     public PromotionCalendarService(WbCalendarApiClient calendarApiClient,
                                     ProductCardRepository productCardRepository,
                                     PromotionParticipationRepository participationRepository,
                                     CabinetService cabinetService,
+                                    CabinetScopeStatusService cabinetScopeStatusService,
                                     @Lazy PromotionCalendarService self) {
         this.calendarApiClient = calendarApiClient;
         this.productCardRepository = productCardRepository;
         this.participationRepository = participationRepository;
         this.cabinetService = cabinetService;
+        this.cabinetScopeStatusService = cabinetScopeStatusService;
         this.self = self;
     }
 
@@ -125,7 +129,9 @@ public class PromotionCalendarService {
                 participationRepository.saveAll(toSave);
             }
             log.info("Кабинет {}: синхронизация акций завершена, участий: {}", cabinetId, toSave.size());
+            cabinetScopeStatusService.recordSuccess(cabinetId, WbApiCategory.PRICES_AND_DISCOUNTS);
         } catch (WbApiUnauthorizedScopeException e) {
+            cabinetScopeStatusService.recordFailure(cabinetId, e.getCategory(), e.getMessage());
             log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.", cabinetId, e.getCategory().getDisplayName());
             throw e;
         } catch (HttpClientErrorException e) {

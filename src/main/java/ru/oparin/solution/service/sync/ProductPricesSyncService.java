@@ -12,7 +12,9 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.ProductPriceHistory;
 import ru.oparin.solution.repository.ProductCardRepository;
+import ru.oparin.solution.service.CabinetScopeStatusService;
 import ru.oparin.solution.service.ProductPriceService;
+import ru.oparin.solution.service.wb.WbApiCategory;
 import ru.oparin.solution.service.wb.WbOrdersApiClient;
 import ru.oparin.solution.service.wb.WbProductsApiClient;
 
@@ -36,6 +38,7 @@ public class ProductPricesSyncService {
     private final ProductPriceService productPriceService;
     private final WbProductsApiClient productsApiClient;
     private final WbOrdersApiClient ordersApiClient;
+    private final CabinetScopeStatusService cabinetScopeStatusService;
 
     /**
      * Загружает цены товаров кабинета за вчерашнюю дату из WB API и сохраняет в БД.
@@ -69,6 +72,7 @@ public class ProductPricesSyncService {
 
             loadPricesInBatches(cabinet, apiKey, date, nmIdsToLoad);
             log.info("Завершена загрузка цен товаров за дату {} для кабинета (ID: {})", date, cabinet.getId());
+            cabinetScopeStatusService.recordSuccess(cabinet.getId(), WbApiCategory.PRICES_AND_DISCOUNTS);
         } catch (WbApiUnauthorizedScopeException e) {
             handleWbUnauthorizedScope(cabinet, e);
         } catch (ResourceAccessException e) {
@@ -109,6 +113,7 @@ public class ProductPricesSyncService {
             log.info("Найдено {} уникальных артикулов с данными СПП для обновления", sppResult.sppLastValueByNmId().size());
             productPriceService.updateSppDiscount(sppResult.sppLastValueByNmId(), date, cabinet.getId());
             log.info("Завершено обновление СПП из заказов за дату {} для кабинета (ID: {})", date, cabinet.getId());
+            cabinetScopeStatusService.recordSuccess(cabinet.getId(), WbApiCategory.STATISTICS);
         } catch (WbApiUnauthorizedScopeException e) {
             handleWbUnauthorizedScope(cabinet, e);
         } catch (Exception e) {
@@ -187,7 +192,8 @@ public class ProductPricesSyncService {
         }
     }
 
-    private static void handleWbUnauthorizedScope(Cabinet cabinet, WbApiUnauthorizedScopeException e) {
+    private void handleWbUnauthorizedScope(Cabinet cabinet, WbApiUnauthorizedScopeException e) {
+        cabinetScopeStatusService.recordFailure(cabinet.getId(), e.getCategory(), e.getMessage());
         log.warn("Для кабинета {} нет доступа к категории WB API: {}. Проверьте настройки токена в ЛК продавца.",
                 cabinet.getId(), e.getCategory().getDisplayName());
     }

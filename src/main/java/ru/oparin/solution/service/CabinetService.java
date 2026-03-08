@@ -31,6 +31,7 @@ public class CabinetService {
     private final UserRepository userRepository;
     private final CabinetDeletionService cabinetDeletionService;
     private final SubscriptionAccessService subscriptionAccessService;
+    private final CabinetScopeStatusService cabinetScopeStatusService;
 
     /**
      * Список кабинетов пользователя (продавца), отсортированный по дате создания (новые первые).
@@ -277,6 +278,16 @@ public class CabinetService {
                     .lastDataUpdateRequestedAt(c.getLastDataUpdateRequestedAt())
                     .build();
         }
+        List<CabinetDto.ScopeStatusDto> scopeStatuses = cabinetScopeStatusService.getStatusesByCabinetId(c.getId())
+                .stream()
+                .map(s -> CabinetDto.ScopeStatusDto.builder()
+                        .category(s.category())
+                        .categoryDisplayName(s.categoryDisplayName())
+                        .lastCheckedAt(s.lastCheckedAt())
+                        .success(s.success())
+                        .errorMessage(s.errorMessage())
+                        .build())
+                .collect(Collectors.toList());
         return CabinetDto.builder()
                 .id(c.getId())
                 .name(c.getName())
@@ -285,6 +296,7 @@ public class CabinetService {
                 .lastDataUpdateAt(c.getLastDataUpdateAt())
                 .lastDataUpdateRequestedAt(c.getLastDataUpdateRequestedAt())
                 .apiKey(apiKeyInfo)
+                .scopeStatuses(scopeStatuses)
                 .build();
     }
 }

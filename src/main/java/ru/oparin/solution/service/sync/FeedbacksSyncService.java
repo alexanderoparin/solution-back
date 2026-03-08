@@ -13,7 +13,9 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.repository.ProductCardRepository;
+import ru.oparin.solution.service.CabinetScopeStatusService;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.wb.WbApiCategory;
 import ru.oparin.solution.service.wb.WbFeedbacksApiClient;
 
 import java.math.BigDecimal;
@@ -37,6 +39,7 @@ public class FeedbacksSyncService {
     private final WbFeedbacksApiClient feedbacksApiClient;
     private final ProductCardRepository productCardRepository;
     private final CabinetService cabinetService;
+    private final CabinetScopeStatusService cabinetScopeStatusService;
 
     /**
      * Синхронизирует отзывы в отдельной транзакции. Вызывать из полного обновления кабинета,
@@ -76,6 +79,7 @@ public class FeedbacksSyncService {
             log.info("Обновлены рейтинг и отзывы для кабинета {}: обновлено карточек {}, из них с отзывами {}; в ответе API по продавцу встретилось nmId {}",
                     cabinetId, cards.size(), updatedWithData, byNmId.size());
         }
+        cabinetScopeStatusService.recordSuccess(cabinetId, WbApiCategory.FEEDBACKS_AND_QUESTIONS);
     }
 
     /**

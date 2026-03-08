@@ -16,6 +16,7 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.sync.*;
+import ru.oparin.solution.service.wb.WbApiCategory;
 
 import java.time.Duration;
 import java.time.LocalDate;
@@ -46,6 +47,7 @@ public class ProductCardAnalyticsService {
     private final PromotionCalendarService promotionCalendarService;
     private final FeedbacksSyncService feedbacksSyncService;
     private final CabinetService cabinetService;
+    private final CabinetScopeStatusService cabinetScopeStatusService;
 
     // --- Публичный API (асинхронные вызовы, транзакции, валидация) ---
 
@@ -135,7 +137,9 @@ public class ProductCardAnalyticsService {
                 return;
             }
             stocksService.updateStocksForCabinet(managed, apiKey, nmIds);
+            cabinetScopeStatusService.recordSuccess(cabinetId, WbApiCategory.ANALYTICS);
         } catch (WbApiUnauthorizedScopeException e) {
+            cabinetScopeStatusService.recordFailure(cabinetId, e.getCategory(), e.getMessage());
             logScopeAccessDenied(cabinetId, e);
         } finally {
             MDC.remove("cabinetTag");
@@ -154,16 +158,16 @@ public class ProductCardAnalyticsService {
                 cabinetId, seller.getEmail(), dateFrom, dateTo);
 
         try {
-            runWithScopeGuard(cabinetId, () -> syncCards(managed, managed.getApiKey()));
+            runWithScopeGuard(cabinetId, WbApiCategory.CONTENT, () -> syncCards(managed, managed.getApiKey()));
             runWithScopeGuard(cabinetId, () -> syncPricesAndSpp(managed, managed.getApiKey()));
 
             List<ProductCard> productCards = productCardService.findByCabinetId(cabinetId);
             List<Long> nmIds = collectNmIds(productCards);
 
-            runWithScopeGuard(cabinetId, () -> syncCampaignsAndStatistics(managed, managed.getApiKey(), cabinetId, seller, dateFrom, dateTo));
+            runWithScopeGuard(cabinetId, WbApiCategory.PROMOTION, () -> syncCampaignsAndStatistics(managed, managed.getApiKey(), cabinetId, seller, dateFrom, dateTo));
 
             log.info("Найдено карточек для загрузки аналитики: {}", productCards.size());
-            runWithScopeGuard(cabinetId, () -> syncAnalytics(managed, cabinetId, productCards, dateFrom, dateTo));
+            runWithScopeGuard(cabinetId, WbApiCategory.ANALYTICS, () -> syncAnalytics(managed, cabinetId, productCards, dateFrom, dateTo));
 
             markUpdateCompleted(managed);
 
@@ -171,7 +175,7 @@ public class ProductCardAnalyticsService {
                 syncPromotionCalendarWithGuard(managed, cabinetId);
             }
             syncFeedbacksWithGuard(managed, cabinetId);
-            runWithScopeGuard(cabinetId, () -> syncStocks(managed, nmIds));
+            runWithScopeGuard(cabinetId, WbApiCategory.ANALYTICS, () -> syncStocks(managed, nmIds));
 
         } catch (HttpClientErrorException e) {
             handle401AndInvalidateKey(managed, e);
@@ -239,6 +243,7 @@ public class ProductCardAnalyticsService {
         try {
             promotionCalendarService.syncPromotionsForCabinet(managed);
         } catch (WbApiUnauthorizedScopeException e) {
+            cabinetScopeStatusService.recordFailure(cabinetId, e.getCategory(), e.getMessage());
             logScopeAccessDenied(cabinetId, e);
         } catch (Exception e) {
             log.warn("Синхронизация акций календаря для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
@@ -249,6 +254,7 @@ public class ProductCardAnalyticsService {
         try {
             feedbacksSyncService.syncFeedbacksForCabinetInNewTransaction(managed, managed.getApiKey());
         } catch (WbApiUnauthorizedScopeException e) {
+            cabinetScopeStatusService.recordFailure(cabinetId, e.getCategory(), e.getMessage());
             logScopeAccessDenied(cabinetId, e);
         } catch (Exception e) {
             log.warn("Синхронизация отзывов для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
@@ -262,10 +268,28 @@ public class ProductCardAnalyticsService {
 
     // --- Обработка ошибок ---
 
+    /**
+     * Выполняет блок с одной категорией WB API: при успехе пишет success, при 401 — failure.
+     */
+    private void runWithScopeGuard(long cabinetId, WbApiCategory category, Runnable action) {
+        try {
+            action.run();
+            cabinetScopeStatusService.recordSuccess(cabinetId, category);
+        } catch (WbApiUnauthorizedScopeException e) {
+            cabinetScopeStatusService.recordFailure(cabinetId, e.getCategory(), e.getMessage());
+            logScopeAccessDenied(cabinetId, e);
+        }
+    }
+
+    /**
+     * Выполняет блок, который сам записывает успех по категориям (например syncPricesAndSpp — две категории).
+     * Только ловит 401 и пишет failure, success не вызывается здесь.
+     */
     private void runWithScopeGuard(long cabinetId, Runnable action) {
         try {
             action.run();
         } catch (WbApiUnauthorizedScopeException e) {
+            cabinetScopeStatusService.recordFailure(cabinetId, e.getCategory(), e.getMessage());
             logScopeAccessDenied(cabinetId, e);
         }
     }

@@ -3,6 +3,7 @@ package ru.oparin.solution.dto.cabinet;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * DTO кабинета продавца (ответ API).
@@ -29,6 +30,11 @@ public class CabinetDto {
      */
     private ApiKeyInfo apiKey;
 
+    /**
+     * Статусы доступа к категориям WB API по кабинету (успех/неуспех последнего блока обновлений).
+     */
+    private List<ScopeStatusDto> scopeStatuses;
+
     @Getter
     @Setter
     @Builder
@@ -42,5 +48,18 @@ public class CabinetDto {
         private LocalDateTime lastDataUpdateAt;
         /** Время запроса обновления (кнопка нажата, задача в очереди). Для блокировки кнопки до старта. */
         private LocalDateTime lastDataUpdateRequestedAt;
+    }
+
+    @Getter
+    @Setter
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ScopeStatusDto {
+        private String category;
+        private String categoryDisplayName;
+        private LocalDateTime lastCheckedAt;
+        private Boolean success;
+        private String errorMessage;
     }
 }

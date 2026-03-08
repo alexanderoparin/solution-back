@@ -9,10 +9,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.dto.wb.WbWarehouseResponse;
 import ru.oparin.solution.exception.UserException;
+import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.*;
+import ru.oparin.solution.service.wb.WbApiCategory;
 import ru.oparin.solution.service.wb.WbWarehousesApiClient;
 
 import java.time.LocalDate;
@@ -34,6 +36,7 @@ public class AnalyticsScheduler {
     private final ProductCardAnalyticsService analyticsService;
     private final WbWarehousesApiClient warehousesApiClient;
     private final WbWarehouseService warehouseService;
+    private final CabinetScopeStatusService cabinetScopeStatusService;
     private final Executor cabinetUpdateExecutor;
 
     public AnalyticsScheduler(WbApiKeyService wbApiKeyService,
@@ -42,6 +45,7 @@ public class AnalyticsScheduler {
                               ProductCardAnalyticsService analyticsService,
                               WbWarehousesApiClient warehousesApiClient,
                               WbWarehouseService warehouseService,
+                              CabinetScopeStatusService cabinetScopeStatusService,
                               @Qualifier("cabinetUpdateExecutor") Executor cabinetUpdateExecutor) {
         this.wbApiKeyService = wbApiKeyService;
         this.cabinetService = cabinetService;
@@ -49,6 +53,7 @@ public class AnalyticsScheduler {
         this.analyticsService = analyticsService;
         this.warehousesApiClient = warehousesApiClient;
         this.warehouseService = warehouseService;
+        this.cabinetScopeStatusService = cabinetScopeStatusService;
         this.cabinetUpdateExecutor = cabinetUpdateExecutor;
     }
 
@@ -106,8 +111,12 @@ public class AnalyticsScheduler {
 
             List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(apiKey);
             warehouseService.saveOrUpdateWarehouses(warehouses);
+            cabinetScopeStatusService.recordSuccess(cabinetId, WbApiCategory.MARKETPLACE);
 
             log.info("Завершено обновление складов WB для кабинета (ID: {})", cabinetId);
+        } catch (WbApiUnauthorizedScopeException e) {
+            cabinetScopeStatusService.recordFailure(cabinetId, e.getCategory(), e.getMessage());
+            log.warn("Не удалось обновить склады с кабинета {}, нет доступа к категории WB API: {}", cabinetId, e.getCategory().getDisplayName());
         } catch (HttpClientErrorException ex) {
             log.warn("Не удалось обновить склады с кабинета {}, получили код ошибки {}", cabinetId, ex.getStatusCode());
         } catch (Exception e) {
@@ -138,36 +147,54 @@ public class AnalyticsScheduler {
 
     /**
      * Ручной запуск обновления данных для конкретного продавца.
-     * Используется для принудительного обновления без ожидания ночного шедулера.
-     * Обновление можно запускать не чаще одного раза в 6 часов (для админа и менеджера ограничение не действует).
+     * Запускает обновление по всем кабинетам продавца, у которых задан API-ключ.
+     * Обновление по каждому кабинету можно запускать не чаще одного раза в 6 часов (для админа и менеджера ограничение не действует).
      *
      * @param seller продавец, для которого нужно обновить данные
      * @param skipIntervalCheck если true, проверка 6 часов не выполняется (для ADMIN и MANAGER)
-     * @throws UserException если с последнего обновления прошло меньше 6 часов
+     * @throws UserException если нет ни одного кабинета с API-ключом или все кабинеты не прошли проверку интервала
      */
     @Transactional
     public void triggerManualUpdate(User seller, boolean skipIntervalCheck) {
         log.info("Ручной запуск обновления данных для продавца (ID: {}, email: {})",
                 seller.getId(), seller.getEmail());
 
-        try {
-            Cabinet cabinet = wbApiKeyService.findDefaultCabinetByUserId(seller.getId());
+        List<Cabinet> cabinets = cabinetService.findCabinetsByUserId(seller.getId()).stream()
+                .filter(c -> c.getApiKey() != null && !c.getApiKey().isBlank())
+                .toList();
 
-            if (!skipIntervalCheck) {
-                validateUpdateInterval(cabinet);
+        if (cabinets.isEmpty()) {
+            throw new UserException("Нет кабинетов с API-ключом для обновления данных.", HttpStatus.BAD_REQUEST);
+        }
+
+        DateRange period = calculateLastTwoWeeksPeriod();
+        int started = 0;
+
+        try {
+            for (Cabinet cabinet : cabinets) {
+                try {
+                    if (!skipIntervalCheck) {
+                        validateUpdateInterval(cabinet);
+                    }
+                    cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
+                    cabinetService.save(cabinet);
+                    analyticsService.updateCardsAndLoadAnalytics(cabinet, period.from(), period.to());
+                    started++;
+                } catch (UserException e) {
+                    log.warn("Кабинет (ID: {}) пропущен: {}", cabinet.getId(), e.getMessage());
+                }
             }
 
-            cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
-            cabinetService.save(cabinet);
+            if (started == 0) {
+                throw new UserException(
+                        "Обновление по всем кабинетам возможно не ранее чем через 6 часов. Следующее обновление будет доступно позже.",
+                        HttpStatus.TOO_MANY_REQUESTS
+                );
+            }
 
-            DateRange period = calculateLastTwoWeeksPeriod();
-
-            analyticsService.updateCardsAndLoadAnalytics(cabinet, period.from(), period.to());
-
-            log.info("Ручное обновление данных для продавца (ID: {}, email: {}) успешно запущено",
-                    seller.getId(), seller.getEmail());
+            log.info("Ручное обновление данных для продавца (ID: {}, email: {}) запущено для {} кабинетов из {}",
+                    seller.getId(), seller.getEmail(), started, cabinets.size());
         } catch (UserException e) {
-            // Пробрасываем UserException без логирования как ошибку (это ожидаемое поведение)
             throw e;
         } catch (Exception e) {
             log.error("Ошибка при ручном обновлении данных для продавца (ID: {}, email: {}): {}",
