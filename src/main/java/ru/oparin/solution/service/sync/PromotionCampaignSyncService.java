@@ -7,6 +7,7 @@ import ru.oparin.solution.dto.wb.PromotionAdvertsResponse;
 import ru.oparin.solution.dto.wb.PromotionCountResponse;
 import ru.oparin.solution.dto.wb.PromotionFullStatsRequest;
 import ru.oparin.solution.dto.wb.PromotionFullStatsResponse;
+import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CampaignStatus;
 import ru.oparin.solution.model.PromotionCampaign;
@@ -81,6 +82,8 @@ public class PromotionCampaignSyncService {
             log.info("Завершено обновление рекламных кампаний для кабинета (ID: {})", cabinet.getId());
             return allCampaignIds;
 
+        } catch (WbApiUnauthorizedScopeException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Ошибка при обновлении рекламных кампаний для кабинета (ID: {}): {}",
                     cabinet.getId(), e.getMessage(), e);
