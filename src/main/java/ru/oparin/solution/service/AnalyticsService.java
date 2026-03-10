@@ -941,14 +941,23 @@ public class AnalyticsService {
                 .collect(Collectors.toList());
     }
 
+    private static final int DEFAULT_CAMPAIGNS_PERIOD_DAYS = 14;
+
     /**
-     * Список рекламных кампаний кабинета с агрегированной статистикой за последние 30 дней.
+     * Список рекламных кампаний кабинета с агрегированной статистикой за период.
+     * Если dateFrom/dateTo не заданы — используются последние 14 дней.
      */
     @Transactional(readOnly = true)
-    public List<CampaignDto> listCampaignsByCabinet(Long cabinetId) {
+    public List<CampaignDto> listCampaignsByCabinet(Long cabinetId, LocalDate dateFrom, LocalDate dateTo) {
         if (cabinetId == null) {
             return Collections.emptyList();
         }
+        LocalDate to = dateTo != null ? dateTo : LocalDate.now();
+        LocalDate from = dateFrom != null ? dateFrom : to.minusDays(DEFAULT_CAMPAIGNS_PERIOD_DAYS - 1);
+        if (from.isAfter(to)) {
+            from = to.minusDays(DEFAULT_CAMPAIGNS_PERIOD_DAYS - 1);
+        }
+
         List<PromotionCampaign> campaigns = campaignRepository.findByCabinet_Id(cabinetId).stream()
                 .filter(c -> c.getStatus() != CampaignStatus.FINISHED)
                 .collect(Collectors.toList());
@@ -956,10 +965,8 @@ public class AnalyticsService {
             return Collections.emptyList();
         }
         List<Long> campaignIds = campaigns.stream().map(PromotionCampaign::getAdvertId).collect(Collectors.toList());
-        LocalDate dateTo = LocalDate.now();
-        LocalDate dateFrom = dateTo.minusDays(30);
         List<PromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
-                campaignIds, dateFrom, dateTo);
+                campaignIds, from, to);
         Map<Long, List<PromotionCampaignStatistics>> statsByCampaign = allStats.stream()
                 .collect(Collectors.groupingBy(s -> s.getCampaign().getAdvertId()));
 
