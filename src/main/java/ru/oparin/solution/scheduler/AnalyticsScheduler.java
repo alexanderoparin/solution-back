@@ -147,47 +147,49 @@ public class AnalyticsScheduler {
 
     /**
      * Интервал кулдауна для админов и менеджеров: не чаще одного ручного запуска «обновить кабинеты» в 5 минут.
+     * Применяется точечно:
+     * - для продавца — к его кабинетам (выбор селлера в профиле админа/менеджера);
+     * - для конкретного кабинета — только к нему (обновление со Сводной/карточки).
      */
-    private static final long ADMIN_TRIGGER_COOLDOWN_MS = 5 * 60 * 1000L;
-
-    private volatile long lastAdminTriggeredAtMs = 0;
+    private static final int ADMIN_MIN_UPDATE_INTERVAL_MINUTES = 5;
 
     /**
-     * Проверяет, можно ли выполнить ручной запуск обновления от имени админа/менеджера (ограничение 5 минут).
+     * Глобальный кулдаун только для эндпоинта «обновить всё» (POST /admin/run-analytics-all):
+     * не чаще одного запуска в 5 минут.
+     */
+    private static final long FULL_UPDATE_COOLDOWN_MS = 5 * 60 * 1000L;
+    private volatile long lastFullUpdateTriggeredAtMs = 0;
+
+    /**
+     * Проверяет, можно ли выполнить ручной запуск «обновить всё» (run-analytics-all). Только для AdminController.
      */
     public boolean canRunAdminTriggeredUpdate() {
-        if (lastAdminTriggeredAtMs == 0) {
-            return true;
-        }
-        return System.currentTimeMillis() - lastAdminTriggeredAtMs >= ADMIN_TRIGGER_COOLDOWN_MS;
+        if (lastFullUpdateTriggeredAtMs == 0) return true;
+        return System.currentTimeMillis() - lastFullUpdateTriggeredAtMs >= FULL_UPDATE_COOLDOWN_MS;
     }
 
     /**
-     * Фиксирует момент ручного запуска обновления админом/менеджером (для кулдауна 5 минут).
+     * Фиксирует момент ручного запуска «обновить всё» (для кулдауна 5 минут). Только для AdminController.
      */
     public void recordAdminTriggered() {
-        lastAdminTriggeredAtMs = System.currentTimeMillis();
+        lastFullUpdateTriggeredAtMs = System.currentTimeMillis();
     }
 
     /**
-     * Время последнего ручного запуска обновления админом/менеджером (epoch ms), или 0 если не было.
+     * Время последнего запуска «обновить всё» (epoch ms), или 0. Для GET /admin/trigger-cooldown.
      */
     public long getLastAdminTriggeredAtMs() {
-        return lastAdminTriggeredAtMs;
+        return lastFullUpdateTriggeredAtMs;
     }
 
     /**
-     * Секунд до следующего доступного запуска (0 если уже можно).
+     * Секунд до следующего доступного запуска «обновить всё» (0 если уже можно).
      */
     public long getAdminTriggerCooldownRemainingSeconds() {
-        if (lastAdminTriggeredAtMs == 0) {
-            return 0;
-        }
-        long elapsed = System.currentTimeMillis() - lastAdminTriggeredAtMs;
-        if (elapsed >= ADMIN_TRIGGER_COOLDOWN_MS) {
-            return 0;
-        }
-        return (ADMIN_TRIGGER_COOLDOWN_MS - elapsed) / 1000;
+        if (lastFullUpdateTriggeredAtMs == 0) return 0;
+        long elapsed = System.currentTimeMillis() - lastFullUpdateTriggeredAtMs;
+        if (elapsed >= FULL_UPDATE_COOLDOWN_MS) return 0;
+        return (FULL_UPDATE_COOLDOWN_MS - elapsed) / 1000;
     }
 
     /**
@@ -210,6 +212,10 @@ public class AnalyticsScheduler {
 
         if (cabinets.isEmpty()) {
             throw new UserException("Нет кабинетов с API-ключом для обновления данных.", HttpStatus.BAD_REQUEST);
+        }
+
+        if (skipIntervalCheck) {
+            validateAdminUpdateIntervalForSeller(cabinets);
         }
 
         DateRange period = calculateLastTwoWeeksPeriod();
@@ -275,6 +281,8 @@ public class AnalyticsScheduler {
         try {
             if (!skipIntervalCheck) {
                 validateUpdateInterval(cabinet);
+            } else {
+                validateAdminUpdateIntervalForCabinet(cabinet);
             }
 
             cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
@@ -290,6 +298,53 @@ public class AnalyticsScheduler {
             log.error("Ошибка при ручном обновлении данных для кабинета (ID: {}): {}",
                     cabinet.getId(), e.getMessage(), e);
             throw e;
+        }
+    }
+
+    /**
+     * Проверяет, что для селлера (его кабинетов) прошло не менее ADMIN_MIN_UPDATE_INTERVAL_MINUTES минут
+     * с момента последнего ручного запуска админом/менеджером.
+     */
+    private void validateAdminUpdateIntervalForSeller(List<Cabinet> cabinets) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime lastAction = null;
+
+        for (Cabinet cabinet : cabinets) {
+            LocalDateTime lastRequested = cabinet.getLastDataUpdateRequestedAt();
+            if (lastRequested != null && (lastAction == null || lastRequested.isAfter(lastAction))) {
+                lastAction = lastRequested;
+            }
+        }
+
+        if (lastAction == null) {
+            return;
+        }
+
+        long minutesSinceLast = java.time.Duration.between(lastAction, now).toMinutes();
+        if (minutesSinceLast < ADMIN_MIN_UPDATE_INTERVAL_MINUTES) {
+            throw new UserException(
+                    "Обновление кабинетов для этого продавца можно запускать не чаще одного раза в 5 минут. " +
+                            "Повторите попытку позже.",
+                    HttpStatus.TOO_MANY_REQUESTS
+            );
+        }
+    }
+
+    /**
+     * Проверяет, что для конкретного кабинета прошло не менее ADMIN_MIN_UPDATE_INTERVAL_MINUTES минут
+     * с момента последнего ручного запуска админом/менеджером.
+     */
+    private void validateAdminUpdateIntervalForCabinet(Cabinet cabinet) {
+        LocalDateTime lastRequested = cabinet.getLastDataUpdateRequestedAt();
+        if (lastRequested == null) {
+            return;
+        }
+        long minutesSinceLast = java.time.Duration.between(lastRequested, LocalDateTime.now()).toMinutes();
+        if (minutesSinceLast < ADMIN_MIN_UPDATE_INTERVAL_MINUTES) {
+            throw new UserException(
+                    "Обновление кабинета можно запускать не чаще одного раза в 5 минут. Повторите попытку позже.",
+                    HttpStatus.TOO_MANY_REQUESTS
+            );
         }
     }
 
