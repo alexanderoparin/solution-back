@@ -55,14 +55,19 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
                     validatedFromDate, validatedToDate, nmId);
         }
         SaleFunnelHistoryRequest request = buildAnalyticsRequest(nmId, validatedFromDate, validatedToDate);
-        
+
         try {
-            ResponseEntity<String> response = executeWithRetry(
-                    fullUrl,
-                    apiKey,
-                    request,
-                    MAX_RETRIES_429,
-                    RETRY_DELAY_MS_429
+            // Сначала даём executeWithRetry обрабатывать 429 (Too Many Requests),
+            // а поверх него — executeWithConnectionRetry для таймаутов/сетевых ошибок.
+            ResponseEntity<String> response = executeWithConnectionRetry(
+                    "аналитика воронки продаж WB nmID=" + nmId,
+                    () -> executeWithRetry(
+                            fullUrl,
+                            apiKey,
+                            request,
+                            MAX_RETRIES_429,
+                            RETRY_DELAY_MS_429
+                    )
             );
             return parseAnalyticsResponse(response, nmId);
         } catch (HttpClientErrorException e) {
