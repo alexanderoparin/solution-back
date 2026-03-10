@@ -3,22 +3,21 @@ package ru.oparin.solution.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import ru.oparin.solution.dto.CreateUserRequest;
-import ru.oparin.solution.dto.MessageResponse;
-import ru.oparin.solution.dto.UpdateUserRequest;
-import ru.oparin.solution.dto.UserListItemDto;
+import ru.oparin.solution.dto.*;
 import ru.oparin.solution.dto.cabinet.CabinetDto;
+import ru.oparin.solution.dto.cabinet.UpdateCabinetRequest;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
-import ru.oparin.solution.service.CabinetService;
-import ru.oparin.solution.service.ProductCardAnalyticsService;
-import ru.oparin.solution.service.PromotionCalendarService;
-import ru.oparin.solution.service.UserService;
+import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.sync.FeedbacksSyncService;
 
 import java.util.List;
@@ -35,22 +34,37 @@ public class UsersManagementController {
 
     private final UserService userService;
     private final CabinetService cabinetService;
+    private final WbApiKeyService wbApiKeyService;
     private final AnalyticsScheduler analyticsScheduler;
     private final ProductCardAnalyticsService productCardAnalyticsService;
     private final PromotionCalendarService promotionCalendarService;
     private final FeedbacksSyncService feedbacksSyncService;
 
     /**
-     * Получение списка пользователей, которыми может управлять текущий пользователь.
+     * Постраничное получение списка пользователей, которыми может управлять текущий пользователь.
      *
+     * @param page номер страницы (0-based)
+     * @param size размер страницы
      * @param authentication данные аутентификации
-     * @return список пользователей
+     * @return страница пользователей
      */
     @GetMapping
-    public ResponseEntity<List<UserListItemDto>> getManagedUsers(Authentication authentication) {
+    public ResponseEntity<PageResponse<UserListItemDto>> getManagedUsers(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication
+    ) {
         User currentUser = getCurrentUser(authentication);
-        List<UserListItemDto> users = userService.getManagedUsers(currentUser);
-        return ResponseEntity.ok(users);
+        Pageable pageable = PageRequest.of(page, Math.min(Math.max(size, 1), 100), Sort.by(Sort.Direction.ASC, "createdAt"));
+        var userPage = userService.getManagedUsersPageDto(currentUser, pageable);
+        PageResponse<UserListItemDto> response = PageResponse.<UserListItemDto>builder()
+                .content(userPage.getContent())
+                .totalElements(userPage.getTotalElements())
+                .totalPages(userPage.getTotalPages())
+                .size(userPage.getSize())
+                .number(userPage.getNumber())
+                .build();
+        return ResponseEntity.ok(response);
     }
 
     /**
@@ -244,6 +258,57 @@ public class UsersManagementController {
                 .message("Обновление данных запущено. Процесс выполняется в фоновом режиме. " +
                         "Данные будут доступны через несколько минут.")
                 .build());
+    }
+
+    /**
+     * Запуск валидации API ключа кабинета (для админа/менеджера при просмотре кабинетов селлера).
+     * Те же права доступа, что и для trigger-update.
+     */
+    @PostMapping("/cabinets/{cabinetId}/validate-api-key")
+    public ResponseEntity<MessageResponse> validateCabinetApiKey(
+            @PathVariable Long cabinetId,
+            Authentication authentication
+    ) {
+        User currentUser = getCurrentUser(authentication);
+        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(MessageResponse.builder().message("Недостаточно прав").build());
+        }
+        cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+        wbApiKeyService.validateApiKeyByCabinet(cabinet);
+        String message = Boolean.TRUE.equals(cabinet.getIsValid())
+                ? "API ключ валиден"
+                : (cabinet.getValidationError() != null ? "API ключ невалиден: " + cabinet.getValidationError() : "API ключ невалиден");
+        return ResponseEntity.ok(MessageResponse.builder().message(message).build());
+    }
+
+    /**
+     * Обновление API ключа (и/или имени) кабинета селлера (для админа/менеджера). Те же права доступа, что и для validate-api-key.
+     */
+    @PatchMapping("/cabinets/{cabinetId}")
+    public ResponseEntity<CabinetDto> updateSellerCabinet(
+            @PathVariable Long cabinetId,
+            @Valid @RequestBody UpdateCabinetRequest request,
+            Authentication authentication
+    ) {
+        User currentUser = getCurrentUser(authentication);
+        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
+        if (request.getApiKey() != null) {
+            CabinetDto updated = cabinetService.updateApiKey(cabinetId, request.getApiKey());
+            return ResponseEntity.ok(updated);
+        }
+        if (request.getName() != null && !request.getName().isBlank()) {
+            Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+            cabinet.setName(request.getName().trim());
+            cabinetService.save(cabinet);
+            CabinetDto updated = cabinetService.getByIdAndUserId(cabinetId, cabinet.getUser().getId());
+            return ResponseEntity.ok(updated);
+        }
+        return ResponseEntity.badRequest().build();
     }
 
     /**

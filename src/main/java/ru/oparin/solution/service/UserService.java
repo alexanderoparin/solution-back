@@ -4,6 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -431,6 +434,33 @@ public class UserService {
         return users.stream()
                 .map(this::mapToUserListItemDto)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Постраничное получение пользователей, которыми может управлять текущий пользователь.
+     */
+    public Page<User> getManagedUsersPage(User currentUser, Pageable pageable) {
+        if (currentUser.getRole() == Role.ADMIN) {
+            return userRepository.findByRoleNot(Role.ADMIN, pageable);
+        }
+        if (currentUser.getRole() == Role.MANAGER) {
+            return userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId(), pageable);
+        }
+        if (currentUser.getRole() == Role.SELLER) {
+            return userRepository.findByRoleAndOwnerId(Role.WORKER, currentUser.getId(), pageable);
+        }
+        return Page.empty(pageable);
+    }
+
+    /**
+     * Постраничное получение списка пользователей (DTO) для управления.
+     */
+    public Page<UserListItemDto> getManagedUsersPageDto(User currentUser, Pageable pageable) {
+        Page<User> page = getManagedUsersPage(currentUser, pageable);
+        List<UserListItemDto> content = page.getContent().stream()
+                .map(this::mapToUserListItemDto)
+                .collect(Collectors.toList());
+        return new PageImpl<>(content, page.getPageable(), page.getTotalElements());
     }
 
     /**

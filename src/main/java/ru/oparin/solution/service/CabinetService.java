@@ -113,6 +113,18 @@ public class CabinetService {
     }
 
     /**
+     * Обновление только API ключа кабинета (для админа/менеджера при редактировании кабинета селлера).
+     * Проверка доступа выполняется в контроллере.
+     */
+    @Transactional
+    public CabinetDto updateApiKey(Long cabinetId, String apiKey) {
+        Cabinet cabinet = findByIdWithUserOrThrow(cabinetId);
+        resetValidationAndSetApiKey(cabinet, apiKey);
+        cabinet = cabinetRepository.save(cabinet);
+        return toDto(cabinet);
+    }
+
+    /**
      * Сбрасывает статус валидации и устанавливает новый API ключ кабинета.
      */
     public void resetValidationAndSetApiKey(Cabinet cabinet, String apiKey) {
