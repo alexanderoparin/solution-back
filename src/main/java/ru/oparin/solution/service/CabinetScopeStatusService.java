@@ -44,8 +44,11 @@ public class CabinetScopeStatusService {
         log.debug("Кабинет {}: категория {} — успех", cabinetId, category.getDisplayName());
     }
 
+    private static final int MAX_ERROR_MESSAGE_LENGTH = 500;
+
     /**
      * Записать неуспех (401 или иная ошибка доступа) по категории для кабинета.
+     * В БД пишется очищенное сообщение: без &lt;EOL&gt;, при возможности — только поле "detail" из JSON ответа WB.
      */
     @Transactional
     public void recordFailure(Long cabinetId, WbApiCategory category, String errorMessage) {
@@ -53,10 +56,46 @@ public class CabinetScopeStatusService {
         CabinetScopeStatus status = findOrCreate(cabinetId, category);
         status.setLastCheckedAt(now);
         status.setSuccess(false);
-        status.setErrorMessage(errorMessage != null && errorMessage.length() > 500
-                ? errorMessage.substring(0, 500) + "…" : errorMessage);
+        status.setErrorMessage(sanitizeErrorMessage(errorMessage));
         repository.save(status);
         log.debug("Кабинет {}: категория {} — неуспех: {}", cabinetId, category.getDisplayName(), errorMessage);
+    }
+
+    /**
+     * Убирает &lt;EOL&gt; из сообщения, при возможности извлекает "detail" из JSON ответа WB, обрезает длину.
+     */
+    private static String sanitizeErrorMessage(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String withoutEol = raw.replace("<EOL>", " ").replace("\n", " ");
+        String detail = extractJsonDetail(withoutEol);
+        String toStore = (detail != null ? detail : withoutEol).trim();
+        if (toStore.length() > MAX_ERROR_MESSAGE_LENGTH) {
+            toStore = toStore.substring(0, MAX_ERROR_MESSAGE_LENGTH) + "…";
+        }
+        return toStore.isEmpty() ? null : toStore;
+    }
+
+    /** Извлекает значение поля "detail" из JSON-подобной строки (первое вхождение "detail": "значение"). */
+    private static String extractJsonDetail(String s) {
+        int idx = s.indexOf("\"detail\"");
+        if (idx < 0) {
+            return null;
+        }
+        int colon = s.indexOf(':', idx);
+        if (colon < 0) {
+            return null;
+        }
+        int start = s.indexOf('"', colon + 1);
+        if (start < 0) {
+            return null;
+        }
+        int end = s.indexOf('"', start + 1);
+        if (end < 0) {
+            return null;
+        }
+        return s.substring(start + 1, end).trim();
     }
 
     /**
