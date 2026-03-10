@@ -146,6 +146,51 @@ public class AnalyticsScheduler {
     private static final int MIN_UPDATE_INTERVAL_HOURS = 6;
 
     /**
+     * Интервал кулдауна для админов и менеджеров: не чаще одного ручного запуска «обновить кабинеты» в 5 минут.
+     */
+    private static final long ADMIN_TRIGGER_COOLDOWN_MS = 5 * 60 * 1000L;
+
+    private volatile long lastAdminTriggeredAtMs = 0;
+
+    /**
+     * Проверяет, можно ли выполнить ручной запуск обновления от имени админа/менеджера (ограничение 5 минут).
+     */
+    public boolean canRunAdminTriggeredUpdate() {
+        if (lastAdminTriggeredAtMs == 0) {
+            return true;
+        }
+        return System.currentTimeMillis() - lastAdminTriggeredAtMs >= ADMIN_TRIGGER_COOLDOWN_MS;
+    }
+
+    /**
+     * Фиксирует момент ручного запуска обновления админом/менеджером (для кулдауна 5 минут).
+     */
+    public void recordAdminTriggered() {
+        lastAdminTriggeredAtMs = System.currentTimeMillis();
+    }
+
+    /**
+     * Время последнего ручного запуска обновления админом/менеджером (epoch ms), или 0 если не было.
+     */
+    public long getLastAdminTriggeredAtMs() {
+        return lastAdminTriggeredAtMs;
+    }
+
+    /**
+     * Секунд до следующего доступного запуска (0 если уже можно).
+     */
+    public long getAdminTriggerCooldownRemainingSeconds() {
+        if (lastAdminTriggeredAtMs == 0) {
+            return 0;
+        }
+        long elapsed = System.currentTimeMillis() - lastAdminTriggeredAtMs;
+        if (elapsed >= ADMIN_TRIGGER_COOLDOWN_MS) {
+            return 0;
+        }
+        return (ADMIN_TRIGGER_COOLDOWN_MS - elapsed) / 1000;
+    }
+
+    /**
      * Ручной запуск обновления данных для конкретного продавца.
      * Запускает обновление по всем кабинетам продавца, у которых задан API-ключ.
      * Обновление по каждому кабинету можно запускать не чаще одного раза в 6 часов (для админа и менеджера ограничение не действует).

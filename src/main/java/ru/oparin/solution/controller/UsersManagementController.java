@@ -213,10 +213,20 @@ public class UsersManagementController {
                             .build());
         }
         
-        // Запускаем обновление асинхронно (для админа и менеджера — без ограничения 6 часов)
+        // Для админа и менеджера: ограничение «не чаще 1 раза в 5 минут» (общее для всех ручных запусков)
         boolean skipIntervalCheck = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER;
+        if (skipIntervalCheck && !analyticsScheduler.canRunAdminTriggeredUpdate()) {
+            long remaining = analyticsScheduler.getAdminTriggerCooldownRemainingSeconds();
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(MessageResponse.builder()
+                            .message("Обновление кабинетов можно запускать не чаще одного раза в 5 минут. Повторите попытку позже.")
+                            .build());
+        }
+        if (skipIntervalCheck) {
+            analyticsScheduler.recordAdminTriggered();
+        }
         analyticsScheduler.triggerManualUpdate(seller, skipIntervalCheck);
-        
+
         return ResponseEntity.ok(MessageResponse.builder()
                 .message("Обновление данных запущено. Процесс выполняется в фоновом режиме. " +
                         "Данные будут доступны через несколько минут.")
@@ -240,6 +250,15 @@ public class UsersManagementController {
         }
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
         boolean skipIntervalCheck = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER;
+        if (skipIntervalCheck && !analyticsScheduler.canRunAdminTriggeredUpdate()) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(MessageResponse.builder()
+                            .message("Обновление кабинетов можно запускать не чаще одного раза в 5 минут. Повторите попытку позже.")
+                            .build());
+        }
+        if (skipIntervalCheck) {
+            analyticsScheduler.recordAdminTriggered();
+        }
         analyticsScheduler.triggerManualUpdateByCabinet(cabinetId, skipIntervalCheck);
         return ResponseEntity.ok(MessageResponse.builder()
                 .message("Обновление данных запущено. Процесс выполняется в фоновом режиме. " +

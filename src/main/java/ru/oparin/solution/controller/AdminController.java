@@ -91,12 +91,37 @@ public class AdminController {
     /**
      * Запуск полного обновления по всем кабинетам (как ночной шедулер): карточки, цены, остатки, кампании, аналитика, акции календаря.
      * Выполняется в фоне; эндпоинт сразу возвращает 202 Accepted.
+     * Для админов и менеджеров действует ограничение: не чаще одного раза в 5 минут (общее с кнопкой «Обновить» по селлеру).
      */
     @PostMapping("/run-analytics-all")
-    public ResponseEntity<Map<String, String>> runAnalyticsAll() {
+    public ResponseEntity<?> runAnalyticsAll() {
+        if (!analyticsScheduler.canRunAdminTriggeredUpdate()) {
+            long remaining = analyticsScheduler.getAdminTriggerCooldownRemainingSeconds();
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(Map.of(
+                            "message", "Обновление кабинетов можно запускать не чаще одного раза в 5 минут. Повторите попытку позже.",
+                            "lastTriggeredAtMs", analyticsScheduler.getLastAdminTriggeredAtMs(),
+                            "nextAvailableInSeconds", remaining
+                    ));
+        }
+        analyticsScheduler.recordAdminTriggered();
         taskExecutor.execute(analyticsScheduler::runFullAnalyticsUpdate);
         return ResponseEntity.accepted()
                 .body(Map.of("message", "Полное обновление по всем кабинетам запущено в фоне (как по расписанию)."));
+    }
+
+    /**
+     * Статус кулдауна ручного запуска «обновить кабинеты» для админов и менеджеров (не чаще 1 раза в 5 минут).
+     */
+    @GetMapping("/trigger-cooldown")
+    public ResponseEntity<Map<String, Object>> getTriggerCooldown() {
+        long lastMs = analyticsScheduler.getLastAdminTriggeredAtMs();
+        long remainingSeconds = analyticsScheduler.getAdminTriggerCooldownRemainingSeconds();
+        return ResponseEntity.ok(Map.of(
+                "lastTriggeredAtMs", lastMs,
+                "canTrigger", remainingSeconds == 0,
+                "nextAvailableInSeconds", remainingSeconds
+        ));
     }
 
     // ————— Управление планами —————
