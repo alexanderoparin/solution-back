@@ -43,6 +43,7 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
 
     /**
      * Список акций за период (на одну дату — передать start и end на этот день).
+     * При таймауте или ошибке соединения выполняются ретраи.
      *
      * @param apiKey     API ключ продавца (категория «Цены и скидки»)
      * @param startDateTime начало периода (ISO-8601, например 2024-01-15T00:00:00Z)
@@ -51,6 +52,10 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
      * @return ответ с полем data.promotions
      */
     public CalendarPromotionsResponse getPromotions(String apiKey, String startDateTime, String endDateTime, boolean allPromo) {
+        return executeWithConnectionRetry("список акций календаря за период", () -> getPromotionsOnce(apiKey, startDateTime, endDateTime, allPromo));
+    }
+
+    private CalendarPromotionsResponse getPromotionsOnce(String apiKey, String startDateTime, String endDateTime, boolean allPromo) {
         String url = UriComponentsBuilder.fromHttpUrl(dpCalendarBaseUrl + PROMOTIONS_ENDPOINT)
                 .queryParam("startDateTime", startDateTime)
                 .queryParam("endDateTime", endDateTime)
@@ -72,8 +77,10 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("список акций календаря WB", e);
             throw new RestClientException("Ошибка при получении списка акций календаря: " + e.getMessage(), e);
+        } catch (RestClientException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Ошибка при получении списка акций календаря: {}", e.getMessage());
+            logIoErrorOrFull("получении списка акций календаря", e);
             throw new RestClientException("Ошибка при получении списка акций календаря: " + e.getMessage(), e);
         }
     }
@@ -104,12 +111,13 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
             logWbApiCall(url, "номенклатуры в акции (promotionId=" + promotionId + ")");
 
             try {
-                ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-                validateResponse(response);
-
-                CalendarNomenclaturesResponse body = objectMapper.readValue(
-                        response.getBody(),
-                        CalendarNomenclaturesResponse.class
+                CalendarNomenclaturesResponse body = executeWithConnectionRetry(
+                        "номенклатуры акции (promotionId=" + promotionId + ", offset=" + offset + ")",
+                        () -> {
+                            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+                            validateResponse(response);
+                            return objectMapper.readValue(response.getBody(), CalendarNomenclaturesResponse.class);
+                        }
                 );
                 if (body.getData() == null || body.getData().getNomenclatures() == null
                         || body.getData().getNomenclatures().isEmpty()) {
@@ -128,8 +136,10 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
                 throwIf401ScopeNotAllowed(e);
                 logWbApiError("номенклатуры акции WB (promotionId=" + promotionId + ")", e);
                 throw new RestClientException("Ошибка при получении номенклатур акции: " + e.getMessage(), e);
+            } catch (RestClientException e) {
+                throw e;
             } catch (Exception e) {
-                log.error("Ошибка при получении номенклатур акции {} (offset {}): {}", promotionId, offset, e.getMessage());
+                logIoErrorOrFull("получении номенклатур акции " + promotionId + " (offset " + offset + ")", e);
                 throw new RestClientException("Ошибка при получении номенклатур акции: " + e.getMessage(), e);
             }
         }

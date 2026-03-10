@@ -35,8 +35,13 @@ public class WbWarehousesApiClient extends AbstractWbApiClient {
 
     /**
      * Получение списка всех складов WB.
+     * При таймауте или ошибке соединения выполняются ретраи.
      */
     public List<WbWarehouseResponse> getWbOffices(String apiKey) {
+        return executeWithConnectionRetry("список складов WB", () -> getWbOfficesOnce(apiKey));
+    }
+
+    private List<WbWarehouseResponse> getWbOfficesOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
         String url = suppliesBaseUrl + WAREHOUSES_ENDPOINT;
@@ -67,8 +72,10 @@ public class WbWarehousesApiClient extends AbstractWbApiClient {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("список складов WB", e);
             throw new RestClientException("Ошибка при получении списка складов WB: " + e.getMessage(), e);
+        } catch (RestClientException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Ошибка при получении списка складов WB: {}", e.getMessage(), e);
+            logIoErrorOrFull("получении списка складов WB", e);
             throw new RestClientException("Ошибка при получении списка складов WB: " + e.getMessage(), e);
         }
     }

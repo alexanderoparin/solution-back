@@ -35,19 +35,24 @@ public class WbOrdersApiClient extends AbstractWbApiClient {
 
     /**
      * Получение заказов за указанную дату.
-     * 
+     * При таймауте или ошибке соединения выполняются ретраи.
+     *
      * @param apiKey API ключ продавца
      * @param dateFrom дата начала периода (формат: yyyy-MM-dd)
      * @param flag флаг для фильтрации заказов (1 - только реализованные)
      * @return список заказов
      */
     public List<OrdersResponse.Order> getOrders(String apiKey, LocalDate dateFrom, Integer flag) {
+        return executeWithConnectionRetry("заказы продавца (СПП)", () -> getOrdersOnce(apiKey, dateFrom, flag));
+    }
+
+    private List<OrdersResponse.Order> getOrdersOnce(String apiKey, LocalDate dateFrom, Integer flag) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
 
         UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(ORDERS_ENDPOINT)
                 .queryParam("dateFrom", dateFrom.format(DATE_FORMATTER));
-        
+
         if (flag != null) {
             uriBuilder.queryParam("flag", flag);
         }
@@ -67,7 +72,6 @@ public class WbOrdersApiClient extends AbstractWbApiClient {
                 throw new RestClientException("Неожиданный ответ от WB API: " + response.getStatusCode());
             }
 
-            // Парсим JSON массив напрямую в список заказов
             List<OrdersResponse.Order> orders = objectMapper.readValue(
                     response.getBody(),
                     new TypeReference<List<OrdersResponse.Order>>() {}
@@ -80,8 +84,10 @@ public class WbOrdersApiClient extends AbstractWbApiClient {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("получение заказов WB", e);
             throw new RestClientException("Ошибка при получении заказов: " + e.getMessage(), e);
+        } catch (RestClientException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Ошибка при получении заказов: {}", e.getMessage(), e);
+            logIoErrorOrFull("получении заказов", e);
             throw new RestClientException("Ошибка при получении заказов: " + e.getMessage(), e);
         }
     }

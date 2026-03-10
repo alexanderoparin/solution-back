@@ -43,11 +43,16 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
     /**
      * Получение списка кампаний, сгруппированных по типам и статусам.
+     * При таймауте или ошибке соединения (в т.ч. UnknownHostException) выполняются ретраи.
      *
      * @param apiKey API ключ продавца
      * @return список кампаний по типам и статусам
      */
     public PromotionCountResponse getPromotionCount(String apiKey) {
+        return executeWithConnectionRetry("количество кампаний по типам", () -> getPromotionCountOnce(apiKey));
+    }
+
+    private PromotionCountResponse getPromotionCountOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
         String url = promotionBaseUrl + PROMOTION_COUNT_ENDPOINT;
@@ -68,7 +73,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                     PromotionCountResponse.class
             );
 
-            log.info("Получено групп кампаний: {}, всего кампаний: {}", 
+            log.info("Получено групп кампаний: {}, всего кампаний: {}",
                     countResponse.getAdverts() != null ? countResponse.getAdverts().size() : 0,
                     countResponse.getAll() != null ? countResponse.getAll() : 0);
 
@@ -78,8 +83,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("список кампаний WB", e);
             throw new RestClientException("Ошибка при получении списка кампаний: " + e.getMessage(), e);
+        } catch (RestClientException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Ошибка при получении списка кампаний: {}", e.getMessage(), e);
+            logIoErrorOrFull("получении списка кампаний", e);
             throw new RestClientException("Ошибка при получении списка кампаний: " + e.getMessage(), e);
         }
     }
@@ -87,6 +94,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     /**
      * Получение детальной информации о кампаниях (GET /api/advert/v2/adverts).
      * Поддерживаются кампании с единой и ручной ставкой (типы 8 и 9). Максимум 50 ID за запрос.
+     * При таймауте или ошибке соединения выполняются ретраи.
      *
      * @param apiKey API ключ продавца
      * @param campaignIds список ID кампаний (рекомендуется не более 50)
@@ -96,6 +104,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         if (campaignIds == null || campaignIds.isEmpty()) {
             return PromotionAdvertsResponse.builder().adverts(Collections.emptyList()).build();
         }
+        return executeWithConnectionRetry("детали кампаний (v2)", () -> getAdvertsV2Once(apiKey, campaignIds));
+    }
+
+    private PromotionAdvertsResponse getAdvertsV2Once(String apiKey, List<Long> campaignIds) {
         List<Long> batch = campaignIds.size() > ADVERTS_V2_BATCH_SIZE
                 ? campaignIds.subList(0, ADVERTS_V2_BATCH_SIZE)
                 : campaignIds;
@@ -130,8 +142,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("детальная информация о кампаниях WB", e);
             throw new RestClientException("Ошибка при получении детальной информации о кампаниях: " + e.getMessage(), e);
+        } catch (RestClientException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Ошибка при получении детальной информации о кампаниях: {}", e.getMessage(), e);
+            logIoErrorOrFull("получении детальной информации о кампаниях", e);
             throw new RestClientException("Ошибка при получении детальной информации о кампаниях: " + e.getMessage(), e);
         }
     }
@@ -218,7 +232,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             } catch (RestClientException e) {
                 throw e;
             } catch (Exception e) {
-                log.error("Ошибка при получении статистики кампаний: {}", e.getMessage(), e);
+                logIoErrorOrFull("получении статистики кампаний", e);
                 throw new RestClientException("Ошибка при получении статистики кампаний: " + e.getMessage(), e);
             }
         });

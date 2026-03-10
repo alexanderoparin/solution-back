@@ -37,6 +37,7 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
 
     /**
      * Получить обработанные отзывы с пагинацией.
+     * При таймауте или ошибке соединения выполняются ретраи.
      *
      * @param apiKey     API ключ (категория «Вопросы и отзывы»)
      * @param isAnswered true — обработанные, false — необработанные
@@ -46,6 +47,10 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
      * @return ответ с data.feedbacks
      */
     public FeedbacksResponse getFeedbacks(String apiKey, boolean isAnswered, Long nmId, int take, int skip) {
+        return executeWithConnectionRetry("отзывы", () -> getFeedbacksOnce(apiKey, isAnswered, nmId, take, skip));
+    }
+
+    private FeedbacksResponse getFeedbacksOnce(String apiKey, boolean isAnswered, Long nmId, int take, int skip) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(feedbacksBaseUrl + FEEDBACKS_ENDPOINT)
                 .queryParam("isAnswered", isAnswered)
                 .queryParam("take", Math.min(take, MAX_TAKE))
@@ -72,7 +77,7 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
         } catch (RestClientException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Ошибка при получении отзывов: {}", e.getMessage());
+            logIoErrorOrFull("получении отзывов", e);
             throw new RestClientException("Ошибка при получении отзывов: " + e.getMessage(), e);
         }
     }

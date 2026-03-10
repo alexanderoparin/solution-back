@@ -9,6 +9,7 @@ import ru.oparin.solution.dto.wb.WbApiProblemResponse;
 import ru.oparin.solution.dto.wb.WbApiSimpleErrorResponse;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 
+import java.net.UnknownHostException;
 import java.util.concurrent.Callable;
 
 /**
@@ -193,6 +194,27 @@ public abstract class AbstractWbApiClient {
             return true;
         }
         return e.getCause() != null && isTimeoutOrConnectionError(e.getCause());
+    }
+
+    /**
+     * Логирует I/O (сеть, DNS) ошибки одной строкой без стектрейса; остальные — с полным стеком.
+     */
+    protected void logIoErrorOrFull(String context, Throwable e) {
+        if (isConnectionIoError(e)) {
+            log.warn("Ошибка при {}: {}", context, e.getMessage());
+        } else {
+            log.error("Ошибка при {}: {}", context, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Проверяет, является ли ошибка сетевой/I/O (DNS, таймаут соединения и т.п.).
+     * Используется для логирования без стектрейса в вызывающем коде.
+     */
+    public static boolean isConnectionIoError(Throwable e) {
+        if (e == null) return false;
+        if (e instanceof ResourceAccessException || e instanceof UnknownHostException) return true;
+        return isConnectionIoError(e.getCause());
     }
 
     protected static void sleep(long ms) {

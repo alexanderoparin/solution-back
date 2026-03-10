@@ -35,8 +35,13 @@ public class WbContentApiClient extends AbstractWbApiClient {
 
     /**
      * Получение списка карточек товаров селлера.
+     * При таймауте или ошибке соединения выполняются ретраи.
      */
     public CardsListResponse getCardsList(String apiKey, CardsListRequest request) {
+        return executeWithConnectionRetry("список карточек товаров", () -> getCardsListOnce(apiKey, request));
+    }
+
+    private CardsListResponse getCardsListOnce(String apiKey, CardsListRequest request) {
         HttpHeaders headers = createAuthHeadersWithBearer(apiKey);
         CardsListRequest requestBody = buildCardsListRequestBody(request);
         HttpEntity<CardsListRequest> entity = new HttpEntity<>(requestBody, headers);
@@ -50,13 +55,23 @@ public class WbContentApiClient extends AbstractWbApiClient {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("список карточек товаров WB", e);
             throw new RestClientException("Ошибка при получении списка карточек товаров: " + e.getMessage(), e);
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            logIoErrorOrFull("получении списка карточек товаров", e);
+            throw new RestClientException("Ошибка при получении списка карточек товаров: " + e.getMessage(), e);
         }
     }
 
     /**
      * Получение списка карточек товаров из корзины (trash).
+     * При таймауте или ошибке соединения выполняются ретраи.
      */
     public CardsListResponse getCardsTrash(String apiKey, CardsListRequest request) {
+        return executeWithConnectionRetry("карточки из корзины", () -> getCardsTrashOnce(apiKey, request));
+    }
+
+    private CardsListResponse getCardsTrashOnce(String apiKey, CardsListRequest request) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
         CardsListRequest requestBody = buildTrashRequestBody(request);
@@ -79,13 +94,23 @@ public class WbContentApiClient extends AbstractWbApiClient {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("список карточек из корзины WB", e);
             throw new RestClientException("Ошибка при получении списка карточек из корзины: " + e.getMessage(), e);
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            logIoErrorOrFull("получении списка карточек из корзины", e);
+            throw new RestClientException("Ошибка при получении списка карточек из корзины: " + e.getMessage(), e);
         }
     }
 
     /**
      * Проверка подключения к WB API.
+     * При таймауте или ошибке соединения выполняются ретраи.
      */
     public PingResponse ping(String apiKey) {
+        return executeWithConnectionRetry("проверка подключения (ping)", () -> pingOnce(apiKey));
+    }
+
+    private PingResponse pingOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
         String url = contentBaseUrl + PING_ENDPOINT;
@@ -105,6 +130,11 @@ public class WbContentApiClient extends AbstractWbApiClient {
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("ping WB API", e);
+            throw new RestClientException("Ошибка при проверке подключения к WB API: " + e.getMessage(), e);
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            logIoErrorOrFull("проверке подключения к WB API (ping)", e);
             throw new RestClientException("Ошибка при проверке подключения к WB API: " + e.getMessage(), e);
         }
     }

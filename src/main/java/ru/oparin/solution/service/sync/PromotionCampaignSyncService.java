@@ -15,6 +15,7 @@ import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
 import ru.oparin.solution.service.PromotionCampaignService;
 import ru.oparin.solution.service.PromotionCampaignStatisticsService;
+import ru.oparin.solution.service.wb.AbstractWbApiClient;
 import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
 import java.time.LocalDate;
@@ -85,8 +86,13 @@ public class PromotionCampaignSyncService {
         } catch (WbApiUnauthorizedScopeException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Ошибка при обновлении рекламных кампаний для кабинета (ID: {}): {}",
-                    cabinet.getId(), e.getMessage(), e);
+            if (AbstractWbApiClient.isConnectionIoError(e)) {
+                log.warn("Ошибка при обновлении рекламных кампаний для кабинета (ID: {}): {}",
+                        cabinet.getId(), e.getMessage());
+            } else {
+                log.error("Ошибка при обновлении рекламных кампаний для кабинета (ID: {}): {}",
+                        cabinet.getId(), e.getMessage(), e);
+            }
             return List.of();
         }
     }
@@ -132,8 +138,13 @@ public class PromotionCampaignSyncService {
             log.info("Завершено обновление статистики кампаний для продавца (ID: {})", seller.getId());
 
         } catch (Exception e) {
-            log.error("Ошибка при обновлении статистики кампаний для продавца (ID: {}, email: {}): {}",
-                    seller.getId(), seller.getEmail(), e.getMessage(), e);
+            if (AbstractWbApiClient.isConnectionIoError(e)) {
+                log.warn("Ошибка при обновлении статистики кампаний для продавца (ID: {}, email: {}): {}",
+                        seller.getId(), seller.getEmail(), e.getMessage());
+            } else {
+                log.error("Ошибка при обновлении статистики кампаний для продавца (ID: {}, email: {}): {}",
+                        seller.getId(), seller.getEmail(), e.getMessage(), e);
+            }
         }
     }
 
@@ -206,7 +217,11 @@ public class PromotionCampaignSyncService {
                     SyncDelayUtil.sleep(AUCTION_ADVERTS_DELAY_MS);
                 }
             } catch (Exception e) {
-                log.error("Ошибка при загрузке батча {}/{} кампаний (v2): {}", currentBatch, totalBatches, e.getMessage(), e);
+                if (AbstractWbApiClient.isConnectionIoError(e)) {
+                    log.warn("Ошибка при загрузке батча {}/{} кампаний (v2): {}", currentBatch, totalBatches, e.getMessage());
+                } else {
+                    log.error("Ошибка при загрузке батча {}/{} кампаний (v2): {}", currentBatch, totalBatches, e.getMessage(), e);
+                }
             }
         }
         return allCampaigns;
@@ -251,7 +266,11 @@ public class PromotionCampaignSyncService {
                     SyncDelayUtil.sleep(STATISTICS_API_CALL_DELAY_MS);
                 }
             } catch (Exception e) {
-                log.error("Ошибка при загрузке статистики батча {}/{}: {}", currentBatch, totalBatches, e.getMessage(), e);
+                if (AbstractWbApiClient.isConnectionIoError(e)) {
+                    log.warn("Ошибка при загрузке статистики батча {}/{}: {}", currentBatch, totalBatches, e.getMessage());
+                } else {
+                    log.error("Ошибка при загрузке статистики батча {}/{}: {}", currentBatch, totalBatches, e.getMessage(), e);
+                }
             }
         }
 

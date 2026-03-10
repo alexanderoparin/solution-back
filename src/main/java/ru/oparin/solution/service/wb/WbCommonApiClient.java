@@ -28,11 +28,16 @@ public class WbCommonApiClient extends AbstractWbApiClient {
 
     /**
      * Получение информации о продавце.
+     * При таймауте или ошибке соединения выполняются ретраи.
      */
     public SellerInfoResponse getSellerInfo(String apiKey) {
+        return executeWithConnectionRetry("информация о продавце", () -> getSellerInfoOnce(apiKey));
+    }
+
+    private SellerInfoResponse getSellerInfoOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        
+
         logWbApiCall(SELLER_INFO_URL, "информация о продавце");
 
         try {
@@ -49,6 +54,11 @@ public class WbCommonApiClient extends AbstractWbApiClient {
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("информация о продавце WB", e);
+            throw new RestClientException("Ошибка при получении информации о продавце: " + e.getMessage(), e);
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            logIoErrorOrFull("получении информации о продавце", e);
             throw new RestClientException("Ошибка при получении информации о продавце: " + e.getMessage(), e);
         }
     }

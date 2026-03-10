@@ -70,11 +70,10 @@ public class WbProductsApiClient extends AbstractWbApiClient {
                 throwIf401ScopeNotAllowed(e);
                 logWbApiError("получение цен товаров", e);
                 throw new RestClientException("Ошибка при получении цен товаров: " + e.getMessage(), e);
+            } catch (RestClientException e) {
+                throw e;
             } catch (Exception e) {
-                if (e instanceof RestClientException) {
-                    throw (RestClientException) e;
-                }
-                log.error("Ошибка при получении цен товаров: {}", e.getMessage(), e);
+                logIoErrorOrFull("получении цен товаров", e);
                 throw new RestClientException("Ошибка при получении цен товаров: " + e.getMessage(), e);
             }
         });

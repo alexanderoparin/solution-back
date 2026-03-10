@@ -87,13 +87,16 @@ public class WbStocksApiClient extends AbstractWbApiClient {
                     continue;
                 }
                 if (attempt == maxRetries) {
-                    log.error("Ошибка при получении остатков по размерам на складах WB после {} попыток nmID={}: {}",
-                            maxRetries, request.getNmID(), e.getMessage(), e);
+                    logIoErrorOrFull("получении остатков по размерам на складах WB nmID=" + request.getNmID() + " после " + maxRetries + " попыток", e);
                 }
                 throw e;
             } catch (Exception e) {
-                log.error("Ошибка при получении остатков по размерам на складах WB nmID={} (попытка {}/{}): {}",
-                        request.getNmID(), attempt, maxRetries, e.getMessage(), e);
+                if (attempt == maxRetries) {
+                    logIoErrorOrFull("получении остатков по размерам на складах WB nmID=" + request.getNmID(), e);
+                } else {
+                    log.warn("Ошибка при получении остатков по размерам на складах WB nmID={} (попытка {}/{}): {}",
+                            request.getNmID(), attempt, maxRetries, e.getMessage());
+                }
                 if (attempt == maxRetries) {
                     throw new RestClientException("Ошибка при получении остатков по размерам на складах WB: " + e.getMessage(), e);
                 }
