@@ -72,6 +72,25 @@ public class AdvertisingMetricsCalculator {
         }
         setBasicMetrics(metrics, stats);
         calculateDerivedMetrics(metrics, stats);
+        // СРО и ДРР по тем же «Заказали»/«Заказали на сумму», что в сводке (воронка), если они уже заданы
+        alignCpoAndDrrWithFunnel(metrics);
+    }
+
+    /**
+     * Если в metrics уже есть orders/ordersAmount (из воронки), пересчитываем СРО и ДРР по ним,
+     * чтобы в сводке формулы совпадали с отображаемыми «Заказали, шт» и «Заказали на сумму».
+     */
+    private void alignCpoAndDrrWithFunnel(AggregatedMetricsDto metrics) {
+        BigDecimal costs = metrics.getCosts();
+        if (costs == null) return;
+        Integer orders = metrics.getOrders();
+        if (orders != null && orders > 0) {
+            metrics.setCpo(MathUtils.divideSafely(costs, BigDecimal.valueOf(orders)));
+        }
+        BigDecimal ordersAmount = metrics.getOrdersAmount();
+        if (ordersAmount != null && ordersAmount.compareTo(BigDecimal.ZERO) > 0) {
+            metrics.setDrr(MathUtils.calculatePercentage(costs, ordersAmount));
+        }
     }
 
     private List<Long> getCampaignIds(Long sellerId, Long cabinetId) {

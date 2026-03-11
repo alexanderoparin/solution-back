@@ -51,7 +51,7 @@ public class MetricValueCalculator {
             case ORDER_CONVERSION -> calculateOrderConversion(card.getNmId(), cardCabinetId, period);
             case VIEWS, CLICKS, COSTS, CPC,
                  CTR, CPO, DRR ->
-                    calculateAdvertisingMetric(metricName, period, sellerId, cabinetId, card.getNmId(), advertisingStatsCache);
+                    calculateAdvertisingMetric(metricName, period, sellerId, cardCabinetId, card.getNmId(), advertisingStatsCache);
             default -> null;
         };
     }
@@ -117,6 +117,21 @@ public class MetricValueCalculator {
             stats = statisticsAggregator.aggregateStats(campaignIds, period);
         }
 
+        // СРО и ДРР по тем же «Заказали»/«Заказали на сумму», что в таблице (воронка по артикулу)
+        if (nmId != null && (CPO.equals(metricName) || DRR.equals(metricName))) {
+            CampaignStatisticsAggregator.AdvertisingStats articleStats = getAdvertisingStatsForArticle(sellerId, cabinetId, period, nmId);
+            if (articleStats != null && articleStats.sum() != null) {
+                int funnelOrders = sumField(nmId, cabinetId, period, ProductCardAnalytics::getOrders);
+                BigDecimal funnelOrdersSum = sumAmount(nmId, cabinetId, period);
+                if (CPO.equals(metricName) && funnelOrders > 0) {
+                    return MathUtils.divideSafely(articleStats.sum(), BigDecimal.valueOf(funnelOrders));
+                }
+                if (DRR.equals(metricName) && funnelOrdersSum.compareTo(BigDecimal.ZERO) > 0) {
+                    return MathUtils.calculatePercentage(articleStats.sum(), funnelOrdersSum);
+                }
+            }
+        }
+
         return switch (metricName) {
             case VIEWS -> stats.views();
             case CLICKS -> stats.clicks();
@@ -127,6 +142,13 @@ public class MetricValueCalculator {
             case DRR -> calculateDrr(stats);
             default -> null;
         };
+    }
+
+    private CampaignStatisticsAggregator.AdvertisingStats getAdvertisingStatsForArticle(Long sellerId, Long cabinetId, PeriodDto period, Long nmId) {
+        List<Long> campaignIds = getCampaignIds(sellerId, cabinetId);
+        Map<Long, CampaignStatisticsAggregator.AdvertisingStats> byArticle =
+                statisticsAggregator.aggregateStatsByArticle(campaignIds, period);
+        return byArticle.get(nmId);
     }
 
     private BigDecimal calculateCpc(CampaignStatisticsAggregator.AdvertisingStats stats) {

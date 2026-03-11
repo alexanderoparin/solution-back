@@ -723,9 +723,18 @@ public class AnalyticsService {
                                 .clicks(advertising.clicks)
                                 .costs(advertising.costs)
                                 .cpc(advertising.cpc)
-                                .ctr(advertising.ctr)
-                                .cpo(advertising.cpo)
-                                .drr(advertising.drr);
+                                .ctr(advertising.ctr);
+                        // СРО и ДРР считаем по тем же «Заказали», что и в таблице (воронка), чтобы строка была консистентна
+                        if (funnel != null && funnel.getOrders() != null && funnel.getOrders() > 0 && advertising.costs != null) {
+                            builder.cpo(MathUtils.divideSafely(advertising.costs, BigDecimal.valueOf(funnel.getOrders())));
+                        } else {
+                            builder.cpo(advertising.cpo);
+                        }
+                        if (funnel != null && funnel.getOrdersSum() != null && funnel.getOrdersSum().compareTo(BigDecimal.ZERO) > 0 && advertising.costs != null) {
+                            builder.drr(MathUtils.calculatePercentage(advertising.costs, funnel.getOrdersSum()));
+                        } else {
+                            builder.drr(advertising.drr);
+                        }
                     }
                     
                     ProductPriceHistory price = priceByDate.get(date);
