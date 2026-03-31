@@ -106,6 +106,9 @@ public class UsersManagementController {
         }
 
         analyticsScheduler.recordAdminTriggered();
+        log.info("Ручной запуск полного обновления кабинетов: role={}, userId={}, email={}, scope={}",
+                currentUser.getRole(), currentUser.getId(), currentUser.getEmail(),
+                currentUser.getRole() == Role.MANAGER ? "manager-owned-cabinets" : "all-cabinets");
         if (currentUser.getRole() == Role.MANAGER) {
             analyticsScheduler.runFullAnalyticsUpdateForManagerAsync(currentUser.getId());
         } else {

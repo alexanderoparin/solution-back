@@ -1,6 +1,7 @@
 package ru.oparin.solution.controller;
 
 import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,6 +29,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/admin")
+@Slf4j
 public class AdminController {
 
     private final CabinetService cabinetService;
@@ -105,6 +107,7 @@ public class AdminController {
                     ));
         }
         analyticsScheduler.recordAdminTriggered();
+        log.info("Ручной запуск полного обновления кабинетов через /admin/run-analytics-all");
         taskExecutor.execute(analyticsScheduler::runFullAnalyticsUpdate);
         return ResponseEntity.accepted()
                 .body(Map.of("message", "Полное обновление по всем кабинетам запущено в фоне (как по расписанию)."));
