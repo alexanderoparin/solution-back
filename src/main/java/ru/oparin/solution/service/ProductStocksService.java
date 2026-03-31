@@ -1,9 +1,14 @@
 package ru.oparin.solution.service;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.ResourceAccessException;
 import ru.oparin.solution.dto.wb.WbStocksSizesRequest;
@@ -41,6 +46,17 @@ public class ProductStocksService {
     private final ProductBarcodeRepository barcodeRepository;
 
     /**
+     * self-proxy, чтобы вызовы @Transactional методов не обходили Spring proxy
+     * (самовызов внутри этого же бина).
+     */
+    @Lazy
+    @Autowired
+    private ProductStocksService self;
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    /**
      * Получает и сохраняет остатки товаров по размерам на складах WB.
      * Данные перезаписываются каждый день, время записи фиксируется в created_at и updated_at.
      *
@@ -48,12 +64,12 @@ public class ProductStocksService {
      * @param nmId артикул товара (nmID)
      * @return ответ с остатками товаров по размерам
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public WbStocksSizesResponse getWbStocksBySizes(String apiKey, Long nmId) {
-        return getWbStocksBySizes(apiKey, nmId, null);
+        return self.getWbStocksBySizes(apiKey, nmId, null);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public WbStocksSizesResponse getWbStocksBySizes(String apiKey, Long nmId, Cabinet cabinet) {
         WbStocksSizesRequest request = buildStocksRequest(nmId);
         WbStocksSizesResponse response = stocksApiClient.getWbStocksBySizes(apiKey, request);
@@ -82,7 +98,7 @@ public class ProductStocksService {
         int count = 0;
         for (Long nmId : nmIds) {
             try {
-                getWbStocksBySizes(apiKey, nmId, cabinet);
+                self.getWbStocksBySizes(apiKey, nmId, cabinet);
                 count++;
                 if (count < nmIds.size()) {
                     Thread.sleep(STOCKS_REQUEST_DELAY_MS);
@@ -179,6 +195,15 @@ public class ProductStocksService {
         } catch (Exception e) {
             log.error("Ошибка при сохранении остатка для nmID {}, warehouseId {}, barcode {}, amount {}: {}",
                     nmId, office.getOfficeID(), barcode, stockCount, e.getMessage());
+            // После исключения Hibernate часто оставляет persistence context в нестабильном состоянии.
+            // Очищаем, чтобы следующие save/find не попали в "битую" сессию.
+            if (entityManager != null) {
+                try {
+                    entityManager.clear();
+                } catch (Exception ignore) {
+                    // не маскируем исходную ошибку
+                }
+            }
             statistics.incrementSkipped();
         }
     }
