@@ -28,7 +28,7 @@ import ru.oparin.solution.repository.UserRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import static java.lang.Boolean.TRUE;
@@ -568,12 +568,17 @@ public class UserService {
         LocalDateTime lastDataUpdateAt = null;
         LocalDateTime lastDataUpdateRequestedAt = null;
         if (user.getRole() == Role.SELLER) {
-            Optional<Cabinet> cabinet = cabinetService.findDefaultByUserId(user.getId());
-            if (cabinet.isPresent()) {
-                Cabinet c = cabinet.get();
-                lastDataUpdateAt = c.getLastDataUpdateAt();
-                lastDataUpdateRequestedAt = c.getLastDataUpdateRequestedAt();
-            }
+            List<Cabinet> cabinets = cabinetService.findCabinetsByUserId(user.getId());
+            lastDataUpdateAt = cabinets.stream()
+                    .map(Cabinet::getLastDataUpdateAt)
+                    .filter(Objects::nonNull)
+                    .max(LocalDateTime::compareTo)
+                    .orElse(null);
+            lastDataUpdateRequestedAt = cabinets.stream()
+                    .map(Cabinet::getLastDataUpdateRequestedAt)
+                    .filter(Objects::nonNull)
+                    .max(LocalDateTime::compareTo)
+                    .orElse(null);
         }
 
         return UserListItemDto.builder()
