@@ -5,10 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -20,6 +17,7 @@ import ru.oparin.solution.service.ArticleNoteService;
 import ru.oparin.solution.service.SellerContextService;
 import ru.oparin.solution.service.UserService;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -144,7 +142,15 @@ public class ArticleNotesController {
         String fileName = fileInfo.getFileName();
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                // Tomcat валидирует заголовки и не принимает кириллицу в plain `filename=...`.
+                // ContentDisposition формирует корректные параметры (в т.ч. filename* с UTF-8).
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename(fileName, StandardCharsets.UTF_8)
+                                .build()
+                                .toString()
+                )
                 .contentType(MediaType.parseMediaType(fileInfo.getMimeType() != null ? fileInfo.getMimeType() : MediaType.APPLICATION_OCTET_STREAM_VALUE))
                 .body(resource);
     }
