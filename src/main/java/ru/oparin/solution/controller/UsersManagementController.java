@@ -106,10 +106,16 @@ public class UsersManagementController {
         }
 
         analyticsScheduler.recordAdminTriggered();
-        analyticsScheduler.runFullAnalyticsUpdateAsync();
+        if (currentUser.getRole() == Role.MANAGER) {
+            analyticsScheduler.runFullAnalyticsUpdateForManagerAsync(currentUser.getId());
+        } else {
+            analyticsScheduler.runFullAnalyticsUpdateAsync();
+        }
         return ResponseEntity.accepted()
                 .body(MessageResponse.builder()
-                        .message("Полное обновление всех активных кабинетов запущено в фоне.")
+                        .message(currentUser.getRole() == Role.MANAGER
+                                ? "Полное обновление кабинетов ваших селлеров запущено в фоне."
+                                : "Полное обновление всех активных кабинетов запущено в фоне.")
                         .build());
     }
 

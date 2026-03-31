@@ -42,11 +42,23 @@ public class FullUpdateOrchestrator {
      * затем синхронизация акций календаря (своя транзакция). Кабинеты обрабатываются параллельно.
      */
     public void runFullUpdate() {
-        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER).stream()
-                // Сначала обновляем кабинеты с самым старым lastDataUpdateAt (или null — ещё не обновлялись).
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
+        runFullUpdateForCabinets(cabinets, "всем кабинетам");
+    }
+
+    /**
+     * Полное обновление только по кабинетам селлеров конкретного менеджера.
+     */
+    public void runFullUpdateForManager(Long managerId) {
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUserAndOwnerId(Role.SELLER, managerId);
+        runFullUpdateForCabinets(cabinets, "кабинетам менеджера " + managerId);
+    }
+
+    private void runFullUpdateForCabinets(List<Cabinet> sourceCabinets, String scopeLabel) {
+        List<Cabinet> cabinets = sourceCabinets.stream()
                 .sorted(Comparator.comparing(Cabinet::getLastDataUpdateAt, Comparator.nullsFirst(Comparator.naturalOrder())))
                 .toList();
-        log.info("Запуск полного обновления по кабинетам. Найдено кабинетов с API-ключом: {}", cabinets.size());
+        log.info("Запуск полного обновления по {}. Найдено кабинетов с API-ключом: {}", scopeLabel, cabinets.size());
 
         if (cabinets.isEmpty()) {
             log.info("Кабинетов с ключом не найдено, обновление пропущено");

@@ -87,6 +87,14 @@ public class AnalyticsScheduler {
     }
 
     /**
+     * Асинхронный запуск полного обновления по кабинетам селлеров конкретного менеджера.
+     */
+    @Async("taskExecutor")
+    public void runFullAnalyticsUpdateForManagerAsync(Long managerId) {
+        fullUpdateOrchestrator.runFullUpdateForManager(managerId);
+    }
+
+    /**
      * Автоматическое обновление списка складов WB по кабинетам с ключом.
      * Запускается каждый день в 00:00.
      */

@@ -236,6 +236,14 @@ public class CabinetService {
     }
 
     /**
+     * Все кабинеты с API-ключом и активным SELLER, принадлежащим указанному владельцу (MANAGER).
+     */
+    @Transactional(readOnly = true)
+    public List<Cabinet> findCabinetsWithApiKeyAndUserAndOwnerId(Role role, Long ownerId) {
+        return cabinetRepository.findCabinetsWithApiKeyAndUserAndOwnerId(role, ownerId);
+    }
+
+    /**
      * Сохраняет кабинет (создание или обновление).
      */
     @Transactional

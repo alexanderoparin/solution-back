@@ -46,4 +46,24 @@ public interface CabinetRepository extends JpaRepository<Cabinet, Long> {
      */
     @Query("SELECT c FROM Cabinet c JOIN FETCH c.user u WHERE c.apiKey IS NOT NULL AND u.isActive = true AND u.role = :role ORDER BY c.id")
     List<Cabinet> findCabinetsWithApiKeyAndUser(@Param("role") Role role);
+
+    /**
+     * Кабинеты с API-ключом у активных SELLER, принадлежащих указанному владельцу (MANAGER).
+     * Загружает User и owner, чтобы избежать lazy-загрузки в асинхронных потоках.
+     */
+    @Query("""
+            SELECT c
+            FROM Cabinet c
+            JOIN FETCH c.user u
+            JOIN FETCH u.owner o
+            WHERE c.apiKey IS NOT NULL
+              AND u.isActive = true
+              AND u.role = :role
+              AND o.id = :ownerId
+            ORDER BY c.id
+            """)
+    List<Cabinet> findCabinetsWithApiKeyAndUserAndOwnerId(
+            @Param("role") Role role,
+            @Param("ownerId") Long ownerId
+    );
 }
