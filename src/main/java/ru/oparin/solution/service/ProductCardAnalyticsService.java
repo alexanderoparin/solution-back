@@ -180,34 +180,34 @@ public class ProductCardAnalyticsService {
             log.info("Найдено карточек для загрузки аналитики: {}", productCards.size());
 
             CompletableFuture<Void> pricesFuture = CompletableFuture.runAsync(
-                    () -> runTimedStep("syncPricesAndSpp", cabinetId,
-                            () -> runWithScopeGuard(cabinetId, () -> syncPricesAndSpp(managed, managed.getApiKey()))),
+                    withCabinetMdc(cabinetId, () -> runTimedStep("syncPricesAndSpp", cabinetId,
+                            () -> runWithScopeGuard(cabinetId, () -> syncPricesAndSpp(managed, managed.getApiKey())))),
                     taskExecutor
             );
 
             CompletableFuture<Void> campaignFuture = CompletableFuture.runAsync(
-                    () -> runTimedStep("syncCampaignsAndStatistics", cabinetId,
+                    withCabinetMdc(cabinetId, () -> runTimedStep("syncCampaignsAndStatistics", cabinetId,
                             () -> runWithScopeGuard(cabinetId, WbApiCategory.PROMOTION,
-                                    () -> syncCampaignsAndStatistics(managed, managed.getApiKey(), cabinetId, seller, dateFrom, dateTo))),
+                                    () -> syncCampaignsAndStatistics(managed, managed.getApiKey(), cabinetId, seller, dateFrom, dateTo)))),
                     taskExecutor
             );
 
             CompletableFuture<Void> analyticsFuture = CompletableFuture.runAsync(
-                    () -> runTimedStep("syncAnalytics", cabinetId,
+                    withCabinetMdc(cabinetId, () -> runTimedStep("syncAnalytics", cabinetId,
                             () -> runWithScopeGuard(cabinetId, WbApiCategory.ANALYTICS,
-                                    () -> syncAnalytics(managed, cabinetId, productCards, dateFrom, dateTo))),
+                                    () -> syncAnalytics(managed, cabinetId, productCards, dateFrom, dateTo)))),
                     taskExecutor
             );
 
             CompletableFuture<Void> feedbacksFuture = CompletableFuture.runAsync(
-                    () -> runTimedStep("syncFeedbacks", cabinetId, () -> syncFeedbacksWithGuard(managed, cabinetId)),
+                    withCabinetMdc(cabinetId, () -> runTimedStep("syncFeedbacks", cabinetId, () -> syncFeedbacksWithGuard(managed, cabinetId))),
                     taskExecutor
             );
 
             CompletableFuture<Void> promotionCalendarFuture = syncPromotion
                     ? CompletableFuture.runAsync(
-                    () -> runTimedStep("syncPromotionCalendar", cabinetId,
-                            () -> syncPromotionCalendarWithGuard(managed, cabinetId)),
+                    withCabinetMdc(cabinetId, () -> runTimedStep("syncPromotionCalendar", cabinetId,
+                            () -> syncPromotionCalendarWithGuard(managed, cabinetId))),
                     taskExecutor
             )
                     : CompletableFuture.completedFuture(null);
@@ -216,12 +216,12 @@ public class ProductCardAnalyticsService {
                 // Опциональная фоновая ветка остатков (по умолчанию выключена и запускается отдельной кнопкой).
                 List<Long> nmIds = collectNmIds(productCards);
                 CompletableFuture.runAsync(
-                        () -> runTimedStep("syncStocksAsync", cabinetId,
+                        withCabinetMdc(cabinetId, () -> runTimedStep("syncStocksAsync", cabinetId,
                                 () -> runWithScopeGuard(cabinetId, WbApiCategory.ANALYTICS, () -> {
                                     syncStocks(managed, nmIds);
                                     managed.setLastStocksUpdateAt(LocalDateTime.now());
                                     cabinetService.save(managed);
-                                })),
+                                }))),
                         taskExecutor
                 );
             }
@@ -331,6 +331,17 @@ public class ProductCardAnalyticsService {
         long seconds = totalSeconds % 60;
         log.info("Метрика full-update: cabinetId={}, step={}, elapsed={} мин {} сек ({} ms)",
                 cabinetId, stepName, minutes, seconds, elapsedMs);
+    }
+
+    private Runnable withCabinetMdc(long cabinetId, Runnable task) {
+        return () -> {
+            MDC.put("cabinetTag", "[cabinet:" + cabinetId + "]");
+            try {
+                task.run();
+            } finally {
+                MDC.remove("cabinetTag");
+            }
+        };
     }
 
     // --- Обработка ошибок ---

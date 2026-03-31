@@ -5,9 +5,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.analytics.*;
+import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.*;
 import ru.oparin.solution.service.analytics.*;
@@ -1188,10 +1190,10 @@ public class AnalyticsService {
         ProductCard card = (cabinetId != null
                 ? productCardRepository.findByNmIdAndCabinet_Id(nmId, cabinetId)
                 : productCardRepository.findByNmId(nmId))
-                .orElseThrow(() -> new IllegalArgumentException("Артикул не найден: " + nmId));
+                .orElseThrow(() -> new UserException("Артикул не найден: " + nmId, HttpStatus.NOT_FOUND));
 
         if (!card.getSeller().getId().equals(sellerId)) {
-            throw new IllegalArgumentException("Артикул не принадлежит продавцу");
+            throw new UserException("Артикул не принадлежит продавцу", HttpStatus.FORBIDDEN);
         }
 
         return card;
