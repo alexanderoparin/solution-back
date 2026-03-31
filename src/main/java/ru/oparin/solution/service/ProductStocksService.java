@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -35,8 +36,6 @@ import java.util.Optional;
 public class ProductStocksService {
 
     private static final String STOCK_TYPE_WB = "wb";
-    /** Задержка между запросами остатков: лимит WB API — 3 запроса/мин, интервал 20 сек (см. dev.wildberries.ru/swagger/analytics). */
-    private static final long STOCKS_REQUEST_DELAY_MS = 20000;
     private static final String ORDER_FIELD_STOCK_COUNT = "stockCount";
     private static final String ORDER_MODE_ASC = "asc";
     private static final long DEFAULT_STOCK_COUNT = 0L;
@@ -44,6 +43,8 @@ public class ProductStocksService {
     private final WbStocksApiClient stocksApiClient;
     private final ProductStockRepository stockRepository;
     private final ProductBarcodeRepository barcodeRepository;
+    @Value("${wb.stocks.request-delay-ms:20000}")
+    private long stocksRequestDelayMs;
 
     /**
      * self-proxy, чтобы вызовы @Transactional методов не обходили Spring proxy
@@ -101,7 +102,7 @@ public class ProductStocksService {
                 self.getWbStocksBySizes(apiKey, nmId, cabinet);
                 count++;
                 if (count < nmIds.size()) {
-                    Thread.sleep(STOCKS_REQUEST_DELAY_MS);
+                    Thread.sleep(stocksRequestDelayMs);
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

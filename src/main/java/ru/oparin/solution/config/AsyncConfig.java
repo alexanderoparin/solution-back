@@ -1,5 +1,6 @@
 package ru.oparin.solution.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -16,8 +17,16 @@ import java.util.concurrent.ThreadPoolExecutor;
 @EnableAsync
 public class AsyncConfig {
 
-    public static final int MIN_POOL_SIZE = 4;
-    public static final int MAX_POOL_SIZE = 6;
+    @Value("${app.executors.core-pool-size:4}")
+    private int corePoolSize;
+    @Value("${app.executors.max-pool-size:6}")
+    private int maxPoolSize;
+    @Value("${app.executors.task-queue-capacity:500}")
+    private int taskQueueCapacity;
+    @Value("${app.executors.cabinet-queue-capacity:100}")
+    private int cabinetQueueCapacity;
+    @Value("${app.executors.user-deletion-queue-capacity:50}")
+    private int userDeletionQueueCapacity;
 
     /**
      * Пул потоков для асинхронных задач.
@@ -28,9 +37,9 @@ public class AsyncConfig {
     @Bean(name = "taskExecutor")
     public Executor taskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(MIN_POOL_SIZE); // Минимум потоков
-        executor.setMaxPoolSize(MAX_POOL_SIZE); // Максимум потоков
-        executor.setQueueCapacity(500); // Очередь на 500 задач (для поддержки большого количества селлеров)
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(taskQueueCapacity);
         executor.setThreadNamePrefix("analytics-async-");
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy()); // Выполнение в текущем потоке при переполнении
         executor.setWaitForTasksToCompleteOnShutdown(true);
@@ -45,9 +54,9 @@ public class AsyncConfig {
     @Bean(name = "cabinetUpdateExecutor")
     public Executor cabinetUpdateExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(MIN_POOL_SIZE);
-        executor.setMaxPoolSize(MAX_POOL_SIZE);
-        executor.setQueueCapacity(100);
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(cabinetQueueCapacity);
         executor.setThreadNamePrefix("cabinet-update-");
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(true);
@@ -63,9 +72,9 @@ public class AsyncConfig {
     @Bean(name = "userDeletionExecutor")
     public Executor userDeletionExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(MIN_POOL_SIZE);
-        executor.setMaxPoolSize(MAX_POOL_SIZE);
-        executor.setQueueCapacity(50);
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(userDeletionQueueCapacity);
         executor.setThreadNamePrefix("user-deletion-");
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(true);

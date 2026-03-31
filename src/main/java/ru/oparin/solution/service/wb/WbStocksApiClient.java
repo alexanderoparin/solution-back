@@ -29,16 +29,17 @@ public class WbStocksApiClient extends AbstractWbApiClient {
 
     @Value("${wb.api.analytics-base-url}")
     private String analyticsBaseUrl;
-
-    private static final int MAX_RETRIES_429 = 5;
-    private static final long RETRY_DELAY_MS_429 = 20000; // 20 секунд
+    @Value("${wb.stocks.max-retries-429:5}")
+    private int maxRetries429;
+    @Value("${wb.stocks.retry-delay-ms-429:20000}")
+    private long retryDelayMs429;
 
     /**
      * Получение остатков товаров по размерам на складах WB.
      * При 429 — до 5 повторов с задержкой 20 с. Ретраи при 504/таймауте/соединении — в базовом клиенте.
      */
     public WbStocksSizesResponse getWbStocksBySizes(String apiKey, WbStocksSizesRequest request) {
-        return getWbStocksBySizesWithRetry(apiKey, request, MAX_RETRIES_429);
+        return getWbStocksBySizesWithRetry(apiKey, request, maxRetries429);
     }
 
     private WbStocksSizesResponse getWbStocksBySizesWithRetry(String apiKey, WbStocksSizesRequest request, int maxRetries) {
@@ -72,9 +73,10 @@ public class WbStocksApiClient extends AbstractWbApiClient {
                 return executeWithConnectionRetry(context, oneAttempt);
             } catch (HttpClientErrorException e) {
                 if (e.getStatusCode().value() == 429 && attempt < maxRetries) {
+                    log429Metric();
                     log.warn("Получен 429 Too Many Requests (попытка {}/{}). Ожидание {} мс перед повторной попыткой...",
-                            attempt, maxRetries, RETRY_DELAY_MS_429);
-                    sleep(RETRY_DELAY_MS_429);
+                            attempt, maxRetries, retryDelayMs429);
+                    sleep(retryDelayMs429);
                     continue;
                 }
                 throwIf401ScopeNotAllowed(e);
@@ -82,8 +84,9 @@ public class WbStocksApiClient extends AbstractWbApiClient {
                 throw new RestClientException("Ошибка от WB API: " + e.getStatusCode() + " - " + e.getMessage(), e);
             } catch (RestClientException e) {
                 if (e.getMessage() != null && e.getMessage().contains("429") && attempt < maxRetries) {
-                    log.warn("Ошибка 429 при попытке {}/{}. Повтор через {} мс...", attempt, maxRetries, RETRY_DELAY_MS_429);
-                    sleep(RETRY_DELAY_MS_429);
+                    log429Metric();
+                    log.warn("Ошибка 429 при попытке {}/{}. Повтор через {} мс...", attempt, maxRetries, retryDelayMs429);
+                    sleep(retryDelayMs429);
                     continue;
                 }
                 if (attempt == maxRetries) {

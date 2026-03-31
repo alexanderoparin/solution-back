@@ -3,6 +3,7 @@ package ru.oparin.solution.scheduler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,6 +76,14 @@ public class AnalyticsScheduler {
      */
     public void runFullAnalyticsUpdate() {
         fullUpdateOrchestrator.runFullUpdate();
+    }
+
+    /**
+     * Асинхронный запуск полного обновления по всем кабинетам.
+     */
+    @Async("taskExecutor")
+    public void runFullAnalyticsUpdateAsync() {
+        runFullAnalyticsUpdate();
     }
 
     /**
@@ -154,8 +163,8 @@ public class AnalyticsScheduler {
     private static final int ADMIN_MIN_UPDATE_INTERVAL_MINUTES = 5;
 
     /**
-     * Глобальный кулдаун только для эндпоинта «обновить всё» (POST /admin/run-analytics-all):
-     * не чаще одного запуска в 5 минут.
+     * Глобальный кулдаун только для эндпоинта «обновить всё» (POST /admin/run-analytics-all
+     * и POST /users/trigger-all-cabinets-update): не чаще одного запуска в 5 минут.
      */
     private static final long FULL_UPDATE_COOLDOWN_MS = 5 * 60 * 1000L;
     private volatile long lastFullUpdateTriggeredAtMs = 0;
@@ -169,7 +178,7 @@ public class AnalyticsScheduler {
     }
 
     /**
-     * Фиксирует момент ручного запуска «обновить всё» (для кулдауна 5 минут). Только для AdminController.
+     * Фиксирует момент ручного запуска «обновить всё» (для кулдауна 5 минут).
      */
     public void recordAdminTriggered() {
         lastFullUpdateTriggeredAtMs = System.currentTimeMillis();

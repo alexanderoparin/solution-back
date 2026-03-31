@@ -74,6 +74,12 @@ public class Cabinet {
     @Column(name = "last_stocks_update_requested_at")
     private LocalDateTime lastStocksUpdateRequestedAt;
 
+    /**
+     * Время последнего успешного завершения обновления остатков по кабинету.
+     */
+    @Column(name = "last_stocks_update_at")
+    private LocalDateTime lastStocksUpdateAt;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

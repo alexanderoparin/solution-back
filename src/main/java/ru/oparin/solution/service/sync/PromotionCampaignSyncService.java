@@ -2,6 +2,7 @@ package ru.oparin.solution.service.sync;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.dto.wb.PromotionAdvertsResponse;
 import ru.oparin.solution.dto.wb.PromotionCountResponse;
@@ -36,9 +37,11 @@ public class PromotionCampaignSyncService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final int STATISTICS_BATCH_SIZE = 50;
-    private static final int STATISTICS_API_CALL_DELAY_MS = 20000;
     private static final int CAMPAIGNS_BATCH_SIZE = 50;
-    private static final int AUCTION_ADVERTS_DELAY_MS = 200;
+    @Value("${wb.promotion.statistics-delay-ms:20000}")
+    private int statisticsApiCallDelayMs;
+    @Value("${wb.promotion.adverts-delay-ms:200}")
+    private int auctionAdvertsDelayMs;
 
     private final WbPromotionApiClient promotionApiClient;
     private final PromotionCampaignService promotionCampaignService;
@@ -214,7 +217,7 @@ public class PromotionCampaignSyncService {
                     log.info("Получено {} кампаний из батча {}/{}", batchResponse.getAdverts().size(), currentBatch, totalBatches);
                 }
                 if (currentBatch < totalBatches) {
-                    SyncDelayUtil.sleep(AUCTION_ADVERTS_DELAY_MS);
+                    SyncDelayUtil.sleep(auctionAdvertsDelayMs);
                 }
             } catch (Exception e) {
                 if (AbstractWbApiClient.isConnectionIoError(e)) {
@@ -263,7 +266,7 @@ public class PromotionCampaignSyncService {
                     }
                 }
                 if (endIndex < campaignIds.size()) {
-                    SyncDelayUtil.sleep(STATISTICS_API_CALL_DELAY_MS);
+                    SyncDelayUtil.sleep(statisticsApiCallDelayMs);
                 }
             } catch (Exception e) {
                 if (AbstractWbApiClient.isConnectionIoError(e)) {

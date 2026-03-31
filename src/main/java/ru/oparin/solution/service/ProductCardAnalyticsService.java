@@ -3,6 +3,7 @@ package ru.oparin.solution.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.scheduling.annotation.Async;
@@ -23,6 +24,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 /**
@@ -48,6 +51,8 @@ public class ProductCardAnalyticsService {
     private final FeedbacksSyncService feedbacksSyncService;
     private final CabinetService cabinetService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
+    @Qualifier("taskExecutor")
+    private final Executor taskExecutor;
 
     // --- Публичный API (асинхронные вызовы, транзакции, валидация) ---
 
@@ -70,7 +75,7 @@ public class ProductCardAnalyticsService {
         MDC.put("cabinetTag", "[cabinet:" + cabinet.getId() + "]");
         try {
             Cabinet managed = findManagedCabinet(cabinet.getId());
-            doUpdateCabinetAnalytics(managed, dateFrom, dateTo, true);
+            doUpdateCabinetAnalytics(managed, dateFrom, dateTo, true, false);
         } finally {
             MDC.remove("cabinetTag");
         }
@@ -83,7 +88,7 @@ public class ProductCardAnalyticsService {
     @Transactional
     public void updateCabinetAnalyticsInTransaction(Cabinet cabinet, LocalDate dateFrom, LocalDate dateTo) {
         Cabinet managed = findManagedCabinet(cabinet.getId());
-        doUpdateCabinetAnalytics(managed, dateFrom, dateTo, false);
+        doUpdateCabinetAnalytics(managed, dateFrom, dateTo, false, false);
     }
 
     /**
@@ -137,6 +142,8 @@ public class ProductCardAnalyticsService {
                 return;
             }
             stocksService.updateStocksForCabinet(managed, apiKey, nmIds);
+            managed.setLastStocksUpdateAt(LocalDateTime.now());
+            cabinetService.save(managed);
             cabinetScopeStatusService.recordSuccess(cabinetId, WbApiCategory.ANALYTICS);
         } catch (WbApiUnauthorizedScopeException e) {
             cabinetScopeStatusService.recordFailure(cabinetId, e.getCategory(), e.getMessage());
@@ -148,7 +155,13 @@ public class ProductCardAnalyticsService {
 
     // --- Основной поток: один уровень абстракции ---
 
-    private void doUpdateCabinetAnalytics(Cabinet managed, LocalDate dateFrom, LocalDate dateTo, boolean syncPromotion) {
+    private void doUpdateCabinetAnalytics(
+            Cabinet managed,
+            LocalDate dateFrom,
+            LocalDate dateTo,
+            boolean syncPromotion,
+            boolean runStocksInBackground
+    ) {
         long cabinetId = managed.getId();
         if (skipIfNoApiKey(managed, cabinetId)) return;
 
@@ -157,26 +170,65 @@ public class ProductCardAnalyticsService {
         log.info("Начало обновления карточек, кампаний и загрузки аналитики для кабинета (ID: {}, продавец: {}) за период {} - {}",
                 cabinetId, seller.getEmail(), dateFrom, dateTo);
 
+        long updateStartedAt = System.currentTimeMillis();
         try {
+            long cardsStartedAt = System.currentTimeMillis();
             runWithScopeGuard(cabinetId, WbApiCategory.CONTENT, () -> syncCards(managed, managed.getApiKey()));
-            runWithScopeGuard(cabinetId, () -> syncPricesAndSpp(managed, managed.getApiKey()));
+            logStepDuration("syncCards", cabinetId, cardsStartedAt);
 
             List<ProductCard> productCards = productCardService.findByCabinetId(cabinetId);
-            List<Long> nmIds = collectNmIds(productCards);
-
-            runWithScopeGuard(cabinetId, WbApiCategory.PROMOTION, () -> syncCampaignsAndStatistics(managed, managed.getApiKey(), cabinetId, seller, dateFrom, dateTo));
-
             log.info("Найдено карточек для загрузки аналитики: {}", productCards.size());
-            runWithScopeGuard(cabinetId, WbApiCategory.ANALYTICS, () -> syncAnalytics(managed, cabinetId, productCards, dateFrom, dateTo));
 
-            markUpdateCompleted(managed);
+            CompletableFuture<Void> pricesFuture = CompletableFuture.runAsync(
+                    () -> runTimedStep("syncPricesAndSpp", cabinetId,
+                            () -> runWithScopeGuard(cabinetId, () -> syncPricesAndSpp(managed, managed.getApiKey()))),
+                    taskExecutor
+            );
 
-            if (syncPromotion) {
-                syncPromotionCalendarWithGuard(managed, cabinetId);
+            CompletableFuture<Void> campaignFuture = CompletableFuture.runAsync(
+                    () -> runTimedStep("syncCampaignsAndStatistics", cabinetId,
+                            () -> runWithScopeGuard(cabinetId, WbApiCategory.PROMOTION,
+                                    () -> syncCampaignsAndStatistics(managed, managed.getApiKey(), cabinetId, seller, dateFrom, dateTo))),
+                    taskExecutor
+            );
+
+            CompletableFuture<Void> analyticsFuture = CompletableFuture.runAsync(
+                    () -> runTimedStep("syncAnalytics", cabinetId,
+                            () -> runWithScopeGuard(cabinetId, WbApiCategory.ANALYTICS,
+                                    () -> syncAnalytics(managed, cabinetId, productCards, dateFrom, dateTo))),
+                    taskExecutor
+            );
+
+            CompletableFuture<Void> feedbacksFuture = CompletableFuture.runAsync(
+                    () -> runTimedStep("syncFeedbacks", cabinetId, () -> syncFeedbacksWithGuard(managed, cabinetId)),
+                    taskExecutor
+            );
+
+            CompletableFuture<Void> promotionCalendarFuture = syncPromotion
+                    ? CompletableFuture.runAsync(
+                    () -> runTimedStep("syncPromotionCalendar", cabinetId,
+                            () -> syncPromotionCalendarWithGuard(managed, cabinetId)),
+                    taskExecutor
+            )
+                    : CompletableFuture.completedFuture(null);
+
+            if (runStocksInBackground) {
+                // Опциональная фоновая ветка остатков (по умолчанию выключена и запускается отдельной кнопкой).
+                List<Long> nmIds = collectNmIds(productCards);
+                CompletableFuture.runAsync(
+                        () -> runTimedStep("syncStocksAsync", cabinetId,
+                                () -> runWithScopeGuard(cabinetId, WbApiCategory.ANALYTICS, () -> {
+                                    syncStocks(managed, nmIds);
+                                    managed.setLastStocksUpdateAt(LocalDateTime.now());
+                                    cabinetService.save(managed);
+                                })),
+                        taskExecutor
+                );
             }
-            syncFeedbacksWithGuard(managed, cabinetId);
-            runWithScopeGuard(cabinetId, WbApiCategory.ANALYTICS, () -> syncStocks(managed, nmIds));
 
+            CompletableFuture.allOf(pricesFuture, campaignFuture, analyticsFuture, feedbacksFuture, promotionCalendarFuture).join();
+            markUpdateCompleted(managed);
+            logStepDuration("cabinetMainPipeline", cabinetId, updateStartedAt);
         } catch (HttpClientErrorException e) {
             handle401AndInvalidateKey(managed, e);
             throw e;
@@ -264,6 +316,21 @@ public class ProductCardAnalyticsService {
     private void syncStocks(Cabinet managed, List<Long> nmIds) {
         if (nmIds.isEmpty()) return;
         stocksService.updateStocksForCabinet(managed, managed.getApiKey(), nmIds);
+    }
+
+    private void runTimedStep(String stepName, long cabinetId, Runnable step) {
+        long startedAt = System.currentTimeMillis();
+        step.run();
+        logStepDuration(stepName, cabinetId, startedAt);
+    }
+
+    private void logStepDuration(String stepName, long cabinetId, long startedAt) {
+        long elapsedMs = System.currentTimeMillis() - startedAt;
+        long totalSeconds = elapsedMs / 1000;
+        long minutes = totalSeconds / 60;
+        long seconds = totalSeconds % 60;
+        log.info("Метрика full-update: cabinetId={}, step={}, elapsed={} мин {} сек ({} ms)",
+                cabinetId, stepName, minutes, seconds, elapsedMs);
     }
 
     // --- Обработка ошибок ---

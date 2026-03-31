@@ -2,6 +2,7 @@ package ru.oparin.solution.service.sync;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
 import ru.oparin.solution.dto.wb.OrdersResponse;
@@ -32,7 +33,8 @@ import java.util.stream.Collectors;
 public class ProductPricesSyncService {
 
     private static final int PRICES_BATCH_SIZE = 1000;
-    private static final int PRICES_API_CALL_DELAY_MS = 600;
+    @Value("${wb.prices.api-call-delay-ms:600}")
+    private int pricesApiCallDelayMs;
 
     private final ProductCardRepository productCardRepository;
     private final ProductPriceService productPriceService;
@@ -151,7 +153,7 @@ public class ProductPricesSyncService {
                 productPriceService.savePrices(response, date, cabinet);
 
                 if (i < batches.size() - 1) {
-                    SyncDelayUtil.sleep(PRICES_API_CALL_DELAY_MS);
+                    SyncDelayUtil.sleep(pricesApiCallDelayMs);
                 }
             } catch (WbApiUnauthorizedScopeException e) {
                 handleWbUnauthorizedScope(cabinet, e);

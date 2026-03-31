@@ -54,6 +54,7 @@ public abstract class AbstractWbApiClient {
 
         while (attemptNum < MAX_CONNECTION_RETRIES) {
             try {
+                applyRateLimit();
                 return attempt.call();
             } catch (RestClientException e) {
                 if (e instanceof HttpClientErrorException) {
@@ -78,6 +79,7 @@ public abstract class AbstractWbApiClient {
     }
 
     protected <T> ResponseEntity<String> executePostRequest(String url, HttpEntity<T> entity) {
+        applyRateLimit();
         ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
         validateResponse(response);
         return response;
@@ -96,20 +98,24 @@ public abstract class AbstractWbApiClient {
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 HttpEntity<T> entity = new HttpEntity<>(requestBody, createJsonAuthHeaders(apiKey));
+                applyRateLimit();
                 ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
 
                 if (response.getStatusCode().value() == 429 && attempt < maxRetries) {
+                    log429Metric();
                     log.warn("Получен 429 Too Many Requests (попытка {}/{}). Ожидание {} мс...", attempt, maxRetries, retryDelayMs);
                     sleep(retryDelayMs);
                     continue;
                 }
                 if (response.getStatusCode().value() == 429) {
+                    log429Metric();
                     throw new RestClientException("429 Too Many Requests: " + response.getBody());
                 }
                 validateResponse(response);
                 return response;
             } catch (RestClientException e) {
                 if (is429Error(e) && attempt < maxRetries) {
+                    log429Metric();
                     sleep(retryDelayMs);
                     continue;
                 }
@@ -157,6 +163,9 @@ public abstract class AbstractWbApiClient {
         String body = e.getResponseBodyAsString();
         int status = e.getStatusCode() != null ? e.getStatusCode().value() : 0;
         String statusText = e.getStatusText();
+        if (status == 429) {
+            log429Metric();
+        }
 
         if (body == null || body.isBlank()) {
             log.error("WB API [{}]: {} {}", context, status, statusText);
@@ -169,6 +178,15 @@ public abstract class AbstractWbApiClient {
             return;
         }
         log.error("WB API [{}]: {} {}; тело ответа: {}", context, status, statusText, truncateBody(body));
+    }
+
+    protected void applyRateLimit() {
+        WbApiRateLimiter.acquire(getApiCategory());
+    }
+
+    protected void log429Metric() {
+        long count = WbApiRateLimiter.increment429AndGet(getApiCategory());
+        log.warn("Метрика 429: category={}, total429={}", getApiCategory(), count);
     }
 
     protected HttpHeaders createAuthHeaders(String apiKey) {

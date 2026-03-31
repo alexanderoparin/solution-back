@@ -2,6 +2,7 @@ package ru.oparin.solution.service.sync;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.wb.SaleFunnelResponse;
@@ -26,10 +27,10 @@ import java.util.Optional;
 public class ProductCardAnalyticsLoadService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final int API_CALL_DELAY_MS = 20000;
-
     private final ProductCardAnalyticsRepository analyticsRepository;
     private final WbAnalyticsApiClient analyticsApiClient;
+    @Value("${wb.analytics.card-delay-ms:20000}")
+    private int apiCallDelayMs;
 
     /**
      * Загружает аналитику за период для всех карточек (с задержкой между запросами к WB).
@@ -89,7 +90,7 @@ public class ProductCardAnalyticsLoadService {
     }
 
     private SaleFunnelResponse fetchAnalytics(String apiKey, Long nmId, LocalDate dateFrom, LocalDate dateTo) {
-        SyncDelayUtil.sleep(API_CALL_DELAY_MS);
+        SyncDelayUtil.sleep(apiCallDelayMs);
         String dateFromStr = dateFrom.format(DATE_FORMATTER);
         String dateToStr = dateTo.format(DATE_FORMATTER);
         return analyticsApiClient.getSaleFunnelProduct(apiKey, nmId, dateFromStr, dateToStr);

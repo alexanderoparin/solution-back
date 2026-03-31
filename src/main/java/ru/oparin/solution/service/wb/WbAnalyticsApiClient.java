@@ -31,12 +31,14 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
     }
 
     private static final String SALE_FUNNEL_PRODUCT_HISTORY_ENDPOINT = "/api/analytics/v3/sales-funnel/products/history";
-    private static final int MAX_RETRIES_429 = 5;
-    private static final long RETRY_DELAY_MS_429 = 20000;
     private static final int MAX_ANALYTICS_PERIOD_DAYS = 7;
 
     @Value("${wb.api.analytics-base-url}")
     private String analyticsBaseUrl;
+    @Value("${wb.analytics.max-retries-429:5}")
+    private int maxRetries429;
+    @Value("${wb.analytics.retry-delay-ms-429:20000}")
+    private long retryDelayMs429;
 
     /**
      * Получение аналитики воронки продаж по карточке товара.
@@ -65,8 +67,8 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
                             fullUrl,
                             apiKey,
                             request,
-                            MAX_RETRIES_429,
-                            RETRY_DELAY_MS_429
+                            maxRetries429,
+                            retryDelayMs429
                     )
             );
             return parseAnalyticsResponse(response, nmId);

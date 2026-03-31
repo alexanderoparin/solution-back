@@ -16,6 +16,7 @@ import ru.oparin.solution.dto.wb.*;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
 /**
@@ -40,6 +41,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
     @Value("${wb.api.promotion-base-url}")
     private String promotionBaseUrl;
+    @Value("${wb.promotion.max-retries-429:5}")
+    private int maxRetries429;
+    @Value("${wb.promotion.retry-delay-ms-429:20000}")
+    private long retryDelayMs429;
 
     /**
      * Получение списка кампаний, сгруппированных по типам и статусам.
@@ -49,7 +54,8 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
      * @return список кампаний по типам и статусам
      */
     public PromotionCountResponse getPromotionCount(String apiKey) {
-        return executeWithConnectionRetry("количество кампаний по типам", () -> getPromotionCountOnce(apiKey));
+        return executeWith429Retry("количество кампаний по типам",
+                () -> executeWithConnectionRetry("количество кампаний по типам", () -> getPromotionCountOnce(apiKey)));
     }
 
     private PromotionCountResponse getPromotionCountOnce(String apiKey) {
@@ -104,7 +110,8 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         if (campaignIds == null || campaignIds.isEmpty()) {
             return PromotionAdvertsResponse.builder().adverts(Collections.emptyList()).build();
         }
-        return executeWithConnectionRetry("детали кампаний (v2)", () -> getAdvertsV2Once(apiKey, campaignIds));
+        return executeWith429Retry("детали кампаний (v2)",
+                () -> executeWithConnectionRetry("детали кампаний (v2)", () -> getAdvertsV2Once(apiKey, campaignIds)));
     }
 
     private PromotionAdvertsResponse getAdvertsV2Once(String apiKey, List<Long> campaignIds) {
@@ -186,7 +193,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
      * @return статистика по кампаниям
      */
     public PromotionFullStatsResponse getPromotionFullStats(String apiKey, PromotionFullStatsRequest request) {
-        return executeWithConnectionRetry("статистика кампаний за период", () -> {
+        return executeWith429Retry("статистика кампаний за период", () -> executeWithConnectionRetry("статистика кампаний за период", () -> {
             HttpHeaders headers = createAuthHeaders(apiKey);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
@@ -235,7 +242,37 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                 logIoErrorOrFull("получении статистики кампаний", e);
                 throw new RestClientException("Ошибка при получении статистики кампаний: " + e.getMessage(), e);
             }
-        });
+        }));
+    }
+
+    private <T> T executeWith429Retry(String context, Callable<T> attempt) {
+        for (int retry = 1; retry <= maxRetries429; retry++) {
+            try {
+                return attempt.call();
+            } catch (HttpClientErrorException e) {
+                if (e.getStatusCode().value() == 429 && retry < maxRetries429) {
+                    log429AndSleep(context, retry);
+                    continue;
+                }
+                throw e;
+            } catch (RestClientException e) {
+                if (e.getMessage() != null && e.getMessage().contains("429") && retry < maxRetries429) {
+                    log429AndSleep(context, retry);
+                    continue;
+                }
+                throw e;
+            } catch (Exception e) {
+                throw new RestClientException("Ошибка при " + context + ": " + e.getMessage(), e);
+            }
+        }
+        throw new RestClientException("Не удалось выполнить " + context + " после " + maxRetries429 + " попыток");
+    }
+
+    private void log429AndSleep(String context, int retry) {
+        log429Metric();
+        log.warn("WB promotion 429 при {} (попытка {}/{}). Повтор через {} мс...",
+                context, retry, maxRetries429, retryDelayMs429);
+        sleep(retryDelayMs429);
     }
 
     private void addQueryParameters(UriComponentsBuilder uriBuilder, PromotionFullStatsRequest request) {

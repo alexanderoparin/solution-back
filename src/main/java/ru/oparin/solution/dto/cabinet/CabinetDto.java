@@ -24,6 +24,8 @@ public class CabinetDto {
     private LocalDateTime lastDataUpdateAt;
     /** Время запроса обновления (кнопка нажата). Всегда в ответе. */
     private LocalDateTime lastDataUpdateRequestedAt;
+    /** Время последнего успешного завершения обновления остатков. */
+    private LocalDateTime lastStocksUpdateAt;
 
     /**
      * Информация о WB API ключе кабинета.
@@ -48,6 +50,8 @@ public class CabinetDto {
         private LocalDateTime lastDataUpdateAt;
         /** Время запроса обновления (кнопка нажата, задача в очереди). Для блокировки кнопки до старта. */
         private LocalDateTime lastDataUpdateRequestedAt;
+        /** Время последнего успешного завершения обновления остатков. */
+        private LocalDateTime lastStocksUpdateAt;
     }
 
     @Getter

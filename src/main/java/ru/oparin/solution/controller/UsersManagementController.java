@@ -21,6 +21,7 @@ import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.sync.FeedbacksSyncService;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Контроллер для управления пользователями.
@@ -80,6 +81,36 @@ public class UsersManagementController {
         User currentUser = getCurrentUser(authentication);
         List<UserListItemDto> sellers = userService.getActiveSellers(currentUser);
         return ResponseEntity.ok(sellers);
+    }
+
+    /**
+     * Запуск полного обновления по всем активным кабинетам (как ночной шедулер).
+     * Доступно для ADMIN и MANAGER. Кулдаун: не чаще одного раза в 5 минут.
+     */
+    @PostMapping("/trigger-all-cabinets-update")
+    public ResponseEntity<?> triggerAllCabinetsUpdate(Authentication authentication) {
+        User currentUser = getCurrentUser(authentication);
+        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(MessageResponse.builder().message("Недостаточно прав").build());
+        }
+
+        if (!analyticsScheduler.canRunAdminTriggeredUpdate()) {
+            long remaining = analyticsScheduler.getAdminTriggerCooldownRemainingSeconds();
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(Map.of(
+                            "message", "Обновление всех кабинетов можно запускать не чаще одного раза в 5 минут. Повторите попытку позже.",
+                            "lastTriggeredAtMs", analyticsScheduler.getLastAdminTriggeredAtMs(),
+                            "nextAvailableInSeconds", remaining
+                    ));
+        }
+
+        analyticsScheduler.recordAdminTriggered();
+        analyticsScheduler.runFullAnalyticsUpdateAsync();
+        return ResponseEntity.accepted()
+                .body(MessageResponse.builder()
+                        .message("Полное обновление всех активных кабинетов запущено в фоне.")
+                        .build());
     }
 
     /**

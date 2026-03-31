@@ -30,10 +30,14 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
     /** Максимум отзывов в одном ответе по документации. */
     private static final int MAX_TAKE = 5000;
     /** Задержка между запросами из-за лимита 3 req/s. */
-    private static final long REQUEST_DELAY_MS = 350;
+    private static long requestDelayMs = 350;
 
     @Value("${wb.api.feedbacks-base-url}")
     private String feedbacksBaseUrl;
+    @Value("${wb.feedbacks.request-delay-ms:350}")
+    private void setRequestDelayMs(long configuredDelayMs) {
+        requestDelayMs = configuredDelayMs;
+    }
 
     /**
      * Получить обработанные отзывы с пагинацией.
@@ -87,7 +91,7 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
      */
     public static void delayBetweenRequests() {
         try {
-            Thread.sleep(REQUEST_DELAY_MS);
+            Thread.sleep(requestDelayMs);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RestClientException("Прервано ожидание перед запросом отзывов", e);

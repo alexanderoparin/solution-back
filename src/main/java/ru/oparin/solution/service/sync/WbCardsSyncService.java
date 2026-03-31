@@ -2,6 +2,7 @@ package ru.oparin.solution.service.sync;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.dto.wb.CardsListRequest;
 import ru.oparin.solution.dto.wb.CardsListResponse;
@@ -18,8 +19,9 @@ import java.util.ArrayList;
 public class WbCardsSyncService {
 
     private static final int CARDS_PAGE_LIMIT = 100;
-    private static final int CARDS_PAGINATION_DELAY_MS = 700;
     private static final int WITH_PHOTO_ALL = -1;
+    @Value("${wb.content.cards-pagination-delay-ms:700}")
+    private int cardsPaginationDelayMs;
 
     private final WbContentApiClient contentApiClient;
 
@@ -41,7 +43,7 @@ public class WbCardsSyncService {
         int pageNumber = 1;
         while (hasMoreCards(response, totalReceived)) {
             pageNumber++;
-            SyncDelayUtil.sleep(CARDS_PAGINATION_DELAY_MS);
+            SyncDelayUtil.sleep(cardsPaginationDelayMs);
 
             CardsListRequest nextRequest = createNextPageRequest(response);
             CardsListResponse nextResponse = contentApiClient.getCardsList(apiKey, nextRequest);

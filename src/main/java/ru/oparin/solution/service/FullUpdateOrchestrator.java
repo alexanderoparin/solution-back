@@ -8,6 +8,7 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -41,7 +42,10 @@ public class FullUpdateOrchestrator {
      * затем синхронизация акций календаря (своя транзакция). Кабинеты обрабатываются параллельно.
      */
     public void runFullUpdate() {
-        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER).stream()
+                // Сначала обновляем кабинеты с самым старым lastDataUpdateAt (или null — ещё не обновлялись).
+                .sorted(Comparator.comparing(Cabinet::getLastDataUpdateAt, Comparator.nullsFirst(Comparator.naturalOrder())))
+                .toList();
         log.info("Запуск полного обновления по кабинетам. Найдено кабинетов с API-ключом: {}", cabinets.size());
 
         if (cabinets.isEmpty()) {

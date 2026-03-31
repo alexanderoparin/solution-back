@@ -288,6 +288,7 @@ public class CabinetService {
                     .validationError(c.getValidationError())
                     .lastDataUpdateAt(c.getLastDataUpdateAt())
                     .lastDataUpdateRequestedAt(c.getLastDataUpdateRequestedAt())
+                    .lastStocksUpdateAt(c.getLastStocksUpdateAt())
                     .build();
         }
         List<CabinetDto.ScopeStatusDto> scopeStatuses = cabinetScopeStatusService.getStatusesByCabinetId(c.getId())
@@ -307,6 +308,7 @@ public class CabinetService {
                 .updatedAt(c.getUpdatedAt())
                 .lastDataUpdateAt(c.getLastDataUpdateAt())
                 .lastDataUpdateRequestedAt(c.getLastDataUpdateRequestedAt())
+                .lastStocksUpdateAt(c.getLastStocksUpdateAt())
                 .apiKey(apiKeyInfo)
                 .scopeStatuses(scopeStatuses)
                 .build();
