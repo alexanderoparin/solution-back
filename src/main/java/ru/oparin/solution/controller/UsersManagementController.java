@@ -266,6 +266,9 @@ public class UsersManagementController {
                             .message("У вас нет доступа к данному селлеру")
                             .build());
         }
+
+        log.info("Ручной запуск обновления данных по селлеру: initiatedByRole={}, initiatedById={}, initiatedByEmail={}, sellerId={}, sellerEmail={}",
+                currentUser.getRole(), currentUser.getId(), currentUser.getEmail(), seller.getId(), seller.getEmail());
         
         boolean skipIntervalCheck = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER;
         analyticsScheduler.triggerManualUpdate(seller, skipIntervalCheck);
@@ -292,6 +295,10 @@ public class UsersManagementController {
                     .body(MessageResponse.builder().message("Недостаточно прав").build());
         }
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+        log.info("Ручной запуск обновления данных по кабинету: initiatedByRole={}, initiatedById={}, initiatedByEmail={}, cabinetId={}, sellerEmail={}",
+                currentUser.getRole(), currentUser.getId(), currentUser.getEmail(), cabinetId,
+                cabinet.getUser() != null ? cabinet.getUser().getEmail() : null);
         boolean skipIntervalCheck = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER;
         analyticsScheduler.triggerManualUpdateByCabinet(cabinetId, skipIntervalCheck);
         return ResponseEntity.ok(MessageResponse.builder()

@@ -2,6 +2,7 @@ package ru.oparin.solution.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -30,6 +31,7 @@ import static java.lang.Boolean.TRUE;
 @RestController
 @RequestMapping("/user")
 @RequiredArgsConstructor
+@Slf4j
 public class UserController {
 
     private final UserService userService;
@@ -140,6 +142,9 @@ public class UserController {
     public ResponseEntity<MessageResponse> triggerDataUpdate(Authentication authentication) {
         User user = getCurrentUser(authentication);
         validateSellerRole(user);
+
+        log.info("Ручной запуск обновления данных по селлеру (self-service): initiatedByRole={}, initiatedById={}, initiatedByEmail={}",
+                user.getRole(), user.getId(), user.getEmail());
 
         // Запускаем обновление асинхронно
         analyticsScheduler.triggerManualUpdate(user);
