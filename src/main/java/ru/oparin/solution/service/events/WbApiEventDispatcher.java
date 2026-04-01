@@ -12,7 +12,10 @@ import ru.oparin.solution.config.WbEventsProperties;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.model.WbApiEventType;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
@@ -20,14 +23,6 @@ import java.util.concurrent.Executor;
 @RequiredArgsConstructor
 @Slf4j
 public class WbApiEventDispatcher {
-
-    /**
-     * Не дожимать очередь подряд: у типа длинная обязательная пауза перед вызовом WB
-     * ({@code wb.analytics.card-delay-ms}), иначе один поток {@code cabinet-update-*} занят десятками минут одним кабинетом.
-     */
-    private static final Set<WbApiEventType> SKIP_DRAIN_AFTER_SUCCESS = Set.of(
-            WbApiEventType.ANALYTICS_SALES_FUNNEL_NMID
-    );
 
     private final WbApiEventService eventService;
     private final ApplicationContext applicationContext;
@@ -102,9 +97,6 @@ public class WbApiEventDispatcher {
      */
     private void drainSameCabinetTypeAfterSuccess(Long cabinetId, WbApiEventType type) {
         if (cabinetId == null || type == null) {
-            return;
-        }
-        if (SKIP_DRAIN_AFTER_SUCCESS.contains(type)) {
             return;
         }
         int max = wbEventsProperties.getMaxSameCabinetTypeDrainAfterSuccess();
