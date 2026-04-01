@@ -8,6 +8,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.dto.wb.CalendarPromotionsResponse;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.PromotionParticipation;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.repository.ProductCardRepository;
@@ -18,7 +19,6 @@ import ru.oparin.solution.service.wb.WbCalendarApiClient;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Синхронизация участия товаров кабинета в акциях календаря WB.
@@ -79,10 +79,10 @@ public class PromotionCalendarService {
             }
 
             List<Long> cabinetNmIds = productCardRepository.findByCabinet_Id(cabinetId).stream()
-                    .map(c -> c.getNmId())
+                    .map(ProductCard::getNmId)
                     .filter(Objects::nonNull)
                     .distinct()
-                    .collect(Collectors.toList());
+                    .toList();
             if (cabinetNmIds.isEmpty()) {
                 participationRepository.deleteByCabinet_Id(cabinetId);
                 log.debug("Кабинет {}: нет карточек, участия очищены", cabinetId);
