@@ -356,7 +356,7 @@ public class WbApiEventService {
                 payload.dateTo()
         );
         if (needing.isEmpty()) {
-            tryFinalizeMain(cabinetId, payload.includeStocks(), triggerSource, excludeAdvertBatchEventId);
+            tryFinalizeMain(cabinetId, excludeAdvertBatchEventId);
             return;
         }
         String statsPrefix = promotionStatsDedupPrefix(cabinetId, payload.dateFrom(), payload.dateTo());
@@ -601,26 +601,27 @@ public class WbApiEventService {
         return stuck.size();
     }
 
+    /**
+     * Фиксирует успешное завершение основной волны по кабинету. События остатков при includeStocks
+     * создаются раньше — после полной загрузки карточек в {@link ContentCardsListPageEventExecutor}.
+     */
     @Transactional
-    public void markMainCompleted(Long cabinetId, boolean includeStocks, String triggerSource) {
+    public void markMainCompleted(Long cabinetId) {
         Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
         cabinet.setLastDataUpdateAt(LocalDateTime.now());
         cabinetService.save(cabinet);
-        if (includeStocks) {
-            enqueueAllStocksByNmIdForCabinet(cabinetId, triggerSource);
-        }
     }
 
     @Transactional
-    public void tryFinalizeMain(Long cabinetId, boolean includeStocks, String triggerSource) {
-        tryFinalizeMain(cabinetId, includeStocks, triggerSource, null);
+    public void tryFinalizeMain(Long cabinetId) {
+        tryFinalizeMain(cabinetId, null);
     }
 
     /**
      * @param excludeEventId событие, которое сейчас выполняется (RUNNING) — не учитывать при проверке «есть ли ещё main-work».
      */
     @Transactional
-    public void tryFinalizeMain(Long cabinetId, boolean includeStocks, String triggerSource, Long excludeEventId) {
+    public void tryFinalizeMain(Long cabinetId, Long excludeEventId) {
         boolean hasPendingMain = eventRepository.existsByCabinet_IdAndEventTypeInAndStatusInExcludingEventId(
                 cabinetId,
                 MAIN_EVENT_TYPES,
@@ -628,7 +629,7 @@ public class WbApiEventService {
                 excludeEventId
         );
         if (!hasPendingMain) {
-            markMainCompleted(cabinetId, includeStocks, triggerSource);
+            markMainCompleted(cabinetId);
         }
     }
 

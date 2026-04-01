@@ -36,7 +36,7 @@ public class AnalyticsSalesFunnelEventExecutor implements WbApiEventExecutor {
 
         try {
             analyticsLoadService.loadAnalyticsForCard(card, cabinet.getApiKey(), payload.dateFrom(), payload.dateTo());
-            eventService.tryFinalizeMain(cabinet.getId(), payload.includeStocks(), event.getTriggerSource(), event.getId());
+            eventService.tryFinalizeMain(cabinet.getId(), event.getId());
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (Exception e) {
             return WbApiEventExecutionResult.retryableError(e.getMessage());

@@ -24,7 +24,7 @@ public class PricesSppOrdersEventExecutor implements WbApiEventExecutor {
         }
         try {
             productPricesSyncService.updateSppFromOrders(cabinet, cabinet.getApiKey());
-            eventService.tryFinalizeMain(cabinet.getId(), payload.includeStocks(), event.getTriggerSource(), event.getId());
+            eventService.tryFinalizeMain(cabinet.getId(), event.getId());
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (Exception e) {
             return WbApiEventExecutionResult.retryableError(e.getMessage());

@@ -38,7 +38,7 @@ public class FeedbacksSyncCabinetEventExecutor implements WbApiEventExecutor {
             log.warn("Синхронизация отзывов для кабинета {} завершилась с ошибкой: {}", cabinet.getId(), e.getMessage());
         }
         if (!isAdminBulkStandalone(event.getTriggerSource())) {
-            eventService.tryFinalizeMain(cabinet.getId(), payload.includeStocks(), event.getTriggerSource(), event.getId());
+            eventService.tryFinalizeMain(cabinet.getId(), event.getId());
         }
         return WbApiEventExecutionResult.completedSuccessfully();
     }

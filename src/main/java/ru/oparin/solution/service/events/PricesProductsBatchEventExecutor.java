@@ -27,7 +27,7 @@ public class PricesProductsBatchEventExecutor implements WbApiEventExecutor {
         try {
             LocalDate date = LocalDate.now().minusDays(1);
             productPricesSyncService.loadPricesBatch(cabinet, cabinet.getApiKey(), date, payload.nmIds());
-            eventService.tryFinalizeMain(cabinet.getId(), payload.includeStocks(), event.getTriggerSource(), event.getId());
+            eventService.tryFinalizeMain(cabinet.getId(), event.getId());
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (Exception e) {
             return WbApiEventExecutionResult.retryableError(e.getMessage());

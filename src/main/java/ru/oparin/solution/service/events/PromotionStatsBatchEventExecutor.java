@@ -37,7 +37,7 @@ public class PromotionStatsBatchEventExecutor implements WbApiEventExecutor {
                     payload.dateFrom(),
                     payload.dateTo()
             )) {
-                eventService.tryFinalizeMain(cabinet.getId(), payload.includeStocks(), event.getTriggerSource(), event.getId());
+                eventService.tryFinalizeMain(cabinet.getId(), event.getId());
             }
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (WbApiUnauthorizedScopeException e) {

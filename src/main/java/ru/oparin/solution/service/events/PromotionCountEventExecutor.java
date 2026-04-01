@@ -29,7 +29,7 @@ public class PromotionCountEventExecutor implements WbApiEventExecutor {
             var countResponse = promotionCampaignSyncService.fetchPromotionCount(cabinet.getApiKey());
             List<Long> ids = promotionCampaignSyncService.listCampaignIdsFromCount(countResponse);
             if (ids.isEmpty()) {
-                eventService.tryFinalizeMain(cabinet.getId(), payload.includeStocks(), event.getTriggerSource(), event.getId());
+                eventService.tryFinalizeMain(cabinet.getId(), event.getId());
                 return WbApiEventExecutionResult.completedSuccessfully();
             }
             eventService.enqueuePromotionAdvertsBatchEvents(cabinet.getId(), payload, ids, event.getTriggerSource());

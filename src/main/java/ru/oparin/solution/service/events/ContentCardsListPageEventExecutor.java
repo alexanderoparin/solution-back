@@ -121,6 +121,9 @@ public class ContentCardsListPageEventExecutor implements WbApiEventExecutor {
                 .filter(nmId -> nmId != null)
                 .distinct()
                 .toList();
+        if (payload.includeStocks()) {
+            eventService.enqueueAllStocksByNmIdForCabinet(cabinetId, triggerSource);
+        }
         for (Long nmId : nmIds) {
             eventService.enqueueAnalyticsSalesFunnelEvent(
                     cabinetId,
