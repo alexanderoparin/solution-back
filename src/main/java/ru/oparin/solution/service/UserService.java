@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -17,6 +18,7 @@ import ru.oparin.solution.config.SubscriptionProperties;
 import ru.oparin.solution.dto.CreateUserRequest;
 import ru.oparin.solution.dto.RegisterRequest;
 import ru.oparin.solution.dto.UpdateUserRequest;
+import ru.oparin.solution.dto.UserSortField;
 import ru.oparin.solution.dto.UserListItemDto;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
@@ -46,6 +48,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionProperties subscriptionProperties;
+    private final UserManagementQueryService userManagementQueryService;
 
     @Lazy
     @Autowired
@@ -452,6 +455,22 @@ public class UserService {
         return Page.empty(pageable);
     }
 
+    public Page<User> getManagedUsersPage(User currentUser,
+                                          Pageable pageable,
+                                          String email,
+                                          boolean onlySellers,
+                                          UserSortField sortBy,
+                                          Sort.Direction sortDir) {
+        return userManagementQueryService.findManagedUsers(
+                currentUser,
+                pageable,
+                email,
+                onlySellers,
+                sortBy,
+                sortDir
+        );
+    }
+
     /**
      * Постраничное получение списка пользователей (DTO) для управления.
      */
@@ -460,6 +479,19 @@ public class UserService {
         List<UserListItemDto> content = page.getContent().stream()
                 .map(this::mapToUserListItemDto)
                 .collect(Collectors.toList());
+        return new PageImpl<>(content, page.getPageable(), page.getTotalElements());
+    }
+
+    public Page<UserListItemDto> getManagedUsersPageDto(User currentUser,
+                                                        Pageable pageable,
+                                                        String email,
+                                                        boolean onlySellers,
+                                                        UserSortField sortBy,
+                                                        Sort.Direction sortDir) {
+        Page<User> page = getManagedUsersPage(currentUser, pageable, email, onlySellers, sortBy, sortDir);
+        List<UserListItemDto> content = page.getContent().stream()
+                .map(this::mapToUserListItemDto)
+                .toList();
         return new PageImpl<>(content, page.getPageable(), page.getTotalElements());
     }
 

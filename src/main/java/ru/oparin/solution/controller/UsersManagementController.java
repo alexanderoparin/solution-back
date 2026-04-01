@@ -53,11 +53,16 @@ public class UsersManagementController {
     public ResponseEntity<PageResponse<UserListItemDto>> getManagedUsers(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String email,
+            @RequestParam(required = false) Boolean onlySellers,
+            @RequestParam(defaultValue = UserSortField.DEFAULT_REQUEST_VALUE) UserSortField sortBy,
+            @RequestParam(defaultValue = "ASC") Sort.Direction sortDir,
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        Pageable pageable = PageRequest.of(page, Math.min(Math.max(size, 1), 100), Sort.by(Sort.Direction.ASC, "createdAt"));
-        var userPage = userService.getManagedUsersPageDto(currentUser, pageable);
+        boolean onlySellersValue = onlySellers == null ? Boolean.TRUE : onlySellers;
+        Pageable pageable = PageRequest.of(page, Math.clamp(size, 1, 100));
+        var userPage = userService.getManagedUsersPageDto(currentUser, pageable, email, onlySellersValue, sortBy, sortDir);
         PageResponse<UserListItemDto> response = PageResponse.<UserListItemDto>builder()
                 .content(userPage.getContent())
                 .totalElements(userPage.getTotalElements())

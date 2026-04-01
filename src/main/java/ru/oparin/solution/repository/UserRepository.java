@@ -14,7 +14,7 @@ import java.util.Optional;
  * Репозиторий для работы с пользователями.
  */
 @Repository
-public interface UserRepository extends JpaRepository<User, Long> {
+public interface UserRepository extends JpaRepository<User, Long>, UserManagementCriteriaRepository {
     /**
      * Поиск пользователя по email.
      *
@@ -62,9 +62,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
      */
     Page<User> findByRoleAndOwnerId(Role role, Long ownerId, Pageable pageable);
 
-    /**
-     * Поиск пользователей с ролью, отличной от указанной, с постраничным выводом.
-     */
     Page<User> findByRoleNot(Role role, Pageable pageable);
 
     /**
@@ -74,6 +71,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * @return список пользователей с указанной ролью
      */
     List<User> findByRole(Role role);
+
+    Page<User> findByRole(Role role, Pageable pageable);
+
+    Page<User> findByRoleAndEmailContainingIgnoreCase(Role role, String email, Pageable pageable);
 
     /**
      * Поиск пользователей с ролью, отличной от указанной (для админа: все кроме админов).
