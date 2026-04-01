@@ -33,7 +33,6 @@ import java.util.concurrent.Executor;
 @RequiredArgsConstructor
 public class AnalyticsScheduler {
 
-    private final WbApiKeyService wbApiKeyService;
     private final CabinetService cabinetService;
     private final FullUpdateOrchestrator fullUpdateOrchestrator;
     private final ProductCardAnalyticsService analyticsService;
@@ -44,44 +43,25 @@ public class AnalyticsScheduler {
     private final Executor cabinetUpdateExecutor;
 
     /**
-     * Автоматическая загрузка аналитики для всех кабинетов с привязанным API-ключом (активные продавцы).
-     * Запускается каждый день по расписанию. Для каждого кабинета загружаются карточки, кампании и аналитика.
-     * Период: последние 14 дней (без текущих суток). После кабинетов — синхронизация акций календаря.
-     * Публичный метод также вызывается из AdminController для ручного «обновить всё».
+     * Автоматическая ночная загрузка аналитики:
+     * main-обновление всех кабинетов, затем единый этап обновления остатков.
      */
     @Scheduled(cron = "0 15 0 * * ?")
     public void loadAnalyticsForAllActiveSellers() {
-        runFullAnalyticsUpdate();
+        runNightlyFullAnalyticsUpdate();
     }
 
     /**
-     * Полное обновление по всем кабинетам (как ночной шедулер).
-     * Вызывается по расписанию и из админ-эндпоинта POST /admin/run-analytics-all.
-     * Вся логика — в оркестраторе: для каждого кабинета свой сервис в своей транзакции.
+     * Ночной полный прогон: main по всем кабинетам, затем единый этап остатков.
      */
-    public void runFullAnalyticsUpdate() {
-        fullUpdateOrchestrator.runFullUpdate();
+    public void runNightlyFullAnalyticsUpdate() {
+        fullUpdateOrchestrator.runFullUpdate(true);
     }
 
-    /**
-     * Асинхронный запуск полного обновления по всем кабинетам.
-     */
-    @Async("taskExecutor")
-    public void runFullAnalyticsUpdateAsync() {
-        runFullAnalyticsUpdateAsync(false);
-    }
 
     @Async("taskExecutor")
     public void runFullAnalyticsUpdateAsync(boolean includeStocks) {
         fullUpdateOrchestrator.runFullUpdate(includeStocks);
-    }
-
-    /**
-     * Асинхронный запуск полного обновления по кабинетам селлеров конкретного менеджера.
-     */
-    @Async("taskExecutor")
-    public void runFullAnalyticsUpdateForManagerAsync(Long managerId) {
-        runFullAnalyticsUpdateForManagerAsync(managerId, false);
     }
 
     @Async("taskExecutor")

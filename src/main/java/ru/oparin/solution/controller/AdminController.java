@@ -108,7 +108,7 @@ public class AdminController {
         }
         analyticsScheduler.recordAdminTriggered();
         log.info("Ручной запуск полного обновления кабинетов через /admin/run-analytics-all");
-        taskExecutor.execute(analyticsScheduler::runFullAnalyticsUpdate);
+        taskExecutor.execute(analyticsScheduler::runNightlyFullAnalyticsUpdate);
         return ResponseEntity.accepted()
                 .body(Map.of("message", "Полное обновление по всем кабинетам запущено в фоне (как по расписанию)."));
     }

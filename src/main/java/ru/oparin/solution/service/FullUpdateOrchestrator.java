@@ -27,6 +27,7 @@ public class FullUpdateOrchestrator {
     private final CabinetService cabinetService;
     private final ProductCardAnalyticsService productCardAnalyticsService;
     private final PromotionCalendarService promotionCalendarService;
+    private final StocksRoundRobinOrchestrator stocksRoundRobinOrchestrator;
     @Qualifier("cabinetUpdateExecutor")
     private final Executor cabinetUpdateExecutor;
 
@@ -41,13 +42,6 @@ public class FullUpdateOrchestrator {
     public void runFullUpdate(boolean includeStocks) {
         List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
         runFullUpdateForCabinets(cabinets, "всем кабинетам", includeStocks);
-    }
-
-    /**
-     * Полное обновление только по кабинетам селлеров конкретного менеджера.
-     */
-    public void runFullUpdateForManager(Long managerId) {
-        runFullUpdateForManager(managerId, false);
     }
 
     public void runFullUpdateForManager(Long managerId, boolean includeStocks) {
@@ -73,21 +67,25 @@ public class FullUpdateOrchestrator {
 
         List<CompletableFuture<Void>> futures = cabinets.stream()
                 .map(cabinet -> CompletableFuture.runAsync(
-                        () -> runCabinetFullUpdate(cabinet, from, to, includeStocks),
+                        () -> runCabinetMainUpdate(cabinet, from, to),
                         cabinetUpdateExecutor
                 ))
                 .toList();
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        log.info("Основное обновление завершено по {} кабинетам.", cabinets.size());
+        if (includeStocks) {
+            stocksRoundRobinOrchestrator.runStocksRoundRobin(cabinets, scopeLabel);
+        }
         log.info("Завершено полное обновление по {} кабинетам.", cabinets.size());
     }
 
-    private void runCabinetFullUpdate(Cabinet cabinet, LocalDate from, LocalDate to, boolean includeStocks) {
+    private void runCabinetMainUpdate(Cabinet cabinet, LocalDate from, LocalDate to) {
         String prevName = Thread.currentThread().getName();
         try {
             Thread.currentThread().setName("full-update-cabinet-" + cabinet.getId());
             MDC.put("cabinetTag", "[cabinet:" + cabinet.getId() + "]");
-            productCardAnalyticsService.updateCabinetAnalyticsInTransaction(cabinet, from, to, includeStocks);
+            productCardAnalyticsService.updateCabinetAnalyticsInTransaction(cabinet, from, to, false);
             promotionCalendarService.syncPromotionsForCabinet(cabinet);
         } catch (Exception e) {
             log.error("Ошибка при полном обновлении кабинета (ID: {}, продавец: {}): {}",
