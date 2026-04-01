@@ -26,10 +26,7 @@ import ru.oparin.solution.service.sync.PromotionCampaignSyncService;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -545,6 +542,18 @@ public class WbApiEventService {
                 LocalDateTime.now()
         );
         return ready.stream().limit(limit).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<WbApiEvent> findNextReadyEventForCabinetAndType(Long cabinetId, WbApiEventType eventType) {
+        List<WbApiEvent> list = eventRepository.findReadyEventsForCabinetAndType(
+                cabinetId,
+                eventType,
+                RUNNABLE_STATUSES,
+                LocalDateTime.now(),
+                PageRequest.of(0, 1)
+        );
+        return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
     }
 
     @Transactional

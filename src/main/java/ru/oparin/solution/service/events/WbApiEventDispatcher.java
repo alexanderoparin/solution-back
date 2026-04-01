@@ -70,6 +70,15 @@ public class WbApiEventDispatcher {
             if (!eventService.tryMarkRunning(event)) {
                 return;
             }
+            runMarkedEvent(event);
+            drainSameCabinetTypeAfterSuccess(cabinetId, event.getEventType());
+        } finally {
+            MDC.remove("cabinetTag");
+        }
+    }
+
+    private void runMarkedEvent(WbApiEvent event) {
+        try {
             WbApiEventExecutor executor = applicationContext.getBean(event.getExecutorBeanName(), WbApiEventExecutor.class);
             WbApiEventExecutionResult result = executor.execute(event);
             if (result.success()) {
@@ -80,8 +89,29 @@ public class WbApiEventDispatcher {
         } catch (Exception e) {
             log.error("Ошибка выполнения WB API события id={}, type={}: {}", event.getId(), event.getEventType(), e.getMessage(), e);
             eventService.markFailed(event, WbApiEventExecutionResult.retryableError(e.getMessage()));
-        } finally {
-            MDC.remove("cabinetTag");
+        }
+    }
+
+    /**
+     * Не ждать следующий poll: обработать следующие готовые события того же типа и кабинета подряд (лимит из конфига).
+     */
+    private void drainSameCabinetTypeAfterSuccess(Long cabinetId, WbApiEventType type) {
+        if (cabinetId == null || type == null) {
+            return;
+        }
+        int max = wbEventsProperties.getMaxSameCabinetTypeDrainAfterSuccess();
+        if (max <= 0) {
+            return;
+        }
+        for (int i = 0; i < max; i++) {
+            WbApiEvent next = eventService.findNextReadyEventForCabinetAndType(cabinetId, type).orElse(null);
+            if (next == null) {
+                return;
+            }
+            if (!eventService.tryMarkRunning(next)) {
+                return;
+            }
+            runMarkedEvent(next);
         }
     }
 
