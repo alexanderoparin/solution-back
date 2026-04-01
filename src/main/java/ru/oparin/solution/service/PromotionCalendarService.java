@@ -91,6 +91,7 @@ public class PromotionCalendarService {
 
             Set<Long> cabinetNmIdSet = new HashSet<>(cabinetNmIds);
             List<PromotionParticipation> toSave = new ArrayList<>();
+            Set<String> uniqueKeys = new HashSet<>();
 
             for (CalendarPromotionsResponse.CalendarPromotionItem promo : response.getData().getPromotions()) {
                 Long promoId = promo.getId();
@@ -113,6 +114,11 @@ public class PromotionCalendarService {
                 }
                 for (Long nmId : inPromotion) {
                     if (cabinetNmIdSet.contains(nmId)) {
+                        String key = cabinetId + ":" + nmId + ":" + promoId;
+                        if (!uniqueKeys.add(key)) {
+                            // WB может вернуть дубли nmId в рамках одной акции/запроса.
+                            continue;
+                        }
                         toSave.add(PromotionParticipation.builder()
                                 .cabinet(cabinet)
                                 .nmId(nmId)
@@ -125,6 +131,7 @@ public class PromotionCalendarService {
             }
 
             participationRepository.deleteByCabinet_Id(cabinetId);
+            participationRepository.flush();
             if (!toSave.isEmpty()) {
                 participationRepository.saveAll(toSave);
             }

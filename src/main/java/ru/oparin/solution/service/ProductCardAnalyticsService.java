@@ -229,8 +229,13 @@ public class ProductCardAnalyticsService {
             CompletableFuture.allOf(pricesFuture, campaignFuture, analyticsFuture, feedbacksFuture, promotionCalendarFuture).join();
             markUpdateCompleted(managed);
             logStepDuration("cabinetMainPipeline", cabinetId, updateStartedAt);
+            log.info("MAIN COMPLETED: cabinetId={}, sellerEmail={}", cabinetId, seller.getEmail());
         } catch (HttpClientErrorException e) {
+            log.error("MAIN FAILED: cabinetId={}, sellerEmail={}, reason={}", cabinetId, seller.getEmail(), e.getMessage(), e);
             handle401AndInvalidateKey(managed, e);
+            throw e;
+        } catch (Exception e) {
+            log.error("MAIN FAILED: cabinetId={}, sellerEmail={}, reason={}", cabinetId, seller.getEmail(), e.getMessage(), e);
             throw e;
         }
     }
