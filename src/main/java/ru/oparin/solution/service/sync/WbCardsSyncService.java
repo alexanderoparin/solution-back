@@ -20,7 +20,7 @@ public class WbCardsSyncService {
 
     private static final int CARDS_PAGE_LIMIT = 100;
     private static final int WITH_PHOTO_ALL = -1;
-    @Value("${wb.content.cards-pagination-delay-ms:700}")
+    @Value("${wb.content.cards-pagination-delay-ms}")
     private int cardsPaginationDelayMs;
 
     private final WbContentApiClient contentApiClient;

@@ -38,9 +38,9 @@ public class PromotionCampaignSyncService {
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final int STATISTICS_BATCH_SIZE = 50;
     private static final int CAMPAIGNS_BATCH_SIZE = 50;
-    @Value("${wb.promotion.statistics-delay-ms:20000}")
+    @Value("${wb.promotion.statistics-delay-ms}")
     private int statisticsApiCallDelayMs;
-    @Value("${wb.promotion.adverts-delay-ms:200}")
+    @Value("${wb.promotion.adverts-delay-ms}")
     private int auctionAdvertsDelayMs;
 
     private final WbPromotionApiClient promotionApiClient;

@@ -41,10 +41,10 @@ public class ArticleNoteService {
     private final UserService userService;
     private final CabinetService cabinetService;
 
-    @Value("${app.uploads.directory:/app/uploads/article-notes}")
+    @Value("${app.uploads.directory}")
     private String uploadsDirectory;
 
-    @Value("${app.uploads.max-file-size:31457280}") // 30 MB по умолчанию
+    @Value("${app.uploads.max-file-size}") // 30 MB
     private long maxFileSize;
 
     /**

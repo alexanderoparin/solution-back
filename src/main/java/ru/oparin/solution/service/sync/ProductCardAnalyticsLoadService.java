@@ -29,7 +29,7 @@ public class ProductCardAnalyticsLoadService {
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private final ProductCardAnalyticsRepository analyticsRepository;
     private final WbAnalyticsApiClient analyticsApiClient;
-    @Value("${wb.analytics.card-delay-ms:20000}")
+    @Value("${wb.analytics.card-delay-ms}")
     private int apiCallDelayMs;
 
     /**
@@ -207,7 +207,7 @@ public class ProductCardAnalyticsLoadService {
                 maxMissing = date;
             }
         }
-        if (minMissing == null || maxMissing == null) return null;
+        if (minMissing == null) return null;
         return new DateRange(minMissing, maxMissing);
     }
 

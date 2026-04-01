@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
 public class ProductPricesSyncService {
 
     private static final int PRICES_BATCH_SIZE = 1000;
-    @Value("${wb.prices.api-call-delay-ms:600}")
+    @Value("${wb.prices.api-call-delay-ms}")
     private int pricesApiCallDelayMs;
 
     private final ProductCardRepository productCardRepository;

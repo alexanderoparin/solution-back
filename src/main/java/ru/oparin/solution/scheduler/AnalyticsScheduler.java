@@ -1,5 +1,6 @@
 package ru.oparin.solution.scheduler;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
@@ -29,6 +30,7 @@ import java.util.concurrent.Executor;
  */
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class AnalyticsScheduler {
 
     private final WbApiKeyService wbApiKeyService;
@@ -38,25 +40,8 @@ public class AnalyticsScheduler {
     private final WbWarehousesApiClient warehousesApiClient;
     private final WbWarehouseService warehouseService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
+    @Qualifier("cabinetUpdateExecutor")
     private final Executor cabinetUpdateExecutor;
-
-    public AnalyticsScheduler(WbApiKeyService wbApiKeyService,
-                              CabinetService cabinetService,
-                              FullUpdateOrchestrator fullUpdateOrchestrator,
-                              ProductCardAnalyticsService analyticsService,
-                              WbWarehousesApiClient warehousesApiClient,
-                              WbWarehouseService warehouseService,
-                              CabinetScopeStatusService cabinetScopeStatusService,
-                              @Qualifier("cabinetUpdateExecutor") Executor cabinetUpdateExecutor) {
-        this.wbApiKeyService = wbApiKeyService;
-        this.cabinetService = cabinetService;
-        this.fullUpdateOrchestrator = fullUpdateOrchestrator;
-        this.analyticsService = analyticsService;
-        this.warehousesApiClient = warehousesApiClient;
-        this.warehouseService = warehouseService;
-        this.cabinetScopeStatusService = cabinetScopeStatusService;
-        this.cabinetUpdateExecutor = cabinetUpdateExecutor;
-    }
 
     /**
      * Автоматическая загрузка аналитики для всех кабинетов с привязанным API-ключом (активные продавцы).
@@ -255,26 +240,7 @@ public class AnalyticsScheduler {
 
         try {
             for (Cabinet cabinet : cabinets) {
-                try {
-                    if (!skipIntervalCheck) {
-                        validateUpdateInterval(cabinet);
-                    }
-                    cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
-                    cabinetService.save(cabinet);
-                    analyticsService.updateCardsAndLoadAnalytics(cabinet, period.from(), period.to());
-                    if (includeStocks) {
-                        try {
-                            analyticsService.validateStocksUpdateInterval(cabinet.getId());
-                            analyticsService.recordStocksUpdateTriggered(cabinet.getId());
-                            analyticsService.runStocksUpdateOnly(cabinet.getId());
-                        } catch (UserException e) {
-                            log.warn("Обновление остатков для кабинета (ID: {}) пропущено: {}", cabinet.getId(), e.getMessage());
-                        }
-                    }
-                    started++;
-                } catch (UserException e) {
-                    log.warn("Кабинет (ID: {}) пропущен: {}", cabinet.getId(), e.getMessage());
-                }
+                if (tryRunManualCabinetUpdate(cabinet, period, skipIntervalCheck, includeStocks)) started++;
             }
 
             if (started == 0) {
@@ -292,6 +258,37 @@ public class AnalyticsScheduler {
             log.error("Ошибка при ручном обновлении данных для продавца (ID: {}, email: {}): {}",
                     seller.getId(), seller.getEmail(), e.getMessage(), e);
             throw e;
+        }
+    }
+
+    private boolean tryRunManualCabinetUpdate(Cabinet cabinet,
+                                              DateRange period,
+                                              boolean skipIntervalCheck,
+                                              boolean includeStocks) {
+        try {
+            if (!skipIntervalCheck) {
+                validateUpdateInterval(cabinet);
+            }
+            cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
+            cabinetService.save(cabinet);
+            analyticsService.updateCardsAndLoadAnalytics(cabinet, period.from(), period.to());
+            if (includeStocks) {
+                tryRunStocksUpdate(cabinet.getId());
+            }
+            return true;
+        } catch (UserException e) {
+            log.warn("Кабинет (ID: {}) пропущен: {}", cabinet.getId(), e.getMessage());
+            return false;
+        }
+    }
+
+    private void tryRunStocksUpdate(Long cabinetId) {
+        try {
+            analyticsService.validateStocksUpdateInterval(cabinetId);
+            analyticsService.recordStocksUpdateTriggered(cabinetId);
+            analyticsService.runStocksUpdateOnly(cabinetId);
+        } catch (UserException e) {
+            log.warn("Обновление остатков для кабинета (ID: {}) пропущено: {}", cabinetId, e.getMessage());
         }
     }
 

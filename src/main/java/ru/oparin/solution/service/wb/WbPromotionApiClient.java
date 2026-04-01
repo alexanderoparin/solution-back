@@ -41,9 +41,9 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
     @Value("${wb.api.promotion-base-url}")
     private String promotionBaseUrl;
-    @Value("${wb.promotion.max-retries-429:5}")
+    @Value("${wb.promotion.max-retries-429}")
     private int maxRetries429;
-    @Value("${wb.promotion.retry-delay-ms-429:20000}")
+    @Value("${wb.promotion.retry-delay-ms-429}")
     private long retryDelayMs429;
 
     /**

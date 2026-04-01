@@ -29,9 +29,9 @@ public class WbStocksApiClient extends AbstractWbApiClient {
 
     @Value("${wb.api.analytics-base-url}")
     private String analyticsBaseUrl;
-    @Value("${wb.stocks.max-retries-429:5}")
+    @Value("${wb.stocks.max-retries-429}")
     private int maxRetries429;
-    @Value("${wb.stocks.retry-delay-ms-429:20000}")
+    @Value("${wb.stocks.retry-delay-ms-429}")
     private long retryDelayMs429;
 
     /**

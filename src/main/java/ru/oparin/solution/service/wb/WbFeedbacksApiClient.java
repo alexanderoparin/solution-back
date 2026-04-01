@@ -34,7 +34,7 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
 
     @Value("${wb.api.feedbacks-base-url}")
     private String feedbacksBaseUrl;
-    @Value("${wb.feedbacks.request-delay-ms:350}")
+    @Value("${wb.feedbacks.request-delay-ms}")
     private void setRequestDelayMs(long configuredDelayMs) {
         requestDelayMs = configuredDelayMs;
     }

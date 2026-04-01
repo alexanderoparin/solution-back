@@ -1,5 +1,6 @@
 package ru.oparin.solution.service;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -20,22 +21,14 @@ import java.util.concurrent.Executor;
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class FullUpdateOrchestrator {
 
     private final CabinetService cabinetService;
     private final ProductCardAnalyticsService productCardAnalyticsService;
     private final PromotionCalendarService promotionCalendarService;
+    @Qualifier("cabinetUpdateExecutor")
     private final Executor cabinetUpdateExecutor;
-
-    public FullUpdateOrchestrator(CabinetService cabinetService,
-                                  ProductCardAnalyticsService productCardAnalyticsService,
-                                  PromotionCalendarService promotionCalendarService,
-                                  @Qualifier("cabinetUpdateExecutor") Executor cabinetUpdateExecutor) {
-        this.cabinetService = cabinetService;
-        this.productCardAnalyticsService = productCardAnalyticsService;
-        this.promotionCalendarService = promotionCalendarService;
-        this.cabinetUpdateExecutor = cabinetUpdateExecutor;
-    }
 
     /**
      * Полное обновление по всем кабинетам с API-ключом: для каждого кабинета — обновление аналитики (своя транзакция),
@@ -79,24 +72,29 @@ public class FullUpdateOrchestrator {
         log.info("Период для загрузки аналитики: {} - {}", from, to);
 
         List<CompletableFuture<Void>> futures = cabinets.stream()
-                .map(cabinet -> CompletableFuture.runAsync(() -> {
-                    String prevName = Thread.currentThread().getName();
-                    try {
-                        Thread.currentThread().setName("full-update-cabinet-" + cabinet.getId());
-                        MDC.put("cabinetTag", "[cabinet:" + cabinet.getId() + "]");
-                        productCardAnalyticsService.updateCabinetAnalyticsInTransaction(cabinet, from, to, includeStocks);
-                        promotionCalendarService.syncPromotionsForCabinet(cabinet);
-                    } catch (Exception e) {
-                        log.error("Ошибка при полном обновлении кабинета (ID: {}, продавец: {}): {}",
-                                cabinet.getId(), cabinet.getUser().getEmail(), e.getMessage());
-                    } finally {
-                        Thread.currentThread().setName(prevName);
-                        MDC.remove("cabinetTag");
-                    }
-                }, cabinetUpdateExecutor))
+                .map(cabinet -> CompletableFuture.runAsync(
+                        () -> runCabinetFullUpdate(cabinet, from, to, includeStocks),
+                        cabinetUpdateExecutor
+                ))
                 .toList();
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         log.info("Завершено полное обновление по {} кабинетам.", cabinets.size());
+    }
+
+    private void runCabinetFullUpdate(Cabinet cabinet, LocalDate from, LocalDate to, boolean includeStocks) {
+        String prevName = Thread.currentThread().getName();
+        try {
+            Thread.currentThread().setName("full-update-cabinet-" + cabinet.getId());
+            MDC.put("cabinetTag", "[cabinet:" + cabinet.getId() + "]");
+            productCardAnalyticsService.updateCabinetAnalyticsInTransaction(cabinet, from, to, includeStocks);
+            promotionCalendarService.syncPromotionsForCabinet(cabinet);
+        } catch (Exception e) {
+            log.error("Ошибка при полном обновлении кабинета (ID: {}, продавец: {}): {}",
+                    cabinet.getId(), cabinet.getUser().getEmail(), e.getMessage());
+        } finally {
+            Thread.currentThread().setName(prevName);
+            MDC.remove("cabinetTag");
+        }
     }
 }

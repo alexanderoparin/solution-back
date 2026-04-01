@@ -33,6 +33,9 @@ import java.util.Map;
 @Slf4j
 public class UsersManagementController {
 
+    private static final String MESSAGE_FORBIDDEN = "Недостаточно прав";
+    private static final String MESSAGE_ADMIN_ONLY = "Доступно только для администратора";
+
     private final UserService userService;
     private final CabinetService cabinetService;
     private final WbApiKeyService wbApiKeyService;
@@ -98,9 +101,8 @@ public class UsersManagementController {
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(MessageResponse.builder().message("Недостаточно прав").build());
+        if (!isAdminOrManager(currentUser)) {
+            return forbiddenMessageResponse(MESSAGE_FORBIDDEN);
         }
 
         if (!analyticsScheduler.canRunAdminTriggeredUpdate()) {
@@ -123,16 +125,14 @@ public class UsersManagementController {
         } else {
             analyticsScheduler.runFullAnalyticsUpdateAsync(includeStocks);
         }
-        return ResponseEntity.accepted()
-                .body(MessageResponse.builder()
-                        .message(currentUser.getRole() == Role.MANAGER
-                                ? (includeStocks
-                                    ? "Полное обновление кабинетов ваших селлеров (включая остатки) запущено в фоне."
-                                    : "Полное обновление кабинетов ваших селлеров запущено в фоне.")
-                                : (includeStocks
-                                    ? "Полное обновление всех активных кабинетов (включая остатки) запущено в фоне."
-                                    : "Полное обновление всех активных кабинетов запущено в фоне."))
-                        .build());
+        String message = currentUser.getRole() == Role.MANAGER
+                ? (includeStocks
+                ? "Полное обновление кабинетов ваших селлеров (включая остатки) запущено в фоне."
+                : "Полное обновление кабинетов ваших селлеров запущено в фоне.")
+                : (includeStocks
+                ? "Полное обновление всех активных кабинетов (включая остатки) запущено в фоне."
+                : "Полное обновление всех активных кабинетов запущено в фоне.");
+        return acceptedMessageResponse(message);
     }
 
     /**
@@ -222,15 +222,14 @@ public class UsersManagementController {
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
+        if (!isAdminOrManager(currentUser)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         User seller = userService.findById(sellerId);
         if (seller.getRole() != Role.SELLER) {
             return ResponseEntity.badRequest().build();
         }
-        if (currentUser.getRole() == Role.MANAGER &&
-                (seller.getOwner() == null || !seller.getOwner().getId().equals(currentUser.getId()))) {
+        if (currentUser.getRole() == Role.MANAGER && !isSellerOwnedByManager(seller, currentUser)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         List<CabinetDto> cabinets = cabinetService.listByUserId(seller.getId());
@@ -252,29 +251,20 @@ public class UsersManagementController {
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        
-        // Проверяем права доступа
-        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(MessageResponse.builder()
-                            .message("Недостаточно прав для выполнения операции")
-                            .build());
+
+        if (!isAdminOrManager(currentUser)) {
+            return forbiddenMessageResponse("Недостаточно прав для выполнения операции");
         }
-        
-        // Получаем селлера
+
         User seller = userService.findById(sellerId);
-        
-        // Проверяем, что это селлер
         if (seller.getRole() != Role.SELLER) {
             return ResponseEntity.badRequest()
                     .body(MessageResponse.builder()
                             .message("Указанный пользователь не является селлером")
                             .build());
         }
-        
-        // Для менеджера проверяем, что селлер принадлежит ему
-        if (currentUser.getRole() == Role.MANAGER && 
-            (seller.getOwner() == null || !seller.getOwner().getId().equals(currentUser.getId()))) {
+
+        if (currentUser.getRole() == Role.MANAGER && !isSellerOwnedByManager(seller, currentUser)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(MessageResponse.builder()
                             .message("У вас нет доступа к данному селлеру")
@@ -287,11 +277,9 @@ public class UsersManagementController {
         boolean skipIntervalCheck = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER;
         analyticsScheduler.triggerManualUpdate(seller, skipIntervalCheck, includeStocks);
 
-        return ResponseEntity.ok(MessageResponse.builder()
-                .message(includeStocks
-                        ? "Обновление данных (включая остатки) запущено. Процесс выполняется в фоновом режиме. Данные будут доступны через несколько минут."
-                        : "Обновление данных запущено. Процесс выполняется в фоновом режиме. Данные будут доступны через несколько минут.")
-                .build());
+        return okMessageResponse(includeStocks
+                ? "Обновление данных (включая остатки) запущено. Процесс выполняется в фоновом режиме. Данные будут доступны через несколько минут."
+                : "Обновление данных запущено. Процесс выполняется в фоновом режиме. Данные будут доступны через несколько минут.");
     }
 
     /**
@@ -305,9 +293,8 @@ public class UsersManagementController {
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(MessageResponse.builder().message("Недостаточно прав").build());
+        if (!isAdminOrManager(currentUser)) {
+            return forbiddenMessageResponse(MESSAGE_FORBIDDEN);
         }
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
         Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
@@ -316,10 +303,7 @@ public class UsersManagementController {
                 cabinet.getUser() != null ? cabinet.getUser().getEmail() : null);
         boolean skipIntervalCheck = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER;
         analyticsScheduler.triggerManualUpdateByCabinet(cabinetId, skipIntervalCheck);
-        return ResponseEntity.ok(MessageResponse.builder()
-                .message("Обновление данных запущено. Процесс выполняется в фоновом режиме. " +
-                        "Данные будут доступны через несколько минут.")
-                .build());
+        return okMessageResponse("Обновление данных запущено. Процесс выполняется в фоновом режиме. Данные будут доступны через несколько минут.");
     }
 
     /**
@@ -332,9 +316,8 @@ public class UsersManagementController {
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(MessageResponse.builder().message("Недостаточно прав").build());
+        if (!isAdminOrManager(currentUser)) {
+            return forbiddenMessageResponse(MESSAGE_FORBIDDEN);
         }
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
         Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
@@ -342,7 +325,7 @@ public class UsersManagementController {
         String message = Boolean.TRUE.equals(cabinet.getIsValid())
                 ? "API ключ валиден"
                 : (cabinet.getValidationError() != null ? "API ключ невалиден: " + cabinet.getValidationError() : "API ключ невалиден");
-        return ResponseEntity.ok(MessageResponse.builder().message(message).build());
+        return okMessageResponse(message);
     }
 
     /**
@@ -355,7 +338,7 @@ public class UsersManagementController {
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
+        if (!isAdminOrManager(currentUser)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
@@ -388,9 +371,7 @@ public class UsersManagementController {
         productCardAnalyticsService.validateStocksUpdateInterval(cabinetId);
         productCardAnalyticsService.recordStocksUpdateTriggered(cabinetId);
         productCardAnalyticsService.runStocksUpdateOnly(cabinetId);
-        return ResponseEntity.ok(MessageResponse.builder()
-                .message("Обновление остатков запущено. Данные обновятся в фоне в течение нескольких минут.")
-                .build());
+        return okMessageResponse("Обновление остатков запущено. Данные обновятся в фоне в течение нескольких минут.");
     }
 
     /**
@@ -403,16 +384,11 @@ public class UsersManagementController {
     @GetMapping("/trigger-promotions-update")
     public ResponseEntity<MessageResponse> triggerPromotionsUpdate(Authentication authentication) {
         User currentUser = getCurrentUser(authentication);
-        if (currentUser.getRole() != Role.ADMIN) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(MessageResponse.builder()
-                            .message("Доступно только для администратора")
-                            .build());
+        if (!isAdmin(currentUser)) {
+            return forbiddenMessageResponse(MESSAGE_ADMIN_ONLY);
         }
         promotionCalendarService.syncPromotionsForAllCabinets();
-        return ResponseEntity.ok(MessageResponse.builder()
-                .message("Обновление данных по акциям календаря запущено и выполнено.")
-                .build());
+        return okMessageResponse("Обновление данных по акциям календаря запущено и выполнено.");
     }
 
     /**
@@ -425,16 +401,11 @@ public class UsersManagementController {
     @GetMapping("/trigger-feedbacks-update")
     public ResponseEntity<MessageResponse> triggerFeedbacksUpdate(Authentication authentication) {
         User currentUser = getCurrentUser(authentication);
-        if (currentUser.getRole() != Role.ADMIN) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(MessageResponse.builder()
-                            .message("Доступно только для администратора")
-                            .build());
+        if (!isAdmin(currentUser)) {
+            return forbiddenMessageResponse(MESSAGE_ADMIN_ONLY);
         }
         feedbacksSyncService.syncFeedbacksForAllCabinets();
-        return ResponseEntity.ok(MessageResponse.builder()
-                .message("Обновление рейтинга и отзывов по кабинетам запущено и выполнено.")
-                .build());
+        return okMessageResponse("Обновление рейтинга и отзывов по кабинетам запущено и выполнено.");
     }
 
     /**
@@ -442,6 +413,31 @@ public class UsersManagementController {
      */
     private User getCurrentUser(Authentication authentication) {
         return userService.findByEmail(authentication.getName());
+    }
+
+    private boolean isAdminOrManager(User currentUser) {
+        return currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER;
+    }
+
+    private boolean isAdmin(User currentUser) {
+        return currentUser.getRole() == Role.ADMIN;
+    }
+
+    private boolean isSellerOwnedByManager(User seller, User manager) {
+        return seller.getOwner() != null && seller.getOwner().getId().equals(manager.getId());
+    }
+
+    private ResponseEntity<MessageResponse> forbiddenMessageResponse(String message) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(MessageResponse.builder().message(message).build());
+    }
+
+    private ResponseEntity<MessageResponse> okMessageResponse(String message) {
+        return ResponseEntity.ok(MessageResponse.builder().message(message).build());
+    }
+
+    private ResponseEntity<MessageResponse> acceptedMessageResponse(String message) {
+        return ResponseEntity.accepted().body(MessageResponse.builder().message(message).build());
     }
 
     /**

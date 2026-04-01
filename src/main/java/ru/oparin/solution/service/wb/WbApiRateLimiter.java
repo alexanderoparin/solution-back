@@ -19,19 +19,19 @@ public class WbApiRateLimiter {
 
     private static volatile WbApiRateLimiter INSTANCE;
 
-    @Value("${wb.rate-limit.default-min-interval-ms:0}")
+    @Value("${wb.rate-limit.default-min-interval-ms}")
     private long defaultMinIntervalMs;
-    @Value("${wb.rate-limit.analytics-min-interval-ms:200}")
+    @Value("${wb.rate-limit.analytics-min-interval-ms}")
     private long analyticsMinIntervalMs;
-    @Value("${wb.rate-limit.promotion-min-interval-ms:200}")
+    @Value("${wb.rate-limit.promotion-min-interval-ms}")
     private long promotionMinIntervalMs;
-    @Value("${wb.rate-limit.content-min-interval-ms:700}")
+    @Value("${wb.rate-limit.content-min-interval-ms}")
     private long contentMinIntervalMs;
-    @Value("${wb.rate-limit.prices-min-interval-ms:600}")
+    @Value("${wb.rate-limit.prices-min-interval-ms}")
     private long pricesMinIntervalMs;
-    @Value("${wb.rate-limit.feedbacks-min-interval-ms:350}")
+    @Value("${wb.rate-limit.feedbacks-min-interval-ms}")
     private long feedbacksMinIntervalMs;
-    @Value("${wb.rate-limit.statistics-min-interval-ms:200}")
+    @Value("${wb.rate-limit.statistics-min-interval-ms}")
     private long statisticsMinIntervalMs;
 
     private final ConcurrentMap<WbApiCategory, AtomicLong> nextAllowedAtMs = new ConcurrentHashMap<>();

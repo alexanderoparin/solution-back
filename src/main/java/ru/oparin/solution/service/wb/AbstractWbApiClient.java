@@ -126,7 +126,7 @@ public abstract class AbstractWbApiClient {
     }
 
     protected void throwIf401ScopeNotAllowed(HttpClientErrorException e) {
-        if (e.getStatusCode() != null && e.getStatusCode().value() == 401) {
+        if (e.getStatusCode().value() == 401) {
             throw new WbApiUnauthorizedScopeException(e, getApiCategory());
         }
     }
@@ -161,13 +161,13 @@ public abstract class AbstractWbApiClient {
      */
     protected void logWbApiError(String context, HttpClientErrorException e) {
         String body = e.getResponseBodyAsString();
-        int status = e.getStatusCode() != null ? e.getStatusCode().value() : 0;
+        int status = e.getStatusCode().value();
         String statusText = e.getStatusText();
         if (status == 429) {
             log429Metric();
         }
 
-        if (body == null || body.isBlank()) {
+        if (body.isBlank()) {
             log.error("WB API [{}]: {} {}", context, status, statusText);
             return;
         }
@@ -205,13 +205,16 @@ public abstract class AbstractWbApiClient {
     // --- Ретраи и утилиты (protected для наследников) ---
 
     protected static boolean isTimeoutOrConnectionError(Throwable e) {
+        if (e == null) {
+            return false;
+        }
         if (e instanceof ResourceAccessException) {
             return true;
         }
         if (hasTimeoutOrConnectionInMessage(e.getMessage())) {
             return true;
         }
-        return e.getCause() != null && isTimeoutOrConnectionError(e.getCause());
+        return isTimeoutOrConnectionError(e.getCause());
     }
 
     /**
@@ -265,7 +268,7 @@ public abstract class AbstractWbApiClient {
         if (!(e instanceof HttpServerErrorException he)) {
             return false;
         }
-        return he.getStatusCode() != null && he.getStatusCode().value() == 504;
+        return he.getStatusCode().value() == 504;
     }
 
     private void logRetryAndSleep(RetryDecision decision, String context, int attemptNum) {

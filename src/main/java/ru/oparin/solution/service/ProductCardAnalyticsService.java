@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.stream.Collectors;
 
 /**
  * Оркестратор полного обновления данных кабинета: карточки, цены, остатки, кампании, аналитика.
@@ -188,34 +187,34 @@ public class ProductCardAnalyticsService {
             log.info("Найдено карточек для загрузки аналитики: {}", productCards.size());
 
             CompletableFuture<Void> pricesFuture = CompletableFuture.runAsync(
-                    withCabinetMdc(cabinetId, () -> runTimedStep("syncPricesAndSpp", cabinetId,
-                            () -> runWithScopeGuard(cabinetId, () -> syncPricesAndSpp(managed, managed.getApiKey())))),
+                    runAsyncCabinetStep("syncPricesAndSpp", cabinetId,
+                            () -> runWithScopeGuard(cabinetId, () -> syncPricesAndSpp(managed, managed.getApiKey()))),
                     taskExecutor
             );
 
             CompletableFuture<Void> campaignFuture = CompletableFuture.runAsync(
-                    withCabinetMdc(cabinetId, () -> runTimedStep("syncCampaignsAndStatistics", cabinetId,
+                    runAsyncCabinetStep("syncCampaignsAndStatistics", cabinetId,
                             () -> runWithScopeGuard(cabinetId, WbApiCategory.PROMOTION,
-                                    () -> syncCampaignsAndStatistics(managed, managed.getApiKey(), cabinetId, seller, dateFrom, dateTo)))),
+                                    () -> syncCampaignsAndStatistics(managed, managed.getApiKey(), cabinetId, seller, dateFrom, dateTo))),
                     taskExecutor
             );
 
             CompletableFuture<Void> analyticsFuture = CompletableFuture.runAsync(
-                    withCabinetMdc(cabinetId, () -> runTimedStep("syncAnalytics", cabinetId,
+                    runAsyncCabinetStep("syncAnalytics", cabinetId,
                             () -> runWithScopeGuard(cabinetId, WbApiCategory.ANALYTICS,
-                                    () -> syncAnalytics(managed, cabinetId, productCards, dateFrom, dateTo)))),
+                                    () -> syncAnalytics(managed, cabinetId, productCards, dateFrom, dateTo))),
                     taskExecutor
             );
 
             CompletableFuture<Void> feedbacksFuture = CompletableFuture.runAsync(
-                    withCabinetMdc(cabinetId, () -> runTimedStep("syncFeedbacks", cabinetId, () -> syncFeedbacksWithGuard(managed, cabinetId))),
+                    runAsyncCabinetStep("syncFeedbacks", cabinetId, () -> syncFeedbacksWithGuard(managed, cabinetId)),
                     taskExecutor
             );
 
             CompletableFuture<Void> promotionCalendarFuture = syncPromotion
                     ? CompletableFuture.runAsync(
-                    withCabinetMdc(cabinetId, () -> runTimedStep("syncPromotionCalendar", cabinetId,
-                            () -> syncPromotionCalendarWithGuard(managed, cabinetId))),
+                    runAsyncCabinetStep("syncPromotionCalendar", cabinetId,
+                            () -> syncPromotionCalendarWithGuard(managed, cabinetId)),
                     taskExecutor
             )
                     : CompletableFuture.completedFuture(null);
@@ -224,12 +223,12 @@ public class ProductCardAnalyticsService {
                 // Опциональная фоновая ветка остатков (по умолчанию выключена и запускается отдельной кнопкой).
                 List<Long> nmIds = collectNmIds(productCards);
                 CompletableFuture.runAsync(
-                        withCabinetMdc(cabinetId, () -> runTimedStep("syncStocksAsync", cabinetId,
+                        runAsyncCabinetStep("syncStocksAsync", cabinetId,
                                 () -> runWithScopeGuard(cabinetId, WbApiCategory.ANALYTICS, () -> {
                                     syncStocks(managed, nmIds);
                                     managed.setLastStocksUpdateAt(LocalDateTime.now());
                                     cabinetService.save(managed);
-                                }))),
+                                })),
                         taskExecutor
                 );
             }
@@ -337,6 +336,10 @@ public class ProductCardAnalyticsService {
         logStepDuration(stepName, cabinetId, startedAt);
     }
 
+    private Runnable runAsyncCabinetStep(String stepName, long cabinetId, Runnable step) {
+        return withCabinetMdc(cabinetId, () -> runTimedStep(stepName, cabinetId, step));
+    }
+
     private void logStepDuration(String stepName, long cabinetId, long startedAt) {
         long elapsedMs = System.currentTimeMillis() - startedAt;
         long totalSeconds = elapsedMs / 1000;
@@ -403,10 +406,10 @@ public class ProductCardAnalyticsService {
 
     private List<Long> collectNmIds(List<ProductCard> productCards) {
         return productCards.stream()
-                    .map(ProductCard::getNmId)
+                .map(ProductCard::getNmId)
                 .filter(Objects::nonNull)
-                    .distinct()
-                    .collect(Collectors.toList());
+                .distinct()
+                .toList();
     }
 
     private List<Long> collectNmIdsFromCabinet(long cabinetId) {

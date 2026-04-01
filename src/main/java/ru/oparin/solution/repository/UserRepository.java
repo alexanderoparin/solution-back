@@ -71,18 +71,6 @@ public interface UserRepository extends JpaRepository<User, Long>, UserManagemen
      * @return список пользователей с указанной ролью
      */
     List<User> findByRole(Role role);
-
-    Page<User> findByRole(Role role, Pageable pageable);
-
-    Page<User> findByRoleAndEmailContainingIgnoreCase(Role role, String email, Pageable pageable);
-
-    /**
-     * Поиск пользователей с ролью, отличной от указанной (для админа: все кроме админов).
-     *
-     * @param role роль для исключения
-     * @return список пользователей
-     */
-    List<User> findByRoleNot(Role role);
 }
 
 

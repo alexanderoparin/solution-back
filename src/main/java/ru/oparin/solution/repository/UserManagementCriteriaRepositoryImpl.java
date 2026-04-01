@@ -22,6 +22,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class UserManagementCriteriaRepositoryImpl implements UserManagementCriteriaRepository {
 
+    private static final String USER_ROLE_FIELD = "role";
+    private static final String USER_OWNER_FIELD = "owner";
+    private static final String USER_ID_FIELD = "id";
+    private static final String USER_EMAIL_FIELD = "email";
+    private static final String CABINET_USER_FIELD = "user";
+    private static final String CABINET_LAST_UPDATE_AT_FIELD = "lastDataUpdateAt";
+    private static final String CABINET_LAST_UPDATE_REQUESTED_AT_FIELD = "lastDataUpdateRequestedAt";
+
     private final EntityManager entityManager;
 
     @Override
@@ -35,7 +43,7 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
         CriteriaQuery<User> cq = cb.createQuery(User.class);
         Root<User> root = cq.from(User.class);
 
-        List<Predicate> predicates = buildPredicates(cb, cq, root, currentUser, email, onlySellers);
+        List<Predicate> predicates = buildPredicates(cb, root, currentUser, email, onlySellers);
         cq.where(predicates.toArray(new Predicate[0]));
 
         applySorting(cb, cq, root, sortBy, sortDir);
@@ -52,41 +60,40 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
     private long count(CriteriaBuilder cb, User currentUser, String email, boolean onlySellers) {
         CriteriaQuery<Long> countQuery = cb.createQuery(Long.class);
         Root<User> countRoot = countQuery.from(User.class);
-        List<Predicate> countPredicates = buildPredicates(cb, countQuery, countRoot, currentUser, email, onlySellers);
+        List<Predicate> countPredicates = buildPredicates(cb, countRoot, currentUser, email, onlySellers);
         countQuery.select(cb.countDistinct(countRoot));
         countQuery.where(countPredicates.toArray(new Predicate[0]));
         return entityManager.createQuery(countQuery).getSingleResult();
     }
 
-    private <T> List<Predicate> buildPredicates(CriteriaBuilder cb,
-                                                CriteriaQuery<T> query,
-                                                Root<User> root,
-                                                User currentUser,
-                                                String email,
-                                                boolean onlySellers) {
+    private List<Predicate> buildPredicates(CriteriaBuilder cb,
+                                            Root<User> root,
+                                            User currentUser,
+                                            String email,
+                                            boolean onlySellers) {
         List<Predicate> predicates = new ArrayList<>();
 
         Role role = currentUser.getRole();
         if (role == Role.ADMIN) {
             if (onlySellers) {
-                predicates.add(cb.equal(root.get("role"), Role.SELLER));
+                predicates.add(cb.equal(root.get(USER_ROLE_FIELD), Role.SELLER));
             } else {
-                predicates.add(cb.notEqual(root.get("role"), Role.ADMIN));
+                predicates.add(cb.notEqual(root.get(USER_ROLE_FIELD), Role.ADMIN));
             }
         } else if (role == Role.MANAGER) {
             // Менеджер всегда работает только со своими селлерами.
-            predicates.add(cb.equal(root.get("role"), Role.SELLER));
-            predicates.add(cb.equal(root.get("owner").get("id"), currentUser.getId()));
+            predicates.add(cb.equal(root.get(USER_ROLE_FIELD), Role.SELLER));
+            predicates.add(cb.equal(root.get(USER_OWNER_FIELD).get(USER_ID_FIELD), currentUser.getId()));
         } else if (role == Role.SELLER) {
-            predicates.add(cb.equal(root.get("role"), Role.WORKER));
-            predicates.add(cb.equal(root.get("owner").get("id"), currentUser.getId()));
+            predicates.add(cb.equal(root.get(USER_ROLE_FIELD), Role.WORKER));
+            predicates.add(cb.equal(root.get(USER_OWNER_FIELD).get(USER_ID_FIELD), currentUser.getId()));
         } else {
             predicates.add(cb.disjunction());
         }
 
         String trimmed = email == null ? null : email.trim();
         if (trimmed != null && !trimmed.isEmpty()) {
-            predicates.add(cb.like(cb.lower(root.get("email")), "%" + trimmed.toLowerCase() + "%"));
+            predicates.add(cb.like(cb.lower(root.get(USER_EMAIL_FIELD)), "%" + trimmed.toLowerCase() + "%"));
         }
 
         return predicates;
@@ -101,14 +108,14 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
 
         if (sortBy == UserSortField.LAST_DATA_UPDATE_AT || sortBy == UserSortField.LAST_DATA_UPDATE_REQUESTED_AT) {
             String field = sortBy == UserSortField.LAST_DATA_UPDATE_AT
-                    ? "lastDataUpdateAt"
-                    : "lastDataUpdateRequestedAt";
+                    ? CABINET_LAST_UPDATE_AT_FIELD
+                    : CABINET_LAST_UPDATE_REQUESTED_AT_FIELD;
 
             Subquery<LocalDateTime> aggregateSubquery = cq.subquery(LocalDateTime.class);
             Root<Cabinet> cabinetRoot = aggregateSubquery.from(Cabinet.class);
             Expression<LocalDateTime> aggregateField = cabinetRoot.get(field).as(LocalDateTime.class);
             aggregateSubquery.select(cb.greatest(aggregateField));
-            aggregateSubquery.where(cb.equal(cabinetRoot.get("user").get("id"), root.get("id")));
+            aggregateSubquery.where(cb.equal(cabinetRoot.get(CABINET_USER_FIELD).get(USER_ID_FIELD), root.get(USER_ID_FIELD)));
 
             Expression<Integer> nullRank = cb.<Integer>selectCase()
                     .when(cb.isNull(aggregateSubquery), asc ? 0 : 1)
@@ -117,21 +124,21 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
             cq.orderBy(
                     cb.asc(nullRank),
                     asc ? cb.asc(aggregateSubquery) : cb.desc(aggregateSubquery),
-                    cb.asc(root.get("id"))
+                    cb.asc(root.get(USER_ID_FIELD))
             );
             return;
         }
 
         Expression<?> sortExpression = switch (sortBy) {
-            case EMAIL -> root.get("email");
-            case ROLE -> root.get("role");
+            case EMAIL -> root.get(USER_EMAIL_FIELD);
+            case ROLE -> root.get(USER_ROLE_FIELD);
             case IS_ACTIVE -> root.get("isActive");
             default -> root.get("createdAt");
         };
 
         cq.orderBy(
                 asc ? cb.asc(sortExpression) : cb.desc(sortExpression),
-                cb.asc(root.get("id"))
+                cb.asc(root.get(USER_ID_FIELD))
         );
     }
 }

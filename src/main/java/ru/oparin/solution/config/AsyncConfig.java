@@ -17,15 +17,15 @@ import java.util.concurrent.ThreadPoolExecutor;
 @EnableAsync
 public class AsyncConfig {
 
-    @Value("${app.executors.core-pool-size:4}")
+    @Value("${app.executors.core-pool-size}")
     private int corePoolSize;
-    @Value("${app.executors.max-pool-size:6}")
+    @Value("${app.executors.max-pool-size}")
     private int maxPoolSize;
-    @Value("${app.executors.task-queue-capacity:500}")
+    @Value("${app.executors.task-queue-capacity}")
     private int taskQueueCapacity;
-    @Value("${app.executors.cabinet-queue-capacity:100}")
+    @Value("${app.executors.cabinet-queue-capacity}")
     private int cabinetQueueCapacity;
-    @Value("${app.executors.user-deletion-queue-capacity:50}")
+    @Value("${app.executors.user-deletion-queue-capacity}")
     private int userDeletionQueueCapacity;
 
     /**

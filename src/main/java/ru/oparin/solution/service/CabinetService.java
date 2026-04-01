@@ -17,7 +17,6 @@ import ru.oparin.solution.repository.UserRepository;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 /**
  * Сервис CRUD для кабинетов продавца.
@@ -26,6 +25,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class CabinetService {
+
+    private static final String CABINET_NOT_FOUND = "Кабинет не найден";
+    private static final String CABINET_ACCESS_DENIED = "Нет доступа к данному кабинету";
+    private static final String CABINET_NOT_SELLER_OWNED = "Кабинет не принадлежит селлеру";
+    private static final String SELLER_ONLY_CREATE = "Только продавец может создавать кабинеты";
+    private static final String SUBSCRIPTION_REQUIRED = "Оформите подписку для создания кабинета";
 
     private final CabinetRepository cabinetRepository;
     private final UserRepository userRepository;
@@ -38,8 +43,7 @@ public class CabinetService {
      */
     @Transactional(readOnly = true)
     public List<CabinetDto> listByUserId(Long userId) {
-        List<Cabinet> cabinets = findCabinetsByUserId(userId);
-        return cabinets.stream().map(this::toDto).collect(Collectors.toList());
+        return findCabinetsByUserId(userId).stream().map(this::toDto).toList();
     }
 
     /**
@@ -60,7 +64,7 @@ public class CabinetService {
     @Transactional(readOnly = true)
     public Cabinet findByIdWithUserOrThrow(Long cabinetId) {
         return cabinetRepository.findByIdWithUser(cabinetId)
-                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new UserException(CABINET_NOT_FOUND, HttpStatus.NOT_FOUND));
     }
 
     /**
@@ -80,10 +84,10 @@ public class CabinetService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserException("Пользователь не найден", HttpStatus.NOT_FOUND));
         if (user.getRole() != Role.SELLER) {
-            throw new UserException("Только продавец может создавать кабинеты", HttpStatus.FORBIDDEN);
+            throw new UserException(SELLER_ONLY_CREATE, HttpStatus.FORBIDDEN);
         }
         if (Boolean.FALSE.equals(user.getIsAgencyClient()) && !subscriptionAccessService.hasAccess(user)) {
-            throw new UserException("Оформите подписку для создания кабинета", HttpStatus.FORBIDDEN);
+            throw new UserException(SUBSCRIPTION_REQUIRED, HttpStatus.FORBIDDEN);
         }
 
         Cabinet cabinet = Cabinet.builder()
@@ -168,19 +172,7 @@ public class CabinetService {
     @Transactional(readOnly = true)
     public void validateCabinetAccessForUpdate(Long cabinetId, User currentUser) {
         Cabinet cabinet = findByIdWithUserOrThrow(cabinetId);
-        User seller = cabinet.getUser();
-        if (seller.getRole() != Role.SELLER) {
-            throw new UserException("Кабинет не принадлежит селлеру", HttpStatus.FORBIDDEN);
-        }
-        if (currentUser.getRole() == Role.ADMIN) {
-            return;
-        }
-        if (currentUser.getRole() == Role.MANAGER) {
-            if (seller.getOwner() != null && seller.getOwner().getId().equals(currentUser.getId())) {
-                return;
-            }
-        }
-        throw new UserException("Нет доступа к данному кабинету", HttpStatus.FORBIDDEN);
+        validateSellerCabinetAccess(cabinet.getUser(), currentUser, false);
     }
 
     /**
@@ -190,22 +182,7 @@ public class CabinetService {
     @Transactional(readOnly = true)
     public void validateCabinetAccessForStocksUpdate(Long cabinetId, User currentUser) {
         Cabinet cabinet = findByIdWithUserOrThrow(cabinetId);
-        User seller = cabinet.getUser();
-        if (currentUser.getRole() == Role.SELLER) {
-            if (seller.getId().equals(currentUser.getId())) {
-                return;
-            }
-            throw new UserException("Нет доступа к данному кабинету", HttpStatus.FORBIDDEN);
-        }
-        if (currentUser.getRole() == Role.ADMIN) {
-            return;
-        }
-        if (currentUser.getRole() == Role.MANAGER) {
-            if (seller.getOwner() != null && seller.getOwner().getId().equals(currentUser.getId())) {
-                return;
-            }
-        }
-        throw new UserException("Нет доступа к данному кабинету", HttpStatus.FORBIDDEN);
+        validateSellerCabinetAccess(cabinet.getUser(), currentUser, true);
     }
 
     /**
@@ -283,23 +260,36 @@ public class CabinetService {
             throw new UserException("Кабинет не найден или доступ запрещён", HttpStatus.NOT_FOUND);
         }
         return cabinetRepository.findById(cabinetId)
-                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new UserException(CABINET_NOT_FOUND, HttpStatus.NOT_FOUND));
     }
 
-    private CabinetDto toDto(Cabinet c) {
-        CabinetDto.ApiKeyInfo apiKeyInfo = null;
-        if (c.getApiKey() != null || c.getIsValid() != null) {
-            apiKeyInfo = CabinetDto.ApiKeyInfo.builder()
-                    .apiKey(c.getApiKey())
-                    .isValid(c.getIsValid())
-                    .lastValidatedAt(c.getLastValidatedAt())
-                    .validationError(c.getValidationError())
-                    .lastDataUpdateAt(c.getLastDataUpdateAt())
-                    .lastDataUpdateRequestedAt(c.getLastDataUpdateRequestedAt())
-                    .lastStocksUpdateAt(c.getLastStocksUpdateAt())
-                    .build();
+    private void validateSellerCabinetAccess(User seller, User currentUser, boolean allowSellerSelf) {
+        if (seller.getRole() != Role.SELLER) {
+            throw new UserException(CABINET_NOT_SELLER_OWNED, HttpStatus.FORBIDDEN);
         }
-        List<CabinetDto.ScopeStatusDto> scopeStatuses = cabinetScopeStatusService.getStatusesByCabinetId(c.getId())
+
+        if (currentUser.getRole() == Role.ADMIN) {
+            return;
+        }
+
+        if (currentUser.getRole() == Role.MANAGER && isSellerOwnedByManager(seller, currentUser.getId())) {
+            return;
+        }
+
+        if (allowSellerSelf && currentUser.getRole() == Role.SELLER && seller.getId().equals(currentUser.getId())) {
+            return;
+        }
+
+        throw new UserException(CABINET_ACCESS_DENIED, HttpStatus.FORBIDDEN);
+    }
+
+    private boolean isSellerOwnedByManager(User seller, Long managerId) {
+        return seller.getOwner() != null && seller.getOwner().getId().equals(managerId);
+    }
+
+    private CabinetDto toDto(Cabinet cabinet) {
+        CabinetDto.ApiKeyInfo apiKeyInfo = toApiKeyInfo(cabinet);
+        List<CabinetDto.ScopeStatusDto> scopeStatuses = cabinetScopeStatusService.getStatusesByCabinetId(cabinet.getId())
                 .stream()
                 .map(s -> CabinetDto.ScopeStatusDto.builder()
                         .category(s.category())
@@ -308,17 +298,32 @@ public class CabinetService {
                         .success(s.success())
                         .errorMessage(s.errorMessage())
                         .build())
-                .collect(Collectors.toList());
+                .toList();
         return CabinetDto.builder()
-                .id(c.getId())
-                .name(c.getName())
-                .createdAt(c.getCreatedAt())
-                .updatedAt(c.getUpdatedAt())
-                .lastDataUpdateAt(c.getLastDataUpdateAt())
-                .lastDataUpdateRequestedAt(c.getLastDataUpdateRequestedAt())
-                .lastStocksUpdateAt(c.getLastStocksUpdateAt())
+                .id(cabinet.getId())
+                .name(cabinet.getName())
+                .createdAt(cabinet.getCreatedAt())
+                .updatedAt(cabinet.getUpdatedAt())
+                .lastDataUpdateAt(cabinet.getLastDataUpdateAt())
+                .lastDataUpdateRequestedAt(cabinet.getLastDataUpdateRequestedAt())
+                .lastStocksUpdateAt(cabinet.getLastStocksUpdateAt())
                 .apiKey(apiKeyInfo)
                 .scopeStatuses(scopeStatuses)
+                .build();
+    }
+
+    private CabinetDto.ApiKeyInfo toApiKeyInfo(Cabinet cabinet) {
+        if (cabinet.getApiKey() == null && cabinet.getIsValid() == null) {
+            return null;
+        }
+        return CabinetDto.ApiKeyInfo.builder()
+                .apiKey(cabinet.getApiKey())
+                .isValid(cabinet.getIsValid())
+                .lastValidatedAt(cabinet.getLastValidatedAt())
+                .validationError(cabinet.getValidationError())
+                .lastDataUpdateAt(cabinet.getLastDataUpdateAt())
+                .lastDataUpdateRequestedAt(cabinet.getLastDataUpdateRequestedAt())
+                .lastStocksUpdateAt(cabinet.getLastStocksUpdateAt())
                 .build();
     }
 }

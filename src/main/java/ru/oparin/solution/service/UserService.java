@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
@@ -15,11 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.config.SubscriptionProperties;
-import ru.oparin.solution.dto.CreateUserRequest;
-import ru.oparin.solution.dto.RegisterRequest;
-import ru.oparin.solution.dto.UpdateUserRequest;
-import ru.oparin.solution.dto.UserSortField;
-import ru.oparin.solution.dto.UserListItemDto;
+import ru.oparin.solution.dto.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
@@ -31,7 +26,6 @@ import ru.oparin.solution.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 import static java.lang.Boolean.TRUE;
 
@@ -42,6 +36,9 @@ import static java.lang.Boolean.TRUE;
 @RequiredArgsConstructor
 @Slf4j
 public class UserService {
+
+    private static final String MANAGER_CAN_MANAGE_ONLY_OWN_SELLERS = "MANAGER может управлять только своими SELLER";
+    private static final String SELLER_CAN_MANAGE_ONLY_OWN_WORKERS = "SELLER может управлять только своими WORKER";
 
     private final UserRepository userRepository;
     private final CabinetService cabinetService;
@@ -411,57 +408,13 @@ public class UserService {
         userRepository.delete(user);
     }
 
-    /**
-     * Получение списка пользователей, которыми может управлять текущий пользователь.
-     *
-     * @param currentUser текущий пользователь
-     * @return список пользователей
-     */
-    public List<UserListItemDto> getManagedUsers(User currentUser) {
-        List<User> users;
-
-        if (currentUser.getRole() == Role.ADMIN) {
-            // Админ видит всех пользователей кроме других админов (менеджеры, селлеры, работники)
-            users = userRepository.findByRoleNot(Role.ADMIN);
-        } else if (currentUser.getRole() == Role.MANAGER) {
-            // Менеджер видит своих селлеров
-            users = userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId());
-        } else if (currentUser.getRole() == Role.SELLER) {
-            // Селлер видит своих работников
-            users = userRepository.findByRoleAndOwnerId(Role.WORKER, currentUser.getId());
-        } else {
-            // WORKER не может управлять пользователями
-            return List.of();
-        }
-
-        return users.stream()
-                .map(this::mapToUserListItemDto)
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * Постраничное получение пользователей, которыми может управлять текущий пользователь.
-     */
-    public Page<User> getManagedUsersPage(User currentUser, Pageable pageable) {
-        if (currentUser.getRole() == Role.ADMIN) {
-            return userRepository.findByRoleNot(Role.ADMIN, pageable);
-        }
-        if (currentUser.getRole() == Role.MANAGER) {
-            return userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId(), pageable);
-        }
-        if (currentUser.getRole() == Role.SELLER) {
-            return userRepository.findByRoleAndOwnerId(Role.WORKER, currentUser.getId(), pageable);
-        }
-        return Page.empty(pageable);
-    }
-
-    public Page<User> getManagedUsersPage(User currentUser,
-                                          Pageable pageable,
-                                          String email,
-                                          boolean onlySellers,
-                                          UserSortField sortBy,
-                                          Sort.Direction sortDir) {
-        return userManagementQueryService.findManagedUsers(
+    public Page<UserListItemDto> getManagedUsersPageDto(User currentUser,
+                                                        Pageable pageable,
+                                                        String email,
+                                                        boolean onlySellers,
+                                                        UserSortField sortBy,
+                                                        Sort.Direction sortDir) {
+        Page<User> page = userManagementQueryService.findManagedUsers(
                 currentUser,
                 pageable,
                 email,
@@ -469,30 +422,7 @@ public class UserService {
                 sortBy,
                 sortDir
         );
-    }
-
-    /**
-     * Постраничное получение списка пользователей (DTO) для управления.
-     */
-    public Page<UserListItemDto> getManagedUsersPageDto(User currentUser, Pageable pageable) {
-        Page<User> page = getManagedUsersPage(currentUser, pageable);
-        List<UserListItemDto> content = page.getContent().stream()
-                .map(this::mapToUserListItemDto)
-                .collect(Collectors.toList());
-        return new PageImpl<>(content, page.getPageable(), page.getTotalElements());
-    }
-
-    public Page<UserListItemDto> getManagedUsersPageDto(User currentUser,
-                                                        Pageable pageable,
-                                                        String email,
-                                                        boolean onlySellers,
-                                                        UserSortField sortBy,
-                                                        Sort.Direction sortDir) {
-        Page<User> page = getManagedUsersPage(currentUser, pageable, email, onlySellers, sortBy, sortDir);
-        List<UserListItemDto> content = page.getContent().stream()
-                .map(this::mapToUserListItemDto)
-                .toList();
-        return new PageImpl<>(content, page.getPageable(), page.getTotalElements());
+        return page.map(this::mapToUserListItemDto);
     }
 
     /**
@@ -505,21 +435,8 @@ public class UserService {
      * @return список активных селлеров с API ключами
      */
     public List<UserListItemDto> getActiveSellers(User currentUser) {
-        List<User> sellers;
-
-        if (currentUser.getRole() == Role.ADMIN) {
-            // Админ видит всех активных селлеров
-            sellers = userRepository.findByRoleAndIsActive(Role.SELLER, true);
-        } else if (currentUser.getRole() == Role.MANAGER) {
-            // Менеджер видит только своих активных селлеров
-            List<User> allSellers = userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId());
-            sellers = allSellers.stream()
-                    .filter(user -> TRUE.equals(user.getIsActive()))
-                    .collect(Collectors.toList());
-        } else {
-            // Только ADMIN и MANAGER могут просматривать аналитику селлеров
-            return List.of();
-        }
+        List<User> sellers = getVisibleActiveSellers(currentUser);
+        if (sellers.isEmpty()) return List.of();
 
         // Фильтруем только селлеров с кабинетами
         List<User> sellersWithCabinets = sellers.stream()
@@ -528,24 +445,30 @@ public class UserService {
 
         return sellersWithCabinets.stream()
                 .map(this::mapToUserListItemDto)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     /**
      * Проверяет, может ли текущий пользователь создавать пользователей указанной роли.
      */
     private void validateCanCreateUser(User currentUser, Role newUserRole) {
-        if (currentUser.getRole() == Role.ADMIN) {
-            // Админ может создавать менеджеров и селлеров
-            if (newUserRole != Role.MANAGER && newUserRole != Role.SELLER) {
-                throw new UserException("ADMIN может создавать только MANAGER или SELLER", HttpStatus.FORBIDDEN);
+        switch (currentUser.getRole()) {
+            case ADMIN -> {
+                if (newUserRole != Role.MANAGER && newUserRole != Role.SELLER) {
+                    throw new UserException("ADMIN может создавать только MANAGER или SELLER", HttpStatus.FORBIDDEN);
+                }
             }
-        } else if (currentUser.getRole() == Role.MANAGER && newUserRole != Role.SELLER) {
-            throw new UserException("MANAGER может создавать только SELLER", HttpStatus.FORBIDDEN);
-        } else if (currentUser.getRole() == Role.SELLER && newUserRole != Role.WORKER) {
-            throw new UserException("SELLER может создавать только WORKER", HttpStatus.FORBIDDEN);
-        } else if (currentUser.getRole() == Role.WORKER) {
-            throw new UserException("WORKER не может создавать пользователей", HttpStatus.FORBIDDEN);
+            case MANAGER -> {
+                if (newUserRole != Role.SELLER) {
+                    throw new UserException("MANAGER может создавать только SELLER", HttpStatus.FORBIDDEN);
+                }
+            }
+            case SELLER -> {
+                if (newUserRole != Role.WORKER) {
+                    throw new UserException("SELLER может создавать только WORKER", HttpStatus.FORBIDDEN);
+                }
+            }
+            case WORKER -> throw new UserException("WORKER не может создавать пользователей", HttpStatus.FORBIDDEN);
         }
     }
 
@@ -553,28 +476,11 @@ public class UserService {
      * Проверяет, может ли текущий пользователь управлять указанным пользователем.
      */
     private void validateCanManageUser(User currentUser, User userToManage) {
-        if (currentUser.getRole() == Role.ADMIN) {
-            if (userToManage.getRole() == Role.ADMIN) {
-                throw new UserException("ADMIN не может управлять другими администраторами", HttpStatus.FORBIDDEN);
-            }
-        } else if (currentUser.getRole() == Role.MANAGER) {
-            // Менеджер может управлять только своими селлерами
-            if (userToManage.getRole() != Role.SELLER) {
-                throw new UserException("MANAGER может управлять только SELLER", HttpStatus.FORBIDDEN);
-            }
-            if (userToManage.getOwner() == null || !currentUser.getId().equals(userToManage.getOwner().getId())) {
-                throw new UserException("MANAGER может управлять только своими SELLER", HttpStatus.FORBIDDEN);
-            }
-        } else if (currentUser.getRole() == Role.SELLER) {
-            // Селлер может управлять только своими работниками
-            if (userToManage.getRole() != Role.WORKER) {
-                throw new UserException("SELLER может управлять только WORKER", HttpStatus.FORBIDDEN);
-            }
-            if (userToManage.getOwner() == null || !currentUser.getId().equals(userToManage.getOwner().getId())) {
-                throw new UserException("SELLER может управлять только своими WORKER", HttpStatus.FORBIDDEN);
-            }
-        } else {
-            throw new UserException("WORKER не может управлять пользователями", HttpStatus.FORBIDDEN);
+        switch (currentUser.getRole()) {
+            case ADMIN -> validateAdminCanManage(userToManage);
+            case MANAGER -> validateManagerCanManage(currentUser, userToManage);
+            case SELLER -> validateSellerCanManage(currentUser, userToManage);
+            case WORKER -> throw new UserException("WORKER не может управлять пользователями", HttpStatus.FORBIDDEN);
         }
     }
 
@@ -582,15 +488,10 @@ public class UserService {
      * Получает владельца для нового пользователя в зависимости от роли.
      */
     private User getOwnerForNewUser(User currentUser, Role newUserRole) {
-        if (newUserRole == Role.MANAGER) {
-            return currentUser; // ADMIN создает MANAGER
-        } else if (newUserRole == Role.SELLER) {
-            // ADMIN или MANAGER может создавать SELLER
-            return currentUser;
-        } else if (newUserRole == Role.WORKER) {
-            return currentUser; // SELLER создает WORKER
-        }
-        return null;
+        return switch (newUserRole) {
+            case MANAGER, SELLER, WORKER -> currentUser;
+            default -> null;
+        };
     }
 
     /**
@@ -600,17 +501,9 @@ public class UserService {
         LocalDateTime lastDataUpdateAt = null;
         LocalDateTime lastDataUpdateRequestedAt = null;
         if (user.getRole() == Role.SELLER) {
-            List<Cabinet> cabinets = cabinetService.findCabinetsByUserId(user.getId());
-            lastDataUpdateAt = cabinets.stream()
-                    .map(Cabinet::getLastDataUpdateAt)
-                    .filter(Objects::nonNull)
-                    .max(LocalDateTime::compareTo)
-                    .orElse(null);
-            lastDataUpdateRequestedAt = cabinets.stream()
-                    .map(Cabinet::getLastDataUpdateRequestedAt)
-                    .filter(Objects::nonNull)
-                    .max(LocalDateTime::compareTo)
-                    .orElse(null);
+            SellerUpdateDates dates = getSellerUpdateDates(user.getId());
+            lastDataUpdateAt = dates.lastDataUpdateAt();
+            lastDataUpdateRequestedAt = dates.lastDataUpdateRequestedAt();
         }
 
         return UserListItemDto.builder()
@@ -625,4 +518,61 @@ public class UserService {
                 .lastDataUpdateRequestedAt(lastDataUpdateRequestedAt)
                 .build();
     }
+
+    private List<User> getVisibleActiveSellers(User currentUser) {
+        if (currentUser.getRole() == Role.ADMIN) {
+            return userRepository.findByRoleAndIsActive(Role.SELLER, true);
+        }
+        if (currentUser.getRole() == Role.MANAGER) {
+            return userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId()).stream()
+                    .filter(user -> TRUE.equals(user.getIsActive()))
+                    .toList();
+        }
+        return List.of();
+    }
+
+    private void validateAdminCanManage(User userToManage) {
+        if (userToManage.getRole() == Role.ADMIN) {
+            throw new UserException("ADMIN не может управлять другими администраторами", HttpStatus.FORBIDDEN);
+        }
+    }
+
+    private void validateManagerCanManage(User currentUser, User userToManage) {
+        if (userToManage.getRole() != Role.SELLER) {
+            throw new UserException(MANAGER_CAN_MANAGE_ONLY_OWN_SELLERS, HttpStatus.FORBIDDEN);
+        }
+        if (!isOwnedBy(userToManage, currentUser.getId())) {
+            throw new UserException(MANAGER_CAN_MANAGE_ONLY_OWN_SELLERS, HttpStatus.FORBIDDEN);
+        }
+    }
+
+    private void validateSellerCanManage(User currentUser, User userToManage) {
+        if (userToManage.getRole() != Role.WORKER) {
+            throw new UserException(SELLER_CAN_MANAGE_ONLY_OWN_WORKERS, HttpStatus.FORBIDDEN);
+        }
+        if (!isOwnedBy(userToManage, currentUser.getId())) {
+            throw new UserException(SELLER_CAN_MANAGE_ONLY_OWN_WORKERS, HttpStatus.FORBIDDEN);
+        }
+    }
+
+    private boolean isOwnedBy(User user, Long ownerId) {
+        return user.getOwner() != null && ownerId.equals(user.getOwner().getId());
+    }
+
+    private SellerUpdateDates getSellerUpdateDates(Long sellerId) {
+        List<Cabinet> cabinets = cabinetService.findCabinetsByUserId(sellerId);
+        LocalDateTime lastDataUpdateAt = cabinets.stream()
+                .map(Cabinet::getLastDataUpdateAt)
+                .filter(Objects::nonNull)
+                .max(LocalDateTime::compareTo)
+                .orElse(null);
+        LocalDateTime lastDataUpdateRequestedAt = cabinets.stream()
+                .map(Cabinet::getLastDataUpdateRequestedAt)
+                .filter(Objects::nonNull)
+                .max(LocalDateTime::compareTo)
+                .orElse(null);
+        return new SellerUpdateDates(lastDataUpdateAt, lastDataUpdateRequestedAt);
+    }
+
+    private record SellerUpdateDates(LocalDateTime lastDataUpdateAt, LocalDateTime lastDataUpdateRequestedAt) {}
 }

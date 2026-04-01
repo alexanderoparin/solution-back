@@ -16,15 +16,4 @@ public enum UserSortField {
     public static final String DEFAULT_REQUEST_VALUE = "LAST_DATA_UPDATE_AT";
 
     private final String paramValue;
-
-    public static UserSortField fromParam(String value) {
-        if (value != null) {
-            for (UserSortField field : values()) {
-                if (field.paramValue.equalsIgnoreCase(value) || field.name().equalsIgnoreCase(value)) {
-                    return field;
-                }
-            }
-        }
-        return LAST_DATA_UPDATE_AT;
-    }
 }

@@ -39,11 +39,12 @@ public class ProductStocksService {
     private static final String ORDER_FIELD_STOCK_COUNT = "stockCount";
     private static final String ORDER_MODE_ASC = "asc";
     private static final long DEFAULT_STOCK_COUNT = 0L;
+    private static final String WB_ANALYTICS_HOST = "seller-analytics-api.wildberries.ru";
 
     private final WbStocksApiClient stocksApiClient;
     private final ProductStockRepository stockRepository;
     private final ProductBarcodeRepository barcodeRepository;
-    @Value("${wb.stocks.request-delay-ms:20000}")
+    @Value("${wb.stocks.request-delay-ms}")
     private long stocksRequestDelayMs;
 
     /**
@@ -91,7 +92,7 @@ public class ProductStocksService {
      * Обновляет остатки по размерам на складах WB для всех указанных артикулов кабинета.
      * Между запросами пауза 20 с (лимит API).
      */
-    public void updateStocksForCabinet(Cabinet cabinet, String apiKey, java.util.List<Long> nmIds) {
+    public void updateStocksForCabinet(Cabinet cabinet, String apiKey, List<Long> nmIds) {
         if (nmIds == null || nmIds.isEmpty()) {
             return;
         }
@@ -101,16 +102,14 @@ public class ProductStocksService {
             try {
                 self.getWbStocksBySizes(apiKey, nmId, cabinet);
                 count++;
-                if (count < nmIds.size()) {
-                    Thread.sleep(stocksRequestDelayMs);
-                }
+                if (count < nmIds.size()) Thread.sleep(stocksRequestDelayMs);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.error("Прервано ожидание перед запросом остатков для артикула {}", nmId);
                 break;
             } catch (ResourceAccessException e) {
                 if (e.getCause() instanceof UnknownHostException) {
-                    log.error("Ошибка при обновлении остатков для nmID {}: не удалось разрешить хост WB API (DNS). Проверьте доступность seller-analytics-api.wildberries.ru и настройки DNS на сервере.", nmId);
+                    log.error("Ошибка при обновлении остатков для nmID {}: не удалось разрешить хост WB API (DNS). Проверьте доступность {} и настройки DNS на сервере.", nmId, WB_ANALYTICS_HOST);
                 } else {
                     log.error("Ошибка при обновлении остатков для артикула {}: {}", nmId, e.getMessage());
                 }
@@ -196,16 +195,16 @@ public class ProductStocksService {
         } catch (Exception e) {
             log.error("Ошибка при сохранении остатка для nmID {}, warehouseId {}, barcode {}, amount {}: {}",
                     nmId, office.getOfficeID(), barcode, stockCount, e.getMessage());
-            // После исключения Hibernate часто оставляет persistence context в нестабильном состоянии.
-            // Очищаем, чтобы следующие save/find не попали в "битую" сессию.
-            if (entityManager != null) {
-                try {
-                    entityManager.clear();
-                } catch (Exception ignore) {
-                    // не маскируем исходную ошибку
-                }
-            }
+            clearPersistenceContextSafely();
             statistics.incrementSkipped();
+        }
+    }
+
+    private void clearPersistenceContextSafely() {
+        try {
+            entityManager.clear();
+        } catch (Exception ignore) {
+            // не маскируем исходную ошибку
         }
     }
 
@@ -364,13 +363,6 @@ public class ProductStocksService {
     private Long getStockCount(WbStocksSizesResponse.OfficeStock office) {
         Long stockCount = office.getMetrics().getStockCount();
         return stockCount != null ? stockCount : DEFAULT_STOCK_COUNT;
-    }
-
-    /**
-     * Находит существующую запись об остатках.
-     */
-    private Optional<ProductStock> findExistingStock(Long nmId, Long warehouseId, String barcode) {
-        return stockRepository.findByNmIdAndWarehouseIdAndBarcode(nmId, warehouseId, barcode);
     }
 
     private Optional<ProductStock> findExistingStock(Long nmId, Long warehouseId, String barcode, Long cabinetId) {
