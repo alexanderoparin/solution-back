@@ -11,8 +11,7 @@ import ru.oparin.solution.repository.ProductPriceHistoryRepository;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 /**
  * Сервис для работы с ценами товаров.
@@ -34,7 +33,7 @@ public class ProductPriceService {
             return;
         }
 
-        List<ProductPriceHistory> pricesToSave = new ArrayList<>();
+        List<ProductPriceHistory> built = new ArrayList<>();
         int skippedCount = 0;
 
         for (ProductPricesResponse.Good good : response.getData().getListGoods()) {
@@ -44,15 +43,68 @@ public class ProductPriceService {
                 continue;
             }
 
-            List<ProductPriceHistory> prices = processGood(good, yesterdayDate, cabinet);
-            pricesToSave.addAll(prices);
+            built.addAll(processGood(good, yesterdayDate, cabinet));
         }
 
-        if (!pricesToSave.isEmpty()) {
-            priceHistoryRepository.saveAll(pricesToSave);
-            log.info("Сохранено записей цен: {} (пропущено товаров: {})", pricesToSave.size(), skippedCount);
-        } else {
+        if (built.isEmpty()) {
             log.warn("Нет данных для сохранения цен");
+            return;
+        }
+
+        Map<NmSizeKey, ProductPriceHistory> incomingByKey = dedupeByNmAndSize(built);
+        List<Long> nmIds = incomingByKey.keySet().stream().map(NmSizeKey::nmId).distinct().toList();
+        Map<NmSizeKey, ProductPriceHistory> existingByKey = loadExistingPriceMap(nmIds, yesterdayDate, cabinet.getId());
+
+        List<ProductPriceHistory> toPersist = new ArrayList<>();
+        for (ProductPriceHistory incoming : incomingByKey.values()) {
+            NmSizeKey key = NmSizeKey.of(incoming);
+            ProductPriceHistory row = existingByKey.get(key);
+            if (row != null) {
+                applyPriceFieldsFromApi(row, incoming);
+                toPersist.add(row);
+            } else {
+                toPersist.add(incoming);
+            }
+        }
+
+        priceHistoryRepository.saveAll(toPersist);
+        log.info("Сохранено записей цен: {} (уникальных ключей nm+size: {}, пропущено товаров: {})",
+                toPersist.size(), incomingByKey.size(), skippedCount);
+    }
+
+    private static Map<NmSizeKey, ProductPriceHistory> dedupeByNmAndSize(List<ProductPriceHistory> rows) {
+        Map<NmSizeKey, ProductPriceHistory> map = new LinkedHashMap<>();
+        for (ProductPriceHistory row : rows) {
+            map.put(NmSizeKey.of(row), row);
+        }
+        return map;
+    }
+
+    private Map<NmSizeKey, ProductPriceHistory> loadExistingPriceMap(List<Long> nmIds, LocalDate date, Long cabinetId) {
+        List<ProductPriceHistory> existing = priceHistoryRepository.findByNmIdInAndDateAndCabinet_Id(nmIds, date, cabinetId);
+        Map<NmSizeKey, ProductPriceHistory> map = new HashMap<>();
+        for (ProductPriceHistory row : existing) {
+            map.put(NmSizeKey.of(row), row);
+        }
+        return map;
+    }
+
+    /**
+     * Обновляет поля снимка цены из WB; sppDiscount не трогаем (его заполняет синхронизация заказов).
+     */
+    private static void applyPriceFieldsFromApi(ProductPriceHistory target, ProductPriceHistory source) {
+        target.setTechSizeName(source.getTechSizeName());
+        target.setPrice(source.getPrice());
+        target.setDiscountedPrice(source.getDiscountedPrice());
+        target.setClubDiscountedPrice(source.getClubDiscountedPrice());
+        target.setDiscount(source.getDiscount());
+        target.setClubDiscount(source.getClubDiscount());
+        target.setEditableSizePrice(source.getEditableSizePrice());
+    }
+
+    private record NmSizeKey(Long nmId, Long sizeId) {
+        static NmSizeKey of(ProductPriceHistory p) {
+            return new NmSizeKey(p.getNmId(), p.getSizeId());
         }
     }
 
