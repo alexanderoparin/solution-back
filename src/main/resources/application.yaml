@@ -124,7 +124,6 @@ app:
     poll-delay-ms: 2000
     stuck-check-delay-ms: 30000
     running-timeout-minutes: 15
-    max-same-cabinet-type-drain-after-success: 150
     default-batch-size: 50
     batch-size-by-type:
       CONTENT_CARDS_LIST_PAGE: 20

@@ -37,10 +37,4 @@ public class WbEventsProperties {
      * Ключ = имя enum WbApiEventType, значение = максимальное количество событий типа за один poll.
      */
     private Map<String, Integer> batchSizeByType = new HashMap<>();
-
-    /**
-     * После успешного события — сколько ещё событий того же типа и кабинета обработать подряд
-     * без ожидания следующего poll (ускоряет «уже в БД» и быстрые шаги).
-     */
-    private int maxSameCabinetTypeDrainAfterSuccess = 150;
 }

@@ -30,23 +30,6 @@ public interface WbApiEventRepository extends JpaRepository<WbApiEvent, Long> {
 
     @Query("""
             select e
-            from WbApiEvent e join fetch e.cabinet
-            where e.cabinet.id = :cabinetId
-              and e.eventType = :eventType
-              and e.status in :statuses
-              and e.nextAttemptAt <= :now
-            order by e.priority desc, e.nextAttemptAt asc, e.createdAt asc
-            """)
-    List<WbApiEvent> findReadyEventsForCabinetAndType(
-            @Param("cabinetId") Long cabinetId,
-            @Param("eventType") WbApiEventType eventType,
-            @Param("statuses") Collection<WbApiEventStatus> statuses,
-            @Param("now") LocalDateTime now,
-            Pageable pageable
-    );
-
-    @Query("""
-            select e
             from WbApiEvent e
             where (:status is null or e.status = :status)
               and (:eventType is null or e.eventType = :eventType)
