@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.CabinetUpdateErrorScope;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.service.sync.SyncDelayUtil;
 import ru.oparin.solution.service.wb.WbApiCategory;
@@ -26,6 +27,7 @@ public class StocksRoundRobinOrchestrator {
     private final ProductCardService productCardService;
     private final CabinetService cabinetService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
+    private final CabinetUpdateErrorService cabinetUpdateErrorService;
 
     @Value("${wb.stocks.request-delay-ms}")
     private long stocksRequestDelayMs;
@@ -109,11 +111,14 @@ public class StocksRoundRobinOrchestrator {
             cabinetScopeStatusService.recordSuccess(cabinetId, WbApiCategory.ANALYTICS);
         } catch (WbApiUnauthorizedScopeException e) {
             cabinetScopeStatusService.recordFailure(cabinetId, e.getCategory(), e.getMessage());
+            cabinetUpdateErrorService.recordError(cabinetId, CabinetUpdateErrorScope.STOCKS, e.getMessage());
             log.warn("Round-robin остатки: кабинет {} отключен из-за недостаточных прав WB API ({})",
                     cabinetId, e.getCategory().getDisplayName());
             state.finish();
             return;
         } catch (Exception e) {
+            cabinetUpdateErrorService.recordError(cabinetId, CabinetUpdateErrorScope.STOCKS,
+                    "nmID " + nmId + ": " + e.getMessage());
             log.warn("Round-robin остатки: ошибка для кабинета {}, nmID {}: {}",
                     cabinetId, nmId, e.getMessage());
         }

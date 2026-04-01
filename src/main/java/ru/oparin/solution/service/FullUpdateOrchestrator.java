@@ -6,6 +6,7 @@ import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.CabinetUpdateErrorScope;
 import ru.oparin.solution.model.Role;
 
 import java.time.LocalDate;
@@ -28,6 +29,7 @@ public class FullUpdateOrchestrator {
     private final ProductCardAnalyticsService productCardAnalyticsService;
     private final PromotionCalendarService promotionCalendarService;
     private final StocksRoundRobinOrchestrator stocksRoundRobinOrchestrator;
+    private final CabinetUpdateErrorService cabinetUpdateErrorService;
     @Qualifier("cabinetUpdateExecutor")
     private final Executor cabinetUpdateExecutor;
 
@@ -90,6 +92,7 @@ public class FullUpdateOrchestrator {
         } catch (Exception e) {
             log.error("Ошибка при полном обновлении кабинета (ID: {}, продавец: {}): {}",
                     cabinet.getId(), cabinet.getUser().getEmail(), e.getMessage());
+            cabinetUpdateErrorService.recordError(cabinet.getId(), CabinetUpdateErrorScope.MAIN, e.getMessage());
         } finally {
             Thread.currentThread().setName(prevName);
             MDC.remove("cabinetTag");

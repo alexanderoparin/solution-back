@@ -13,6 +13,7 @@ import ru.oparin.solution.dto.wb.WbWarehouseResponse;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.CabinetUpdateErrorScope;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.*;
@@ -36,6 +37,7 @@ public class AnalyticsScheduler {
     private final CabinetService cabinetService;
     private final FullUpdateOrchestrator fullUpdateOrchestrator;
     private final ProductCardAnalyticsService analyticsService;
+    private final CabinetUpdateErrorService cabinetUpdateErrorService;
     private final WbWarehousesApiClient warehousesApiClient;
     private final WbWarehouseService warehouseService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
@@ -258,6 +260,7 @@ public class AnalyticsScheduler {
             return true;
         } catch (UserException e) {
             log.warn("Кабинет (ID: {}) пропущен: {}", cabinet.getId(), e.getMessage());
+            cabinetUpdateErrorService.recordError(cabinet.getId(), CabinetUpdateErrorScope.MAIN, e.getMessage());
             return false;
         }
     }
@@ -315,6 +318,7 @@ public class AnalyticsScheduler {
         } catch (Exception e) {
             log.error("Ошибка при ручном обновлении данных для кабинета (ID: {}): {}",
                     cabinet.getId(), e.getMessage(), e);
+            cabinetUpdateErrorService.recordError(cabinet.getId(), CabinetUpdateErrorScope.MAIN, e.getMessage());
             throw e;
         }
     }
