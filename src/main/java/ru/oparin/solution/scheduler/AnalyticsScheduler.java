@@ -83,7 +83,12 @@ public class AnalyticsScheduler {
      */
     @Async("taskExecutor")
     public void runFullAnalyticsUpdateAsync() {
-        runFullAnalyticsUpdate();
+        runFullAnalyticsUpdateAsync(false);
+    }
+
+    @Async("taskExecutor")
+    public void runFullAnalyticsUpdateAsync(boolean includeStocks) {
+        fullUpdateOrchestrator.runFullUpdate(includeStocks);
     }
 
     /**
@@ -91,7 +96,12 @@ public class AnalyticsScheduler {
      */
     @Async("taskExecutor")
     public void runFullAnalyticsUpdateForManagerAsync(Long managerId) {
-        fullUpdateOrchestrator.runFullUpdateForManager(managerId);
+        runFullAnalyticsUpdateForManagerAsync(managerId, false);
+    }
+
+    @Async("taskExecutor")
+    public void runFullAnalyticsUpdateForManagerAsync(Long managerId, boolean includeStocks) {
+        fullUpdateOrchestrator.runFullUpdateForManager(managerId, includeStocks);
     }
 
     /**
@@ -220,6 +230,11 @@ public class AnalyticsScheduler {
      */
     @Transactional
     public void triggerManualUpdate(User seller, boolean skipIntervalCheck) {
+        triggerManualUpdate(seller, skipIntervalCheck, false);
+    }
+
+    @Transactional
+    public void triggerManualUpdate(User seller, boolean skipIntervalCheck, boolean includeStocks) {
         log.info("Ручной запуск обновления данных для продавца (ID: {}, email: {})",
                 seller.getId(), seller.getEmail());
 
@@ -247,6 +262,15 @@ public class AnalyticsScheduler {
                     cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
                     cabinetService.save(cabinet);
                     analyticsService.updateCardsAndLoadAnalytics(cabinet, period.from(), period.to());
+                    if (includeStocks) {
+                        try {
+                            analyticsService.validateStocksUpdateInterval(cabinet.getId());
+                            analyticsService.recordStocksUpdateTriggered(cabinet.getId());
+                            analyticsService.runStocksUpdateOnly(cabinet.getId());
+                        } catch (UserException e) {
+                            log.warn("Обновление остатков для кабинета (ID: {}) пропущено: {}", cabinet.getId(), e.getMessage());
+                        }
+                    }
                     started++;
                 } catch (UserException e) {
                     log.warn("Кабинет (ID: {}) пропущен: {}", cabinet.getId(), e.getMessage());
@@ -276,7 +300,7 @@ public class AnalyticsScheduler {
      * Вызов из UserController (селлер обновляет себя).
      */
     public void triggerManualUpdate(User seller) {
-        triggerManualUpdate(seller, false);
+        triggerManualUpdate(seller, false, false);
     }
 
     /**

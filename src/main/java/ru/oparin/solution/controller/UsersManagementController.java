@@ -88,7 +88,10 @@ public class UsersManagementController {
      * Доступно для ADMIN и MANAGER. Кулдаун: не чаще одного раза в 5 минут.
      */
     @PostMapping("/trigger-all-cabinets-update")
-    public ResponseEntity<?> triggerAllCabinetsUpdate(Authentication authentication) {
+    public ResponseEntity<?> triggerAllCabinetsUpdate(
+            @RequestParam(defaultValue = "false") boolean includeStocks,
+            Authentication authentication
+    ) {
         User currentUser = getCurrentUser(authentication);
         if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
@@ -106,19 +109,24 @@ public class UsersManagementController {
         }
 
         analyticsScheduler.recordAdminTriggered();
-        log.info("Ручной запуск полного обновления кабинетов: role={}, userId={}, email={}, scope={}",
+        log.info("Ручной запуск полного обновления кабинетов: role={}, userId={}, email={}, scope={}, includeStocks={}",
                 currentUser.getRole(), currentUser.getId(), currentUser.getEmail(),
-                currentUser.getRole() == Role.MANAGER ? "manager-owned-cabinets" : "all-cabinets");
+                currentUser.getRole() == Role.MANAGER ? "manager-owned-cabinets" : "all-cabinets",
+                includeStocks);
         if (currentUser.getRole() == Role.MANAGER) {
-            analyticsScheduler.runFullAnalyticsUpdateForManagerAsync(currentUser.getId());
+            analyticsScheduler.runFullAnalyticsUpdateForManagerAsync(currentUser.getId(), includeStocks);
         } else {
-            analyticsScheduler.runFullAnalyticsUpdateAsync();
+            analyticsScheduler.runFullAnalyticsUpdateAsync(includeStocks);
         }
         return ResponseEntity.accepted()
                 .body(MessageResponse.builder()
                         .message(currentUser.getRole() == Role.MANAGER
-                                ? "Полное обновление кабинетов ваших селлеров запущено в фоне."
-                                : "Полное обновление всех активных кабинетов запущено в фоне.")
+                                ? (includeStocks
+                                    ? "Полное обновление кабинетов ваших селлеров (включая остатки) запущено в фоне."
+                                    : "Полное обновление кабинетов ваших селлеров запущено в фоне.")
+                                : (includeStocks
+                                    ? "Полное обновление всех активных кабинетов (включая остатки) запущено в фоне."
+                                    : "Полное обновление всех активных кабинетов запущено в фоне."))
                         .build());
     }
 
@@ -235,6 +243,7 @@ public class UsersManagementController {
     @PostMapping("/{sellerId}/trigger-update")
     public ResponseEntity<MessageResponse> triggerSellerDataUpdate(
             @PathVariable Long sellerId,
+            @RequestParam(defaultValue = "false") boolean includeStocks,
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
@@ -267,15 +276,16 @@ public class UsersManagementController {
                             .build());
         }
 
-        log.info("Ручной запуск обновления данных по селлеру: initiatedByRole={}, initiatedById={}, initiatedByEmail={}, sellerId={}, sellerEmail={}",
-                currentUser.getRole(), currentUser.getId(), currentUser.getEmail(), seller.getId(), seller.getEmail());
+        log.info("Ручной запуск обновления данных по селлеру: initiatedByRole={}, initiatedById={}, initiatedByEmail={}, sellerId={}, sellerEmail={}, includeStocks={}",
+                currentUser.getRole(), currentUser.getId(), currentUser.getEmail(), seller.getId(), seller.getEmail(), includeStocks);
         
         boolean skipIntervalCheck = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER;
-        analyticsScheduler.triggerManualUpdate(seller, skipIntervalCheck);
+        analyticsScheduler.triggerManualUpdate(seller, skipIntervalCheck, includeStocks);
 
         return ResponseEntity.ok(MessageResponse.builder()
-                .message("Обновление данных запущено. Процесс выполняется в фоновом режиме. " +
-                        "Данные будут доступны через несколько минут.")
+                .message(includeStocks
+                        ? "Обновление данных (включая остатки) запущено. Процесс выполняется в фоновом режиме. Данные будут доступны через несколько минут."
+                        : "Обновление данных запущено. Процесс выполняется в фоновом режиме. Данные будут доступны через несколько минут.")
                 .build());
     }
 

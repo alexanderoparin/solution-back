@@ -87,8 +87,16 @@ public class ProductCardAnalyticsService {
      */
     @Transactional
     public void updateCabinetAnalyticsInTransaction(Cabinet cabinet, LocalDate dateFrom, LocalDate dateTo) {
+        updateCabinetAnalyticsInTransaction(cabinet, dateFrom, dateTo, false);
+    }
+
+    /**
+     * Обновление аналитики одного кабинета в одной транзакции c опцией фонового запуска остатков.
+     */
+    @Transactional
+    public void updateCabinetAnalyticsInTransaction(Cabinet cabinet, LocalDate dateFrom, LocalDate dateTo, boolean runStocksInBackground) {
         Cabinet managed = findManagedCabinet(cabinet.getId());
-        doUpdateCabinetAnalytics(managed, dateFrom, dateTo, false, false);
+        doUpdateCabinetAnalytics(managed, dateFrom, dateTo, false, runStocksInBackground);
     }
 
     /**

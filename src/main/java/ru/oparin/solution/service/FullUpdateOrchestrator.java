@@ -42,23 +42,32 @@ public class FullUpdateOrchestrator {
      * затем синхронизация акций календаря (своя транзакция). Кабинеты обрабатываются параллельно.
      */
     public void runFullUpdate() {
+        runFullUpdate(false);
+    }
+
+    public void runFullUpdate(boolean includeStocks) {
         List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
-        runFullUpdateForCabinets(cabinets, "всем кабинетам");
+        runFullUpdateForCabinets(cabinets, "всем кабинетам", includeStocks);
     }
 
     /**
      * Полное обновление только по кабинетам селлеров конкретного менеджера.
      */
     public void runFullUpdateForManager(Long managerId) {
-        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUserAndOwnerId(Role.SELLER, managerId);
-        runFullUpdateForCabinets(cabinets, "кабинетам менеджера " + managerId);
+        runFullUpdateForManager(managerId, false);
     }
 
-    private void runFullUpdateForCabinets(List<Cabinet> sourceCabinets, String scopeLabel) {
+    public void runFullUpdateForManager(Long managerId, boolean includeStocks) {
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUserAndOwnerId(Role.SELLER, managerId);
+        runFullUpdateForCabinets(cabinets, "кабинетам менеджера " + managerId, includeStocks);
+    }
+
+    private void runFullUpdateForCabinets(List<Cabinet> sourceCabinets, String scopeLabel, boolean includeStocks) {
         List<Cabinet> cabinets = sourceCabinets.stream()
                 .sorted(Comparator.comparing(Cabinet::getLastDataUpdateAt, Comparator.nullsFirst(Comparator.naturalOrder())))
                 .toList();
-        log.info("Запуск полного обновления по {}. Найдено кабинетов с API-ключом: {}", scopeLabel, cabinets.size());
+        log.info("Запуск полного обновления по {}. Найдено кабинетов с API-ключом: {}, includeStocks={}",
+                scopeLabel, cabinets.size(), includeStocks);
 
         if (cabinets.isEmpty()) {
             log.info("Кабинетов с ключом не найдено, обновление пропущено");
@@ -75,7 +84,7 @@ public class FullUpdateOrchestrator {
                     try {
                         Thread.currentThread().setName("full-update-cabinet-" + cabinet.getId());
                         MDC.put("cabinetTag", "[cabinet:" + cabinet.getId() + "]");
-                        productCardAnalyticsService.updateCabinetAnalyticsInTransaction(cabinet, from, to);
+                        productCardAnalyticsService.updateCabinetAnalyticsInTransaction(cabinet, from, to, includeStocks);
                         promotionCalendarService.syncPromotionsForCabinet(cabinet);
                     } catch (Exception e) {
                         log.error("Ошибка при полном обновлении кабинета (ID: {}, продавец: {}): {}",
