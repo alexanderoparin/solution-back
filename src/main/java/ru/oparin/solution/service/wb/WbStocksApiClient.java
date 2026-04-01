@@ -74,8 +74,8 @@ public class WbStocksApiClient extends AbstractWbApiClient {
             } catch (HttpClientErrorException e) {
                 if (e.getStatusCode().value() == 429 && attempt < maxRetries) {
                     log429Metric();
-                    log.warn("Получен 429 Too Many Requests (попытка {}/{}). Ожидание {} мс перед повторной попыткой...",
-                            attempt, maxRetries, retryDelayMs429);
+                    log.warn("Получен 429 Too Many Requests для nmID={} (попытка {}/{}). Ожидание {} мс перед повторной попыткой...",
+                            request.getNmID(), attempt, maxRetries, retryDelayMs429);
                     sleep(retryDelayMs429);
                     continue;
                 }
@@ -85,7 +85,8 @@ public class WbStocksApiClient extends AbstractWbApiClient {
             } catch (RestClientException e) {
                 if (e.getMessage() != null && e.getMessage().contains("429") && attempt < maxRetries) {
                     log429Metric();
-                    log.warn("Ошибка 429 при попытке {}/{}. Повтор через {} мс...", attempt, maxRetries, retryDelayMs429);
+                    log.warn("Ошибка 429 для nmID={} при попытке {}/{}. Повтор через {} мс...",
+                            request.getNmID(), attempt, maxRetries, retryDelayMs429);
                     sleep(retryDelayMs429);
                     continue;
                 }
