@@ -33,8 +33,7 @@ public class WbEventsProperties {
     private int defaultBatchSize = 50;
 
     /**
-     * Лимиты вычитки по типам событий.
-     * Ключ = имя enum WbApiEventType, значение = максимальное количество событий типа за один poll.
+     * Лимит событий данного типа за один poll: отдельный SQL-запрос на тип + верхняя граница после дедупа (кабинет+тип).
      */
     private Map<String, Integer> batchSizeByType = new HashMap<>();
 }

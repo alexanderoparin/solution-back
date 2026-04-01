@@ -33,8 +33,7 @@ public class WbApiEventDispatcher {
     @Scheduled(fixedDelayString = "${app.wb-events.poll-delay-ms:3000}")
     @SchedulerLock(name = "wbApiEventDispatcherPoll", lockAtLeastFor = "PT1S", lockAtMostFor = "PT2M")
     public void pollAndExecute() {
-        int batchSize = resolveReadBatchSize();
-        List<WbApiEvent> events = eventService.findDueEvents(batchSize);
+        List<WbApiEvent> events = eventService.findDueEvents();
         if (events.isEmpty()) {
             return;
         }
@@ -45,6 +44,9 @@ public class WbApiEventDispatcher {
         }
 
         List<WbApiEvent> selected = applyPerTypeBatchLimits(new ArrayList<>(uniqueByCabinetAndType.values()));
+        if (selected.isEmpty()) {
+            return;
+        }
 
         List<CompletableFuture<Void>> futures = selected.stream()
                 .map(event -> CompletableFuture.runAsync(() -> executeSingle(event), cabinetUpdateExecutor))
@@ -83,14 +85,6 @@ public class WbApiEventDispatcher {
         } finally {
             MDC.remove("cabinetTag");
         }
-    }
-
-    private int resolveReadBatchSize() {
-        int sum = wbEventsProperties.getBatchSizeByType().values().stream()
-                .filter(v -> v != null && v > 0)
-                .mapToInt(Integer::intValue)
-                .sum();
-        return sum > 0 ? sum : wbEventsProperties.getDefaultBatchSize();
     }
 
     private List<WbApiEvent> applyPerTypeBatchLimits(List<WbApiEvent> events) {
