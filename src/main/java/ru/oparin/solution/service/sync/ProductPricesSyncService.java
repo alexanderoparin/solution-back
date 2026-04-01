@@ -123,6 +123,18 @@ public class ProductPricesSyncService {
         }
     }
 
+    /**
+     * Загружает цены для конкретного батча nmIds одним HTTP-запросом.
+     */
+    public void loadPricesBatch(Cabinet cabinet, String apiKey, LocalDate date, List<Long> nmIdsBatch) {
+        if (nmIdsBatch == null || nmIdsBatch.isEmpty()) {
+            return;
+        }
+        ProductPricesRequest request = ProductPricesRequest.builder().nmList(nmIdsBatch).build();
+        ProductPricesResponse response = productsApiClient.getProductPrices(apiKey, request);
+        productPriceService.savePrices(response, date, cabinet);
+    }
+
     private List<Long> getDistinctNmIdsForCabinet(Long cabinetId) {
         List<ProductCard> productCards = productCardRepository.findByCabinet_Id(cabinetId);
         return productCards.stream()

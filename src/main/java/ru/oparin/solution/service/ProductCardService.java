@@ -48,6 +48,11 @@ public class ProductCardService {
         return productCardRepository.findByCabinet_Id(cabinetId);
     }
 
+    @Transactional(readOnly = true)
+    public Optional<ProductCard> findByNmIdAndCabinetId(Long nmId, Long cabinetId) {
+        return productCardRepository.findByNmIdAndCabinet_Id(nmId, cabinetId);
+    }
+
     /**
      * Сохраняет или обновляет карточки товаров из ответа WB API для указанного кабинета.
      */

@@ -100,6 +100,8 @@ wb:
     max-retries-429: 5
     retry-delay-ms-429: 20000
   promotion:
+    campaigns-batch-size: 50
+    statistics-batch-size: 50
     adverts-delay-ms: 200
     statistics-delay-ms: 20000
     max-retries-429: 5
@@ -118,6 +120,23 @@ app:
     task-queue-capacity: 500
     cabinet-queue-capacity: 100
     user-deletion-queue-capacity: 50
+  wb-events:
+    poll-delay-ms: 2000
+    stuck-check-delay-ms: 30000
+    running-timeout-minutes: 15
+    default-batch-size: 50
+    batch-size-by-type:
+      CONTENT_CARDS_LIST_PAGE: 20
+      ANALYTICS_SALES_FUNNEL_NMID: 30
+      PRICES_PRODUCTS_BATCH: 12
+      PRICES_SPP_ORDERS: 8
+      PROMOTION_COUNT: 12
+      PROMOTION_ADVERTS_BATCH: 15
+      PROMOTION_STATS_BATCH: 10
+      FEEDBACKS_SYNC_CABINET: 15
+      PROMOTION_CALENDAR_SYNC_CABINET: 15
+      WAREHOUSES_SYNC_CABINET: 12
+      STOCKS_BY_NMID: 20
   uploads:
     directory: /app/uploads
     max-file-size: 31457280  # 30 MB по умолчанию

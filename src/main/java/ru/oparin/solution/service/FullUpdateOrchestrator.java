@@ -2,23 +2,18 @@ package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.CabinetUpdateErrorScope;
 import ru.oparin.solution.model.Role;
+import ru.oparin.solution.service.events.WbApiEventService;
 
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 
 /**
  * Единая точка входа для полного обновления по всем кабинетам (как ночной шедулер).
- * Только оркестрирует: для каждого кабинета вызывает свой сервис в своей транзакции.
- * Не выполняет бизнес-логику и не открывает транзакции сам.
+ * Только оркестрирует: создает события CONTENT в очереди WB API.
  */
 @Service
 @Slf4j
@@ -26,17 +21,8 @@ import java.util.concurrent.Executor;
 public class FullUpdateOrchestrator {
 
     private final CabinetService cabinetService;
-    private final ProductCardAnalyticsService productCardAnalyticsService;
-    private final PromotionCalendarService promotionCalendarService;
-    private final StocksRoundRobinOrchestrator stocksRoundRobinOrchestrator;
-    private final CabinetUpdateErrorService cabinetUpdateErrorService;
-    @Qualifier("cabinetUpdateExecutor")
-    private final Executor cabinetUpdateExecutor;
+    private final WbApiEventService wbApiEventService;
 
-    /**
-     * Полное обновление по всем кабинетам с API-ключом: для каждого кабинета — обновление аналитики (своя транзакция),
-     * затем синхронизация акций календаря (своя транзакция). Кабинеты обрабатываются параллельно.
-     */
     public void runFullUpdate() {
         runFullUpdate(false);
     }
@@ -67,35 +53,15 @@ public class FullUpdateOrchestrator {
         LocalDate from = to.minusDays(13);
         log.info("Период для загрузки аналитики: {} - {}", from, to);
 
-        List<CompletableFuture<Void>> futures = cabinets.stream()
-                .map(cabinet -> CompletableFuture.runAsync(
-                        () -> runCabinetMainUpdate(cabinet, from, to),
-                        cabinetUpdateExecutor
-                ))
-                .toList();
-
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-        log.info("Основное обновление завершено по {} кабинетам.", cabinets.size());
-        if (includeStocks) {
-            stocksRoundRobinOrchestrator.runStocksRoundRobin(cabinets, scopeLabel);
-        }
-        log.info("Завершено полное обновление по {} кабинетам.", cabinets.size());
+        cabinets.forEach(cabinet -> wbApiEventService.enqueueInitialContentEvent(
+                cabinet.getId(),
+                from,
+                to,
+                includeStocks,
+                "SCHEDULED"
+        ));
+        log.info("Созданы CONTENT события для {} кабинетов (includeStocks={}). Дальнейшее выполнение идет через event dispatcher.",
+                cabinets.size(), includeStocks);
     }
 
-    private void runCabinetMainUpdate(Cabinet cabinet, LocalDate from, LocalDate to) {
-        String prevName = Thread.currentThread().getName();
-        try {
-            Thread.currentThread().setName("full-update-cabinet-" + cabinet.getId());
-            MDC.put("cabinetTag", "[cabinet:" + cabinet.getId() + "]");
-            productCardAnalyticsService.updateCabinetAnalyticsInTransaction(cabinet, from, to, false);
-            promotionCalendarService.syncPromotionsForCabinet(cabinet);
-        } catch (Exception e) {
-            log.error("Ошибка при полном обновлении кабинета (ID: {}, продавец: {}): {}",
-                    cabinet.getId(), cabinet.getUser().getEmail(), e.getMessage());
-            cabinetUpdateErrorService.recordError(cabinet.getId(), CabinetUpdateErrorScope.MAIN, e.getMessage());
-        } finally {
-            Thread.currentThread().setName(prevName);
-            MDC.remove("cabinetTag");
-        }
-    }
 }

@@ -17,9 +17,14 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
-import ru.oparin.solution.service.*;
-import ru.oparin.solution.service.sync.FeedbacksSyncService;
+import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.ProductCardAnalyticsService;
+import ru.oparin.solution.service.UserService;
+import ru.oparin.solution.service.WbApiKeyService;
+import ru.oparin.solution.service.events.WbApiEventService;
+import ru.oparin.solution.service.events.payload.MainStepPayload;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -41,8 +46,7 @@ public class UsersManagementController {
     private final WbApiKeyService wbApiKeyService;
     private final AnalyticsScheduler analyticsScheduler;
     private final ProductCardAnalyticsService productCardAnalyticsService;
-    private final PromotionCalendarService promotionCalendarService;
-    private final FeedbacksSyncService feedbacksSyncService;
+    private final WbApiEventService wbApiEventService;
 
     /**
      * Постраничное получение списка пользователей, которыми может управлять текущий пользователь.
@@ -370,8 +374,8 @@ public class UsersManagementController {
         cabinetService.validateCabinetAccessForStocksUpdate(cabinetId, currentUser);
         productCardAnalyticsService.validateStocksUpdateInterval(cabinetId);
         productCardAnalyticsService.recordStocksUpdateTriggered(cabinetId);
-        productCardAnalyticsService.runStocksUpdateOnly(cabinetId);
-        return okMessageResponse("Обновление остатков запущено. Данные обновятся в фоне в течение нескольких минут.");
+        wbApiEventService.enqueueAllStocksByNmIdForCabinet(cabinetId, "MANUAL_STOCKS_ONLY");
+        return okMessageResponse("Обновление остатков поставлено в очередь событий WB API.");
     }
 
     /**
@@ -387,8 +391,17 @@ public class UsersManagementController {
         if (!isAdmin(currentUser)) {
             return forbiddenMessageResponse(MESSAGE_ADMIN_ONLY);
         }
-        promotionCalendarService.syncPromotionsForAllCabinets();
-        return okMessageResponse("Обновление данных по акциям календаря запущено и выполнено.");
+        LocalDate d = LocalDate.now();
+        MainStepPayload payload = MainStepPayload.builder()
+                .dateFrom(d)
+                .dateTo(d)
+                .includeStocks(false)
+                .build();
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
+        for (Cabinet c : cabinets) {
+            wbApiEventService.enqueuePromotionCalendarSyncCabinetEvent(c.getId(), payload, "ADMIN_BULK_CALENDAR");
+        }
+        return okMessageResponse("Обновление календаря акций поставлено в очередь для " + cabinets.size() + " кабинетов.");
     }
 
     /**
@@ -404,8 +417,17 @@ public class UsersManagementController {
         if (!isAdmin(currentUser)) {
             return forbiddenMessageResponse(MESSAGE_ADMIN_ONLY);
         }
-        feedbacksSyncService.syncFeedbacksForAllCabinets();
-        return okMessageResponse("Обновление рейтинга и отзывов по кабинетам запущено и выполнено.");
+        LocalDate d = LocalDate.now();
+        MainStepPayload payload = MainStepPayload.builder()
+                .dateFrom(d)
+                .dateTo(d)
+                .includeStocks(false)
+                .build();
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
+        for (Cabinet c : cabinets) {
+            wbApiEventService.enqueueFeedbacksSyncCabinetEvent(c.getId(), payload, "ADMIN_BULK_FEEDBACKS");
+        }
+        return okMessageResponse("Синхронизация отзывов поставлена в очередь для " + cabinets.size() + " кабинетов.");
     }
 
     /**

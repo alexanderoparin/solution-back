@@ -2,17 +2,20 @@ package ru.oparin.solution.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.wb.*;
-import ru.oparin.solution.service.*;
+import ru.oparin.solution.service.CardsListRequestBuilder;
+import ru.oparin.solution.service.ProductCardService;
+import ru.oparin.solution.service.ProductStocksService;
+import ru.oparin.solution.service.SellerContextService;
+import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.wb.WbCommonApiClient;
 import ru.oparin.solution.service.wb.WbContentApiClient;
-import ru.oparin.solution.service.wb.WbWarehousesApiClient;
 import ru.oparin.solution.validation.AnalyticsPeriodValidator;
 
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -27,9 +30,7 @@ public class WbApiController {
     private final WbCommonApiClient commonApiClient;
     private final SellerContextService sellerContextService;
     private final ProductCardService productCardService;
-    private final ProductCardAnalyticsService analyticsService;
-    private final WbWarehousesApiClient warehousesApiClient;
-    private final WbWarehouseService warehouseService;
+    private final WbApiEventService wbApiEventService;
     private final ProductStocksService stocksService;
 
     @PostMapping("/cards/list")
@@ -104,14 +105,17 @@ public class WbApiController {
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
         
         AnalyticsPeriodValidator.validate(request.getDateFrom(), request.getDateTo());
-        
-        analyticsService.updateCardsAndLoadAnalytics(
-                context.user(),
+
+        wbApiEventService.enqueueInitialContentEvent(
+                context.cabinet().getId(),
                 request.getDateFrom(),
-                request.getDateTo()
+                request.getDateTo(),
+                false,
+                "SELLER_WB_API"
         );
-        
-        return ResponseEntity.ok(Map.of("message", "Обновление карточек и загрузка аналитики запущено"));
+
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(Map.of("message", "Обновление поставлено в очередь событий WB API"));
     }
 
     @GetMapping("/warehouses/update")
@@ -120,11 +124,11 @@ public class WbApiController {
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
-        
-        List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(context.apiKey());
-        warehouseService.saveOrUpdateWarehouses(warehouses);
-        
-        return ResponseEntity.ok(Map.of("message", "Обновление складов WB завершено"));
+
+        wbApiEventService.enqueueWarehousesSyncCabinetEvent(context.cabinet().getId(), "SELLER_WB_API");
+
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(Map.of("message", "Обновление складов WB поставлено в очередь событий"));
     }
 
     @PostMapping("/stocks/{nmId}")

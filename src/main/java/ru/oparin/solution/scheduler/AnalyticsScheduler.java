@@ -2,29 +2,25 @@ package ru.oparin.solution.scheduler;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.HttpClientErrorException;
-import ru.oparin.solution.dto.wb.WbWarehouseResponse;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetUpdateErrorScope;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.service.*;
-import ru.oparin.solution.service.wb.WbApiCategory;
-import ru.oparin.solution.service.wb.WbWarehousesApiClient;
+import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.CabinetUpdateErrorService;
+import ru.oparin.solution.service.FullUpdateOrchestrator;
+import ru.oparin.solution.service.ProductCardAnalyticsService;
+import ru.oparin.solution.service.events.WbApiEventService;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 
 /**
  * Планировщик задач для автоматической загрузки аналитики.
@@ -38,11 +34,7 @@ public class AnalyticsScheduler {
     private final FullUpdateOrchestrator fullUpdateOrchestrator;
     private final ProductCardAnalyticsService analyticsService;
     private final CabinetUpdateErrorService cabinetUpdateErrorService;
-    private final WbWarehousesApiClient warehousesApiClient;
-    private final WbWarehouseService warehouseService;
-    private final CabinetScopeStatusService cabinetScopeStatusService;
-    @Qualifier("cabinetUpdateExecutor")
-    private final Executor cabinetUpdateExecutor;
+    private final WbApiEventService wbApiEventService;
 
     /**
      * Автоматическая ночная загрузка аналитики:
@@ -77,7 +69,7 @@ public class AnalyticsScheduler {
      */
     @Scheduled(cron = "0 0 0 * * ?")
     public void updateWbWarehouses() {
-        log.info("Запуск автоматического обновления складов WB");
+        log.info("Запуск автоматического обновления складов WB (очередь событий)");
 
         List<Cabinet> cabinetsWithKey = findCabinetsWithApiKey();
         if (cabinetsWithKey.isEmpty()) {
@@ -85,37 +77,10 @@ public class AnalyticsScheduler {
             return;
         }
 
-        List<CompletableFuture<Void>> futures = cabinetsWithKey.stream()
-                .map(cabinet -> {
-                    long cabinetId = cabinet.getId();
-                    String apiKey = cabinet.getApiKey();
-                    String userEmail = cabinet.getUser() != null ? cabinet.getUser().getEmail() : null;
-                    return CompletableFuture.runAsync(() -> updateWarehousesForCabinet(cabinetId, apiKey, userEmail), cabinetUpdateExecutor);
-                })
-                .toList();
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-    }
-
-    private void updateWarehousesForCabinet(long cabinetId, String apiKey, String userEmail) {
-        try {
-            if (apiKey == null || apiKey.isBlank()) {
-                return;
-            }
-            log.info("Обновление складов WB для кабинета (ID: {}, продавец: {})", cabinetId, userEmail);
-
-            List<WbWarehouseResponse> warehouses = warehousesApiClient.getWbOffices(apiKey);
-            warehouseService.saveOrUpdateWarehouses(warehouses);
-            cabinetScopeStatusService.recordSuccess(cabinetId, WbApiCategory.MARKETPLACE);
-
-            log.info("Завершено обновление складов WB для кабинета (ID: {})", cabinetId);
-        } catch (WbApiUnauthorizedScopeException e) {
-            cabinetScopeStatusService.recordFailure(cabinetId, e.getCategory(), e.getMessage());
-            log.warn("Не удалось обновить склады с кабинета {}, нет доступа к категории WB API: {}", cabinetId, e.getCategory().getDisplayName());
-        } catch (HttpClientErrorException ex) {
-            log.warn("Не удалось обновить склады с кабинета {}, получили код ошибки {}", cabinetId, ex.getStatusCode());
-        } catch (Exception e) {
-            log.warn("Не удалось обновить склады WB для кабинета {}: {}", cabinetId, e.getMessage());
+        for (Cabinet cabinet : cabinetsWithKey) {
+            wbApiEventService.enqueueWarehousesSyncCabinetEvent(cabinet.getId(), "SCHEDULED_WAREHOUSES");
         }
+        log.info("В очередь поставлено {} событий WAREHOUSES_SYNC_CABINET", cabinetsWithKey.size());
     }
 
     /**
@@ -253,25 +218,18 @@ public class AnalyticsScheduler {
             }
             cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
             cabinetService.save(cabinet);
-            analyticsService.updateCardsAndLoadAnalytics(cabinet, period.from(), period.to());
-            if (includeStocks) {
-                tryRunStocksUpdate(cabinet.getId());
-            }
+            wbApiEventService.enqueueInitialContentEvent(
+                    cabinet.getId(),
+                    period.from(),
+                    period.to(),
+                    includeStocks,
+                    "MANUAL_SELLER"
+            );
             return true;
         } catch (UserException e) {
             log.warn("Кабинет (ID: {}) пропущен: {}", cabinet.getId(), e.getMessage());
             cabinetUpdateErrorService.recordError(cabinet.getId(), CabinetUpdateErrorScope.MAIN, e.getMessage());
             return false;
-        }
-    }
-
-    private void tryRunStocksUpdate(Long cabinetId) {
-        try {
-            analyticsService.validateStocksUpdateInterval(cabinetId);
-            analyticsService.recordStocksUpdateTriggered(cabinetId);
-            analyticsService.runStocksUpdateOnly(cabinetId);
-        } catch (UserException e) {
-            log.warn("Обновление остатков для кабинета (ID: {}) пропущено: {}", cabinetId, e.getMessage());
         }
     }
 
@@ -310,9 +268,15 @@ public class AnalyticsScheduler {
             cabinetService.save(cabinet);
 
             DateRange period = calculateLastTwoWeeksPeriod();
-            analyticsService.updateCardsAndLoadAnalytics(cabinet, period.from(), period.to());
+            wbApiEventService.enqueueInitialContentEvent(
+                    cabinet.getId(),
+                    period.from(),
+                    period.to(),
+                    false,
+                    "MANUAL_CABINET"
+            );
 
-            log.info("Ручное обновление данных для кабинета (ID: {}) успешно запущено", cabinet.getId());
+            log.info("Ручное обновление данных для кабинета (ID: {}) поставлено в очередь событий", cabinet.getId());
         } catch (UserException e) {
             throw e;
         } catch (Exception e) {

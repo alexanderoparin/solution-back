@@ -10,12 +10,14 @@ import ru.oparin.solution.dto.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Plan;
+import ru.oparin.solution.model.WbApiEventStatus;
+import ru.oparin.solution.model.WbApiEventType;
 import ru.oparin.solution.repository.PlanRepository;
 import ru.oparin.solution.repository.SubscriptionRepository;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.AdminSubscriptionService;
 import ru.oparin.solution.service.CabinetService;
-import ru.oparin.solution.service.ProductCardAnalyticsService;
+import ru.oparin.solution.service.events.WbApiEventService;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -33,32 +35,32 @@ import java.util.stream.Collectors;
 public class AdminController {
 
     private final CabinetService cabinetService;
-    private final ProductCardAnalyticsService productCardAnalyticsService;
     private final AnalyticsScheduler analyticsScheduler;
     private final Executor taskExecutor;
     private final PlanRepository planRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final AdminSubscriptionService adminSubscriptionService;
+    private final WbApiEventService wbApiEventService;
 
     public AdminController(CabinetService cabinetService,
-                           ProductCardAnalyticsService productCardAnalyticsService,
                            AnalyticsScheduler analyticsScheduler,
                            @Qualifier("taskExecutor") Executor taskExecutor,
                            PlanRepository planRepository,
                            SubscriptionRepository subscriptionRepository,
-                           AdminSubscriptionService adminSubscriptionService) {
+                           AdminSubscriptionService adminSubscriptionService,
+                           WbApiEventService wbApiEventService) {
         this.cabinetService = cabinetService;
-        this.productCardAnalyticsService = productCardAnalyticsService;
         this.analyticsScheduler = analyticsScheduler;
         this.taskExecutor = taskExecutor;
         this.planRepository = planRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.adminSubscriptionService = adminSubscriptionService;
+        this.wbApiEventService = wbApiEventService;
     }
 
     /**
      * Ручной запуск обновления карточек и загрузки аналитики для кабинета.
-     * Задача выполняется асинхронно (taskExecutor). Ограничение 6 часов не применяется.
+     * Создаётся цепочка событий WB API (как при ночном обновлении). Ограничение 6 часов не применяется.
      *
      * @param cabinetId ID кабинета (обязательно)
      * @param dateFrom  дата начала периода (необязательно, по умолчанию 14 дней назад)
@@ -79,11 +81,11 @@ public class AdminController {
             throw new UserException("dateFrom не может быть позже dateTo", HttpStatus.BAD_REQUEST);
         }
 
-        productCardAnalyticsService.updateCardsAndLoadAnalytics(cabinet, from, to);
+        wbApiEventService.enqueueInitialContentEvent(cabinet.getId(), from, to, false, "ADMIN_MANUAL_CABINET");
 
         return ResponseEntity.accepted()
                 .body(Map.of(
-                        "message", "Обновление карточек и загрузка аналитики запущено",
+                        "message", "Обновление поставлено в очередь событий WB API",
                         "cabinetId", String.valueOf(cabinetId),
                         "dateFrom", from.toString(),
                         "dateTo", to.toString()
@@ -125,6 +127,39 @@ public class AdminController {
                 "canTrigger", remainingSeconds == 0,
                 "nextAvailableInSeconds", remainingSeconds
         ));
+    }
+
+    @GetMapping("/wb-events")
+    public ResponseEntity<PageResponse<WbApiEventDto>> getWbEvents(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) WbApiEventStatus status,
+            @RequestParam(required = false) WbApiEventType eventType,
+            @RequestParam(required = false) Long cabinetId
+    ) {
+        return ResponseEntity.ok(wbApiEventService.getEventsPage(page, size, status, eventType, cabinetId));
+    }
+
+    @GetMapping("/wb-events/{eventId}")
+    public ResponseEntity<WbApiEventDto> getWbEvent(@PathVariable Long eventId) {
+        return ResponseEntity.ok(wbApiEventService.getEventById(eventId));
+    }
+
+    @GetMapping("/wb-events/stats")
+    public ResponseEntity<WbApiEventStatsDto> getWbEventsStats() {
+        return ResponseEntity.ok(wbApiEventService.getStats());
+    }
+
+    @PostMapping("/wb-events/{eventId}/retry")
+    public ResponseEntity<Map<String, String>> retryWbEvent(@PathVariable Long eventId) {
+        wbApiEventService.retryNow(eventId);
+        return ResponseEntity.ok(Map.of("message", "Событие отправлено на повторное выполнение"));
+    }
+
+    @PostMapping("/wb-events/{eventId}/cancel")
+    public ResponseEntity<Map<String, String>> cancelWbEvent(@PathVariable Long eventId) {
+        wbApiEventService.cancel(eventId);
+        return ResponseEntity.ok(Map.of("message", "Событие отменено"));
     }
 
     // ————— Управление планами —————

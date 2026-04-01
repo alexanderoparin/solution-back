@@ -24,6 +24,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -36,8 +37,10 @@ import java.util.stream.Collectors;
 public class PromotionCampaignSyncService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final int STATISTICS_BATCH_SIZE = 50;
-    private static final int CAMPAIGNS_BATCH_SIZE = 50;
+    @Value("${wb.promotion.statistics-batch-size:50}")
+    private int statisticsBatchSize;
+    @Value("${wb.promotion.campaigns-batch-size:50}")
+    private int campaignsBatchSize;
     @Value("${wb.promotion.statistics-delay-ms}")
     private int statisticsApiCallDelayMs;
     @Value("${wb.promotion.adverts-delay-ms}")
@@ -47,6 +50,78 @@ public class PromotionCampaignSyncService {
     private final PromotionCampaignService promotionCampaignService;
     private final PromotionCampaignStatisticsService campaignStatisticsService;
     private final PromotionCampaignRepository campaignRepository;
+
+    public PromotionCountResponse fetchPromotionCount(String apiKey) {
+        return promotionApiClient.getPromotionCount(apiKey);
+    }
+
+    public List<Long> listCampaignIdsFromCount(PromotionCountResponse countResponse) {
+        CampaignIdsByType campaignsByType = separateCampaignsByType(countResponse);
+        List<Long> all = new ArrayList<>();
+        all.addAll(campaignsByType.type8Ids());
+        all.addAll(campaignsByType.type9Ids());
+        return all;
+    }
+
+    /**
+     * Одна страница GET /advert/v2/adverts и сохранение в БД (один HTTP-запрос).
+     */
+    public void loadAndSaveAdvertsBatch(Cabinet cabinet, String apiKey, List<Long> batchIds) {
+        PromotionAdvertsResponse batchResponse = promotionApiClient.getAdvertsV2(apiKey, batchIds);
+        if (batchResponse != null && batchResponse.getAdverts() != null && !batchResponse.getAdverts().isEmpty()) {
+            promotionCampaignService.saveOrUpdateCampaigns(
+                    PromotionAdvertsResponse.builder().adverts(batchResponse.getAdverts()).build(),
+                    cabinet
+            );
+        }
+    }
+
+    /**
+     * Один POST fullstats и сохранение (один HTTP-запрос).
+     */
+    public void loadAndSaveStatisticsBatch(
+            User seller,
+            String apiKey,
+            List<Long> batchIds,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+        String dateFromStr = dateFrom.format(DATE_FORMATTER);
+        String dateToStr = dateTo.format(DATE_FORMATTER);
+        PromotionFullStatsRequest request = PromotionFullStatsRequest.builder()
+                .advertId(batchIds)
+                .dateFrom(dateFromStr)
+                .dateTo(dateToStr)
+                .build();
+        PromotionFullStatsResponse batchResponse = promotionApiClient.getPromotionFullStats(apiKey, request);
+        if (batchResponse != null && batchResponse.getAdverts() != null && !batchResponse.getAdverts().isEmpty()) {
+            campaignStatisticsService.saveOrUpdateStatistics(
+                    PromotionFullStatsResponse.builder().adverts(batchResponse.getAdverts()).build(),
+                    seller
+            );
+        }
+    }
+
+    /**
+     * Кампании кабинета, для которых ещё не хватает статистики за период (по данным БД).
+     */
+    public List<Long> listCampaignIdsNeedingStatisticsForPeriod(Long cabinetId, LocalDate dateFrom, LocalDate dateTo) {
+        List<Long> ids = campaignRepository.findByCabinet_Id(cabinetId).stream()
+                .map(PromotionCampaign::getAdvertId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        List<Long> nonFinished = filterNonFinishedCampaigns(cabinetId, ids);
+        return filterCampaignsNeedingStatistics(nonFinished, dateFrom, dateTo);
+    }
+
+    public int getCampaignsBatchSize() {
+        return campaignsBatchSize;
+    }
+
+    public int getStatisticsBatchSize() {
+        return statisticsBatchSize;
+    }
 
     /**
      * Обновляет список кампаний кабинета (типы 8 и 9) и сохраняет в БД.
@@ -199,15 +274,15 @@ public class PromotionCampaignSyncService {
      */
     private List<PromotionAdvertsResponse.Campaign> fetchAdvertsV2InBatches(String apiKey, List<Long> campaignIds) {
         List<PromotionAdvertsResponse.Campaign> allCampaigns = new ArrayList<>();
-        int totalBatches = (campaignIds.size() + CAMPAIGNS_BATCH_SIZE - 1) / CAMPAIGNS_BATCH_SIZE;
+        int totalBatches = (campaignIds.size() + campaignsBatchSize - 1) / campaignsBatchSize;
 
         log.info("Загрузка детальной информации о {} кампаниях (v2) батчами по {} (всего батчей: {})",
-                campaignIds.size(), CAMPAIGNS_BATCH_SIZE, totalBatches);
+                campaignIds.size(), campaignsBatchSize, totalBatches);
 
-        for (int i = 0; i < campaignIds.size(); i += CAMPAIGNS_BATCH_SIZE) {
-            int endIndex = Math.min(i + CAMPAIGNS_BATCH_SIZE, campaignIds.size());
+        for (int i = 0; i < campaignIds.size(); i += campaignsBatchSize) {
+            int endIndex = Math.min(i + campaignsBatchSize, campaignIds.size());
             List<Long> batch = campaignIds.subList(i, endIndex);
-            int currentBatch = (i / CAMPAIGNS_BATCH_SIZE) + 1;
+            int currentBatch = (i / campaignsBatchSize) + 1;
 
             try {
                 log.info("Загрузка батча {}/{}: {} кампаний", currentBatch, totalBatches, batch.size());
@@ -237,17 +312,17 @@ public class PromotionCampaignSyncService {
             LocalDate dateTo
     ) {
         List<PromotionFullStatsResponse.CampaignStats> allStats = new ArrayList<>();
-        int totalBatches = (campaignIds.size() + STATISTICS_BATCH_SIZE - 1) / STATISTICS_BATCH_SIZE;
+        int totalBatches = (campaignIds.size() + statisticsBatchSize - 1) / statisticsBatchSize;
         String dateFromStr = dateFrom.format(DATE_FORMATTER);
         String dateToStr = dateTo.format(DATE_FORMATTER);
 
         log.info("Загрузка статистики для {} кампаний батчами по {} (всего батчей: {})",
-                campaignIds.size(), STATISTICS_BATCH_SIZE, totalBatches);
+                campaignIds.size(), statisticsBatchSize, totalBatches);
 
-        for (int i = 0; i < campaignIds.size(); i += STATISTICS_BATCH_SIZE) {
-            int endIndex = Math.min(i + STATISTICS_BATCH_SIZE, campaignIds.size());
+        for (int i = 0; i < campaignIds.size(); i += statisticsBatchSize) {
+            int endIndex = Math.min(i + statisticsBatchSize, campaignIds.size());
             List<Long> batch = campaignIds.subList(i, endIndex);
-            int currentBatch = (i / STATISTICS_BATCH_SIZE) + 1;
+            int currentBatch = (i / statisticsBatchSize) + 1;
 
             try {
                 log.info("Загрузка статистики батча {}/{}: {} кампаний", currentBatch, totalBatches, batch.size());

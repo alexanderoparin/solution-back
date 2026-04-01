@@ -59,7 +59,7 @@ public class ProductCardAnalyticsLoadService {
         return new ProcessingResult(successCount, errorCount);
     }
 
-    private void loadAnalyticsForCard(ProductCard card, String apiKey, LocalDate dateFrom, LocalDate dateTo) {
+    public void loadAnalyticsForCard(ProductCard card, String apiKey, LocalDate dateFrom, LocalDate dateTo) {
         Long cabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
         List<LocalDate> existingDates = getExistingAnalyticsDates(card.getNmId(), cabinetId, dateFrom, dateTo);
 

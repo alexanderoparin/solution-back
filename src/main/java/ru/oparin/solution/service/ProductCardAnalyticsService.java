@@ -6,7 +6,6 @@ import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
@@ -16,6 +15,7 @@ import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.sync.*;
 import ru.oparin.solution.service.wb.WbApiCategory;
 
@@ -50,34 +50,25 @@ public class ProductCardAnalyticsService {
     private final FeedbacksSyncService feedbacksSyncService;
     private final CabinetService cabinetService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
+    private final WbApiEventService wbApiEventService;
     @Qualifier("taskExecutor")
     private final Executor taskExecutor;
 
     // --- Публичный API (асинхронные вызовы, транзакции, валидация) ---
 
     /**
-     * Обновляет все карточки и загружает аналитику за указанный период (кабинет по умолчанию продавца).
-     * API-ключ берётся из кабинета.
+     * Ставит в очередь полное обновление кабинета через wb_api_events (цепочка CONTENT → …).
      */
-    @Async("taskExecutor")
     public void updateCardsAndLoadAnalytics(User seller, LocalDate dateFrom, LocalDate dateTo) {
         Cabinet cabinet = cabinetService.findDefaultByUserIdOrThrow(seller.getId());
         updateCardsAndLoadAnalytics(cabinet, dateFrom, dateTo);
     }
 
     /**
-     * Обновляет карточки и загружает аналитику для указанного кабинета (ключ берётся из кабинета).
-     * Выполняется асинхронно. Включает синхронизацию акций календаря (для ручного/одиночного запуска).
+     * Ставит в очередь полное обновление кабинета через wb_api_events.
      */
-    @Async("taskExecutor")
     public void updateCardsAndLoadAnalytics(Cabinet cabinet, LocalDate dateFrom, LocalDate dateTo) {
-        MDC.put("cabinetTag", "[cabinet:" + cabinet.getId() + "]");
-        try {
-            Cabinet managed = findManagedCabinet(cabinet.getId());
-            doUpdateCabinetAnalytics(managed, dateFrom, dateTo, true, false);
-        } finally {
-            MDC.remove("cabinetTag");
-        }
+        wbApiEventService.enqueueInitialContentEvent(cabinet.getId(), dateFrom, dateTo, false, "LEGACY_SERVICE");
     }
 
     /**
@@ -95,7 +86,18 @@ public class ProductCardAnalyticsService {
     @Transactional
     public void updateCabinetAnalyticsInTransaction(Cabinet cabinet, LocalDate dateFrom, LocalDate dateTo, boolean runStocksInBackground) {
         Cabinet managed = findManagedCabinet(cabinet.getId());
-        doUpdateCabinetAnalytics(managed, dateFrom, dateTo, false, runStocksInBackground);
+        doUpdateCabinetAnalytics(managed, dateFrom, dateTo, false, runStocksInBackground, true);
+    }
+
+    /**
+     * Основной pipeline кабинета без повторного запроса CONTENT карточек.
+     * Используется в событийной модели после успешного (или fallback) CONTENT этапа.
+     */
+    @Transactional
+    public void updateCabinetAnalyticsUsingExistingCardsInTransaction(Cabinet cabinet, LocalDate dateFrom, LocalDate dateTo) {
+        Cabinet managed = findManagedCabinet(cabinet.getId());
+        doUpdateCabinetAnalytics(managed, dateFrom, dateTo, false, false, false);
+        promotionCalendarService.syncPromotionsForCabinet(managed);
     }
 
     /**
@@ -131,33 +133,10 @@ public class ProductCardAnalyticsService {
     }
 
     /**
-     * Асинхронное обновление только остатков по кабинету.
+     * Постановка в очередь событий обновления остатков по всем nmID кабинета.
      */
-    @Async("taskExecutor")
     public void runStocksUpdateOnly(Long cabinetId) {
-        MDC.put("cabinetTag", "[cabinet:" + cabinetId + "]");
-        try {
-            Cabinet managed = cabinetService.findByIdWithUserOrThrow(cabinetId);
-            String apiKey = managed.getApiKey();
-            if (apiKey == null || apiKey.isBlank()) {
-                log.warn("У кабинета (ID: {}) не задан API-ключ, обновление остатков пропущено", cabinetId);
-                return;
-            }
-            List<Long> nmIds = collectNmIdsFromCabinet(cabinetId);
-            if (nmIds.isEmpty()) {
-                log.info("У кабинета (ID: {}) нет карточек, обновление остатков пропущено", cabinetId);
-                return;
-            }
-            stocksService.updateStocksForCabinet(managed, apiKey, nmIds);
-            managed.setLastStocksUpdateAt(LocalDateTime.now());
-            cabinetService.save(managed);
-            cabinetScopeStatusService.recordSuccess(cabinetId, WbApiCategory.ANALYTICS);
-        } catch (WbApiUnauthorizedScopeException e) {
-            cabinetScopeStatusService.recordFailure(cabinetId, e.getCategory(), e.getMessage());
-            logScopeAccessDenied(cabinetId, e);
-        } finally {
-            MDC.remove("cabinetTag");
-        }
+        wbApiEventService.enqueueAllStocksByNmIdForCabinet(cabinetId, "LEGACY_SERVICE_STOCKS");
     }
 
     // --- Основной поток: один уровень абстракции ---
@@ -167,7 +146,8 @@ public class ProductCardAnalyticsService {
             LocalDate dateFrom,
             LocalDate dateTo,
             boolean syncPromotion,
-            boolean runStocksInBackground
+            boolean runStocksInBackground,
+            boolean syncCardsStep
     ) {
         long cabinetId = managed.getId();
         if (skipIfNoApiKey(managed, cabinetId)) return;
@@ -179,9 +159,13 @@ public class ProductCardAnalyticsService {
 
         long updateStartedAt = System.currentTimeMillis();
         try {
-            long cardsStartedAt = System.currentTimeMillis();
-            runWithScopeGuard(cabinetId, WbApiCategory.CONTENT, () -> syncCards(managed, managed.getApiKey()));
-            logStepDuration("syncCards", cabinetId, cardsStartedAt);
+            if (syncCardsStep) {
+                long cardsStartedAt = System.currentTimeMillis();
+                runWithScopeGuard(cabinetId, WbApiCategory.CONTENT, () -> syncCards(managed, managed.getApiKey()));
+                logStepDuration("syncCards", cabinetId, cardsStartedAt);
+            } else {
+                log.info("Шаг syncCards пропущен для кабинета {}: используется уже загруженный состав карточек", cabinetId);
+            }
 
             List<ProductCard> productCards = productCardService.findByCabinetId(cabinetId);
             log.info("Найдено карточек для загрузки аналитики: {}", productCards.size());
