@@ -20,9 +20,13 @@ import java.util.Set;
 @Slf4j
 public class StocksByNmIdEventExecutor implements WbApiEventExecutor {
 
-    private static final Set<WbApiEventStatus> ACTIVE_STATUSES = Set.of(
+    /**
+     * Статусы «ещё в очереди / ждут повтора». RUNNING намеренно не включаем: эта проверка вызывается
+     * из execute() до markSuccess, иначе текущее событие всегда считалось бы «висящим» и
+     * lastStocksUpdateAt никогда не обновлялся бы.
+     */
+    private static final Set<WbApiEventStatus> PENDING_STOCKS_STATUSES = Set.of(
             WbApiEventStatus.CREATED,
-            WbApiEventStatus.RUNNING,
             WbApiEventStatus.FAILED_RETRYABLE,
             WbApiEventStatus.DEFERRED_RATE_LIMIT
     );
@@ -52,7 +56,7 @@ public class StocksByNmIdEventExecutor implements WbApiEventExecutor {
         boolean hasPendingStocks = eventRepository.existsByCabinet_IdAndEventTypeAndStatusIn(
                 cabinetId,
                 WbApiEventType.STOCKS_BY_NMID,
-                ACTIVE_STATUSES
+                PENDING_STOCKS_STATUSES
         );
         if (!hasPendingStocks) {
             Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
