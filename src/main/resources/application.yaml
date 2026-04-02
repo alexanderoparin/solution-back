@@ -108,6 +108,10 @@ wb:
     retry-delay-ms-429: 20000
   feedbacks:
     request-delay-ms: 350
+  calendar:
+    request-delay-ms: 1000
+  warehouses:
+    request-delay-ms: 1000
 
 app:
   frontend-url: "https://wb-solution.ru"
@@ -121,8 +125,8 @@ app:
     cabinet-queue-capacity: 100
     user-deletion-queue-capacity: 50
   wb-events:
-    poll-delay-ms: 2000
-    stuck-check-delay-ms: 30000
+    poll-delay-ms: 5000
+    stuck-check-delay-ms: 15000
     running-timeout-minutes: 15
     default-batch-size: 50
     batch-size-by-type:

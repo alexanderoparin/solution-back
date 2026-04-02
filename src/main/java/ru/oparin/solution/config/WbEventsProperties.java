@@ -15,25 +15,26 @@ public class WbEventsProperties {
     /**
      * Интервал вычитки событий (мс).
      */
-    private long pollDelayMs = 2000;
+    private long pollDelayMs;
 
     /**
      * Интервал проверки "зависших" RUNNING (мс).
      */
-    private long stuckCheckDelayMs = 30000;
+    private long stuckCheckDelayMs;
 
     /**
      * Таймаут RUNNING события в минутах.
      */
-    private int runningTimeoutMinutes = 15;
+    private int runningTimeoutMinutes;
 
     /**
      * Базовый лимит вычитки на тип, если тип не задан в map.
      */
-    private int defaultBatchSize = 50;
+    private int defaultBatchSize;
 
     /**
      * Лимит событий данного типа за один poll: отдельный SQL-запрос на тип + верхняя граница после дедупа (кабинет+тип).
      */
     private Map<String, Integer> batchSizeByType = new HashMap<>();
+
 }

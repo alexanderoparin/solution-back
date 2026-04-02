@@ -10,12 +10,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.config.WbEventsProperties;
 import ru.oparin.solution.model.WbApiEvent;
-import ru.oparin.solution.model.WbApiEventType;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
@@ -25,36 +22,43 @@ import java.util.concurrent.Executor;
 public class WbApiEventDispatcher {
 
     private final WbApiEventService eventService;
+    private final WbEventRateLimitService rateLimitService;
     private final ApplicationContext applicationContext;
     private final WbEventsProperties wbEventsProperties;
     @Qualifier("cabinetUpdateExecutor")
     private final Executor cabinetUpdateExecutor;
 
-    @Scheduled(fixedDelayString = "${app.wb-events.poll-delay-ms:3000}")
-    @SchedulerLock(name = "wbApiEventDispatcherPoll", lockAtLeastFor = "PT1S", lockAtMostFor = "PT2M")
+    @Scheduled(fixedDelayString = "${app.wb-events.poll-delay-ms}")
+//    @SchedulerLock(name = "wbApiEventDispatcherPoll", lockAtLeastFor = "PT1S", lockAtMostFor = "PT2M")
     public void pollAndExecute() {
         List<WbApiEvent> events = eventService.findDueEvents();
         if (events.isEmpty()) {
             return;
         }
-        Map<String, WbApiEvent> uniqueByCabinetAndType = new LinkedHashMap<>();
-        for (WbApiEvent event : events) {
-            String key = event.getCabinet().getId() + ":" + event.getEventType().name();
-            uniqueByCabinetAndType.putIfAbsent(key, event);
-        }
+        log.info("WB events poll: получено событий к обработке {}", events.size());
 
-        List<WbApiEvent> selected = applyPerTypeBatchLimits(new ArrayList<>(uniqueByCabinetAndType.values()));
-        if (selected.isEmpty()) {
-            return;
-        }
-
-        List<CompletableFuture<Void>> futures = selected.stream()
-                .map(event -> CompletableFuture.runAsync(() -> executeSingle(event), cabinetUpdateExecutor))
+        List<CompletableFuture<EventExecutionOutcome>> futures = events.stream()
+                .map(event -> CompletableFuture.supplyAsync(() -> executeSingle(event), cabinetUpdateExecutor))
                 .toList();
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        int deferredCount = 0;
+        int executedCount = 0;
+        for (CompletableFuture<EventExecutionOutcome> future : futures) {
+            EventExecutionOutcome outcome = future.join();
+            if (outcome == EventExecutionOutcome.DEFERRED_RATE_LIMIT) {
+                deferredCount++;
+            } else if (outcome == EventExecutionOutcome.EXECUTED) {
+                executedCount++;
+            }
+        }
+        log.info(
+                "WB events poll: выполнено {}, отложено по rate-limit {} (всего выбрано {})",
+                executedCount, deferredCount, events.size()
+        );
     }
 
-    @Scheduled(fixedDelayString = "${app.wb-events.stuck-check-delay-ms:30000}")
+    @Scheduled(fixedDelayString = "${app.wb-events.stuck-check-delay-ms}")
     @SchedulerLock(name = "wbApiEventDispatcherRecoverStuck", lockAtLeastFor = "PT1S", lockAtMostFor = "PT2M")
     public void recoverStuckRunning() {
         int recovered = eventService.recoverStuckRunningEvents(wbEventsProperties.getRunningTimeoutMinutes());
@@ -63,51 +67,47 @@ public class WbApiEventDispatcher {
         }
     }
 
-    private void executeSingle(WbApiEvent event) {
+    private EventExecutionOutcome executeSingle(WbApiEvent event) {
         Long cabinetId = event.getCabinet() != null ? event.getCabinet().getId() : null;
         if (cabinetId != null) {
             MDC.put("cabinetTag", "[cabinet:" + cabinetId + "]");
         }
         try {
             if (!eventService.tryMarkRunning(event)) {
-                return;
+                return EventExecutionOutcome.SKIPPED;
+            }
+            LocalDateTime deferUntil = rateLimitService.acquireOrDefer(event);
+            if (deferUntil != null) {
+                eventService.markFailed(
+                        event,
+                        WbApiEventExecutionResult.deferredRateLimit(
+                                "Rate limit по кабинету и endpoint: отложено до " + deferUntil,
+                                deferUntil
+                        )
+                );
+                return EventExecutionOutcome.DEFERRED_RATE_LIMIT;
             }
             WbApiEventExecutor executor = applicationContext.getBean(event.getExecutorBeanName(), WbApiEventExecutor.class);
             WbApiEventExecutionResult result = executor.execute(event);
             if (result.success()) {
                 eventService.markSuccess(event);
-                return;
+                return EventExecutionOutcome.EXECUTED;
             }
             eventService.markFailed(event, result);
+            return EventExecutionOutcome.EXECUTED;
         } catch (Exception e) {
             log.error("Ошибка выполнения WB API события id={}, type={}: {}", event.getId(), event.getEventType(), e.getMessage(), e);
             eventService.markFailed(event, WbApiEventExecutionResult.retryableError(e.getMessage()));
+            return EventExecutionOutcome.EXECUTED;
         } finally {
             MDC.remove("cabinetTag");
         }
     }
 
-    private List<WbApiEvent> applyPerTypeBatchLimits(List<WbApiEvent> events) {
-        Map<WbApiEventType, Integer> counters = new LinkedHashMap<>();
-        List<WbApiEvent> selected = new ArrayList<>();
-        for (WbApiEvent event : events) {
-            WbApiEventType type = event.getEventType();
-            int current = counters.getOrDefault(type, 0);
-            int limit = resolvePerTypeLimit(type);
-            if (current >= limit) {
-                continue;
-            }
-            counters.put(type, current + 1);
-            selected.add(event);
-        }
-        return selected;
+    private enum EventExecutionOutcome {
+        EXECUTED,
+        DEFERRED_RATE_LIMIT,
+        SKIPPED
     }
 
-    private int resolvePerTypeLimit(WbApiEventType type) {
-        Integer fromMap = wbEventsProperties.getBatchSizeByType().get(type.name());
-        if (fromMap != null && fromMap > 0) {
-            return fromMap;
-        }
-        return wbEventsProperties.getDefaultBatchSize();
-    }
 }

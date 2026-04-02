@@ -10,7 +10,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.oparin.solution.config.WbEventsProperties;
 import ru.oparin.solution.dto.PageResponse;
 import ru.oparin.solution.dto.WbApiEventDto;
 import ru.oparin.solution.dto.WbApiEventStatsDto;
@@ -27,7 +26,10 @@ import ru.oparin.solution.service.sync.PromotionCampaignSyncService;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -84,7 +86,6 @@ public class WbApiEventService {
     );
 
     private final WbApiEventRepository eventRepository;
-    private final WbEventsProperties wbEventsProperties;
     private final CabinetRepository cabinetRepository;
     private final CabinetService cabinetService;
     private final ProductCardService productCardService;
@@ -537,41 +538,16 @@ public class WbApiEventService {
         eventRepository.save(event);
     }
 
-    /**
-     * События к исполнению: для каждого типа отдельная выборка с лимитом из конфига,
-     * затем общая сортировка по приоритету. Так в одном poll попадают разные типы, а не только
-     * первые N строк одного типа из глобально отсортированной очереди.
-     */
     @Transactional(readOnly = true)
     public List<WbApiEvent> findDueEvents() {
-        List<WbApiEventStatus> statuses = List.of(
-                WbApiEventStatus.CREATED,
-                WbApiEventStatus.FAILED_RETRYABLE,
-                WbApiEventStatus.DEFERRED_RATE_LIMIT
+        return eventRepository.findReadyEvents(
+                List.of(
+                        WbApiEventStatus.CREATED,
+                        WbApiEventStatus.FAILED_RETRYABLE,
+                        WbApiEventStatus.DEFERRED_RATE_LIMIT
+                ),
+                LocalDateTime.now()
         );
-        LocalDateTime now = LocalDateTime.now();
-        List<WbApiEvent> merged = new ArrayList<>();
-        for (WbApiEventType type : WbApiEventType.values()) {
-            int limit = resolvePerTypePollLimit(type);
-            if (limit <= 0) {
-                continue;
-            }
-            merged.addAll(eventRepository.findReadyEventsByType(statuses, now, type, PageRequest.of(0, limit)));
-        }
-        merged.sort(
-                Comparator.comparing(WbApiEvent::getPriority).reversed()
-                        .thenComparing(WbApiEvent::getNextAttemptAt)
-                        .thenComparing(WbApiEvent::getCreatedAt)
-        );
-        return merged;
-    }
-
-    private int resolvePerTypePollLimit(WbApiEventType type) {
-        Integer fromMap = wbEventsProperties.getBatchSizeByType().get(type.name());
-        if (fromMap != null && fromMap > 0) {
-            return fromMap;
-        }
-        return wbEventsProperties.getDefaultBatchSize();
     }
 
     @Transactional
@@ -710,8 +686,6 @@ public class WbApiEventService {
 
     @Transactional
     public void markFailed(WbApiEvent event, WbApiEventExecutionResult result) {
-        int nextAttempt = event.getAttemptCount() + 1;
-        event.setAttemptCount(nextAttempt);
         event.setLastError(result.errorMessage());
         event.setUpdatedAt(LocalDateTime.now());
 
@@ -721,6 +695,9 @@ public class WbApiEventService {
             eventRepository.save(event);
             return;
         }
+
+        int nextAttempt = event.getAttemptCount() + 1;
+        event.setAttemptCount(nextAttempt);
 
         if (result.retryable() && nextAttempt < event.getMaxAttempts()) {
             event.setStatus(WbApiEventStatus.FAILED_RETRYABLE);

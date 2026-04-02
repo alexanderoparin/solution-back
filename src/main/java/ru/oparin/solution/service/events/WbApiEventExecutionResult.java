@@ -39,4 +39,13 @@ public record WbApiEventExecutionResult(
                 .errorMessage(message)
                 .build();
     }
+
+    public static WbApiEventExecutionResult deferredRateLimit(String message, LocalDateTime deferUntil) {
+        return WbApiEventExecutionResult.builder()
+                .success(false)
+                .retryable(true)
+                .errorMessage(message)
+                .deferUntil(deferUntil)
+                .build();
+    }
 }
