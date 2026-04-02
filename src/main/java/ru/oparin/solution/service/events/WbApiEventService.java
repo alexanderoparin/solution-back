@@ -677,6 +677,7 @@ public class WbApiEventService {
     public void markFailed(WbApiEvent event, WbApiEventExecutionResult result) {
         event.setLastError(result.errorMessage());
         event.setUpdatedAt(LocalDateTime.now());
+        Long cabinetId = event.getCabinet() != null ? event.getCabinet().getId() : null;
 
         if (result.deferUntil() != null) {
             event.setStatus(WbApiEventStatus.DEFERRED_RATE_LIMIT);
@@ -698,6 +699,16 @@ public class WbApiEventService {
         event.setStatus(result.fallbackUsed() ? WbApiEventStatus.FAILED_WITH_FALLBACK : WbApiEventStatus.FAILED_FINAL);
         event.setFinishedAt(LocalDateTime.now());
         eventRepository.save(event);
+        log.warn(
+                "WB event завершен с ошибкой: id={}, type={}, cabinetId={}, status={}, attempts={}/{}, error={}",
+                event.getId(),
+                event.getEventType(),
+                cabinetId,
+                event.getStatus(),
+                event.getAttemptCount(),
+                event.getMaxAttempts(),
+                event.getLastError()
+        );
     }
 
     public <T> T readPayload(WbApiEvent event, Class<T> payloadType) {
