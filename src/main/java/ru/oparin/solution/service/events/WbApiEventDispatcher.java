@@ -44,17 +44,20 @@ public class WbApiEventDispatcher {
 
         int deferredCount = 0;
         int executedCount = 0;
+        int skippedCount = 0;
         for (CompletableFuture<EventExecutionOutcome> future : futures) {
             EventExecutionOutcome outcome = future.join();
             if (outcome == EventExecutionOutcome.DEFERRED_RATE_LIMIT) {
                 deferredCount++;
             } else if (outcome == EventExecutionOutcome.EXECUTED) {
                 executedCount++;
+            } else if (outcome == EventExecutionOutcome.SKIPPED) {
+                skippedCount++;
             }
         }
         log.info(
-                "WB events poll: выполнено {}, отложено по rate-limit {} (всего выбрано {})",
-                executedCount, deferredCount, events.size()
+                "WB events poll: выполнено {}, отложено по rate-limit {}, пропущено {} (всего выбрано {})",
+                executedCount, deferredCount, skippedCount, events.size()
         );
     }
 
