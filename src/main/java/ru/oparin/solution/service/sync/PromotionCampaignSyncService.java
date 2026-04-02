@@ -41,10 +41,6 @@ public class PromotionCampaignSyncService {
     private int statisticsBatchSize;
     @Value("${wb.promotion.campaigns-batch-size:50}")
     private int campaignsBatchSize;
-    @Value("${wb.promotion.statistics-delay-ms}")
-    private int statisticsApiCallDelayMs;
-    @Value("${wb.promotion.adverts-delay-ms}")
-    private int auctionAdvertsDelayMs;
 
     private final WbPromotionApiClient promotionApiClient;
     private final PromotionCampaignService promotionCampaignService;
@@ -291,9 +287,6 @@ public class PromotionCampaignSyncService {
                     allCampaigns.addAll(batchResponse.getAdverts());
                     log.info("Получено {} кампаний из батча {}/{}", batchResponse.getAdverts().size(), currentBatch, totalBatches);
                 }
-                if (currentBatch < totalBatches) {
-                    SyncDelayUtil.sleep(auctionAdvertsDelayMs);
-                }
             } catch (Exception e) {
                 if (AbstractWbApiClient.isConnectionIoError(e)) {
                     log.warn("Ошибка при загрузке батча {}/{} кампаний (v2): {}", currentBatch, totalBatches, e.getMessage());
@@ -339,9 +332,6 @@ public class PromotionCampaignSyncService {
                         log.info("Для {} кампаний из батча {}/{} нет статистики за период {} - {}: {}",
                                 missing.size(), currentBatch, totalBatches, dateFrom, dateTo, missing);
                     }
-                }
-                if (endIndex < campaignIds.size()) {
-                    SyncDelayUtil.sleep(statisticsApiCallDelayMs);
                 }
             } catch (Exception e) {
                 if (AbstractWbApiClient.isConnectionIoError(e)) {

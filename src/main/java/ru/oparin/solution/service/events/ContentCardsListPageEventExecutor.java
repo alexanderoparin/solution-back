@@ -2,7 +2,6 @@ package ru.oparin.solution.service.events;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.dto.wb.CardsListRequest;
 import ru.oparin.solution.dto.wb.CardsListResponse;
@@ -15,7 +14,6 @@ import ru.oparin.solution.service.CabinetUpdateErrorService;
 import ru.oparin.solution.service.ProductCardService;
 import ru.oparin.solution.service.events.payload.ContentCardsListPagePayload;
 import ru.oparin.solution.service.events.payload.MainStepPayload;
-import ru.oparin.solution.service.sync.SyncDelayUtil;
 import ru.oparin.solution.service.wb.WbContentApiClient;
 
 import java.util.List;
@@ -34,9 +32,6 @@ public class ContentCardsListPageEventExecutor implements WbApiEventExecutor {
     private final WbContentApiClient contentApiClient;
     private final ProductCardService productCardService;
     private final CabinetUpdateErrorService cabinetUpdateErrorService;
-
-    @Value("${wb.content.cards-pagination-delay-ms}")
-    private int cardsPaginationDelayMs;
 
     @Override
     public WbApiEventExecutionResult execute(WbApiEvent event) {
@@ -59,7 +54,6 @@ public class ContentCardsListPageEventExecutor implements WbApiEventExecutor {
                         .cursorNmId(response.getCursor().getNmID())
                         .cursorUpdatedAt(response.getCursor().getUpdatedAt())
                         .build();
-                SyncDelayUtil.sleep(cardsPaginationDelayMs);
                 eventService.enqueueNextContentEvent(cabinet.getId(), nextPayload, event.getTriggerSource());
                 return WbApiEventExecutionResult.completedSuccessfully();
             }

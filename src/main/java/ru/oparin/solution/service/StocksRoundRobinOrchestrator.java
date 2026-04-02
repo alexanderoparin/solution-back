@@ -2,13 +2,11 @@ package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetUpdateErrorScope;
 import ru.oparin.solution.model.ProductCard;
-import ru.oparin.solution.service.sync.SyncDelayUtil;
 import ru.oparin.solution.service.wb.WbApiCategory;
 
 import java.time.LocalDateTime;
@@ -29,9 +27,6 @@ public class StocksRoundRobinOrchestrator {
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final CabinetUpdateErrorService cabinetUpdateErrorService;
 
-    @Value("${wb.stocks.request-delay-ms}")
-    private long stocksRequestDelayMs;
-
     public void runStocksRoundRobin(List<Cabinet> cabinets, String scopeLabel) {
         List<CabinetState> states = buildStates(cabinets);
         log.info("Запуск round-robin обновления остатков по {}. Кабинетов к обработке: {}", scopeLabel, states.size());
@@ -42,38 +37,21 @@ public class StocksRoundRobinOrchestrator {
         }
 
         Deque<CabinetState> queue = new ArrayDeque<>(states);
-        Map<Long, Long> nextAllowedAtMs = new HashMap<>();
 
         while (!queue.isEmpty()) {
             int iterationSize = queue.size();
-            long minWaitMs = Long.MAX_VALUE;
-            boolean hasProgress = false;
 
             for (int i = 0; i < iterationSize; i++) {
                 CabinetState state = queue.pollFirst();
                 if (state == null) {
                     continue;
                 }
-
-                long nowMs = System.currentTimeMillis();
-                long allowedAtMs = nextAllowedAtMs.getOrDefault(state.cabinet().getId(), 0L);
-                if (nowMs < allowedAtMs) {
-                    minWaitMs = Math.min(minWaitMs, allowedAtMs - nowMs);
-                    queue.offerLast(state);
-                    continue;
-                }
-
-                hasProgress = true;
-                processOneNmId(state, nextAllowedAtMs);
+                processOneNmId(state);
                 if (state.hasNext()) {
                     queue.offerLast(state);
                 } else {
                     completeCabinetStocksUpdate(state.cabinet());
                 }
-            }
-
-            if (!hasProgress && minWaitMs != Long.MAX_VALUE) {
-                SyncDelayUtil.sleep(minWaitMs);
             }
         }
 
@@ -103,7 +81,7 @@ public class StocksRoundRobinOrchestrator {
         return new CabinetState(cabinet, nmIds, 0);
     }
 
-    private void processOneNmId(CabinetState state, Map<Long, Long> nextAllowedAtMs) {
+    private void processOneNmId(CabinetState state) {
         Long nmId = state.currentNmId();
         Long cabinetId = state.cabinet().getId();
         try {
@@ -124,7 +102,6 @@ public class StocksRoundRobinOrchestrator {
         }
 
         state.advance();
-        nextAllowedAtMs.put(cabinetId, System.currentTimeMillis() + stocksRequestDelayMs);
     }
 
     private void completeCabinetStocksUpdate(Cabinet cabinet) {

@@ -2,7 +2,6 @@ package ru.oparin.solution.service.sync;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
 import ru.oparin.solution.dto.wb.OrdersResponse;
@@ -33,8 +32,6 @@ import java.util.stream.Collectors;
 public class ProductPricesSyncService {
 
     private static final int PRICES_BATCH_SIZE = 1000;
-    @Value("${wb.prices.api-call-delay-ms}")
-    private int pricesApiCallDelayMs;
 
     private final ProductCardRepository productCardRepository;
     private final ProductPriceService productPriceService;
@@ -44,7 +41,6 @@ public class ProductPricesSyncService {
 
     /**
      * Загружает цены товаров кабинета за вчерашнюю дату из WB API и сохраняет в БД.
-     * Запросы выполняются батчами с задержкой между вызовами; товары, для которых цены уже есть, пропускаются.
      *
      * @param cabinet кабинет, для которого загружаются цены
      * @param apiKey  API-ключ WB для доступа к discounts-prices-api
@@ -163,10 +159,6 @@ public class ProductPricesSyncService {
                 ProductPricesRequest request = ProductPricesRequest.builder().nmList(batch).build();
                 ProductPricesResponse response = productsApiClient.getProductPrices(apiKey, request);
                 productPriceService.savePrices(response, date, cabinet);
-
-                if (i < batches.size() - 1) {
-                    SyncDelayUtil.sleep(pricesApiCallDelayMs);
-                }
             } catch (WbApiUnauthorizedScopeException e) {
                 handleWbUnauthorizedScope(cabinet, e);
                 break;

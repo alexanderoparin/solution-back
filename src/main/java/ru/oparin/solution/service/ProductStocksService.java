@@ -6,7 +6,6 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -44,8 +43,6 @@ public class ProductStocksService {
     private final WbStocksApiClient stocksApiClient;
     private final ProductStockRepository stockRepository;
     private final ProductBarcodeRepository barcodeRepository;
-    @Value("${wb.stocks.request-delay-ms}")
-    private long stocksRequestDelayMs;
 
     /**
      * self-proxy, чтобы вызовы @Transactional методов не обходили Spring proxy
@@ -90,23 +87,15 @@ public class ProductStocksService {
 
     /**
      * Обновляет остатки по размерам на складах WB для всех указанных артикулов кабинета.
-     * Между запросами пауза 20 с (лимит API).
      */
     public void updateStocksForCabinet(Cabinet cabinet, String apiKey, List<Long> nmIds) {
         if (nmIds == null || nmIds.isEmpty()) {
             return;
         }
         log.info("Начало обновления остатков товаров на складах WB для кабинета (ID: {}), товаров: {}", cabinet.getId(), nmIds.size());
-        int count = 0;
         for (Long nmId : nmIds) {
             try {
                 self.getWbStocksBySizes(apiKey, nmId, cabinet);
-                count++;
-                if (count < nmIds.size()) Thread.sleep(stocksRequestDelayMs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.error("Прервано ожидание перед запросом остатков для артикула {}", nmId);
-                break;
             } catch (ResourceAccessException e) {
                 if (e.getCause() instanceof UnknownHostException) {
                     log.error("Ошибка при обновлении остатков для nmID {}: не удалось разрешить хост WB API (DNS). Проверьте доступность {} и настройки DNS на сервере.", nmId, WB_ANALYTICS_HOST);
