@@ -8,6 +8,7 @@ import ru.oparin.solution.dto.wb.CardsListRequest;
 import ru.oparin.solution.dto.wb.CardsListResponse;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetUpdateErrorScope;
+import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.CabinetUpdateErrorService;
@@ -18,6 +19,7 @@ import ru.oparin.solution.service.sync.SyncDelayUtil;
 import ru.oparin.solution.service.wb.WbContentApiClient;
 
 import java.util.List;
+import java.util.Objects;
 
 @Component("contentCardsListPageEventExecutor")
 @RequiredArgsConstructor
@@ -117,8 +119,8 @@ public class ContentCardsListPageEventExecutor implements WbApiEventExecutor {
         eventService.enqueuePromotionCalendarSyncCabinetEvent(cabinetId, mainStepPayload, triggerSource);
 
         List<Long> nmIds = productCardService.findByCabinetId(cabinetId).stream()
-                .map(card -> card.getNmId())
-                .filter(nmId -> nmId != null)
+                .map(ProductCard::getNmId)
+                .filter(Objects::nonNull)
                 .distinct()
                 .toList();
         if (payload.includeStocks()) {

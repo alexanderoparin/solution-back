@@ -45,11 +45,7 @@ public interface WbApiEventRepository extends JpaRepository<WbApiEvent, Long> {
 
     boolean existsByDedupKeyAndStatusIn(String dedupKey, Collection<WbApiEventStatus> statuses);
 
-    boolean existsByCabinet_IdAndEventTypeAndStatus(Long cabinetId, WbApiEventType eventType, WbApiEventStatus status);
-
     boolean existsByCabinet_IdAndEventTypeAndStatusIn(Long cabinetId, WbApiEventType eventType, Collection<WbApiEventStatus> statuses);
-
-    boolean existsByCabinet_IdAndEventTypeInAndStatusIn(Long cabinetId, Collection<WbApiEventType> eventTypes, Collection<WbApiEventStatus> statuses);
 
     @Query("""
             select case when count(e) > 0 then true else false end

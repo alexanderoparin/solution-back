@@ -29,7 +29,7 @@ public class WbApiEventDispatcher {
     private final Executor cabinetUpdateExecutor;
 
     @Scheduled(fixedDelayString = "${app.wb-events.poll-delay-ms}")
-//    @SchedulerLock(name = "wbApiEventDispatcherPoll", lockAtLeastFor = "PT1S", lockAtMostFor = "PT2M")
+    @SchedulerLock(name = "wbApiEventDispatcherPoll", lockAtLeastFor = "PT1S", lockAtMostFor = "PT2M")
     public void pollAndExecute() {
         List<WbApiEvent> events = eventService.findDueEvents();
         if (events.isEmpty()) {

@@ -13,10 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.PageResponse;
 import ru.oparin.solution.dto.WbApiEventDto;
 import ru.oparin.solution.dto.WbApiEventStatsDto;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.WbApiEvent;
-import ru.oparin.solution.model.WbApiEventStatus;
-import ru.oparin.solution.model.WbApiEventType;
+import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.WbApiEventRepository;
 import ru.oparin.solution.service.CabinetService;
@@ -26,10 +23,7 @@ import ru.oparin.solution.service.sync.PromotionCampaignSyncService;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -146,8 +140,8 @@ public class WbApiEventService {
     @Transactional
     public void enqueueAllStocksByNmIdForCabinet(Long cabinetId, String triggerSource) {
         List<Long> nmIds = productCardService.findByCabinetId(cabinetId).stream()
-                .map(card -> card.getNmId())
-                .filter(nmId -> nmId != null)
+                .map(ProductCard::getNmId)
+                .filter(Objects::nonNull)
                 .distinct()
                 .toList();
         for (Long nmId : nmIds) {
@@ -285,8 +279,8 @@ public class WbApiEventService {
     @Transactional
     public void enqueuePricesRequestLevelEvents(Long cabinetId, MainStepPayload payload, String triggerSource) {
         List<Long> nmIds = productCardService.findByCabinetId(cabinetId).stream()
-                .map(card -> card.getNmId())
-                .filter(nmId -> nmId != null)
+                .map(ProductCard::getNmId)
+                .filter(Objects::nonNull)
                 .distinct()
                 .toList();
         for (int i = 0; i < nmIds.size(); i += PRICES_BATCH_SIZE) {
@@ -586,11 +580,6 @@ public class WbApiEventService {
         Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
         cabinet.setLastDataUpdateAt(LocalDateTime.now());
         cabinetService.save(cabinet);
-    }
-
-    @Transactional
-    public void tryFinalizeMain(Long cabinetId) {
-        tryFinalizeMain(cabinetId, null);
     }
 
     /**
