@@ -64,4 +64,35 @@ public final class CabinetManagedSpecifications {
             return cb.and(scope, cb.or(orParts.toArray(Predicate[]::new)));
         };
     }
+
+    /**
+     * Та же зона видимости, что у {@link #managedList(User, String)}, но только кабинеты с непустым API-ключом.
+     */
+    public static Specification<Cabinet> managedListWithApiKey(User currentUser) {
+        return (root, query, cb) -> {
+            Join<Cabinet, User> userJoin = root.join("user", JoinType.INNER);
+
+            if (!isCountQuery(query)) {
+                root.fetch("user", JoinType.INNER);
+                query.distinct(true);
+            }
+
+            Predicate isSeller = cb.equal(userJoin.get("role"), Role.SELLER);
+            Predicate scope;
+            if (currentUser.getRole() == Role.ADMIN) {
+                scope = isSeller;
+            } else if (currentUser.getRole() == Role.MANAGER) {
+                Join<User, User> owner = userJoin.join("owner", JoinType.INNER);
+                scope = cb.and(isSeller, cb.equal(owner.get("id"), currentUser.getId()));
+            } else {
+                return cb.disjunction();
+            }
+
+            Predicate hasKey = cb.and(
+                    cb.isNotNull(root.get("apiKey")),
+                    cb.notEqual(root.get("apiKey"), "")
+            );
+            return cb.and(scope, hasKey);
+        };
+    }
 }

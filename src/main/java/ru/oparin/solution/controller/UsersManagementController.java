@@ -14,6 +14,7 @@ import ru.oparin.solution.dto.*;
 import ru.oparin.solution.dto.cabinet.CabinetDto;
 import ru.oparin.solution.dto.cabinet.ManagedCabinetRowDto;
 import ru.oparin.solution.dto.cabinet.UpdateCabinetRequest;
+import ru.oparin.solution.dto.cabinet.WorkContextCabinetDto;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
@@ -244,6 +245,18 @@ public class UsersManagementController {
                 .number(cabinetPage.getNumber())
                 .build();
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Кабинеты с API-ключом для переключения контекста в шапке (алфавит по названию кабинета).
+     */
+    @GetMapping("/work-context-cabinets")
+    public ResponseEntity<List<WorkContextCabinetDto>> getWorkContextCabinets(Authentication authentication) {
+        User currentUser = getCurrentUser(authentication);
+        if (!isAdminOrManager(currentUser)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        return ResponseEntity.ok(cabinetService.listWorkContextCabinets(currentUser));
     }
 
     /**

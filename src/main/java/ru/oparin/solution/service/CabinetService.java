@@ -10,10 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.ManagedCabinetSortField;
-import ru.oparin.solution.dto.cabinet.CabinetDto;
-import ru.oparin.solution.dto.cabinet.CreateCabinetRequest;
-import ru.oparin.solution.dto.cabinet.ManagedCabinetRowDto;
-import ru.oparin.solution.dto.cabinet.UpdateCabinetRequest;
+import ru.oparin.solution.dto.cabinet.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
@@ -22,6 +19,7 @@ import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.repository.spec.CabinetManagedSpecifications;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -87,6 +85,31 @@ public class CabinetService {
                         .sellerEmail(c.getUser().getEmail())
                         .cabinet(toDto(c))
                         .build());
+    }
+
+    /**
+     * Кабинеты с API-ключом в зоне видимости ADMIN/MANAGER, по алфавиту названия (без учёта регистра).
+     * Сортировка в памяти: при {@code SELECT DISTINCT} PostgreSQL не принимает {@code ORDER BY lower(name)},
+     * если в списке выборки только {@code name} (генерация Hibernate для {@link Sort.Order#ignoreCase()}).
+     */
+    @Transactional(readOnly = true)
+    public List<WorkContextCabinetDto> listWorkContextCabinets(User currentUser) {
+        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
+            throw new UserException(CABINET_ACCESS_DENIED, HttpStatus.FORBIDDEN);
+        }
+        List<Cabinet> list = cabinetRepository.findAll(
+                CabinetManagedSpecifications.managedListWithApiKey(currentUser));
+        return list.stream()
+                .sorted(Comparator.comparing(Cabinet::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(c -> WorkContextCabinetDto.builder()
+                        .cabinetId(c.getId())
+                        .sellerId(c.getUser().getId())
+                        .cabinetName(c.getName())
+                        .sellerEmail(c.getUser().getEmail())
+                        .lastDataUpdateAt(c.getLastDataUpdateAt())
+                        .lastDataUpdateRequestedAt(c.getLastDataUpdateRequestedAt())
+                        .build())
+                .toList();
     }
 
     /**
