@@ -2,11 +2,17 @@ package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Sort.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.oparin.solution.dto.ManagedCabinetSortField;
 import ru.oparin.solution.dto.cabinet.CabinetDto;
 import ru.oparin.solution.dto.cabinet.CreateCabinetRequest;
+import ru.oparin.solution.dto.cabinet.ManagedCabinetRowDto;
 import ru.oparin.solution.dto.cabinet.UpdateCabinetRequest;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
@@ -14,6 +20,7 @@ import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
+import ru.oparin.solution.repository.spec.CabinetManagedSpecifications;
 
 import java.util.List;
 import java.util.Optional;
@@ -44,6 +51,42 @@ public class CabinetService {
     @Transactional(readOnly = true)
     public List<CabinetDto> listByUserId(Long userId) {
         return findCabinetsByUserId(userId).stream().map(this::toDto).toList();
+    }
+
+    /**
+     * Сортировка для {@link #pageManagedCabinets(User, Pageable, String)}.
+     */
+    public static Sort sortForManagedList(ManagedCabinetSortField field, Sort.Direction direction) {
+        return switch (field) {
+            case CABINET_ID -> Sort.by(new Order(direction, "id"));
+            case CABINET_NAME -> Sort.by(new Order(direction, "name").ignoreCase());
+            case SELLER_EMAIL -> Sort.by(new Order(direction, "user.email").ignoreCase());
+            case LAST_DATA_UPDATE_AT -> Sort.by(
+                    direction == Sort.Direction.ASC
+                            ? Order.asc("lastDataUpdateAt").nullsLast()
+                            : Order.desc("lastDataUpdateAt").nullsLast());
+            case LAST_STOCKS_UPDATE_AT -> Sort.by(
+                    direction == Sort.Direction.ASC
+                            ? Order.asc("lastStocksUpdateAt").nullsLast()
+                            : Order.desc("lastStocksUpdateAt").nullsLast());
+        };
+    }
+
+    /**
+     * Постраничный плоский список кабинетов (ADMIN / MANAGER) с поиском и сортировкой.
+     */
+    @Transactional(readOnly = true)
+    public Page<ManagedCabinetRowDto> pageManagedCabinets(User currentUser, Pageable pageable, String search) {
+        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
+            throw new UserException(CABINET_ACCESS_DENIED, HttpStatus.FORBIDDEN);
+        }
+        var spec = CabinetManagedSpecifications.managedList(currentUser, search);
+        return cabinetRepository.findAll(spec, pageable)
+                .map(c -> ManagedCabinetRowDto.builder()
+                        .sellerId(c.getUser().getId())
+                        .sellerEmail(c.getUser().getEmail())
+                        .cabinet(toDto(c))
+                        .build());
     }
 
     /**

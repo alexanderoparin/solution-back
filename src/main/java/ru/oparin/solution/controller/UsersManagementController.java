@@ -12,6 +12,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.*;
 import ru.oparin.solution.dto.cabinet.CabinetDto;
+import ru.oparin.solution.dto.cabinet.ManagedCabinetRowDto;
 import ru.oparin.solution.dto.cabinet.UpdateCabinetRequest;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
@@ -215,6 +216,34 @@ public class UsersManagementController {
         return ResponseEntity.ok(MessageResponse.builder()
                 .message("Удаление запущено. Выполняется в фоновом режиме.")
                 .build());
+    }
+
+    /**
+     * Постраничный плоский список кабинетов в зоне видимости ADMIN/MANAGER (режим «Кабинеты»).
+     */
+    @GetMapping("/managed-cabinets")
+    public ResponseEntity<PageResponse<ManagedCabinetRowDto>> getManagedCabinets(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = ManagedCabinetSortField.DEFAULT_REQUEST_VALUE) ManagedCabinetSortField sortBy,
+            @RequestParam(defaultValue = "ASC") Sort.Direction sortDir,
+            Authentication authentication
+    ) {
+        User currentUser = getCurrentUser(authentication);
+        if (!isAdminOrManager(currentUser)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        Pageable pageable = PageRequest.of(page, Math.clamp(size, 1, 100), CabinetService.sortForManagedList(sortBy, sortDir));
+        var cabinetPage = cabinetService.pageManagedCabinets(currentUser, pageable, search);
+        PageResponse<ManagedCabinetRowDto> response = PageResponse.<ManagedCabinetRowDto>builder()
+                .content(cabinetPage.getContent())
+                .totalElements(cabinetPage.getTotalElements())
+                .totalPages(cabinetPage.getTotalPages())
+                .size(cabinetPage.getSize())
+                .number(cabinetPage.getNumber())
+                .build();
+        return ResponseEntity.ok(response);
     }
 
     /**

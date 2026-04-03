@@ -1,6 +1,7 @@
 package ru.oparin.solution.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -14,7 +15,7 @@ import java.util.Optional;
  * Репозиторий для работы с кабинетами продавцов.
  */
 @Repository
-public interface CabinetRepository extends JpaRepository<Cabinet, Long> {
+public interface CabinetRepository extends JpaRepository<Cabinet, Long>, JpaSpecificationExecutor<Cabinet> {
 
     /**
      * Все кабинеты продавца, отсортированные по дате создания (новые первые).
