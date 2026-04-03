@@ -16,13 +16,13 @@ public class WbApiEventsCleanupScheduler {
     private final WbApiEventService wbApiEventService;
 
     /**
-     * Каждое воскресенье в 12:00 удаляет успешно выполненные события старше 7 дней.
+     * Удаляет успешно выполненные события старше 1 дней.
      */
-    @Scheduled(cron = "0 0 12 ? * SUN")
+    @Scheduled(cron = "0 0 0 * * *")
     @SchedulerLock(name = "wbApiEventsCleanupWeekly", lockAtLeastFor = "PT5S", lockAtMostFor = "PT10M")
     @Transactional
     public void cleanupOldSuccessfulEvents() {
-        long deleted = wbApiEventService.deleteOldSuccessfulEvents(7);
+        long deleted = wbApiEventService.deleteOldSuccessfulEvents(1);
         if (deleted > 0) {
             log.info("Очистка WB API событий: удалено успешно выполненных старше 7 дней: {}", deleted);
         }

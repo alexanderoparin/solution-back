@@ -15,7 +15,6 @@ import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.CabinetUpdateErrorService;
 import ru.oparin.solution.service.FullUpdateOrchestrator;
-import ru.oparin.solution.service.ProductCardAnalyticsService;
 import ru.oparin.solution.service.events.WbApiEventService;
 
 import java.time.LocalDate;
@@ -32,7 +31,6 @@ public class AnalyticsScheduler {
 
     private final CabinetService cabinetService;
     private final FullUpdateOrchestrator fullUpdateOrchestrator;
-    private final ProductCardAnalyticsService analyticsService;
     private final CabinetUpdateErrorService cabinetUpdateErrorService;
     private final WbApiEventService wbApiEventService;
 
@@ -40,7 +38,7 @@ public class AnalyticsScheduler {
      * Автоматическая ночная загрузка аналитики:
      * main-обновление всех кабинетов, затем единый этап обновления остатков.
      */
-    @Scheduled(cron = "0 15 0 * * ?")
+    @Scheduled(cron = "0 0 0 * * ?")
     public void loadAnalyticsForAllActiveSellers() {
         runNightlyFullAnalyticsUpdate();
     }
@@ -149,20 +147,6 @@ public class AnalyticsScheduler {
         long elapsed = System.currentTimeMillis() - lastFullUpdateTriggeredAtMs;
         if (elapsed >= FULL_UPDATE_COOLDOWN_MS) return 0;
         return (FULL_UPDATE_COOLDOWN_MS - elapsed) / 1000;
-    }
-
-    /**
-     * Ручной запуск обновления данных для конкретного продавца.
-     * Запускает обновление по всем кабинетам продавца, у которых задан API-ключ.
-     * Обновление по каждому кабинету можно запускать не чаще одного раза в 6 часов (для админа и менеджера ограничение не действует).
-     *
-     * @param seller продавец, для которого нужно обновить данные
-     * @param skipIntervalCheck если true, проверка 6 часов не выполняется (для ADMIN и MANAGER)
-     * @throws UserException если нет ни одного кабинета с API-ключом или все кабинеты не прошли проверку интервала
-     */
-    @Transactional
-    public void triggerManualUpdate(User seller, boolean skipIntervalCheck) {
-        triggerManualUpdate(seller, skipIntervalCheck, false);
     }
 
     @Transactional
@@ -332,13 +316,6 @@ public class AnalyticsScheduler {
                     HttpStatus.TOO_MANY_REQUESTS
             );
         }
-    }
-
-    /**
-     * Ручной запуск обновления данных для кабинета (с проверкой интервала 6 часов).
-     */
-    public void triggerManualUpdateByCabinet(Long cabinetId) {
-        triggerManualUpdateByCabinet(cabinetId, false);
     }
 
     /**
