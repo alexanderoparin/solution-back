@@ -23,20 +23,22 @@ public class AnalyticsSalesFunnelEventExecutor implements WbApiEventExecutor {
     @Override
     public WbApiEventExecutionResult execute(WbApiEvent event) {
         AnalyticsSalesFunnelPayload payload = eventService.readPayload(event, AnalyticsSalesFunnelPayload.class);
-        var cabinet = cabinetService.findByIdWithUserOrThrow(event.getCabinet().getId());
-        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
-            return WbApiEventExecutionResult.finalError("У кабинета отсутствует API ключ");
+        long eventCabinetId = event.getCabinet().getId();
+
+        ProductCard card = productCardService.findByNmId(payload.nmId()).orElse(null);
+        if (card == null) {
+            return WbApiEventExecutionResult.finalError("Карточка не найдена для nmID=" + payload.nmId());
         }
 
-        ProductCard card = productCardService.findByNmIdAndCabinetId(payload.nmId(), cabinet.getId())
-                .orElse(null);
-        if (card == null) {
-            return WbApiEventExecutionResult.finalError("Карточка не найдена в кабинете для nmID=" + payload.nmId());
+        var cardCabinet = cabinetService.findByIdWithUserOrThrow(card.getCabinet().getId());
+        if (cardCabinet.getApiKey() == null || cardCabinet.getApiKey().isBlank()) {
+            return WbApiEventExecutionResult.finalError("У кабинета карточки отсутствует API ключ");
         }
 
         try {
-            analyticsLoadService.loadAnalyticsForCard(card, cabinet.getApiKey(), payload.dateFrom(), payload.dateTo());
-            eventService.tryFinalizeMain(cabinet.getId(), event.getId());
+            analyticsLoadService.loadAnalyticsForCard(
+                    card, cardCabinet.getApiKey(), payload.dateFrom(), payload.dateTo());
+            eventService.tryFinalizeMain(eventCabinetId, event.getId());
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (Exception e) {
             return WbApiEventExecutionResult.retryableError(e.getMessage());
