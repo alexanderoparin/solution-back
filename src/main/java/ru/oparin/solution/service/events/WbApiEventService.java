@@ -291,12 +291,15 @@ public class WbApiEventService {
         enqueuePricesSppEvent(cabinetId, payload, triggerSource);
     }
 
+    /**
+     * @return {@code true}, если создано новое событие PROMOTION_COUNT; {@code false}, если активная задача с тем же периодом уже есть
+     */
     @Transactional
-    public void enqueuePromotionRequestLevelEvents(Long cabinetId, MainStepPayload payload, String triggerSource) {
+    public boolean enqueuePromotionRequestLevelEvents(Long cabinetId, MainStepPayload payload, String triggerSource) {
         String dedupKey = "PROMOTION_COUNT:" + promotionPeriodKey(cabinetId, payload.dateFrom(), payload.dateTo());
         if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
             log.debug("WB API promotion count event уже существует (dedupKey={}), создание пропущено", dedupKey);
-            return;
+            return false;
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
@@ -316,6 +319,7 @@ public class WbApiEventService {
                 .updatedAt(LocalDateTime.now())
                 .build();
         eventRepository.save(event);
+        return true;
     }
 
     @Transactional

@@ -869,7 +869,8 @@ public class AnalyticsService {
                             .type(c.getType() != null ? c.getType().getDescription() : null)
                             .status(c.getStatus() != null ? c.getStatus().getCode() : null)
                             .statusName(c.getStatus() != null ? c.getStatus().getDescription() : null)
-                            .createdAt(c.getCreateTime());
+                            .createdAt(c.getCreateTime())
+                            .updatedAt(resolveCampaignUpdatedAt(c));
                     if (withMetrics) {
                         List<PromotionCampaignStatistics> stats = statsByCampaignFinal.getOrDefault(c.getAdvertId(), Collections.emptyList());
                         int views = 0, clicks = 0, orders = 0, cart = 0;
@@ -954,6 +955,13 @@ public class AnalyticsService {
 
     private static final int DEFAULT_CAMPAIGNS_PERIOD_DAYS = 14;
 
+    private static LocalDateTime resolveCampaignUpdatedAt(PromotionCampaign c) {
+        if (c.getChangeTime() != null) {
+            return c.getChangeTime();
+        }
+        return c.getUpdatedAt();
+    }
+
     /**
      * Список рекламных кампаний кабинета с агрегированной статистикой за период.
      * Если dateFrom/dateTo не заданы — используются последние 14 дней.
@@ -1007,6 +1015,7 @@ public class AnalyticsService {
                             .status(c.getStatus() != null ? c.getStatus().getCode() : null)
                             .statusName(c.getStatus() != null ? c.getStatus().getDescription() : null)
                             .createdAt(c.getCreateTime())
+                            .updatedAt(resolveCampaignUpdatedAt(c))
                             .articlesCount(articlesCount)
                             .views(views > 0 ? views : null)
                             .clicks(clicks > 0 ? clicks : null)

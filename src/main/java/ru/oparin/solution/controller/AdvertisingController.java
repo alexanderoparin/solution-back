@@ -7,11 +7,16 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.analytics.CampaignDetailDto;
 import ru.oparin.solution.dto.analytics.CampaignDto;
+import ru.oparin.solution.dto.analytics.PromotionSyncEnqueueResponse;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.service.AnalyticsService;
 import ru.oparin.solution.service.SellerContextService;
+import ru.oparin.solution.service.events.WbApiEventService;
+import ru.oparin.solution.service.events.payload.MainStepPayload;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 /**
  * API для раздела «Реклама»: список рекламных кампаний кабинета.
@@ -21,8 +26,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AdvertisingController {
 
+    private static final int SYNC_PROMOTION_DEFAULT_PERIOD_DAYS = 14;
+
     private final SellerContextService sellerContextService;
     private final AnalyticsService analyticsService;
+    private final WbApiEventService wbApiEventService;
 
     /**
      * Список рекламных кампаний текущего кабинета (с агрегацией статистики за период).
@@ -51,6 +59,48 @@ public class AdvertisingController {
         Long resolvedCabinetId = context.cabinet() != null ? context.cabinet().getId() : null;
         List<CampaignDto> campaigns = analyticsService.listCampaignsByCabinet(resolvedCabinetId, dateFrom, dateTo);
         return ResponseEntity.ok(campaigns);
+    }
+
+    /**
+     * Поставить в очередь обновление списка РК и статистики за период (цепочка PROMOTION_COUNT → … → fullstats).
+     * Период как у списка кампаний: по умолчанию последние 14 дней до сегодня.
+     */
+    @PostMapping("/campaigns/promotion-sync")
+    public ResponseEntity<?> enqueuePromotionSync(
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @RequestParam(required = false) LocalDate dateFrom,
+            @RequestParam(required = false) LocalDate dateTo,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                sellerId,
+                cabinetId
+        );
+        Cabinet cabinet = context.cabinet();
+        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "У кабинета нет API-ключа"));
+        }
+        LocalDate to = dateTo != null ? dateTo : LocalDate.now();
+        LocalDate from = dateFrom != null ? dateFrom : to.minusDays(SYNC_PROMOTION_DEFAULT_PERIOD_DAYS - 1);
+        if (from.isAfter(to)) {
+            LocalDate tmp = from;
+            from = to;
+            to = tmp;
+        }
+        MainStepPayload payload = MainStepPayload.builder()
+                .dateFrom(from)
+                .dateTo(to)
+                .includeStocks(false)
+                .build();
+        boolean enqueued = wbApiEventService.enqueuePromotionRequestLevelEvents(
+                cabinet.getId(),
+                payload,
+                "ADVERTISING_UI"
+        );
+        return ResponseEntity.ok(new PromotionSyncEnqueueResponse(enqueued));
     }
 
     /**

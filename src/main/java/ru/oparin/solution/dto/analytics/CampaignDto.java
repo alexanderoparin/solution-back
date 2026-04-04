@@ -45,6 +45,12 @@ public class CampaignDto {
      */
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdAt;
+
+    /**
+     * Дата последнего изменения (WB change_time), иначе время последней синхронизации записи в БД.
+     */
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    private LocalDateTime updatedAt;
     
     /** Показы (агрегат за период). */
     private Integer views;
