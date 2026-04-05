@@ -79,8 +79,9 @@ public class ArticleNotesController {
             @Valid @RequestBody UpdateNoteRequest request,
             Authentication authentication) {
 
+        User currentUser = userService.findByEmail(authentication.getName());
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
-        ArticleNoteDto note = noteService.updateNote(noteId, nmId, context, request);
+        ArticleNoteDto note = noteService.updateNote(noteId, nmId, context, request, currentUser);
         return ResponseEntity.ok(note);
     }
 
@@ -95,8 +96,9 @@ public class ArticleNotesController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
 
+        User currentUser = userService.findByEmail(authentication.getName());
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
-        noteService.deleteNote(noteId, nmId, context);
+        noteService.deleteNote(noteId, nmId, context, currentUser);
         return ResponseEntity.noContent().build();
     }
 
@@ -112,8 +114,9 @@ public class ArticleNotesController {
             @RequestParam("file") MultipartFile file,
             Authentication authentication) {
 
+        User currentUser = userService.findByEmail(authentication.getName());
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
-        ru.oparin.solution.dto.notes.ArticleNoteFileDto fileDto = noteService.uploadFile(noteId, nmId, context, file);
+        ru.oparin.solution.dto.notes.ArticleNoteFileDto fileDto = noteService.uploadFile(noteId, nmId, context, file, currentUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(fileDto);
     }
 
@@ -167,8 +170,9 @@ public class ArticleNotesController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
 
+        User currentUser = userService.findByEmail(authentication.getName());
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
-        noteService.deleteFile(noteId, fileId, nmId, context);
+        noteService.deleteFile(noteId, fileId, nmId, context, currentUser);
         return ResponseEntity.noContent().build();
     }
 }

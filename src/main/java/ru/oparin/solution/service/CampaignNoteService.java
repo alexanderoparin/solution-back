@@ -75,21 +75,30 @@ public class CampaignNoteService {
                 .collect(Collectors.toList());
     }
 
+    private void assertCurrentUserIsNoteAuthor(CampaignNote note, User currentUser) {
+        if (currentUser == null || note.getUser() == null
+                || !note.getUser().getId().equals(currentUser.getId())) {
+            throw new UserException("Изменять заметку может только её автор", HttpStatus.FORBIDDEN);
+        }
+    }
+
     @Transactional
-    public CampaignNoteDto updateNote(Long noteId, Long campaignId, SellerContext context, UpdateNoteRequest request) {
+    public CampaignNoteDto updateNote(Long noteId, Long campaignId, SellerContext context, UpdateNoteRequest request, User currentUser) {
         long cabinetId = resolveCabinetId(context);
         CampaignNote note = noteRepository.findByIdAndCampaignIdAndCabinetId(noteId, campaignId, cabinetId)
                 .orElseThrow(() -> new UserException("Заметка не найдена", HttpStatus.NOT_FOUND));
+        assertCurrentUserIsNoteAuthor(note, currentUser);
         note.setContent(request.getContent());
         note = noteRepository.save(note);
         return mapToDto(note);
     }
 
     @Transactional
-    public void deleteNote(Long noteId, Long campaignId, SellerContext context) {
+    public void deleteNote(Long noteId, Long campaignId, SellerContext context, User currentUser) {
         long cabinetId = resolveCabinetId(context);
         CampaignNote note = noteRepository.findByIdAndCampaignIdAndCabinetId(noteId, campaignId, cabinetId)
                 .orElseThrow(() -> new UserException("Заметка не найдена", HttpStatus.NOT_FOUND));
+        assertCurrentUserIsNoteAuthor(note, currentUser);
 
         List<CampaignNoteFile> files = fileRepository.findByNote_IdOrderByUploadedAtAsc(noteId);
         for (CampaignNoteFile file : files) {
@@ -100,10 +109,11 @@ public class CampaignNoteService {
     }
 
     @Transactional
-    public CampaignNoteFileDto uploadFile(Long noteId, Long campaignId, SellerContext context, MultipartFile file) {
+    public CampaignNoteFileDto uploadFile(Long noteId, Long campaignId, SellerContext context, MultipartFile file, User currentUser) {
         long cabinetId = resolveCabinetId(context);
-        noteRepository.findByIdAndCampaignIdAndCabinetId(noteId, campaignId, cabinetId)
+        CampaignNote note = noteRepository.findByIdAndCampaignIdAndCabinetId(noteId, campaignId, cabinetId)
                 .orElseThrow(() -> new UserException("Заметка не найдена", HttpStatus.NOT_FOUND));
+        assertCurrentUserIsNoteAuthor(note, currentUser);
 
         validateFile(file);
 
@@ -120,9 +130,8 @@ public class CampaignNoteService {
 
             Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
 
-            CampaignNote noteRef = noteRepository.getReferenceById(noteId);
             CampaignNoteFile noteFile = CampaignNoteFile.builder()
-                    .note(noteRef)
+                    .note(note)
                     .fileName(originalFileName != null ? originalFileName : uniqueFileName)
                     .filePath(filePath.toString())
                     .fileSize(file.getSize())
@@ -138,10 +147,11 @@ public class CampaignNoteService {
     }
 
     @Transactional
-    public void deleteFile(Long noteId, Long fileId, Long campaignId, SellerContext context) {
+    public void deleteFile(Long noteId, Long fileId, Long campaignId, SellerContext context, User currentUser) {
         long cabinetId = resolveCabinetId(context);
-        noteRepository.findByIdAndCampaignIdAndCabinetId(noteId, campaignId, cabinetId)
+        CampaignNote note = noteRepository.findByIdAndCampaignIdAndCabinetId(noteId, campaignId, cabinetId)
                 .orElseThrow(() -> new UserException("Заметка не найдена", HttpStatus.NOT_FOUND));
+        assertCurrentUserIsNoteAuthor(note, currentUser);
 
         CampaignNoteFile file = fileRepository.findByIdAndNoteId(fileId, noteId)
                 .orElseThrow(() -> new UserException("Файл не найден", HttpStatus.NOT_FOUND));

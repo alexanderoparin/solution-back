@@ -65,8 +65,9 @@ public class CampaignNotesController {
             @RequestParam(required = false) Long cabinetId,
             @Valid @RequestBody UpdateNoteRequest request,
             Authentication authentication) {
+        User currentUser = userService.findByEmail(authentication.getName());
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
-        CampaignNoteDto note = noteService.updateNote(noteId, campaignId, context, request);
+        CampaignNoteDto note = noteService.updateNote(noteId, campaignId, context, request, currentUser);
         return ResponseEntity.ok(note);
     }
 
@@ -77,8 +78,9 @@ public class CampaignNotesController {
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
+        User currentUser = userService.findByEmail(authentication.getName());
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
-        noteService.deleteNote(noteId, campaignId, context);
+        noteService.deleteNote(noteId, campaignId, context, currentUser);
         return ResponseEntity.noContent().build();
     }
 
@@ -90,8 +92,9 @@ public class CampaignNotesController {
             @RequestParam(required = false) Long cabinetId,
             @RequestParam("file") MultipartFile file,
             Authentication authentication) {
+        User currentUser = userService.findByEmail(authentication.getName());
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
-        CampaignNoteFileDto dto = noteService.uploadFile(noteId, campaignId, context, file);
+        CampaignNoteFileDto dto = noteService.uploadFile(noteId, campaignId, context, file, currentUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(dto);
     }
 
@@ -132,8 +135,9 @@ public class CampaignNotesController {
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
+        User currentUser = userService.findByEmail(authentication.getName());
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
-        noteService.deleteFile(noteId, fileId, campaignId, context);
+        noteService.deleteFile(noteId, fileId, campaignId, context, currentUser);
         return ResponseEntity.noContent().build();
     }
 }

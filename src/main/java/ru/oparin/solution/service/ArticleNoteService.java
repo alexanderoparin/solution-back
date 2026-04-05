@@ -100,14 +100,22 @@ public class ArticleNoteService {
      * @param request данные для обновления
      * @return обновленная заметка
      */
+    private void assertCurrentUserIsNoteAuthor(ArticleNote note, User currentUser) {
+        if (currentUser == null || note.getUser() == null
+                || !note.getUser().getId().equals(currentUser.getId())) {
+            throw new UserException("Изменять заметку может только её автор", HttpStatus.FORBIDDEN);
+        }
+    }
+
     @Transactional
-    public ArticleNoteDto updateNote(Long noteId, Long nmId, SellerContext context, UpdateNoteRequest request) {
+    public ArticleNoteDto updateNote(Long noteId, Long nmId, SellerContext context, UpdateNoteRequest request, User currentUser) {
         long cabinetId = resolveCabinetId(context);
         ArticleNote note = noteRepository.findByIdAndNmIdAndCabinetId(noteId, nmId, cabinetId)
                 .orElseThrow(() -> new UserException(
                         "Заметка не найдена",
                         HttpStatus.NOT_FOUND
                 ));
+        assertCurrentUserIsNoteAuthor(note, currentUser);
 
         note.setContent(request.getContent());
         note = noteRepository.save(note);
@@ -124,13 +132,14 @@ public class ArticleNoteService {
      * @param context контекст продавца
      */
     @Transactional
-    public void deleteNote(Long noteId, Long nmId, SellerContext context) {
+    public void deleteNote(Long noteId, Long nmId, SellerContext context, User currentUser) {
         long cabinetId = resolveCabinetId(context);
         ArticleNote note = noteRepository.findByIdAndNmIdAndCabinetId(noteId, nmId, cabinetId)
                 .orElseThrow(() -> new UserException(
                         "Заметка не найдена",
                         HttpStatus.NOT_FOUND
                 ));
+        assertCurrentUserIsNoteAuthor(note, currentUser);
 
         // Удаляем все файлы
         List<ArticleNoteFile> files = fileRepository.findByNoteIdOrderByUploadedAtAsc(noteId);
@@ -152,13 +161,14 @@ public class ArticleNoteService {
      * @return информация о загруженном файле
      */
     @Transactional
-    public ArticleNoteFileDto uploadFile(Long noteId, Long nmId, SellerContext context, MultipartFile file) {
+    public ArticleNoteFileDto uploadFile(Long noteId, Long nmId, SellerContext context, MultipartFile file, User currentUser) {
         long cabinetId = resolveCabinetId(context);
         ArticleNote note = noteRepository.findByIdAndNmIdAndCabinetId(noteId, nmId, cabinetId)
                 .orElseThrow(() -> new UserException(
                         "Заметка не найдена",
                         HttpStatus.NOT_FOUND
                 ));
+        assertCurrentUserIsNoteAuthor(note, currentUser);
 
         // Валидация файла
         validateFile(file);
@@ -213,13 +223,14 @@ public class ArticleNoteService {
      * @param context контекст продавца
      */
     @Transactional
-    public void deleteFile(Long noteId, Long fileId, Long nmId, SellerContext context) {
+    public void deleteFile(Long noteId, Long fileId, Long nmId, SellerContext context, User currentUser) {
         long cabinetId = resolveCabinetId(context);
         ArticleNote note = noteRepository.findByIdAndNmIdAndCabinetId(noteId, nmId, cabinetId)
                 .orElseThrow(() -> new UserException(
                         "Заметка не найдена",
                         HttpStatus.NOT_FOUND
                 ));
+        assertCurrentUserIsNoteAuthor(note, currentUser);
 
         ArticleNoteFile file = fileRepository.findByIdAndNoteId(fileId, noteId)
                 .orElseThrow(() -> new UserException(
