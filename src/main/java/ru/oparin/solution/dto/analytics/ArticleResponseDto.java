@@ -70,5 +70,10 @@ public class ArticleResponseDto {
      * null, если кабинет не выбран или запуск ещё не выполнялся.
      */
     private LocalDateTime lastStocksUpdateTriggeredAt;
+
+    /**
+     * Редактируемая цель рекламной кампании по артикулу в кабинете; null если не задана или кабинет не выбран.
+     */
+    private String adCampaignGoal;
 }
 

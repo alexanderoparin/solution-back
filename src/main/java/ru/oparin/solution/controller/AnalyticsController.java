@@ -1,11 +1,14 @@
 package ru.oparin.solution.controller;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.analytics.*;
 import ru.oparin.solution.service.AnalyticsService;
+import ru.oparin.solution.service.ArticleAdCampaignGoalService;
 import ru.oparin.solution.service.SellerContextService;
 
 import java.net.URLDecoder;
@@ -22,6 +25,7 @@ public class AnalyticsController {
 
     private final AnalyticsService analyticsService;
     private final SellerContextService sellerContextService;
+    private final ArticleAdCampaignGoalService articleAdCampaignGoalService;
 
     /**
      * Получает список артикулов кабинета/продавца (только справочная информация для фильтра).
@@ -150,6 +154,26 @@ public class AnalyticsController {
         );
         
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Сохраняет текст «Цель рекламной кампании» для артикула в выбранном кабинете.
+     */
+    @PutMapping("/article/{nmId}/ad-campaign-goal")
+    public ResponseEntity<Void> updateAdCampaignGoal(
+            @PathVariable Long nmId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @Valid @RequestBody UpdateAdCampaignGoalRequest request,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                sellerId,
+                cabinetId
+        );
+        articleAdCampaignGoalService.upsertGoal(context.user(), context.cabinetId(), nmId, request.getGoal());
+        return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 
     /**
