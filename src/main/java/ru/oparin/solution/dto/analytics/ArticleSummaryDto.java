@@ -41,6 +41,11 @@ public class ArticleSummaryDto {
     private String photoTm;
 
     /**
+     * URL превью 246×328 (WB); для шапки артикула и «в связке», если задано.
+     */
+    private String photoC246x328;
+
+    /**
      * Артикул продавца.
      */
     private String vendorCode;

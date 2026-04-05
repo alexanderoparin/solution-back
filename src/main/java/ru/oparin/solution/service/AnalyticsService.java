@@ -71,7 +71,7 @@ public class AnalyticsService {
         List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
         if (Boolean.TRUE.equals(onlyWithPhoto)) {
             visibleCards = visibleCards.stream()
-                    .filter(c -> c.getPhotoTm() != null && !c.getPhotoTm().isBlank())
+                    .filter(this::cardHasAnyPhoto)
                     .collect(Collectors.toList());
         }
 
@@ -120,7 +120,7 @@ public class AnalyticsService {
         List<ProductCard> allCards = getVisibleCards(seller.getId(), cabinetId, null);
         if (Boolean.TRUE.equals(onlyWithPhoto)) {
             allCards = allCards.stream()
-                    .filter(c -> c.getPhotoTm() != null && !c.getPhotoTm().isBlank())
+                    .filter(this::cardHasAnyPhoto)
                     .collect(Collectors.toList());
         }
         return mapToArticleSummaries(allCards);
@@ -168,7 +168,7 @@ public class AnalyticsService {
         List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
         if (Boolean.TRUE.equals(onlyWithPhoto)) {
             visibleCards = visibleCards.stream()
-                    .filter(c -> c.getPhotoTm() != null && !c.getPhotoTm().isBlank())
+                    .filter(this::cardHasAnyPhoto)
                     .collect(Collectors.toList());
         }
 
@@ -195,7 +195,7 @@ public class AnalyticsService {
         List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
         if (Boolean.TRUE.equals(onlyWithPhoto)) {
             visibleCards = visibleCards.stream()
-                    .filter(c -> c.getPhotoTm() != null && !c.getPhotoTm().isBlank())
+                    .filter(this::cardHasAnyPhoto)
                     .collect(Collectors.toList());
         }
         List<Long> campaignIds = getCampaignIdsForCabinet(seller.getId(), cabinetId);
@@ -1219,6 +1219,11 @@ public class AnalyticsService {
                 .collect(Collectors.toList());
     }
 
+    private boolean cardHasAnyPhoto(ProductCard card) {
+        return (card.getPhotoTm() != null && !card.getPhotoTm().isBlank())
+                || (card.getPhotoC246x328() != null && !card.getPhotoC246x328().isBlank());
+    }
+
     private ArticleSummaryDto mapToArticleSummary(ProductCard card) {
         return ArticleSummaryDto.builder()
                 .nmId(card.getNmId())
@@ -1226,6 +1231,7 @@ public class AnalyticsService {
                 .brand(card.getBrand())
                 .subjectName(card.getSubjectName())
                 .photoTm(card.getPhotoTm())
+                .photoC246x328(card.getPhotoC246x328())
                 .vendorCode(card.getVendorCode())
                 .rating(card.getRating())
                 .reviewsCount(card.getReviewsCount())
@@ -1241,6 +1247,7 @@ public class AnalyticsService {
                 .subjectName(card.getSubjectName())
                 .vendorCode(card.getVendorCode())
                 .photoTm(card.getPhotoTm())
+                .photoC246x328(card.getPhotoC246x328())
                 .rating(card.getRating())
                 .reviewsCount(card.getReviewsCount())
                 .productUrl("https://www.wildberries.ru/catalog/" + card.getNmId() + "/detail.aspx")

@@ -1,10 +1,6 @@
 package ru.oparin.solution.dto.analytics;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -53,6 +49,11 @@ public class ArticleDetailDto {
      * URL миниатюры первой фотографии товара.
      */
     private String photoTm;
+
+    /**
+     * URL превью 246×328 (WB photos[].c246x328); для отображения в шапке артикула, если задано.
+     */
+    private String photoC246x328;
     
     /**
      * Рейтинг товара.

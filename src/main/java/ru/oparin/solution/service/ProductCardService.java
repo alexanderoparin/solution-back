@@ -206,6 +206,7 @@ public class ProductCardService {
 
     private ProductCard mapToProductCard(CardDto cardDto, User seller, Cabinet cabinet) {
         String photoTm = extractPhotoTm(cardDto);
+        String photoC246x328 = extractPhotoC246x328(cardDto);
 
         return ProductCard.builder()
                 .nmId(cardDto.getNmId())
@@ -217,6 +218,7 @@ public class ProductCardService {
                 .brand(cardDto.getBrand())
                 .vendorCode(cardDto.getVendorCode())
                 .photoTm(photoTm)
+                .photoC246x328(photoC246x328)
                 .build();
     }
 
@@ -229,6 +231,18 @@ public class ProductCardService {
         return firstPhoto != null ? firstPhoto.getTm() : null;
     }
 
+    private String extractPhotoC246x328(CardDto cardDto) {
+        if (cardDto.getPhotos() == null || cardDto.getPhotos().isEmpty()) {
+            return null;
+        }
+        CardDto.Photo firstPhoto = cardDto.getPhotos().get(0);
+        if (firstPhoto == null || firstPhoto.getC246x328() == null) {
+            return null;
+        }
+        String url = firstPhoto.getC246x328().trim();
+        return url.isEmpty() ? null : url;
+    }
+
     private void updateCardFields(ProductCard existing, ProductCard updated) {
         existing.setImtId(updated.getImtId());
         existing.setTitle(updated.getTitle());
@@ -236,6 +250,7 @@ public class ProductCardService {
         existing.setBrand(updated.getBrand());
         existing.setVendorCode(updated.getVendorCode());
         existing.setPhotoTm(updated.getPhotoTm());
+        existing.setPhotoC246x328(updated.getPhotoC246x328());
     }
 
     private record ProcessingResult(int savedCount, int updatedCount) {

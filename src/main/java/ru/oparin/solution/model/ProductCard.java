@@ -81,6 +81,12 @@ public class ProductCard {
     private String photoTm;
 
     /**
+     * URL превью первой фотографии (246×328, поле c246x328 в WB API).
+     */
+    @Column(name = "photo_c246x328", length = 1000)
+    private String photoC246x328;
+
+    /**
      * Дата создания записи.
      */
     @CreatedDate
