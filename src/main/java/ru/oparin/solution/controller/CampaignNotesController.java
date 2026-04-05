@@ -2,11 +2,14 @@ package ru.oparin.solution.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import ru.oparin.solution.dto.notes.CampaignNoteDto;
+import ru.oparin.solution.dto.notes.CampaignNoteFileDto;
 import ru.oparin.solution.dto.notes.CreateNoteRequest;
 import ru.oparin.solution.dto.notes.UpdateNoteRequest;
 import ru.oparin.solution.model.User;
@@ -14,6 +17,8 @@ import ru.oparin.solution.service.CampaignNoteService;
 import ru.oparin.solution.service.SellerContextService;
 import ru.oparin.solution.service.UserService;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 
 /**
@@ -74,6 +79,61 @@ public class CampaignNotesController {
             Authentication authentication) {
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
         noteService.deleteNote(noteId, campaignId, context);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{noteId}/files")
+    public ResponseEntity<CampaignNoteFileDto> uploadFile(
+            @PathVariable Long campaignId,
+            @PathVariable Long noteId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @RequestParam("file") MultipartFile file,
+            Authentication authentication) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        CampaignNoteFileDto dto = noteService.uploadFile(noteId, campaignId, context, file);
+        return ResponseEntity.status(HttpStatus.CREATED).body(dto);
+    }
+
+    @GetMapping("/{noteId}/files/{fileId}")
+    public ResponseEntity<Resource> downloadFile(
+            @PathVariable Long campaignId,
+            @PathVariable Long noteId,
+            @PathVariable Long fileId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        Path filePath = noteService.getFile(noteId, fileId, campaignId, context);
+        Resource resource = new FileSystemResource(filePath);
+        if (!resource.exists()) {
+            return ResponseEntity.notFound().build();
+        }
+        CampaignNoteFileDto fileInfo = noteService.getFileInfo(noteId, fileId, campaignId, context);
+        String fileName = fileInfo.getFileName();
+        return ResponseEntity.ok()
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename(fileName, StandardCharsets.UTF_8)
+                                .build()
+                                .toString()
+                )
+                .contentType(MediaType.parseMediaType(
+                        fileInfo.getMimeType() != null ? fileInfo.getMimeType() : MediaType.APPLICATION_OCTET_STREAM_VALUE))
+                .body(resource);
+    }
+
+    @DeleteMapping("/{noteId}/files/{fileId}")
+    public ResponseEntity<Void> deleteFile(
+            @PathVariable Long campaignId,
+            @PathVariable Long noteId,
+            @PathVariable Long fileId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        noteService.deleteFile(noteId, fileId, campaignId, context);
         return ResponseEntity.noContent().build();
     }
 }

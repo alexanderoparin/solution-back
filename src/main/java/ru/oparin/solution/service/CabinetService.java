@@ -220,6 +220,7 @@ public class CabinetService {
         cabinetDeletionService.deleteStepCardAnalytics(cabinetId);
         cabinetDeletionService.deleteStepProductCards(cabinetId);
         cabinetDeletionService.deleteStepArticleNotes(cabinetId);
+        cabinetDeletionService.deleteStepCampaignNoteFiles(cabinetId);
         cabinetDeletionService.deleteStepCampaignNotes(cabinetId);
         log.info("[Удаление кабинета]   Запись кабинета");
         deleteCabinet(cabinet);

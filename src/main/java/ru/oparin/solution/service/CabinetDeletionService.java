@@ -2,12 +2,18 @@ package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import ru.oparin.solution.model.CampaignNoteFile;
 import ru.oparin.solution.repository.*;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 
 /**
@@ -31,6 +37,7 @@ public class CabinetDeletionService {
     private final ProductCardRepository productCardRepository;
     private final ArticleNoteRepository articleNoteRepository;
     private final CampaignNoteRepository campaignNoteRepository;
+    private final CampaignNoteFileRepository campaignNoteFileRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void deleteStepStatisticsAndArticles(Long cabinetId) {
@@ -89,6 +96,35 @@ public class CabinetDeletionService {
         deleteByIdBatches("Заметки по артикулам",
                 () -> articleNoteRepository.findIdByCabinetId(cabinetId, PageRequest.of(0, BATCH_SIZE)),
                 articleNoteRepository::deleteAllById);
+    }
+
+    /**
+     * Сначала удаляем файлы заметок РК с диска и строки в campaign_note_files, иначе при удалении заметок останутся сироты на диске.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void deleteStepCampaignNoteFiles(Long cabinetId) {
+        while (true) {
+            Page<CampaignNoteFile> page = campaignNoteFileRepository.findByNote_CabinetId(cabinetId, PageRequest.of(0, BATCH_SIZE));
+            if (page.isEmpty()) {
+                break;
+            }
+            for (CampaignNoteFile f : page.getContent()) {
+                deleteCampaignNoteFileFromDisk(f.getFilePath());
+            }
+            campaignNoteFileRepository.deleteAll(page.getContent());
+            log.info("[Удаление кабинета]   Файлы заметок РК: удалено записей {}", page.getContent().size());
+        }
+    }
+
+    private void deleteCampaignNoteFileFromDisk(String filePath) {
+        try {
+            Path path = Paths.get(filePath);
+            if (Files.exists(path)) {
+                Files.delete(path);
+            }
+        } catch (IOException e) {
+            log.warn("[Удаление кабинета] Не удалось удалить файл заметки РК с диска: {}", filePath, e);
+        }
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

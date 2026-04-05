@@ -3,6 +3,7 @@ package ru.oparin.solution.dto.notes;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * DTO для заметки к рекламной кампании (РК).
@@ -20,4 +21,5 @@ public class CampaignNoteDto {
     private String content;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private List<CampaignNoteFileDto> files;
 }
