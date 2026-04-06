@@ -38,7 +38,7 @@ public class AnalyticsScheduler {
      * Автоматическая ночная загрузка аналитики:
      * main-обновление всех кабинетов, затем единый этап обновления остатков.
      */
-    @Scheduled(cron = "0 0 1 * * ?")
+    @Scheduled(cron = "0 0 2 * * ?")
     public void loadAnalyticsForAllActiveSellers() {
         runNightlyFullAnalyticsUpdate();
     }
@@ -65,7 +65,7 @@ public class AnalyticsScheduler {
      * Автоматическое обновление списка складов WB по кабинетам с ключом.
      * Запускается каждый день в 00:00.
      */
-    @Scheduled(cron = "0 0 0 * * ?")
+    @Scheduled(cron = "0 0 1 * * ?")
     public void updateWbWarehouses() {
         log.info("Запуск автоматического обновления складов WB (очередь событий)");
 
