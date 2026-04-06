@@ -179,7 +179,7 @@ public class ProductCardAnalyticsService {
             CompletableFuture<Void> campaignFuture = CompletableFuture.runAsync(
                     runAsyncCabinetStep("syncCampaignsAndStatistics", cabinetId,
                             () -> runWithScopeGuard(cabinetId, WbApiCategory.PROMOTION,
-                                    () -> syncCampaignsAndStatistics(managed, managed.getApiKey(), cabinetId, seller, dateFrom, dateTo))),
+                                    () -> syncCampaignsAndStatistics(managed, managed.getApiKey(), seller, dateFrom, dateTo))),
                     taskExecutor
             );
 
@@ -267,15 +267,12 @@ public class ProductCardAnalyticsService {
         productPricesSyncService.updateSppFromOrders(managed, apiKey);
     }
 
-    private void syncCampaignsAndStatistics(Cabinet managed, String apiKey, long cabinetId, User seller,
+    private void syncCampaignsAndStatistics(Cabinet managed, String apiKey, User seller,
                                             LocalDate dateFrom, LocalDate dateTo) {
         List<Long> campaignIds = campaignSyncService.updateCampaigns(managed, apiKey);
         if (campaignIds.isEmpty()) return;
 
-        List<Long> nonFinishedIds = campaignSyncService.filterNonFinishedCampaigns(cabinetId, campaignIds);
-        if (nonFinishedIds.isEmpty()) return;
-
-        campaignSyncService.updateStatistics(seller, apiKey, nonFinishedIds, cabinetId, dateFrom, dateTo);
+        campaignSyncService.updateStatistics(seller, apiKey, campaignIds, dateFrom, dateTo);
     }
 
     private void syncAnalytics(Cabinet managed, long cabinetId, List<ProductCard> productCards,

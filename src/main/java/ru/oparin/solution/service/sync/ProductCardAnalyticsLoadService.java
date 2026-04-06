@@ -12,7 +12,6 @@ import ru.oparin.solution.service.wb.WbAnalyticsApiClient;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -57,33 +56,14 @@ public class ProductCardAnalyticsLoadService {
     }
 
     public void loadAnalyticsForCard(ProductCard card, String apiKey, LocalDate dateFrom, LocalDate dateTo) {
-        Long cabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
-        List<LocalDate> existingDates = getExistingAnalyticsDates(card.getNmId(), cabinetId, dateFrom, dateTo);
-
-        if (isAllDatesPresent(existingDates, dateFrom, dateTo)) {
-            log.info("Аналитика для nmID {} за период {} - {} уже в БД", card.getNmId(), dateFrom, dateTo);
-            return;
-        }
-
-        DateRange requestRange = calculateRequestRange(existingDates, dateFrom, dateTo);
-        if (requestRange == null) {
-            return;
-        }
-
-        if (!existingDates.isEmpty()) {
-            long totalDays = ChronoUnit.DAYS.between(dateFrom, dateTo) + 1;
-            log.info("Для nmID {} уже есть аналитика за {} из {} дней. Запрашиваем период {} - {}",
-                    card.getNmId(), existingDates.size(), totalDays, requestRange.from(), requestRange.to());
-        }
-
-        SaleFunnelResponse analyticsResponse = fetchAnalytics(apiKey, card.getNmId(), requestRange.from(), requestRange.to());
+        SaleFunnelResponse analyticsResponse = fetchAnalytics(apiKey, card.getNmId(), dateFrom, dateTo);
 
         if (analyticsResponse == null || analyticsResponse.getData() == null) {
             log.warn("Аналитика для карточки nmID {} не получена", card.getNmId());
             return;
         }
 
-        saveAnalyticsData(card, analyticsResponse, existingDates, dateFrom, dateTo);
+        saveAnalyticsData(card, analyticsResponse, dateFrom, dateTo);
     }
 
     private SaleFunnelResponse fetchAnalytics(String apiKey, Long nmId, LocalDate dateFrom, LocalDate dateTo) {
@@ -95,13 +75,11 @@ public class ProductCardAnalyticsLoadService {
     private void saveAnalyticsData(
             ProductCard card,
             SaleFunnelResponse analyticsResponse,
-            List<LocalDate> existingDates,
             LocalDate dateFrom,
             LocalDate dateTo
     ) {
         int savedCount = 0;
         int updatedCount = 0;
-        int skippedCount = 0;
         List<AnalyticsSaveItem> itemsToSave = new ArrayList<>();
 
         for (SaleFunnelResponse.DailyData dailyData : analyticsResponse.getData()) {
@@ -111,10 +89,6 @@ public class ProductCardAnalyticsLoadService {
             try {
                 LocalDate date = LocalDate.parse(dailyData.getDt(), DATE_FORMATTER);
                 if (!isDateInRange(date, dateFrom, dateTo)) continue;
-                if (existingDates.contains(date)) {
-                    skippedCount++;
-                    continue;
-                }
                 itemsToSave.add(new AnalyticsSaveItem(card, dailyData, date));
             } catch (Exception e) {
                 log.error("Ошибка при подготовке аналитики для карточки nmID {} за дату {}: {}",
@@ -128,8 +102,8 @@ public class ProductCardAnalyticsLoadService {
             updatedCount = batchResult.updatedCount();
         }
 
-        log.info("Аналитика для карточки nmID {}: создано {}, обновлено {}, пропущено {}",
-                card.getNmId(), savedCount, updatedCount, skippedCount);
+        log.info("Аналитика для карточки nmID {}: создано {}, обновлено {}",
+                card.getNmId(), savedCount, updatedCount);
     }
 
     @Transactional
@@ -178,35 +152,6 @@ public class ProductCardAnalyticsLoadService {
         return existing.isEmpty();
     }
 
-    private List<LocalDate> getExistingAnalyticsDates(Long nmId, Long cabinetId, LocalDate dateFrom, LocalDate dateTo) {
-        List<ProductCardAnalytics> existing = cabinetId != null
-                ? analyticsRepository.findByCabinet_IdAndProductCardNmIdAndDateBetween(cabinetId, nmId, dateFrom, dateTo)
-                : analyticsRepository.findByProductCardNmIdAndDateBetween(nmId, dateFrom, dateTo);
-        return existing.stream().map(ProductCardAnalytics::getDate).toList();
-    }
-
-    private boolean isAllDatesPresent(List<LocalDate> existingDates, LocalDate dateFrom, LocalDate dateTo) {
-        long totalDays = ChronoUnit.DAYS.between(dateFrom, dateTo) + 1;
-        if (existingDates.size() < totalDays) return false;
-        for (LocalDate date = dateFrom; !date.isAfter(dateTo); date = date.plusDays(1)) {
-            if (!existingDates.contains(date)) return false;
-        }
-        return true;
-    }
-
-    private DateRange calculateRequestRange(List<LocalDate> existingDates, LocalDate dateFrom, LocalDate dateTo) {
-        LocalDate minMissing = null;
-        LocalDate maxMissing = null;
-        for (LocalDate date = dateFrom; !date.isAfter(dateTo); date = date.plusDays(1)) {
-            if (!existingDates.contains(date)) {
-                if (minMissing == null) minMissing = date;
-                maxMissing = date;
-            }
-        }
-        if (minMissing == null) return null;
-        return new DateRange(minMissing, maxMissing);
-    }
-
     private boolean isDateInRange(LocalDate date, LocalDate dateFrom, LocalDate dateTo) {
         return !date.isBefore(dateFrom) && !date.isAfter(dateTo);
     }
@@ -216,6 +161,4 @@ public class ProductCardAnalyticsLoadService {
     private record AnalyticsSaveItem(ProductCard card, SaleFunnelResponse.DailyData dailyData, LocalDate date) {}
 
     private record SaveBatchResult(int savedCount, int updatedCount) {}
-
-    private record DateRange(LocalDate from, LocalDate to) {}
 }

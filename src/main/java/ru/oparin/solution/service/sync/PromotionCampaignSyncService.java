@@ -10,7 +10,6 @@ import ru.oparin.solution.dto.wb.PromotionFullStatsRequest;
 import ru.oparin.solution.dto.wb.PromotionFullStatsResponse;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.CampaignStatus;
 import ru.oparin.solution.model.PromotionCampaign;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
@@ -21,7 +20,6 @@ import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -99,16 +97,18 @@ public class PromotionCampaignSyncService {
     }
 
     /**
-     * Кампании кабинета, для которых ещё не хватает статистики за период (по данным БД).
+     * Все кампании кабинета (по advertId) — для них ставится в очередь загрузка статистики за период.
+     * Статус кампании (в т.ч. завершена) не учитывается.
+     *
+     * @param dateFrom dateTo зарезервированы под контекст периода в очереди событий; отбор кампаний по ним не выполняется
      */
+    @SuppressWarnings("unused")
     public List<Long> listCampaignIdsNeedingStatisticsForPeriod(Long cabinetId, LocalDate dateFrom, LocalDate dateTo) {
-        List<Long> ids = campaignRepository.findByCabinet_Id(cabinetId).stream()
+        return campaignRepository.findByCabinet_Id(cabinetId).stream()
                 .map(PromotionCampaign::getAdvertId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        List<Long> nonFinished = filterNonFinishedCampaigns(cabinetId, ids);
-        return filterCampaignsNeedingStatistics(nonFinished, dateFrom, dateTo);
     }
 
     public int getCampaignsBatchSize() {
@@ -172,13 +172,13 @@ public class PromotionCampaignSyncService {
     }
 
     /**
-     * Обновляет статистику кампаний за период. Исключает завершённые кампании и уже загруженные даты.
+     * Обновляет статистику кампаний за период для всех переданных advertId (в т.ч. завершённых).
+     * Перезаписывает строки по (кампания, nm_id, дата).
      */
     public void updateStatistics(
             User seller,
             String apiKey,
             List<Long> campaignIds,
-            Long cabinetId,
             LocalDate dateFrom,
             LocalDate dateTo
     ) {
@@ -186,18 +186,20 @@ public class PromotionCampaignSyncService {
             log.info("Начало обновления статистики кампаний для продавца (ID: {}, email: {}) за период {} - {}",
                     seller.getId(), seller.getEmail(), dateFrom, dateTo);
 
-            List<Long> nonFinishedIds = filterNonFinishedCampaigns(cabinetId, campaignIds);
-            List<Long> campaignsToFetch = filterCampaignsNeedingStatistics(nonFinishedIds, dateFrom, dateTo);
+            List<Long> toFetch = campaignIds.stream()
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .toList();
 
-            if (campaignsToFetch.isEmpty()) {
-                log.info("Статистика для всех кампаний за период {} - {} уже присутствует в БД", dateFrom, dateTo);
+            if (toFetch.isEmpty()) {
+                log.info("Нет кампаний для загрузки статистики за период {} - {}", dateFrom, dateTo);
                 return;
             }
 
-            log.info("Требуется загрузка статистики для {} из {} кампаний", campaignsToFetch.size(), campaignIds.size());
+            log.info("Загрузка статистики для {} кампаний (перезапись существующих записей)", toFetch.size());
 
             List<PromotionFullStatsResponse.CampaignStats> allStats = fetchStatisticsInBatches(
-                    apiKey, campaignsToFetch, dateFrom, dateTo);
+                    apiKey, toFetch, dateFrom, dateTo);
 
             if (allStats.isEmpty()) {
                 log.info("Не удалось получить статистику кампаний для продавца (ID: {})", seller.getId());
@@ -220,22 +222,6 @@ public class PromotionCampaignSyncService {
                         seller.getId(), seller.getEmail(), e.getMessage(), e);
             }
         }
-    }
-
-    public List<Long> filterNonFinishedCampaigns(Long cabinetId, List<Long> campaignIds) {
-        List<PromotionCampaign> campaigns = campaignRepository.findByCabinet_Id(cabinetId);
-        Set<Long> finishedIds = campaigns.stream()
-                .filter(c -> c.getStatus() == CampaignStatus.FINISHED)
-                .map(PromotionCampaign::getAdvertId)
-                .collect(Collectors.toSet());
-        List<Long> nonFinished = campaignIds.stream()
-                .filter(id -> !finishedIds.contains(id))
-                .collect(Collectors.toList());
-        if (campaignIds.size() - nonFinished.size() > 0) {
-            log.info("Исключено {} завершённых кампаний из запроса статистики. Незавершённых: {}",
-                    campaignIds.size() - nonFinished.size(), nonFinished.size());
-        }
-        return nonFinished;
     }
 
     private CampaignIdsByType separateCampaignsByType(PromotionCountResponse countResponse) {
@@ -356,20 +342,6 @@ public class PromotionCampaignSyncService {
         return requestedIds.stream()
                 .filter(id -> !receivedIds.contains(id))
                 .collect(Collectors.toList());
-    }
-
-    private List<Long> filterCampaignsNeedingStatistics(List<Long> campaignIds, LocalDate dateFrom, LocalDate dateTo) {
-        long totalDays = ChronoUnit.DAYS.between(dateFrom, dateTo) + 1;
-        List<Long> toFetch = new ArrayList<>();
-        for (Long campaignId : campaignIds) {
-            List<LocalDate> existingDates = campaignStatisticsService.getExistingStatisticsDates(campaignId, dateFrom, dateTo);
-            if (existingDates.size() < totalDays) {
-                toFetch.add(campaignId);
-            } else {
-                log.info("Статистика для кампании advertId {} за период {} - {} уже в БД", campaignId, dateFrom, dateTo);
-            }
-        }
-        return toFetch;
     }
 
     private record CampaignIdsByType(List<Long> type8Ids, List<Long> type9Ids) {}

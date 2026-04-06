@@ -37,22 +37,6 @@ public class PromotionCampaignStatisticsService {
     private final PromotionCampaignRepository campaignRepository;
 
     /**
-     * Получает список дат, за которые уже есть статистика для кампании.
-     *
-     * @param campaignId ID кампании
-     * @param dateFrom дата начала периода
-     * @param dateTo дата окончания периода
-     * @return список дат, за которые есть статистика
-     */
-    public List<LocalDate> getExistingStatisticsDates(Long campaignId, LocalDate dateFrom, LocalDate dateTo) {
-        return statisticsRepository.findByCampaignAdvertIdAndDateBetween(campaignId, dateFrom, dateTo)
-                .stream()
-                .map(PromotionCampaignStatistics::getDate)
-                .distinct() // Убираем дубликаты дат (в кампании может быть несколько артикулов)
-                .collect(Collectors.toList());
-    }
-
-    /**
      * Сохраняет или обновляет статистику кампаний из ответа WB API.
      *
      * @param response ответ от WB API со статистикой
