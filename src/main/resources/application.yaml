@@ -4,6 +4,10 @@ server:
     context-path: /api
 
 spring:
+  task:
+    scheduling:
+      pool:
+        size: 4
   mail:
     host: smtp.timeweb.ru
     port: 587
@@ -128,6 +132,7 @@ app:
     poll-delay-ms: 3000
     stuck-check-delay-ms: 15000
     running-timeout-minutes: 15
+    event-await-timeout-seconds: 120
     default-batch-size: 50
     batch-size-by-type:
       CONTENT_CARDS_LIST_PAGE: 20

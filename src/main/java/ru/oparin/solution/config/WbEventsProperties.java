@@ -28,6 +28,11 @@ public class WbEventsProperties {
     private int runningTimeoutMinutes;
 
     /**
+     * Таймаут ожидания завершения одного async-события в poll (секунды).
+     */
+    private int eventAwaitTimeoutSeconds;
+
+    /**
      * Базовый лимит вычитки на тип, если тип не задан в map.
      */
     private int defaultBatchSize;

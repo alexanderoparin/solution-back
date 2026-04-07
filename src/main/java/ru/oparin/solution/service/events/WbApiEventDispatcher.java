@@ -13,8 +13,7 @@ import ru.oparin.solution.model.WbApiEvent;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
+import java.util.concurrent.*;
 
 @Component
 @RequiredArgsConstructor
@@ -40,13 +39,17 @@ public class WbApiEventDispatcher {
         List<CompletableFuture<EventExecutionOutcome>> futures = events.stream()
                 .map(event -> CompletableFuture.supplyAsync(() -> executeSingle(event), cabinetUpdateExecutor))
                 .toList();
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
         int deferredCount = 0;
         int executedCount = 0;
         int skippedCount = 0;
+        int timeoutCount = 0;
         for (CompletableFuture<EventExecutionOutcome> future : futures) {
-            EventExecutionOutcome outcome = future.join();
+            EventExecutionOutcome outcome = awaitOutcome(future);
+            if (outcome == EventExecutionOutcome.TIMEOUT) {
+                timeoutCount++;
+                continue;
+            }
             if (outcome == EventExecutionOutcome.DEFERRED_RATE_LIMIT) {
                 deferredCount++;
             } else if (outcome == EventExecutionOutcome.EXECUTED) {
@@ -56,9 +59,28 @@ public class WbApiEventDispatcher {
             }
         }
         log.info(
-                "WB events poll: выполнено {}, отложено по rate-limit {}, пропущено {} (всего выбрано {})",
-                executedCount, deferredCount, skippedCount, events.size()
+                "WB events poll: выполнено {}, отложено по rate-limit {}, пропущено {}, таймаут {} (всего выбрано {})",
+                executedCount, deferredCount, skippedCount, timeoutCount, events.size()
         );
+    }
+
+    private EventExecutionOutcome awaitOutcome(CompletableFuture<EventExecutionOutcome> future) {
+        int timeoutSeconds = Math.max(1, wbEventsProperties.getEventAwaitTimeoutSeconds());
+        try {
+            return future.get(timeoutSeconds, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            log.error("WB events poll: таймаут ожидания async-события (>{}с), future отменен", timeoutSeconds);
+            return EventExecutionOutcome.TIMEOUT;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("WB events poll: поток прерван при ожидании async-события");
+            return EventExecutionOutcome.TIMEOUT;
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            log.error("WB events poll: ошибка ожидания async-события: {}", cause.getMessage(), cause);
+            return EventExecutionOutcome.TIMEOUT;
+        }
     }
 
     @Scheduled(fixedDelayString = "${app.wb-events.stuck-check-delay-ms}")
@@ -110,7 +132,8 @@ public class WbApiEventDispatcher {
     private enum EventExecutionOutcome {
         EXECUTED,
         DEFERRED_RATE_LIMIT,
-        SKIPPED
+        SKIPPED,
+        TIMEOUT
     }
 
 }
