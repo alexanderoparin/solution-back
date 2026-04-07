@@ -22,9 +22,10 @@ public class WbApiEventsCleanupScheduler {
     @SchedulerLock(name = "wbApiEventsCleanupWeekly", lockAtLeastFor = "PT5S", lockAtMostFor = "PT10M")
     @Transactional
     public void cleanupOldSuccessfulEvents() {
-        long deleted = wbApiEventService.deleteOldSuccessfulEvents(12);
+        int hours = 12;
+        long deleted = wbApiEventService.deleteOldSuccessfulEvents(hours);
         if (deleted > 0) {
-            log.info("Очистка WB API событий: удалено успешно выполненных старше 7 дней: {}", deleted);
+            log.info("Очистка WB API событий: удалено успешно выполненных старше {} часов: {}", hours, deleted);
         }
     }
 }
