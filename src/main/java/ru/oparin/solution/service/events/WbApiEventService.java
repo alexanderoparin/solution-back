@@ -603,8 +603,8 @@ public class WbApiEventService {
     }
 
     @Transactional
-    public long deleteOldSuccessfulEvents(int days) {
-        LocalDateTime threshold = LocalDateTime.now().minusDays(days);
+    public long deleteOldSuccessfulEvents(int hours) {
+        LocalDateTime threshold = LocalDateTime.now().minusHours(hours);
         return eventRepository.deleteByStatusAndFinishedAtBefore(WbApiEventStatus.SUCCESS, threshold);
     }
 

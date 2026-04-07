@@ -119,7 +119,8 @@ public class WbApiKeyService {
         } catch (Exception e) {
             String errorMessage = "Ошибка при валидации: " + e.getMessage();
             updateValidationStatus(cabinet, false, errorMessage);
-            log.error("Ошибка при валидации WB API ключа для кабинета {}", cabinet.getId(), e);
+            log.error("Ошибка при валидации WB API ключа для кабинета {}: {}",
+                    cabinet.getId(), e.getMessage());
         }
 
         // После базовой проверки ключа (контент) дополнительно проверяем доступ к категориям через /ping.
