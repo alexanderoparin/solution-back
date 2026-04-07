@@ -18,7 +18,7 @@ public class WbApiEventsCleanupScheduler {
     /**
      * Удаляет успешно выполненные события старше 12 часов
      */
-    @Scheduled(cron = "0 0 /1 * * *")
+    @Scheduled(cron = "0 0 0,12 * * *")
     @SchedulerLock(name = "wbApiEventsCleanupWeekly", lockAtLeastFor = "PT5S", lockAtMostFor = "PT10M")
     @Transactional
     public void cleanupOldSuccessfulEvents() {
