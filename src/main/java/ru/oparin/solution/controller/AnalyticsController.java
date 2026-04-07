@@ -84,7 +84,8 @@ public class AnalyticsController {
                 request.getSearch(),
                 request.getIncludedNmIds(),
                 request.getFilterToNone(),
-                request.getOnlyWithPhoto()
+                request.getOnlyWithPhoto(),
+                request.getOnlyPriority()
         );
         
         return ResponseEntity.ok(response);
@@ -173,6 +174,23 @@ public class AnalyticsController {
                 cabinetId
         );
         articleAdCampaignGoalService.upsertGoal(context.user(), context.cabinetId(), nmId, request.getGoal());
+        return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+    }
+
+    @PutMapping("/article/{nmId}/priority")
+    public ResponseEntity<Void> updateArticlePriority(
+            @PathVariable Long nmId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @Valid @RequestBody UpdateArticlePriorityRequest request,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                sellerId,
+                cabinetId
+        );
+        analyticsService.updateArticlePriority(context.user(), context.cabinetId(), nmId, request.getPriority());
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 

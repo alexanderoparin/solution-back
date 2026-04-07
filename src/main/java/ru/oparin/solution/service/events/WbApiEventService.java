@@ -47,6 +47,7 @@ public class WbApiEventService {
     private static final int STOCKS_EVENT_PRIORITY = 80;
     private static final int ANALYTICS_EVENT_MAX_ATTEMPTS = 5;
     private static final int ANALYTICS_EVENT_PRIORITY = 90;
+    private static final int PRIORITY_CARD_EVENT_BOOST = 1000;
     private static final int PRICES_EVENT_MAX_ATTEMPTS = 5;
     private static final int PRICES_EVENT_PRIORITY = 85;
     private static final int PRICES_BATCH_SIZE = 1000;
@@ -129,7 +130,7 @@ public class WbApiEventService {
                 .attemptCount(0)
                 .maxAttempts(STOCKS_EVENT_MAX_ATTEMPTS)
                 .nextAttemptAt(LocalDateTime.now())
-                .priority(STOCKS_EVENT_PRIORITY)
+                .priority(resolveNmIdEventPriority(cabinetId, nmId, STOCKS_EVENT_PRIORITY))
                 .triggerSource(triggerSource)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
@@ -268,7 +269,7 @@ public class WbApiEventService {
                 .attemptCount(0)
                 .maxAttempts(ANALYTICS_EVENT_MAX_ATTEMPTS)
                 .nextAttemptAt(LocalDateTime.now())
-                .priority(ANALYTICS_EVENT_PRIORITY)
+                .priority(resolveNmIdEventPriority(cabinetId, nmId, ANALYTICS_EVENT_PRIORITY))
                 .triggerSource(triggerSource)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
@@ -754,6 +755,15 @@ public class WbApiEventService {
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException("Не удалось сериализовать payload события: " + e.getMessage(), e);
         }
+    }
+
+    private int resolveNmIdEventPriority(Long cabinetId, Long nmId, int basePriority) {
+        if (cabinetId == null || nmId == null) {
+            return basePriority;
+        }
+        return productCardService.findByNmIdAndCabinetId(nmId, cabinetId)
+                .map(card -> Boolean.TRUE.equals(card.getIsPriority()) ? basePriority + PRIORITY_CARD_EVENT_BOOST : basePriority)
+                .orElse(basePriority);
     }
 
     private String buildContentDedupKey(Long cabinetId, Long cursorNmId, String cursorUpdatedAt, LocalDate from, LocalDate to) {

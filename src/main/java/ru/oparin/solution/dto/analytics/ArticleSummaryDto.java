@@ -59,5 +59,10 @@ public class ArticleSummaryDto {
      * Количество отзывов по товару.
      */
     private Integer reviewsCount;
+
+    /**
+     * Приоритетная карточка для ускоренной обработки событий по nmID.
+     */
+    private Boolean isPriority;
 }
 

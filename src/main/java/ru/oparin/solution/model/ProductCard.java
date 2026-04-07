@@ -87,6 +87,13 @@ public class ProductCard {
     private String photoC246x328;
 
     /**
+     * Флаг приоритетной карточки: такие карточки обрабатываются в очереди событий раньше остальных.
+     */
+    @Builder.Default
+    @Column(name = "is_priority", nullable = false)
+    private Boolean isPriority = false;
+
+    /**
      * Дата создания записи.
      */
     @CreatedDate

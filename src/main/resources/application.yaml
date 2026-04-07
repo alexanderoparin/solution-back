@@ -129,7 +129,7 @@ app:
     cabinet-queue-capacity: 100
     user-deletion-queue-capacity: 50
   wb-events:
-    poll-delay-ms: 3000
+    poll-delay-ms: ${wb_events_poll_delay_ms:3000}
     stuck-check-delay-ms: 15000
     running-timeout-minutes: 15
     event-await-timeout-seconds: 120

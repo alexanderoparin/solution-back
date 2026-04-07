@@ -63,7 +63,8 @@ public class AnalyticsService {
             String search,
             List<Long> includedNmIds,
             Boolean filterToNone,
-            Boolean onlyWithPhoto
+            Boolean onlyWithPhoto,
+            Boolean onlyPriority
     ) {
         validatePeriods(periods);
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
@@ -72,6 +73,11 @@ public class AnalyticsService {
         if (Boolean.TRUE.equals(onlyWithPhoto)) {
             visibleCards = visibleCards.stream()
                     .filter(this::cardHasAnyPhoto)
+                    .collect(Collectors.toList());
+        }
+        if (Boolean.TRUE.equals(onlyPriority)) {
+            visibleCards = visibleCards.stream()
+                    .filter(c -> Boolean.TRUE.equals(c.getIsPriority()))
                     .collect(Collectors.toList());
         }
 
@@ -1213,6 +1219,13 @@ public class AnalyticsService {
         return card;
     }
 
+    @Transactional
+    public void updateArticlePriority(User seller, Long cabinetId, Long nmId, boolean isPriority) {
+        ProductCard card = findCardBySeller(nmId, seller.getId(), cabinetId);
+        card.setIsPriority(isPriority);
+        productCardRepository.save(card);
+    }
+
     private List<ArticleSummaryDto> mapToArticleSummaries(List<ProductCard> cards) {
         return cards.stream()
                 .map(this::mapToArticleSummary)
@@ -1235,6 +1248,7 @@ public class AnalyticsService {
                 .vendorCode(card.getVendorCode())
                 .rating(card.getRating())
                 .reviewsCount(card.getReviewsCount())
+                .isPriority(Boolean.TRUE.equals(card.getIsPriority()))
                 .build();
     }
 

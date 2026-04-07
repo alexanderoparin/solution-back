@@ -42,6 +42,9 @@ public interface ProductCardRepository extends JpaRepository<ProductCard, Long> 
      */
     Optional<ProductCard> findByNmIdAndCabinet_Id(Long nmId, Long cabinetId);
 
+    @Query("SELECT c.nmId FROM ProductCard c WHERE c.cabinet.id = :cabinetId AND c.nmId IN :nmIds AND c.isPriority = true")
+    List<Long> findPriorityNmIdsByCabinetAndNmIdIn(@Param("cabinetId") Long cabinetId, @Param("nmIds") List<Long> nmIds);
+
     /**
      * Находит все карточки с заданным IMT ID в кабинете (товары «в связке»).
      */

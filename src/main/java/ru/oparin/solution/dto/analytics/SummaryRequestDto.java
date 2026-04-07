@@ -78,6 +78,11 @@ public class SummaryRequestDto {
     private Boolean onlyWithPhoto;
 
     /**
+     * Если true — вернуть только приоритетные артикулы.
+     */
+    private Boolean onlyPriority;
+
+    /**
      * Начало периода для метрик РК в блоке «Список РК» (опционально).
      * Если заданы оба — campaigns в ответе заполняются views, clicks, ctr, cpc, costs, cart, orders за этот период.
      */

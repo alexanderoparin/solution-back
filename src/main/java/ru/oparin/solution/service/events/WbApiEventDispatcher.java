@@ -10,9 +10,13 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.config.WbEventsProperties;
 import ru.oparin.solution.model.WbApiEvent;
+import ru.oparin.solution.model.WbApiEventType;
+import ru.oparin.solution.repository.ProductCardRepository;
+import ru.oparin.solution.service.events.payload.AnalyticsSalesFunnelPayload;
+import ru.oparin.solution.service.events.payload.StocksByNmIdPayload;
 
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.*;
 
 @Component
@@ -24,6 +28,7 @@ public class WbApiEventDispatcher {
     private final WbEventRateLimitService rateLimitService;
     private final ApplicationContext applicationContext;
     private final WbEventsProperties wbEventsProperties;
+    private final ProductCardRepository productCardRepository;
     @Qualifier("cabinetUpdateExecutor")
     private final Executor cabinetUpdateExecutor;
 
@@ -34,6 +39,7 @@ public class WbApiEventDispatcher {
         if (events.isEmpty()) {
             return;
         }
+        events = prioritizeEventsForPriorityCards(events);
         log.info("WB events poll: получено событий к обработке {}", events.size());
 
         List<CompletableFuture<EventExecutionOutcome>> futures = events.stream()
@@ -81,6 +87,62 @@ public class WbApiEventDispatcher {
             log.error("WB events poll: ошибка ожидания async-события: {}", cause.getMessage(), cause);
             return EventExecutionOutcome.TIMEOUT;
         }
+    }
+
+    private List<WbApiEvent> prioritizeEventsForPriorityCards(List<WbApiEvent> events) {
+        Map<Long, Set<Long>> nmIdsByCabinet = collectNmIdsByCabinet(events);
+        if (nmIdsByCabinet.isEmpty()) {
+            return events;
+        }
+
+        Map<Long, Set<Long>> priorityNmIdsByCabinet = new HashMap<>();
+        nmIdsByCabinet.forEach((cabinetId, nmIds) -> {
+            List<Long> priorityNmIds = productCardRepository.findPriorityNmIdsByCabinetAndNmIdIn(cabinetId, nmIds.stream().toList());
+            priorityNmIdsByCabinet.put(cabinetId, new HashSet<>(priorityNmIds));
+        });
+
+        return events.stream()
+                .sorted(Comparator.comparing((WbApiEvent event) -> isPriorityNmEvent(event, priorityNmIdsByCabinet)).reversed())
+                .toList();
+    }
+
+    private Map<Long, Set<Long>> collectNmIdsByCabinet(List<WbApiEvent> events) {
+        Map<Long, Set<Long>> result = new HashMap<>();
+        for (WbApiEvent event : events) {
+            Long cabinetId = event.getCabinet() != null ? event.getCabinet().getId() : null;
+            Long nmId = extractNmId(event);
+            if (cabinetId == null || nmId == null) {
+                continue;
+            }
+            result.computeIfAbsent(cabinetId, ignored -> new HashSet<>()).add(nmId);
+        }
+        return result;
+    }
+
+    private boolean isPriorityNmEvent(WbApiEvent event, Map<Long, Set<Long>> priorityNmIdsByCabinet) {
+        Long cabinetId = event.getCabinet() != null ? event.getCabinet().getId() : null;
+        Long nmId = extractNmId(event);
+        if (cabinetId == null || nmId == null) {
+            return false;
+        }
+        return priorityNmIdsByCabinet.getOrDefault(cabinetId, Set.of()).contains(nmId);
+    }
+
+    private Long extractNmId(WbApiEvent event) {
+        try {
+            if (event.getEventType() == WbApiEventType.ANALYTICS_SALES_FUNNEL_NMID) {
+                AnalyticsSalesFunnelPayload payload = eventService.readPayload(event, AnalyticsSalesFunnelPayload.class);
+                return payload.nmId();
+            }
+            if (event.getEventType() == WbApiEventType.STOCKS_BY_NMID) {
+                StocksByNmIdPayload payload = eventService.readPayload(event, StocksByNmIdPayload.class);
+                return payload.nmId();
+            }
+        } catch (Exception e) {
+            log.warn("Не удалось извлечь nmId из payload события id={}, type={}: {}",
+                    event.getId(), event.getEventType(), e.getMessage());
+        }
+        return null;
     }
 
     @Scheduled(fixedDelayString = "${app.wb-events.stuck-check-delay-ms}")
