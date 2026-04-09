@@ -73,7 +73,7 @@ public class WbEventRateLimitService {
         long delayMs = switch (type) {
             case CONTENT_CARDS_LIST_PAGE -> contentDelayMs;
             case ANALYTICS_SALES_FUNNEL_NMID -> analyticsDelayMs;
-            case PRICES_PRODUCTS_BATCH, PRICES_SPP_ORDERS -> pricesDelayMs;
+            case PRICES_CABINET_WITH_SPP -> pricesDelayMs;
             case PROMOTION_COUNT, PROMOTION_ADVERTS_BATCH -> promotionAdvertsDelayMs;
             case PROMOTION_STATS_BATCH -> promotionStatisticsDelayMs;
             case FEEDBACKS_SYNC_CABINET -> feedbacksDelayMs;

@@ -32,8 +32,7 @@ public class WbApiEventService {
 
     public static final String CONTENT_EXECUTOR_BEAN = "contentCardsListPageEventExecutor";
     public static final String ANALYTICS_EXECUTOR_BEAN = "analyticsSalesFunnelEventExecutor";
-    public static final String PRICES_BATCH_EXECUTOR_BEAN = "pricesProductsBatchEventExecutor";
-    public static final String PRICES_SPP_EXECUTOR_BEAN = "pricesSppOrdersEventExecutor";
+    public static final String PRICES_CABINET_WITH_SPP_EXECUTOR_BEAN = "pricesCabinetWithSppEventExecutor";
     public static final String PROMOTION_COUNT_EXECUTOR_BEAN = "promotionCountEventExecutor";
     public static final String PROMOTION_ADVERTS_BATCH_EXECUTOR_BEAN = "promotionAdvertsBatchEventExecutor";
     public static final String PROMOTION_STATS_BATCH_EXECUTOR_BEAN = "promotionStatsBatchEventExecutor";
@@ -50,7 +49,6 @@ public class WbApiEventService {
     private static final int PRIORITY_CARD_EVENT_BOOST = 1000;
     private static final int PRICES_EVENT_MAX_ATTEMPTS = 5;
     private static final int PRICES_EVENT_PRIORITY = 85;
-    private static final int PRICES_BATCH_SIZE = 1000;
     private static final int PROMOTION_EVENT_MAX_ATTEMPTS = 5;
     private static final int PROMOTION_EVENT_PRIORITY = 85;
     private static final int SIDECAR_EVENT_MAX_ATTEMPTS = 5;
@@ -71,8 +69,7 @@ public class WbApiEventService {
     );
     private static final List<WbApiEventType> MAIN_EVENT_TYPES = List.of(
             WbApiEventType.ANALYTICS_SALES_FUNNEL_NMID,
-            WbApiEventType.PRICES_PRODUCTS_BATCH,
-            WbApiEventType.PRICES_SPP_ORDERS,
+            WbApiEventType.PRICES_CABINET_WITH_SPP,
             WbApiEventType.PROMOTION_COUNT,
             WbApiEventType.PROMOTION_ADVERTS_BATCH,
             WbApiEventType.PROMOTION_STATS_BATCH,
@@ -279,17 +276,37 @@ public class WbApiEventService {
 
     @Transactional
     public void enqueuePricesRequestLevelEvents(Long cabinetId, MainStepPayload payload, String triggerSource) {
-        List<Long> nmIds = productCardService.findByCabinetId(cabinetId).stream()
-                .map(ProductCard::getNmId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-        for (int i = 0; i < nmIds.size(); i += PRICES_BATCH_SIZE) {
-            int end = Math.min(i + PRICES_BATCH_SIZE, nmIds.size());
-            List<Long> batch = nmIds.subList(i, end);
-            enqueuePricesBatchEvent(cabinetId, batch, payload, triggerSource);
+        enqueuePricesCabinetWithSppEvent(cabinetId, payload, triggerSource);
+    }
+
+    /**
+     * Одно событие: цены всеми батчами внутри исполнителя, затем СПП.
+     */
+    @Transactional
+    public void enqueuePricesCabinetWithSppEvent(Long cabinetId, MainStepPayload payload, String triggerSource) {
+        String dedupKey = "PRICES_CABINET_WITH_SPP:" + cabinetId + ":" + payload.dateFrom() + ":" + payload.dateTo();
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("WB API событие цен+СПП уже существует (dedupKey={}), создание пропущено", dedupKey);
+            return;
         }
-        enqueuePricesSppEvent(cabinetId, payload, triggerSource);
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        WbApiEvent event = WbApiEvent.builder()
+                .eventType(WbApiEventType.PRICES_CABINET_WITH_SPP)
+                .status(WbApiEventStatus.CREATED)
+                .executorBeanName(PRICES_CABINET_WITH_SPP_EXECUTOR_BEAN)
+                .cabinet(cabinet)
+                .payloadJson(writePayload(payload))
+                .dedupKey(dedupKey)
+                .attemptCount(0)
+                .maxAttempts(PRICES_EVENT_MAX_ATTEMPTS)
+                .nextAttemptAt(LocalDateTime.now())
+                .priority(PRICES_EVENT_PRIORITY)
+                .triggerSource(triggerSource)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        eventRepository.save(event);
     }
 
     /**
@@ -475,66 +492,6 @@ public class WbApiEventService {
 
     private static String promotionStatsDedupPrefix(Long cabinetId, LocalDate from, LocalDate to) {
         return "PROMOTION_STATS_BATCH:" + promotionPeriodKey(cabinetId, from, to) + ":";
-    }
-
-    @Transactional
-    public void enqueuePricesBatchEvent(Long cabinetId, List<Long> nmIds, MainStepPayload payload, String triggerSource) {
-        String dedupKey = "PRICES_PRODUCTS_BATCH:" + cabinetId + ":" + payload.dateFrom() + ":" + payload.dateTo() + ":" + Integer.toHexString(nmIds.hashCode());
-        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
-            log.debug("WB API prices batch event уже существует (dedupKey={}), создание пропущено", dedupKey);
-            return;
-        }
-        Cabinet cabinet = cabinetRepository.findById(cabinetId)
-                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        PricesProductsBatchPayload batchPayload = PricesProductsBatchPayload.builder()
-                .nmIds(nmIds)
-                .dateFrom(payload.dateFrom())
-                .dateTo(payload.dateTo())
-                .includeStocks(payload.includeStocks())
-                .build();
-        WbApiEvent event = WbApiEvent.builder()
-                .eventType(WbApiEventType.PRICES_PRODUCTS_BATCH)
-                .status(WbApiEventStatus.CREATED)
-                .executorBeanName(PRICES_BATCH_EXECUTOR_BEAN)
-                .cabinet(cabinet)
-                .payloadJson(writePayload(batchPayload))
-                .dedupKey(dedupKey)
-                .attemptCount(0)
-                .maxAttempts(PRICES_EVENT_MAX_ATTEMPTS)
-                .nextAttemptAt(LocalDateTime.now())
-                .priority(PRICES_EVENT_PRIORITY)
-                .triggerSource(triggerSource)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-        eventRepository.save(event);
-    }
-
-    @Transactional
-    public void enqueuePricesSppEvent(Long cabinetId, MainStepPayload payload, String triggerSource) {
-        String dedupKey = "PRICES_SPP_ORDERS:" + cabinetId + ":" + payload.dateFrom() + ":" + payload.dateTo();
-        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
-            log.debug("WB API SPP event уже существует (dedupKey={}), создание пропущено", dedupKey);
-            return;
-        }
-        Cabinet cabinet = cabinetRepository.findById(cabinetId)
-                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        WbApiEvent event = WbApiEvent.builder()
-                .eventType(WbApiEventType.PRICES_SPP_ORDERS)
-                .status(WbApiEventStatus.CREATED)
-                .executorBeanName(PRICES_SPP_EXECUTOR_BEAN)
-                .cabinet(cabinet)
-                .payloadJson(writePayload(payload))
-                .dedupKey(dedupKey)
-                .attemptCount(0)
-                .maxAttempts(PRICES_EVENT_MAX_ATTEMPTS)
-                .nextAttemptAt(LocalDateTime.now())
-                .priority(PRICES_EVENT_PRIORITY)
-                .triggerSource(triggerSource)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-        eventRepository.save(event);
     }
 
     @Transactional(readOnly = true)

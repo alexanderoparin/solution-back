@@ -131,6 +131,23 @@ public class ProductPricesSyncService {
         productPriceService.savePrices(response, date, cabinet);
     }
 
+    /**
+     * Все батчи цен по кабинету за «вчера», затем обновление СПП из заказов за ту же дату.
+     * Используется одним событием очереди, чтобы СПП не выполнялось до сохранения цен.
+     */
+    public void loadPriceBatchesThenSppFromOrders(Cabinet cabinet, String apiKey) {
+        List<Long> nmIds = getDistinctNmIdsForCabinet(cabinet.getId());
+        LocalDate date = LocalDate.now().minusDays(1);
+        if (nmIds.isEmpty()) {
+            log.info("У кабинета (ID: {}) нет карточек для загрузки цен; выполняем только обновление СПП за {}", cabinet.getId(), date);
+            updateSppFromOrders(cabinet, apiKey);
+            return;
+        }
+        log.info("Загрузка цен батчами ({} nmId) затем СПП за {} кабинет (ID: {})", nmIds.size(), date, cabinet.getId());
+        loadPricesInBatches(cabinet, apiKey, date, nmIds);
+        updateSppFromOrders(cabinet, apiKey);
+    }
+
     private List<Long> getDistinctNmIdsForCabinet(Long cabinetId) {
         List<ProductCard> productCards = productCardRepository.findByCabinet_Id(cabinetId);
         return productCards.stream()
