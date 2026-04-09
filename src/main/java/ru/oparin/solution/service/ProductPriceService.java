@@ -68,8 +68,45 @@ public class ProductPriceService {
         }
 
         priceHistoryRepository.saveAll(toPersist);
+        alignSppDiscountAcrossSizeRows(nmIds, yesterdayDate, cabinet.getId());
         log.info("Сохранено записей цен: {} (уникальных ключей nm+size: {}, пропущено товаров: {})",
                 toPersist.size(), incomingByKey.size(), skippedCount);
+    }
+
+    /**
+     * Копирует известное СПП на все строки цены за день по одному nmId.
+     * Нужно, когда после синхронизации из заказов появилась строка по размеру с СПП,
+     * а следующая загрузка цен добавила агрегат без размера с {@code sppDiscount = null} —
+     * иначе в аналитике выбиралась бы строка без СПП.
+     */
+    private void alignSppDiscountAcrossSizeRows(List<Long> nmIds, LocalDate date, Long cabinetId) {
+        if (cabinetId == null || nmIds == null || nmIds.isEmpty()) {
+            return;
+        }
+        for (Long nmId : new LinkedHashSet<>(nmIds)) {
+            List<ProductPriceHistory> rows = priceHistoryRepository.findByNmIdAndDateAndCabinet_Id(nmId, date, cabinetId);
+            if (rows.size() < 2) {
+                continue;
+            }
+            Integer spp = rows.stream()
+                    .map(ProductPriceHistory::getSppDiscount)
+                    .filter(Objects::nonNull)
+                    .findFirst()
+                    .orElse(null);
+            if (spp == null) {
+                continue;
+            }
+            boolean changed = false;
+            for (ProductPriceHistory row : rows) {
+                if (row.getSppDiscount() == null) {
+                    row.setSppDiscount(spp);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                priceHistoryRepository.saveAll(rows);
+            }
+        }
     }
 
     private static Map<NmSizeKey, ProductPriceHistory> dedupeByNmAndSize(List<ProductPriceHistory> rows) {

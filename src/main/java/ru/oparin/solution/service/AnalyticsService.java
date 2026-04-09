@@ -653,6 +653,32 @@ public class AnalyticsService {
         return metrics;
     }
 
+    /**
+     * Одна запись цены на день для таблицы аналитики: при нескольких строках (размеры / агрегат)
+     * предпочитаем вариант с заполненным СПП, иначе прежняя логика (без размера, затем любая).
+     */
+    private static ProductPriceHistory pickRepresentativePriceRow(List<ProductPriceHistory> prices) {
+        if (prices == null || prices.isEmpty()) {
+            throw new IllegalArgumentException("prices must be non-empty");
+        }
+        Optional<ProductPriceHistory> consolidatedWithSpp = prices.stream()
+                .filter(p -> p.getSizeId() == null && p.getSppDiscount() != null)
+                .findFirst();
+        if (consolidatedWithSpp.isPresent()) {
+            return consolidatedWithSpp.get();
+        }
+        Optional<ProductPriceHistory> anyWithSpp = prices.stream()
+                .filter(p -> p.getSppDiscount() != null)
+                .findFirst();
+        if (anyWithSpp.isPresent()) {
+            return anyWithSpp.get();
+        }
+        Optional<ProductPriceHistory> withoutSize = prices.stream()
+                .filter(p -> p.getSizeId() == null)
+                .findFirst();
+        return withoutSize.orElseGet(() -> prices.get(0));
+    }
+
     private List<DailyDataDto> getDailyData(Long nmId, Long cabinetId) {
         LocalDate endDate = LocalDate.now().minusDays(1);
         LocalDate startDate = endDate.minusDays(13);
@@ -677,23 +703,13 @@ public class AnalyticsService {
                         )
                 ));
         
-        // Группируем данные ценообразования по датам (берем запись без размера или первую)
+        // Группируем данные ценообразования по датам (одна строка на день для таблицы)
         Map<LocalDate, ProductPriceHistory> priceByDate = priceData.stream()
                 .collect(Collectors.groupingBy(
                         ProductPriceHistory::getDate,
                         Collectors.collectingAndThen(
                                 Collectors.toList(),
-                                prices -> {
-                                    // Сначала ищем запись без размера
-                                    Optional<ProductPriceHistory> withoutSize = prices.stream()
-                                            .filter(p -> p.getSizeId() == null)
-                                            .findFirst();
-                                    if (withoutSize.isPresent()) {
-                                        return withoutSize.get();
-                                    }
-                                    // Если нет, берем первую
-                                    return prices.get(0);
-                                }
+                                AnalyticsService::pickRepresentativePriceRow
                         )
                 ));
 
