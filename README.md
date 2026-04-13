@@ -1,234 +1,98 @@
 # Solution Backend
 
-Backend приложение для управления рекламными кампаниями Wildberries.
+REST API и фоновая логика платформы Solution для продавцов Wildberries: аналитика, реклама, кабинеты, подписки, очереди событий WB.
+
+Общий обзор монорепозитория — в [корневом README](../README.md).
 
 ## Технологии
 
-- Java 21
-- Spring Boot 3.3.5
-- Spring Data JPA
-- Spring Security + JWT
-- PostgreSQL
-- Maven
-- BCrypt для хеширования паролей
+- Java 21, Maven
+- Spring Boot 3.3.x (Web, Data JPA, Security, Validation, Mail)
+- PostgreSQL, Hibernate (`ddl-auto: validate`)
+- JWT (jjwt), BCrypt
+- **ShedLock** — блокировки для распределённых задач
+- Lombok
 
-## Структура проекта
+## Структура `src/main/java/ru/oparin/solution/`
 
-```
-solution_back/
-├── Dockerfile              # Образ для Docker
-├── docker-compose.yml      # Конфигурация Docker Compose (включает фронтенд)
-├── .env.example            # Шаблон переменных окружения
-├── pom.xml
-└── src/
-    ├── main/
-    │   ├── java/ru/oparin/solution/
-    │   │   ├── config/          # Конфигурации (SecurityConfig)
-    │   │   ├── controller/      # REST контроллеры
-    │   │   ├── dto/             # Data Transfer Objects
-    │   │   ├── exception/       # Обработка исключений
-    │   │   ├── model/           # JPA сущности
-    │   │   ├── repository/      # Репозитории JPA
-    │   │   ├── security/        # JWT и Security компоненты
-    │   │   └── service/         # Бизнес-логика
-    │   └── resources/
-    │       ├── sql/             # SQL скрипты для создания таблиц
-    │       └── application.yaml
-    └── test/
-```
+| Пакет | Содержимое |
+|--------|------------|
+| `config` | Security, CORS, свойства WB, планировщик, ShedLock |
+| `controller` | REST-контроллеры |
+| `dto` | Запросы/ответы API |
+| `exception` | Обработка ошибок |
+| `model` | JPA-сущности |
+| `repository` | Spring Data JPA, при необходимости `spec` |
+| `security` | JWT, фильтры |
+| `service` | Бизнес-логика; подпакеты `sync`, `events`, `wb`, `analytics` и др. |
+| `scheduler` | `@Scheduled`-задачи |
 
-**Примечание:** `docker-compose.yml` находится в этом репозитории и управляет как бэкендом, так и фронтендом (когда он будет создан). Фронтенд должен быть клонирован в соседнюю директорию `../solution-front`.
+SQL-скрипты схемы: `src/main/resources/sql/` (файлы `001_…` … — применять **по порядку номера**).
 
-## Настройка
+Конфигурация: `src/main/resources/application.yaml` (порт **8080**, контекст **`/api`**).
 
-### Вариант 1: Запуск через Docker (рекомендуется)
+## Запуск локально
 
-1. **Убедитесь, что у вас установлены:**
-   - Docker и Docker Compose
-   - PostgreSQL на отдельном сервере
+Требования: JDK 21, Maven 3.9+, PostgreSQL со схемой `solution` и применёнными SQL-скриптами.
 
-2. **Создайте схему в БД:**
-   ```sql
-   CREATE SCHEMA IF NOT EXISTS solution;
-   ```
-
-3. **Выполните SQL скрипты:**
-   - `src/main/resources/sql/001_create_users_table.sql`
-   - `src/main/resources/sql/002_create_wb_api_keys_table.sql`
-
-4. **Скопируйте файл с переменными окружения:**
-   ```bash
-   cp .env.example .env
-   ```
-
-5. **Отредактируйте `.env` файл:**
-   - Укажите данные для подключения к PostgreSQL
-   - Установите JWT_SECRET (обязательно измените в продакшене!)
-
-6. **Запустите приложение:**
-   ```bash
-   docker-compose up -d --build
-   ```
-
-7. **Проверьте статус:**
-   ```bash
-   docker-compose ps
-   docker-compose logs -f backend
-   ```
-
-8. **Приложение будет доступно по адресу:** `http://localhost:8080/api`
-
-### Вариант 2: Запуск без Docker
-
-1. **Убедитесь, что у вас установлены:**
-   - Java 21 или выше
-   - Maven 3.6+
-   - PostgreSQL
-
-2. **Создайте схему в БД:**
-   ```sql
-   CREATE SCHEMA IF NOT EXISTS solution;
-   ```
-
-3. **Выполните SQL скрипты:**
-   - `src/main/resources/sql/001_create_users_table.sql`
-   - `src/main/resources/sql/002_create_wb_api_keys_table.sql`
-
-4. **Настройте подключение к БД через переменные окружения или `application.properties`**
-
-5. **Запуск приложения:**
-   ```bash
-   mvn spring-boot:run
-   ```
-
-6. **Приложение будет доступно по адресу:** `http://localhost:8080/api`
-
-## API Endpoints
-
-### Публичные эндпоинты
-
-- `POST /api/auth/register` - Регистрация SELLER'а
-  ```json
-  {
-    "email": "seller@example.com",
-    "password": "password123",
-    "wbApiKey": "your-wb-api-key"
-  }
-  ```
-
-- `POST /api/auth/login` - Авторизация
-  ```json
-  {
-    "email": "seller@example.com",
-    "password": "password123"
-  }
-  ```
-  Ответ:
-  ```json
-  {
-    "token": "jwt-token",
-    "email": "seller@example.com",
-    "role": "SELLER",
-    "userId": 1
-  }
-  ```
-
-- `GET /api/health` - Проверка работоспособности
-
-### Защищенные эндпоинты (требуют JWT токен в заголовке Authorization: Bearer <token>)
-
-- `PUT /api/user/api-key` - Обновление WB API ключа (только для SELLER)
-  ```json
-  {
-    "wbApiKey": "new-wb-api-key"
-  }
-  ```
-
-- `GET /api/user/profile` - Получение профиля пользователя
-
-## Роли пользователей
-
-- **ADMIN** - Администратор системы
-- **SELLER** - Продавец Wildberries (имеет WB API ключ)
-- **WORKER** - Сотрудник SELLER'а (права будут реализованы позже)
-
-## Особенности
-
-- WB API ключ валидируется при первом использовании планировщиком
-- Пароли хранятся в зашифрованном виде (BCrypt)
-- JWT токены для аутентификации
-- CORS настроен для работы с фронтендом на localhost:5173
-
-## Документация Wildberries API
-
-- **Документация WB API**: https://dev.wildberries.ru/
-- **Базовый URL API**: `https://statistics-api.wildberries.ru`
-
-## Планировщик
-
-Планировщик задач включен (`@EnableScheduling`). Для реализации ночной загрузки данных создайте компонент с `@Scheduled` аннотацией.
-
-Пример:
-```java
-@Component
-@RequiredArgsConstructor
-public class DataScheduler {
-    private final WbApiKeyService wbApiKeyService;
-    private final WbApiClient wbApiClient;
-    
-    @Scheduled(cron = "0 0 2 * * ?") // Каждый день в 2:00
-    public void loadData() {
-        // Логика загрузки данных
-    }
-}
-```
-
-## Деплой на сервер
-
-### Структура на сервере:
-```
-/opt/
-├── solution-back/      # git clone solution-back
-│   ├── docker-compose.yml
-│   └── ...
-└── solution-front/     # git clone solution-front (когда будет создан)
-    └── ...
-```
-
-### Обновление:
 ```bash
-# Обновить только бэкенд
-cd /opt/solution-back
-git pull
-docker-compose up -d --build backend
-
-# Обновить только фронтенд (когда будет создан)
-cd /opt/solution-front
-git pull
-cd /opt/solution-back
-docker-compose up -d --build frontend
-
-# Обновить все
-cd /opt/solution-back
-git pull
-cd /opt/solution-front
-git pull
-cd /opt/solution-back
-docker-compose up -d --build
+cd solution_back
+# задайте переменные окружения: DB_*, JWT_SECRET, при необходимости MAIL_PASSWORD, ROBOKASSA_*, CORS_ALLOWED_ORIGINS
+mvn spring-boot:run
 ```
+
+- База API: `http://localhost:8080/api`
+- Health: `GET http://localhost:8080/api/health`
+
+## Docker Compose
+
+В этом каталоге лежит **`docker-compose.yml`**: сервисы `backend` и `frontend` (сборка Nginx-образа фронта).
+
+Создайте файл **`.env`** рядом с compose (шаблон `.env.example` в репозитории может отсутствовать — ориентируйтесь на блок `environment` в compose и на `application.yaml`). Минимум: **`DB_HOST`**, **`DB_PASSWORD`**, **`JWT_SECRET`**.
+
+Сборка фронта в compose использует контекст **`../solution-front`**. Если в монорепозитории папка называется **`../solution_front`**, поправьте `context` в `docker-compose.yml` или используйте симлинк.
+
+```bash
+cd solution_back
+docker compose up -d --build
+```
+
+Логи бэкенда: в контейнере `/app/logs/application.log`, на хосте — `./logs` при смонтированном volume.
+
+## REST: префиксы контроллеров
+
+Все пути ниже относительно **`/api`** (context-path).
+
+| Префикс | Назначение |
+|---------|------------|
+| `/auth` | Регистрация, вход, восстановление пароля, подтверждение email |
+| `/health` | Проверка живости |
+| `/user` | Профиль, пароль, ключи, статус доступа |
+| `/cabinets` | Кабинеты WB, привязка ключей, work context для MANAGER |
+| `/analytics` | Сводка, товары, карточка артикула, цели по РК в артикуле |
+| `/advertising` | Список РК, детали, синхронизация промо со WB |
+| `/advertising/campaigns/{id}/notes` | Заметки и файлы к кампании |
+| `/analytics/article/{nmId}/notes` | Заметки к артикулу |
+| `/subscription` | Тарифы, подписка, Robokassa |
+| `/admin` | Админские операции (тарифы, события WB и т.д.) |
+| `/users` | Управление пользователями (роли, кабинеты) |
+| `/wb-api` | Сервисные вызовы, связанные с WB API |
+
+Полный перечень методов — в исходниках классов `*Controller.java`. Отдельной OpenAPI-спеки в проекте нет.
+
+## Роли
+
+- **SELLER** — владелец кабинета, API-ключи, сотрудники
+- **WORKER** — сотрудник селлера
+- **MANAGER** — доступ к кабинетам клиентов (work context)
+- **ADMIN** — администрирование системы
+
+## Интеграция с Wildberries
+
+Базовые URL и лимиты задаются в `application.yaml` (блок `wb.api`, `wb.rate-limit`). Документация WB: https://dev.wildberries.ru/
+
+В приложении используется очередь/диспетчер **событий WB** (`WbApiEvent*`), планировщики и исполнители синхронизации карточек, цен, остатков, рекламы, отзывов и т.д.
 
 ## Логирование
 
-Логи сохраняются в:
-- Контейнер: `/app/logs/application.log`
-- Хост: `./logs/application.log`
-
-Просмотр логов:
-```bash
-# Логи из контейнера
-docker-compose logs -f backend
-
-# Логи из файла на хосте
-tail -f logs/application.log
-```
-
+Уровни и файл — в `application.yaml` (`logging.*`). В Docker по умолчанию пишется в `/app/logs/application.log`.
