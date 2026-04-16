@@ -210,6 +210,10 @@ public class AnalyticsService {
         for (PeriodDto period : periods) {
             statsByPeriodByArticle.put(period, campaignStatisticsAggregator.aggregateStatsByArticle(campaignIds, period));
         }
+        Map<PeriodDto, Map<Long, BigDecimal>> funnelOrdersAmountByPeriodByArticle =
+                MetricNames.DRR.equals(metricName)
+                        ? preloadFunnelOrdersAmountByArticle(visibleCards, cabinetId, periods)
+                        : Collections.emptyMap();
 
         List<ArticleMetricDto> articleMetrics = new ArrayList<>();
         CampaignStatisticsAggregator.AdvertisingStats emptyStats = new CampaignStatisticsAggregator.AdvertisingStats(
@@ -226,9 +230,21 @@ public class AnalyticsService {
                 CampaignStatisticsAggregator.AdvertisingStats stats = statsByPeriodByArticle
                         .getOrDefault(period, Collections.emptyMap())
                         .getOrDefault(nmId, emptyStats);
-                Object value = calculateAdvertisingMetricValue(metricName, stats);
+                Object value = calculateAdvertisingMetricValue(
+                        metricName,
+                        stats,
+                        period,
+                        nmId,
+                        funnelOrdersAmountByPeriodByArticle
+                );
                 BigDecimal changePercent = calculateArticleAdvertisingChangePercent(
-                        nmId, metricName, period, periods, statsByPeriodByArticle);
+                        nmId,
+                        metricName,
+                        period,
+                        periods,
+                        statsByPeriodByArticle,
+                        funnelOrdersAmountByPeriodByArticle
+                );
 
                 periodValues.add(PeriodMetricValueDto.builder()
                         .periodId(period.getId())
@@ -265,7 +281,8 @@ public class AnalyticsService {
             String metricName,
             PeriodDto period,
             List<PeriodDto> allPeriodsSortedByDate,
-            Map<PeriodDto, Map<Long, CampaignStatisticsAggregator.AdvertisingStats>> statsByPeriodByArticle
+            Map<PeriodDto, Map<Long, CampaignStatisticsAggregator.AdvertisingStats>> statsByPeriodByArticle,
+            Map<PeriodDto, Map<Long, BigDecimal>> funnelOrdersAmountByPeriodByArticle
     ) {
         PeriodDto previousPeriod = findPreviousPeriodByDateOrder(period, allPeriodsSortedByDate);
         if (previousPeriod == null) {
@@ -277,13 +294,89 @@ public class AnalyticsService {
         CampaignStatisticsAggregator.AdvertisingStats previousStats = statsByPeriodByArticle
                 .getOrDefault(previousPeriod, Collections.emptyMap())
                 .getOrDefault(nmId, new CampaignStatisticsAggregator.AdvertisingStats(0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO));
-        Object currentValue = calculateAdvertisingMetricValue(metricName, currentStats);
-        Object previousValue = calculateAdvertisingMetricValue(metricName, previousStats);
+        Object currentValue = calculateAdvertisingMetricValue(
+                metricName,
+                currentStats,
+                period,
+                nmId,
+                funnelOrdersAmountByPeriodByArticle
+        );
+        Object previousValue = calculateAdvertisingMetricValue(
+                metricName,
+                previousStats,
+                previousPeriod,
+                nmId,
+                funnelOrdersAmountByPeriodByArticle
+        );
         if (MetricNames.isPercentageMetric(metricName)) {
             return calculatePercentageDifference(currentValue, previousValue);
         } else {
             return calculatePercentageChange(currentValue, previousValue);
         }
+    }
+
+    private Object calculateAdvertisingMetricValue(
+            String metricName,
+            CampaignStatisticsAggregator.AdvertisingStats stats,
+            PeriodDto period,
+            Long nmId,
+            Map<PeriodDto, Map<Long, BigDecimal>> funnelOrdersAmountByPeriodByArticle
+    ) {
+        if (MetricNames.DRR.equals(metricName)) {
+            BigDecimal costs = stats.sum();
+            if (costs == null || costs.compareTo(BigDecimal.ZERO) == 0) {
+                return null;
+            }
+            BigDecimal ordersAmount = funnelOrdersAmountByPeriodByArticle
+                    .getOrDefault(period, Collections.emptyMap())
+                    .get(nmId);
+            if (ordersAmount != null && ordersAmount.compareTo(BigDecimal.ZERO) > 0) {
+                return MathUtils.calculatePercentage(costs, ordersAmount);
+            }
+        }
+        return calculateAdvertisingMetricValue(metricName, stats);
+    }
+
+    private Map<PeriodDto, Map<Long, BigDecimal>> preloadFunnelOrdersAmountByArticle(
+            List<ProductCard> cards,
+            Long cabinetId,
+            List<PeriodDto> periods
+    ) {
+        List<Long> nmIds = cards.stream()
+                .map(ProductCard::getNmId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (nmIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<PeriodDto, Map<Long, BigDecimal>> result = new HashMap<>();
+        for (PeriodDto period : periods) {
+            List<ProductCardAnalytics> analytics = cabinetId != null
+                    ? analyticsRepository.findByCabinet_IdAndProductCardNmIdInAndDateBetween(
+                    cabinetId,
+                    nmIds,
+                    period.getDateFrom(),
+                    period.getDateTo()
+            )
+                    : analyticsRepository.findByProductCardNmIdInAndDateBetween(
+                    nmIds,
+                    period.getDateFrom(),
+                    period.getDateTo()
+            );
+            Map<Long, BigDecimal> ordersAmountByNmId = new HashMap<>();
+            for (ProductCardAnalytics item : analytics) {
+                if (item.getProductCard() == null || item.getProductCard().getNmId() == null) {
+                    continue;
+                }
+                Long nmId = item.getProductCard().getNmId();
+                BigDecimal amount = item.getOrdersSum() != null ? item.getOrdersSum() : BigDecimal.ZERO;
+                ordersAmountByNmId.merge(nmId, amount, BigDecimal::add);
+            }
+            result.put(period, ordersAmountByNmId);
+        }
+        return result;
     }
 
     private Object calculateAdvertisingMetricValue(String metricName, CampaignStatisticsAggregator.AdvertisingStats stats) {
