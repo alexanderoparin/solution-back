@@ -5,8 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-import ru.oparin.solution.model.CampaignStatus;
-import ru.oparin.solution.model.CampaignType;
 import ru.oparin.solution.model.PromotionCampaign;
 
 import java.util.List;
@@ -19,44 +17,9 @@ import java.util.Optional;
 public interface PromotionCampaignRepository extends JpaRepository<PromotionCampaign, Long> {
 
     /**
-     * Поиск кампании по ID и продавцу.
-     *
-     * @param advertId ID кампании
-     * @param sellerId ID продавца
-     * @return кампания или пусто
+     * Все кампании продавца (по всем его кабинетам).
      */
-    Optional<PromotionCampaign> findByAdvertIdAndSellerId(Long advertId, Long sellerId);
-
-    /**
-     * Поиск кампании по advertId и id продавца (связь seller).
-     */
-    Optional<PromotionCampaign> findByAdvertIdAndSeller_Id(Long advertId, Long sellerId);
-
-    /**
-     * Поиск всех кампаний продавца.
-     *
-     * @param sellerId ID продавца
-     * @return список кампаний
-     */
-    List<PromotionCampaign> findBySellerId(Long sellerId);
-
-    /**
-     * Поиск кампаний продавца по статусу.
-     *
-     * @param sellerId ID продавца
-     * @param status статус кампании
-     * @return список кампаний
-     */
-    List<PromotionCampaign> findBySellerIdAndStatus(Long sellerId, CampaignStatus status);
-
-    /**
-     * Поиск кампаний продавца по типу.
-     *
-     * @param sellerId ID продавца
-     * @param type тип кампании
-     * @return список кампаний
-     */
-    List<PromotionCampaign> findBySellerIdAndType(Long sellerId, CampaignType type);
+    List<PromotionCampaign> findByCabinet_User_Id(Long userId);
 
     /**
      * Поиск всех кампаний кабинета.

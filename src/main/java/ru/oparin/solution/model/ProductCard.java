@@ -37,13 +37,6 @@ public class ProductCard {
     private Long imtId;
 
     /**
-     * Продавец, владелец карточки (оставляем для удобства).
-     */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "seller_id", nullable = false)
-    private User seller;
-
-    /**
      * Кабинет, которому принадлежит артикул. Один артикул — один кабинет.
      */
     @ManyToOne(fetch = FetchType.LAZY)

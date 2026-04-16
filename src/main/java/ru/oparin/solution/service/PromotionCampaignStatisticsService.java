@@ -261,16 +261,19 @@ public class PromotionCampaignStatisticsService {
     }
 
     private Optional<PromotionCampaign> findCampaign(Long advertId, Long sellerId) {
-        Optional<PromotionCampaign> campaignOptional = campaignRepository.findByAdvertIdAndSellerId(
-                advertId,
-                sellerId
-        );
-
+        Optional<PromotionCampaign> campaignOptional = campaignRepository.findById(advertId);
         if (campaignOptional.isEmpty()) {
-            log.warn("Кампания advertId {} не найдена для продавца (ID: {}), пропускаем статистику",
-                    advertId, sellerId);
+            log.warn("Кампания advertId {} не найдена в БД, пропускаем статистику", advertId);
+            return Optional.empty();
         }
-
+        PromotionCampaign campaign = campaignOptional.get();
+        if (campaign.getCabinet() == null
+                || campaign.getCabinet().getUser() == null
+                || !campaign.getCabinet().getUser().getId().equals(sellerId)) {
+            log.warn("Кампания advertId {} не принадлежит продавцу (ID: {}), пропускаем статистику",
+                    advertId, sellerId);
+            return Optional.empty();
+        }
         return campaignOptional;
     }
 

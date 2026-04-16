@@ -54,7 +54,7 @@ public class PromotionCampaignService {
             log.info("Ответ со списком кампаний пуст, сохранение/обновление не требуется.");
             return;
         }
-        ProcessingResult result = processCampaigns(response.getAdverts(), cabinet.getUser(), cabinet);
+        ProcessingResult result = processCampaigns(response.getAdverts(), cabinet);
         log.info("Обработано кампаний: создано {}, обновлено {}, пропущено {}",
                 result.savedCount(), result.updatedCount(), result.skippedCount());
     }
@@ -65,7 +65,7 @@ public class PromotionCampaignService {
                 || response.getAdverts().isEmpty();
     }
 
-    private ProcessingResult processCampaigns(List<PromotionAdvertsResponse.Campaign> campaignDtos, User seller, Cabinet cabinet) {
+    private ProcessingResult processCampaigns(List<PromotionAdvertsResponse.Campaign> campaignDtos, Cabinet cabinet) {
         int savedCount = 0;
         int updatedCount = 0;
         int skippedCount = 0;
@@ -77,7 +77,7 @@ public class PromotionCampaignService {
             }
 
             try {
-                Optional<SaveResult> result = processCampaign(campaignDto, seller, cabinet);
+                Optional<SaveResult> result = processCampaign(campaignDto, cabinet);
                 if (result.isPresent()) {
                     if (result.get().isNew()) {
                         savedCount++;
@@ -105,8 +105,8 @@ public class PromotionCampaignService {
         return true;
     }
 
-    private Optional<SaveResult> processCampaign(PromotionAdvertsResponse.Campaign campaignDto, User seller, Cabinet cabinet) {
-        PromotionCampaign campaign = mapToPromotionCampaign(campaignDto, seller, cabinet);
+    private Optional<SaveResult> processCampaign(PromotionAdvertsResponse.Campaign campaignDto, Cabinet cabinet) {
+        PromotionCampaign campaign = mapToPromotionCampaign(campaignDto, cabinet);
         if (campaign == null) {
             return Optional.empty();
         }
@@ -233,7 +233,7 @@ public class PromotionCampaignService {
     /**
      * Преобразует DTO кампании в сущность PromotionCampaign.
      */
-    private PromotionCampaign mapToPromotionCampaign(PromotionAdvertsResponse.Campaign campaignDto, User seller, Cabinet cabinet) {
+    private PromotionCampaign mapToPromotionCampaign(PromotionAdvertsResponse.Campaign campaignDto, Cabinet cabinet) {
         try {
             ru.oparin.solution.model.CampaignType campaignType = resolveCampaignType(campaignDto.getType());
             BidType bidType = resolveBidType(campaignDto.getBidType());
@@ -241,7 +241,6 @@ public class PromotionCampaignService {
 
             return PromotionCampaign.builder()
                     .advertId(campaignDto.getAdvertId())
-                    .seller(seller)
                     .cabinet(cabinet)
                     .name(campaignDto.getName())
                     .type(campaignType)

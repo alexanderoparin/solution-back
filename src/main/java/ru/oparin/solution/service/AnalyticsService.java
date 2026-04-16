@@ -272,7 +272,7 @@ public class AnalyticsService {
     private List<Long> getCampaignIdsForCabinet(Long sellerId, Long cabinetId) {
         List<PromotionCampaign> campaigns = cabinetId != null
                 ? campaignRepository.findByCabinet_Id(cabinetId)
-                : campaignRepository.findBySellerId(sellerId);
+                : campaignRepository.findByCabinet_User_Id(sellerId);
         return campaigns.stream().map(PromotionCampaign::getAdvertId).collect(Collectors.toList());
     }
 
@@ -464,7 +464,7 @@ public class AnalyticsService {
         Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> cache = new HashMap<>();
         List<PromotionCampaign> campaigns = cabinetId != null
                 ? campaignRepository.findByCabinet_Id(cabinetId)
-                : campaignRepository.findBySellerId(sellerId);
+                : campaignRepository.findByCabinet_User_Id(sellerId);
         List<Long> campaignIds = campaigns.stream()
                 .map(PromotionCampaign::getAdvertId)
                 .collect(Collectors.toList());
@@ -527,15 +527,18 @@ public class AnalyticsService {
     }
 
     /**
-     * Товары «в связке» — другие артикулы с тем же IMT ID в карточке (тот же кабинет/продавец), без текущего nmId.
+     * Товары «в связке» — другие артикулы с тем же IMT ID в том же кабинете, без текущего nmId.
      */
     private List<ArticleSummaryDto> getBundleProducts(ProductCard card, Long cardCabinetId) {
         if (card.getImtId() == null) {
             return java.util.Collections.emptyList();
         }
-        List<ProductCard> sameImt = cardCabinetId != null
-                ? productCardRepository.findByImtIdAndCabinet_Id(card.getImtId(), cardCabinetId)
-                : productCardRepository.findByImtIdAndSeller_Id(card.getImtId(), card.getSeller().getId());
+        Long cabinetId = cardCabinetId != null ? cardCabinetId
+                : (card.getCabinet() != null ? card.getCabinet().getId() : null);
+        if (cabinetId == null) {
+            return java.util.Collections.emptyList();
+        }
+        List<ProductCard> sameImt = productCardRepository.findByImtIdAndCabinet_Id(card.getImtId(), cabinetId);
         return sameImt.stream()
                 .filter(c -> !c.getNmId().equals(card.getNmId()))
                 .map(this::mapToArticleSummary)
@@ -566,7 +569,7 @@ public class AnalyticsService {
     private List<ProductCard> getVisibleCards(Long sellerId, Long cabinetId, List<Long> excludedNmIds) {
         List<ProductCard> allCards = cabinetId != null
                 ? productCardRepository.findByCabinet_Id(cabinetId)
-                : productCardRepository.findBySellerId(sellerId);
+                : productCardRepository.findByCabinet_User_Id(sellerId);
         return ProductCardFilter.filterVisibleCards(allCards, excludedNmIds).stream()
                 .sorted(Comparator.comparing(ProductCard::getNmId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .collect(Collectors.toList());
@@ -1151,7 +1154,7 @@ public class AnalyticsService {
 
     /**
      * Детали рекламной кампании (комбо): название, статус, список артикулов с фото и названием.
-     * Сначала поиск по кабинету; если не найдено — по продавцу (кампания может быть в другом кабинете того же продавца).
+     * Сначала поиск по кабинету; если кабинет в контексте не задан — по advertId с проверкой владельца кабинета.
      */
     @Transactional(readOnly = true)
     public CampaignDetailDto getCampaignDetail(Long campaignId, Long cabinetId, Long sellerId) {
@@ -1162,7 +1165,13 @@ public class AnalyticsService {
             campaign = campaignRepository.findByAdvertIdAndCabinet_Id(campaignId, cabinetId).orElse(null);
         }
         if (campaign == null && sellerId != null) {
-            campaign = campaignRepository.findByAdvertIdAndSeller_Id(campaignId, sellerId).orElse(null);
+            campaign = campaignRepository.findById(campaignId).orElse(null);
+            if (campaign != null
+                    && (campaign.getCabinet() == null
+                    || campaign.getCabinet().getUser() == null
+                    || !campaign.getCabinet().getUser().getId().equals(sellerId))) {
+                campaign = null;
+            }
             if (campaign != null) {
                 cabinetIdForArticles = campaign.getCabinet() != null ? campaign.getCabinet().getId() : cabinetId;
             }
@@ -1321,7 +1330,9 @@ public class AnalyticsService {
                 : productCardRepository.findByNmId(nmId))
                 .orElseThrow(() -> new UserException("Артикул не найден: " + nmId, HttpStatus.NOT_FOUND));
 
-        if (!card.getSeller().getId().equals(sellerId)) {
+        if (card.getCabinet() == null
+                || card.getCabinet().getUser() == null
+                || !card.getCabinet().getUser().getId().equals(sellerId)) {
             throw new UserException("Артикул не принадлежит продавцу", HttpStatus.FORBIDDEN);
         }
 

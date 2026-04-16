@@ -66,7 +66,7 @@ public class ProductCardService {
         if (isEmptyResponse(response)) {
             return;
         }
-        ProcessingResult result = processCards(response.getCards(), cabinet.getUser(), cabinet);
+        ProcessingResult result = processCards(response.getCards(), cabinet);
         log.info("Обработано карточек: создано {}, обновлено {}",
                 result.savedCount(), result.updatedCount());
     }
@@ -77,7 +77,7 @@ public class ProductCardService {
                 || response.getCards().isEmpty();
     }
 
-    private ProcessingResult processCards(List<CardDto> cards, User seller, Cabinet cabinet) {
+    private ProcessingResult processCards(List<CardDto> cards, Cabinet cabinet) {
         int savedCount = 0;
         int updatedCount = 0;
 
@@ -86,7 +86,7 @@ public class ProductCardService {
                 continue;
             }
 
-            Optional<SaveResult> result = processCard(cardDto, seller, cabinet);
+            Optional<SaveResult> result = processCard(cardDto, cabinet);
             if (result.isPresent()) {
                 if (result.get().isNew()) {
                     savedCount++;
@@ -103,9 +103,9 @@ public class ProductCardService {
         return cardDto != null && cardDto.getNmId() != null;
     }
 
-    private Optional<SaveResult> processCard(CardDto cardDto, User seller, Cabinet cabinet) {
+    private Optional<SaveResult> processCard(CardDto cardDto, Cabinet cabinet) {
         try {
-            ProductCard card = mapToProductCard(cardDto, seller, cabinet);
+            ProductCard card = mapToProductCard(cardDto, cabinet);
             if (card == null) {
                 return Optional.empty();
             }
@@ -113,7 +113,7 @@ public class ProductCardService {
             Optional<ProductCard> existingCard = productCardRepository.findByNmIdAndCabinet_Id(card.getNmId(), cabinet.getId());
 
             if (existingCard.isPresent()) {
-                return handleExistingCard(existingCard.get(), card, seller, cardDto);
+                return handleExistingCard(existingCard.get(), card, cardDto);
             } else {
                 return handleNewCard(card, cardDto);
             }
@@ -126,17 +126,10 @@ public class ProductCardService {
     }
 
     private Optional<SaveResult> handleExistingCard(
-            ProductCard existingCard, 
-            ProductCard updatedCard, 
-            User seller,
+            ProductCard existingCard,
+            ProductCard updatedCard,
             CardDto cardDto
     ) {
-        if (!isCardBelongsToSeller(existingCard, seller)) {
-            log.warn("Карточка с nmID {} принадлежит другому продавцу, пропускаем", 
-                    existingCard.getNmId());
-            return Optional.empty();
-        }
-
         updateCardFields(existingCard, updatedCard);
         productCardRepository.save(existingCard);
 
@@ -192,10 +185,6 @@ public class ProductCardService {
         }
     }
 
-    private boolean isCardBelongsToSeller(ProductCard card, User seller) {
-        return card.getSeller().getId().equals(seller.getId());
-    }
-
     private Optional<SaveResult> handleNewCard(ProductCard card, CardDto cardDto) {
         productCardRepository.save(card);
 
@@ -204,14 +193,13 @@ public class ProductCardService {
         return Optional.of(new SaveResult(true));
     }
 
-    private ProductCard mapToProductCard(CardDto cardDto, User seller, Cabinet cabinet) {
+    private ProductCard mapToProductCard(CardDto cardDto, Cabinet cabinet) {
         String photoTm = extractPhotoTm(cardDto);
         String photoC246x328 = extractPhotoC246x328(cardDto);
 
         return ProductCard.builder()
                 .nmId(cardDto.getNmId())
                 .imtId(cardDto.getImtId())
-                .seller(seller)
                 .cabinet(cabinet)
                 .title(cardDto.getTitle())
                 .subjectName(cardDto.getSubjectName())

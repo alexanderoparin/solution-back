@@ -96,7 +96,7 @@ public class AdvertisingMetricsCalculator {
     private List<Long> getCampaignIds(Long sellerId, Long cabinetId) {
         List<PromotionCampaign> campaigns = cabinetId != null
                 ? campaignRepository.findByCabinet_Id(cabinetId)
-                : campaignRepository.findBySellerId(sellerId);
+                : campaignRepository.findByCabinet_User_Id(sellerId);
         return campaigns.stream()
                 .map(PromotionCampaign::getAdvertId)
                 .toList();

@@ -1,16 +1,11 @@
 package ru.oparin.solution.model;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import ru.oparin.solution.converter.BidTypeConverter;
-import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.converter.CampaignStatusConverter;
 import ru.oparin.solution.converter.CampaignTypeConverter;
 
@@ -35,13 +30,6 @@ public class PromotionCampaign {
     @Id
     @Column(name = "advert_id")
     private Long advertId;
-
-    /**
-     * Продавец, владелец кампании (оставляем для удобства).
-     */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "seller_id", nullable = false)
-    private User seller;
 
     /**
      * Кабинет, которому принадлежит кампания.

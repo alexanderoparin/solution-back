@@ -38,7 +38,9 @@ public class ArticleAdCampaignGoalService {
         }
         ProductCard card = productCardRepository.findByNmIdAndCabinet_Id(nmId, cabinetId)
                 .orElseThrow(() -> new UserException("Артикул не найден", HttpStatus.NOT_FOUND));
-        if (!card.getSeller().getId().equals(seller.getId())) {
+        if (card.getCabinet() == null
+                || card.getCabinet().getUser() == null
+                || !card.getCabinet().getUser().getId().equals(seller.getId())) {
             throw new UserException("Артикул не принадлежит продавцу", HttpStatus.FORBIDDEN);
         }
         String text = goal != null ? goal : "";
