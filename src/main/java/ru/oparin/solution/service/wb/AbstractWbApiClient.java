@@ -13,6 +13,7 @@ import org.springframework.web.client.*;
 import ru.oparin.solution.dto.wb.WbApiProblemResponse;
 import ru.oparin.solution.dto.wb.WbApiSimpleErrorResponse;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
+import ru.oparin.solution.exception.WbRateLimitDeferException;
 
 import java.net.URI;
 import java.net.UnknownHostException;
@@ -37,6 +38,7 @@ public abstract class AbstractWbApiClient {
     private static final String UNKNOWN_ENDPOINT = "UNKNOWN_ENDPOINT";
     private static final String UNKNOWN_OPERATION = "unknown-operation";
     private static final ConcurrentMap<String, AtomicLong> TOO_MANY_REQUESTS_BY_ENDPOINT = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<WbApiCategory, AtomicLong> TOO_MANY_REQUESTS_BY_CATEGORY = new ConcurrentHashMap<>();
 
     protected RestTemplate restTemplate;
     protected final ObjectMapper objectMapper;
@@ -101,8 +103,8 @@ public abstract class AbstractWbApiClient {
     protected abstract WbApiCategory getApiCategory();
 
     /**
-     * Выполняет вызов с ретраями при таймауте, ошибке соединения, DNS и при 504.
-     * 4xx (401, 429 и т.д.) не ретраит — пробрасываются сразу.
+     * Выполняет вызов с учётом сети/504: без ожидания в потоке — при необходимости повтора выбрасывается
+     * {@link WbRateLimitDeferException} (события / повтор снаружи). 4xx (401, 429 и т.д.) не ретраит.
      */
     protected <R> R executeWithConnectionRetry(String context, Callable<R> attempt) {
         RestClientException lastFailure = null;
@@ -110,7 +112,6 @@ public abstract class AbstractWbApiClient {
 
         while (attemptNum < MAX_CONNECTION_RETRIES) {
             try {
-                applyRateLimit();
                 return attempt.call();
             } catch (RestClientException e) {
                 if (e instanceof HttpClientErrorException) {
@@ -126,9 +127,7 @@ public abstract class AbstractWbApiClient {
                 }
                 RetryDecision decision = decideRetry(e, attemptNum);
                 if (decision != RetryDecision.GIVE_UP) {
-                    logRetryAndSleep(decision, context, attemptNum);
-                    attemptNum++;
-                    continue;
+                    logRetryAndDefer(decision, context, attemptNum);
                 }
                 lastFailure = e;
             } catch (Exception e) {
@@ -143,7 +142,6 @@ public abstract class AbstractWbApiClient {
     }
 
     protected <T> ResponseEntity<String> executePostRequest(String url, HttpEntity<T> entity) {
-        applyRateLimit();
         ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
         validateResponse(response);
         return response;
@@ -161,14 +159,13 @@ public abstract class AbstractWbApiClient {
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 HttpEntity<T> entity = new HttpEntity<>(requestBody, createJsonAuthHeaders(apiKey));
-                applyRateLimit();
                 ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
 
                 if (response.getStatusCode().value() == 429 && attempt < maxRetries) {
                     log429Metric(endpoint, operationName);
-                    log.warn("Получен 429 Too Many Requests (попытка {}/{}). Ожидание {} мс...", attempt, maxRetries, retryDelayMs);
-                    sleep(retryDelayMs);
-                    continue;
+                    log.warn("Получен 429 Too Many Requests (попытка {}/{}). Отложенный повтор через {} мс (без sleep).",
+                            attempt, maxRetries, retryDelayMs);
+                    throwDeferAfterMillis("WB API 429 Too Many Requests", retryDelayMs);
                 }
                 if (response.getStatusCode().value() == 429) {
                     log429Metric(endpoint, operationName);
@@ -179,8 +176,7 @@ public abstract class AbstractWbApiClient {
             } catch (RestClientException e) {
                 if (is429Error(e) && attempt < maxRetries) {
                     log429Metric(endpoint, operationName);
-                    sleep(retryDelayMs);
-                    continue;
+                    throwDeferAfterMillis("WB API 429 Too Many Requests", retryDelayMs);
                 }
                 throw e;
             }
@@ -247,16 +243,14 @@ public abstract class AbstractWbApiClient {
         log.error("WB API [{}]: {} {}; тело ответа: {}", context, status, statusText, truncateBody(body));
     }
 
-    protected void applyRateLimit() {
-        WbApiRateLimiter.acquire(getApiCategory());
-    }
-
     protected void log429Metric() {
         log429Metric(UNKNOWN_ENDPOINT, UNKNOWN_OPERATION);
     }
 
     protected void log429Metric(String endpoint, String operationName) {
-        long count = WbApiRateLimiter.increment429AndGet(getApiCategory());
+        long count = TOO_MANY_REQUESTS_BY_CATEGORY
+                .computeIfAbsent(getApiCategory(), ignored -> new AtomicLong())
+                .incrementAndGet();
         String endpointValue = endpoint == null || endpoint.isBlank() ? UNKNOWN_ENDPOINT : endpoint;
         String operationValue = operationName == null || operationName.isBlank() ? UNKNOWN_OPERATION : operationName;
         long endpointCount = TOO_MANY_REQUESTS_BY_ENDPOINT
@@ -315,13 +309,12 @@ public abstract class AbstractWbApiClient {
         return isConnectionIoError(e.getCause());
     }
 
-    protected static void sleep(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-            throw new RestClientException("Прервано ожидание перед повторной попыткой", ie);
-        }
+    /**
+     * Отложить повтор без блокировки потока (события / вызывающий код обрабатывают {@link WbRateLimitDeferException}).
+     */
+    protected static void throwDeferAfterMillis(String reason, long delayMs) {
+        long ms = Math.max(1L, delayMs);
+        throw WbRateLimitDeferException.untilEpochMilli(reason, System.currentTimeMillis() + ms);
     }
 
     // --- Приватные методы ретраев ---
@@ -348,15 +341,15 @@ public abstract class AbstractWbApiClient {
         return he.getStatusCode().value() == 504;
     }
 
-    private void logRetryAndSleep(RetryDecision decision, String context, int attemptNum) {
+    private void logRetryAndDefer(RetryDecision decision, String context, int attemptNum) {
         if (decision == RetryDecision.RETRY_504) {
-            log.warn("504 Gateway Timeout при {} (попытка {}/{}). Повтор через {} мс...",
+            log.warn("504 Gateway Timeout при {} (попытка {}/{}). Отложенный повтор через {} мс (без sleep).",
                     context, attemptNum + 1, MAX_CONNECTION_RETRIES, CONNECTION_RETRY_DELAY_MS);
         } else {
-            log.warn("Таймаут/ошибка соединения при {} (попытка {}/{}). Повтор через {} мс...",
+            log.warn("Таймаут/ошибка соединения при {} (попытка {}/{}). Отложенный повтор через {} мс (без sleep).",
                     context, attemptNum + 1, MAX_CONNECTION_RETRIES, CONNECTION_RETRY_DELAY_MS);
         }
-        sleep(CONNECTION_RETRY_DELAY_MS);
+        throwDeferAfterMillis("WB API: " + context + " — временная ошибка сети или 504", CONNECTION_RETRY_DELAY_MS);
     }
 
     private static void rethrowOrWrap(Exception e) {

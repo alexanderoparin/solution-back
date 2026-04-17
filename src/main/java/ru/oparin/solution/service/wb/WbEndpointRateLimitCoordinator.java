@@ -1,9 +1,11 @@
 package ru.oparin.solution.service.wb;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import ru.oparin.solution.exception.WbRateLimitDeferException;
 
 import java.net.URI;
 import java.util.Locale;
@@ -15,18 +17,20 @@ import java.util.concurrent.atomic.AtomicLong;
  * Учёт лимитов WB по паре «токен (отпечаток) + endpoint».
  * <p>
  * Цель — не доводить до 429 (в т.ч. из‑за возможных штрафных лимитов WB). На каждом успешном ответе
- * {@code 2xx} для этого слота выставляется «не раньше чем» {@code now +} интервал категории из конфига
- * ({@link WbApiRateLimiter#minIntervalMsForCategory(WbApiCategory)}), чтобы следующий запрос к тому же
- * endpoint с тем же токеном не ушёл раньше заданного в {@code wb.rate-limit.*} шага.
- * На {@code 429} дополнительно учитываются заголовки {@code X-Ratelimit-Retry} и {@code X-Ratelimit-Reset}
- * (если есть), иначе — тот же конфиговый интервал.
+ * {@code 2xx} для слота выставляется «не раньше чем» {@code now +} пауза из блока {@code wb.*} sync delays
+ * ({@link WbHttpSuccessSpacingMsResolver}), по тем же величинам, что и {@code WbEventRateLimitService}.
+ * Для неизвестных путей — минимальный fallback в {@link WbHttpSuccessSpacingMsResolver}.
+ * На {@code 429} — {@code X-Ratelimit-Retry} / {@code X-Ratelimit-Reset}, иначе пауза как после 2xx.
  * <p>
  * Время «не раньше чем» для следующего запроса по слоту — в {@link #slots} ({@code nextAllowedAtMs}).
- * Глобальная пауза по категории для всех эндпоинтов — {@link WbApiRateLimiter#acquire(WbApiCategory)}.
+ * При необходимости ожидания выбрасывается {@link ru.oparin.solution.exception.WbRateLimitDeferException} (события / retry снаружи).
  */
 @Component
+@RequiredArgsConstructor
 @Slf4j
 public class WbEndpointRateLimitCoordinator {
+
+    private final WbHttpSuccessSpacingMsResolver httpSuccessSpacingMs;
 
     private final ConcurrentMap<String, RateSlot> slots = new ConcurrentHashMap<>();
 
@@ -58,16 +62,14 @@ public class WbEndpointRateLimitCoordinator {
         long until = slot.getNextAllowedAtMs();
         long now = System.currentTimeMillis();
         if (until > now) {
-            long sleepMs = until - now;
             if (log.isDebugEnabled()) {
-                log.debug("WB rate-limit wait: category={}, endpointKey={}, sleepMs={}",
-                        category != null ? category.name() : "?", endpointKey, sleepMs);
+                log.debug("WB endpoint slot defer: category={}, endpointKey={}, deferUntilEpochMs={}",
+                        category != null ? category.name() : "?", endpointKey, until);
             }
-            try {
-                Thread.sleep(sleepMs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            throw WbRateLimitDeferException.untilEpochMilli(
+                    "Лимит WB по endpoint (токен+path): следующий запрос не раньше указанного времени.",
+                    until
+            );
         }
     }
 
@@ -88,11 +90,10 @@ public class WbEndpointRateLimitCoordinator {
             } else if (resetSec != null && resetSec > 0) {
                 slot.setNextAllowedAtMs(now + resetSec * 1000L);
             } else {
-                slot.setNextAllowedAtMs(now + WbApiRateLimiter.minIntervalMsForCategory(category));
+                slot.setNextAllowedAtMs(now + httpSuccessSpacingMs.spacingAfter2xxMs(endpointKey));
             }
         } else if (httpStatus >= 200 && httpStatus <= 299) {
-            long intervalMs = WbApiRateLimiter.minIntervalMsForCategory(category);
-            slot.setNextAllowedAtMs(now + intervalMs);
+            slot.setNextAllowedAtMs(now + httpSuccessSpacingMs.spacingAfter2xxMs(endpointKey));
         }
     }
 

@@ -80,16 +80,6 @@ wb:
     feedbacks-base-url: https://feedbacks-api.wildberries.ru
     timeout: 30000
 
-  # --- Global WB rate limiter ---
-  rate-limit:
-    default-min-interval-ms: 0
-    analytics-min-interval-ms: 200
-    promotion-min-interval-ms: 200
-    content-min-interval-ms: 700
-    prices-min-interval-ms: 600
-    feedbacks-min-interval-ms: 350
-    statistics-min-interval-ms: 200
-
   # --- WB sync delays / retries ---
   content:
     cards-pagination-delay-ms: 700

@@ -48,7 +48,7 @@ public class StocksByNmIdEventExecutor implements WbApiEventExecutor {
             markStocksCompletedIfLastEvent(cabinet.getId());
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (Exception e) {
-            return WbApiEventExecutionResult.retryableError(e.getMessage());
+            return WbEventExecutionErrors.wrapDeferOrRetryable(e);
         }
     }
 

@@ -35,6 +35,10 @@ public class PromotionCalendarSyncCabinetEventExecutor implements WbApiEventExec
             cabinetScopeStatusService.recordFailure(cabinet.getId(), e.getCategory(), e.getMessage());
             log.warn(MSG_SCOPE, cabinet.getId(), e.getCategory().getDisplayName());
         } catch (Exception e) {
+            WbApiEventExecutionResult deferOrRetry = WbEventExecutionErrors.wrapDeferOrRetryable(e);
+            if (deferOrRetry.deferUntil() != null) {
+                return deferOrRetry;
+            }
             log.warn("Синхронизация акций календаря для кабинета {} завершилась с ошибкой: {}", cabinet.getId(), e.getMessage());
         }
         if (!isAdminBulkStandalone(event.getTriggerSource())) {

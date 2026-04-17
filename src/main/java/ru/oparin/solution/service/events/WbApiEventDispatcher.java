@@ -9,6 +9,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.config.WbEventsProperties;
+import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.model.WbApiEventType;
 import ru.oparin.solution.repository.ProductCardRepository;
@@ -46,12 +47,15 @@ public class WbApiEventDispatcher {
                 .map(event -> CompletableFuture.supplyAsync(() -> executeSingle(event), cabinetUpdateExecutor))
                 .toList();
 
+        int timeoutSeconds = Math.max(1, wbEventsProperties.getEventAwaitTimeoutSeconds());
         int deferredCount = 0;
         int executedCount = 0;
         int skippedCount = 0;
         int timeoutCount = 0;
-        for (CompletableFuture<EventExecutionOutcome> future : futures) {
-            EventExecutionOutcome outcome = awaitOutcome(future);
+        for (int i = 0; i < futures.size(); i++) {
+            CompletableFuture<EventExecutionOutcome> future = futures.get(i);
+            WbApiEvent event = events.get(i);
+            EventExecutionOutcome outcome = awaitOutcome(future, event.getId(), timeoutSeconds);
             if (outcome == EventExecutionOutcome.TIMEOUT) {
                 timeoutCount++;
                 continue;
@@ -70,23 +74,41 @@ public class WbApiEventDispatcher {
         );
     }
 
-    private EventExecutionOutcome awaitOutcome(CompletableFuture<EventExecutionOutcome> future) {
-        int timeoutSeconds = Math.max(1, wbEventsProperties.getEventAwaitTimeoutSeconds());
+    private EventExecutionOutcome awaitOutcome(CompletableFuture<EventExecutionOutcome> future, Long eventId, int timeoutSeconds) {
         try {
             return future.get(timeoutSeconds, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
             future.cancel(true);
             log.error("WB events poll: таймаут ожидания async-события (>{}с), future отменен", timeoutSeconds);
+            revertRunningAfterPollAwaitTimeout(eventId, timeoutSeconds);
             return EventExecutionOutcome.TIMEOUT;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("WB events poll: поток прерван при ожидании async-события");
+            future.cancel(true);
+            revertRunningAfterPollAwaitTimeout(eventId, timeoutSeconds);
             return EventExecutionOutcome.TIMEOUT;
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             log.error("WB events poll: ошибка ожидания async-события: {}", cause.getMessage(), cause);
+            future.cancel(true);
+            revertRunningAfterPollAwaitTimeout(eventId, timeoutSeconds);
+            return EventExecutionOutcome.TIMEOUT;
+        } catch (CancellationException e) {
+            log.error("WB events poll: async-событие отменено (CancellationException)");
+            revertRunningAfterPollAwaitTimeout(eventId, timeoutSeconds);
             return EventExecutionOutcome.TIMEOUT;
         }
+    }
+
+    /**
+     * Если async-задача не вернулась за poll-таймаут, событие остаётся RUNNING в БД — переводим в retry.
+     */
+    private void revertRunningAfterPollAwaitTimeout(Long eventId, int timeoutSeconds) {
+        if (eventId == null) {
+            return;
+        }
+        eventService.revertRunningAfterAsyncPollTimeout(eventId, timeoutSeconds);
     }
 
     private List<WbApiEvent> prioritizeEventsForPriorityCards(List<WbApiEvent> events) {
@@ -176,15 +198,34 @@ public class WbApiEventDispatcher {
             }
             WbApiEventExecutor executor = applicationContext.getBean(event.getExecutorBeanName(), WbApiEventExecutor.class);
             WbApiEventExecutionResult result = executor.execute(event);
+            long eventId = event.getId();
             if (result.success()) {
-                eventService.markSuccess(event);
+                eventService.markSuccessIfRunning(eventId);
                 return EventExecutionOutcome.EXECUTED;
             }
-            eventService.markFailed(event, result);
+            if (result.deferUntil() != null) {
+                eventService.markFailed(event, result);
+                return EventExecutionOutcome.DEFERRED_RATE_LIMIT;
+            }
+            eventService.markFailedIfRunning(eventId, result);
             return EventExecutionOutcome.EXECUTED;
+        } catch (WbRateLimitDeferException e) {
+            eventService.markFailed(
+                    event,
+                    WbApiEventExecutionResult.deferredRateLimit(e.getMessage(), e.getDeferUntil())
+            );
+            return EventExecutionOutcome.DEFERRED_RATE_LIMIT;
         } catch (Exception e) {
+            WbRateLimitDeferException defer = WbRateLimitDeferException.findInChain(e);
+            if (defer != null) {
+                eventService.markFailed(
+                        event,
+                        WbApiEventExecutionResult.deferredRateLimit(defer.getMessage(), defer.getDeferUntil())
+                );
+                return EventExecutionOutcome.DEFERRED_RATE_LIMIT;
+            }
             log.error("Ошибка выполнения WB API события id={}, type={}: {}", event.getId(), event.getEventType(), e.getMessage(), e);
-            eventService.markFailed(event, WbApiEventExecutionResult.retryableError(e.getMessage()));
+            eventService.markFailedIfRunning(event.getId(), WbApiEventExecutionResult.retryableError(e.getMessage()));
             return EventExecutionOutcome.EXECUTED;
         } finally {
             MDC.remove("cabinetTag");

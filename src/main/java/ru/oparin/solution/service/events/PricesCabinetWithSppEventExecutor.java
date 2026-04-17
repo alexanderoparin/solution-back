@@ -28,7 +28,7 @@ public class PricesCabinetWithSppEventExecutor implements WbApiEventExecutor {
             eventService.tryFinalizeMain(cabinet.getId(), event.getId());
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (Exception e) {
-            return WbApiEventExecutionResult.retryableError(e.getMessage());
+            return WbEventExecutionErrors.wrapDeferOrRetryable(e);
         }
     }
 }

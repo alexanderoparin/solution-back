@@ -48,7 +48,7 @@ public class WarehousesSyncCabinetEventExecutor implements WbApiEventExecutor {
             log.warn("Не удалось обновить склады с кабинета {}, получили код ошибки {}", cabinetId, ex.getStatusCode());
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (Exception e) {
-            return WbApiEventExecutionResult.retryableError(e.getMessage());
+            return WbEventExecutionErrors.wrapDeferOrRetryable(e);
         }
     }
 }

@@ -11,6 +11,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.FeedbacksResponse;
+import ru.oparin.solution.exception.WbRateLimitDeferException;
 
 /**
  * Клиент API отзывов WB (feedbacks-api).
@@ -87,14 +88,13 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
     }
 
     /**
-     * Задержка между запросами (лимит API).
+     * Пауза между страницами отзывов — без sleep: отложенный повтор через события ({@link WbRateLimitDeferException}).
      */
     public static void delayBetweenRequests() {
-        try {
-            Thread.sleep(requestDelayMs);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RestClientException("Прервано ожидание перед запросом отзывов", e);
-        }
+        long ms = Math.max(1L, requestDelayMs);
+        throw WbRateLimitDeferException.untilEpochMilli(
+                "Лимит WB API отзывов: следующая страница не раньше указанного времени.",
+                System.currentTimeMillis() + ms
+        );
     }
 }

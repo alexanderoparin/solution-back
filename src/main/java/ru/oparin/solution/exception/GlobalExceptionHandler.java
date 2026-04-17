@@ -12,6 +12,8 @@ import org.springframework.web.context.request.async.AsyncRequestNotUsableExcept
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import ru.oparin.solution.dto.ErrorResponse;
 
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -47,6 +49,25 @@ public class GlobalExceptionHandler {
             builder.retryAfterSeconds(ex.getRetryAfterSeconds().longValue());
         }
         return ResponseEntity.status(ex.getHttpStatus()).body(builder.build());
+    }
+
+    /**
+     * Лимит WB без блокировки потока: клиент может повторить после {@code retryAfterSeconds}.
+     */
+    @ExceptionHandler(WbRateLimitDeferException.class)
+    public ResponseEntity<ErrorResponse> handleWbRateLimitDefer(WbRateLimitDeferException ex) {
+        long sec = ChronoUnit.SECONDS.between(LocalDateTime.now(), ex.getDeferUntil());
+        if (sec < 1) {
+            sec = 1;
+        }
+        long capped = Math.min(sec, Integer.MAX_VALUE);
+        ErrorResponse body = ErrorResponse.builder()
+                .error(ex.getMessage() != null && !ex.getMessage().isBlank()
+                        ? ex.getMessage()
+                        : "Лимит WB: повторите запрос позже.")
+                .retryAfterSeconds(capped)
+                .build();
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body);
     }
 
     /**

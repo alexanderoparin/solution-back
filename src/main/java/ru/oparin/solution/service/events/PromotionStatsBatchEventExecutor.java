@@ -43,7 +43,7 @@ public class PromotionStatsBatchEventExecutor implements WbApiEventExecutor {
         } catch (WbApiUnauthorizedScopeException e) {
             return WbApiEventExecutionResult.finalError(e.getMessage());
         } catch (Exception e) {
-            return WbApiEventExecutionResult.retryableError(e.getMessage());
+            return WbEventExecutionErrors.wrapDeferOrRetryable(e);
         }
     }
 }

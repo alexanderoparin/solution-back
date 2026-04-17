@@ -89,7 +89,7 @@ docker compose up -d --build
 
 ## Интеграция с Wildberries
 
-Базовые URL и лимиты задаются в `application.yaml` (блок `wb.api`, `wb.rate-limit`). Документация WB: https://dev.wildberries.ru/
+Базовые URL и задержки синхронизации задаются в `application.yaml` (блоки `wb.api`, `wb.*` sync delays). Документация WB: https://dev.wildberries.ru/
 
 В приложении используется очередь/диспетчер **событий WB** (`WbApiEvent*`), планировщики и исполнители синхронизации карточек, цен, остатков, рекламы, отзывов и т.д.
 

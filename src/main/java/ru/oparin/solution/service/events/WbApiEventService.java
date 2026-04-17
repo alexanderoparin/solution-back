@@ -519,6 +519,44 @@ public class WbApiEventService {
         return updated > 0;
     }
 
+    /**
+     * После {@link WbApiEventDispatcher} poll-таймаута async-задача могла остаться RUNNING — переводим в retry.
+     */
+    @Transactional
+    public void revertRunningAfterAsyncPollTimeout(long eventId, int pollAwaitTimeoutSeconds) {
+        markFailedIfRunning(
+                eventId,
+                WbApiEventExecutionResult.retryableError(
+                        "Таймаут ожидания на poll (" + pollAwaitTimeoutSeconds + " с): async-выполнение отменено."
+                )
+        );
+    }
+
+    /**
+     * Успех только если событие ещё в RUNNING (иначе poll уже отменил задачу и перевёл в retry).
+     */
+    @Transactional
+    public void markSuccessIfRunning(Long eventId) {
+        WbApiEvent event = eventRepository.findById(eventId).orElse(null);
+        if (event == null || event.getStatus() != WbApiEventStatus.RUNNING) {
+            return;
+        }
+        markSuccess(event);
+    }
+
+    /**
+     * Ошибка выполнения только если событие ещё в RUNNING.
+     */
+    @Transactional
+    public void markFailedIfRunning(Long eventId, WbApiEventExecutionResult result) {
+        WbApiEvent event = eventRepository.findById(eventId).orElse(null);
+        if (event == null || event.getStatus() != WbApiEventStatus.RUNNING) {
+            return;
+        }
+        event.setStartedAt(null);
+        markFailed(event, result);
+    }
+
     @Transactional
     public int recoverStuckRunningEvents(int timeoutMinutes) {
         LocalDateTime threshold = LocalDateTime.now().minusMinutes(timeoutMinutes);
@@ -653,6 +691,7 @@ public class WbApiEventService {
         if (result.deferUntil() != null) {
             event.setStatus(WbApiEventStatus.DEFERRED_RATE_LIMIT);
             event.setNextAttemptAt(result.deferUntil());
+            event.setStartedAt(null);
             eventRepository.save(event);
             return;
         }

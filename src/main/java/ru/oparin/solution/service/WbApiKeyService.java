@@ -9,6 +9,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import ru.oparin.solution.exception.UserException;
+import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.service.wb.Wb429RateLimitHeadersLogger;
 import ru.oparin.solution.service.wb.WbApiCategory;
@@ -16,6 +17,7 @@ import ru.oparin.solution.service.wb.WbContentApiClient;
 import ru.oparin.solution.service.wb.WbEndpointRateLimitCoordinator;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.EnumMap;
 import java.util.Map;
 
@@ -163,7 +165,20 @@ public class WbApiKeyService {
 
             log.info("Проверка доступа к категории WB API {} для кабинета {} через ping: {}", category.getDisplayName(), cabinetId, url);
 
-            wbEndpointRateLimitCoordinator.beforeRequest(apiKey, endpointKey, category);
+            try {
+                wbEndpointRateLimitCoordinator.beforeRequest(apiKey, endpointKey, category);
+            } catch (WbRateLimitDeferException e) {
+                int retryAfter = (int) Math.min(
+                        Integer.MAX_VALUE,
+                        Math.max(1L, ChronoUnit.SECONDS.between(LocalDateTime.now(), e.getDeferUntil()))
+                );
+                cabinetScopeStatusService.recordFailure(cabinetId, category, e.getMessage());
+                throw new UserException(
+                        "Лимит WB: повторите проверку доступа к категории позже.",
+                        HttpStatus.TOO_MANY_REQUESTS,
+                        retryAfter
+                );
+            }
             ResponseEntity<String> response = pingRestTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             wbEndpointRateLimitCoordinator.afterResponse(apiKey, endpointKey, response.getStatusCode().value(), response.getHeaders(), category);
             Wb429RateLimitHeadersLogger.logRateLimitHeaders(log, endpointKey, response.getStatusCode().value(), response.getHeaders());

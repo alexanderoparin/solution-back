@@ -254,14 +254,12 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                 return attempt.call();
             } catch (HttpClientErrorException e) {
                 if (e.getStatusCode().value() == 429 && retry < maxRetries429) {
-                    log429AndSleep(context, endpoint, operation, retry, e);
-                    continue;
+                    log429AndDefer(context, endpoint, operation, retry, e);
                 }
                 throw e;
             } catch (RestClientException e) {
                 if (e.getMessage() != null && e.getMessage().contains("429") && retry < maxRetries429) {
-                    log429AndSleep(context, endpoint, operation, retry, null);
-                    continue;
+                    log429AndDefer(context, endpoint, operation, retry, null);
                 }
                 throw e;
             } catch (Exception e) {
@@ -271,11 +269,18 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         throw new RestClientException("Не удалось выполнить " + context + " после " + maxRetries429 + " попыток");
     }
 
-    private void log429AndSleep(String context, String endpoint, String operation, int retry, HttpClientErrorException e) {
+    private void log429AndDefer(String context, String endpoint, String operation, int retry, HttpClientErrorException e) {
         log429Metric(endpoint, operation);
-        log.warn("WB promotion 429 при {} (попытка {}/{}). Повтор через {} мс...",
-                context, retry, maxRetries429, retryDelayMs429);
-        sleep(retryDelayMs429);
+        long delayMs = retryDelayMs429;
+        if (e != null) {
+            Integer sec = Wb429RateLimitHeadersLogger.parseRetryAfterSeconds(e);
+            if (sec != null && sec > 0) {
+                delayMs = Math.min((long) sec * 1000L, (long) Integer.MAX_VALUE);
+            }
+        }
+        log.warn("WB promotion 429 при {} (попытка {}/{}). Отложенный повтор через {} мс (без sleep).",
+                context, retry, maxRetries429, delayMs);
+        throwDeferAfterMillis("WB promotion 429 при " + context, delayMs);
     }
 
     private void addQueryParameters(UriComponentsBuilder uriBuilder, PromotionFullStatsRequest request) {

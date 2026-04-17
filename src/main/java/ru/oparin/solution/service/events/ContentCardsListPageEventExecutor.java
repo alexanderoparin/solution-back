@@ -61,6 +61,10 @@ public class ContentCardsListPageEventExecutor implements WbApiEventExecutor {
             enqueueAnalyticsEvents(cabinet.getId(), payload, event.getTriggerSource());
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (Exception e) {
+            WbApiEventExecutionResult deferOrRetry = WbEventExecutionErrors.wrapDeferOrRetryable(e);
+            if (deferOrRetry.deferUntil() != null) {
+                return deferOrRetry;
+            }
             boolean hasCardsInDb = !productCardService.findByCabinetId(cabinet.getId()).isEmpty();
             boolean retriesExhausted = event.getAttemptCount() + 1 >= event.getMaxAttempts();
             if (retriesExhausted && hasCardsInDb) {
