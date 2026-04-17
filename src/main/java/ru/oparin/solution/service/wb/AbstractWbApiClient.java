@@ -9,8 +9,12 @@ import ru.oparin.solution.dto.wb.WbApiProblemResponse;
 import ru.oparin.solution.dto.wb.WbApiSimpleErrorResponse;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 
+import java.net.URI;
 import java.net.UnknownHostException;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Абстрактный базовый класс для клиентов WB API.
@@ -25,6 +29,9 @@ public abstract class AbstractWbApiClient {
     protected static final long CONNECTION_RETRY_DELAY_MS = 10_000;
 
     private static final int MAX_BODY_LOG_LENGTH = 500;
+    private static final String UNKNOWN_ENDPOINT = "UNKNOWN_ENDPOINT";
+    private static final String UNKNOWN_OPERATION = "unknown-operation";
+    private static final ConcurrentMap<String, AtomicLong> TOO_MANY_REQUESTS_BY_ENDPOINT = new ConcurrentHashMap<>();
 
     protected final RestTemplate restTemplate;
     protected final ObjectMapper objectMapper;
@@ -95,6 +102,18 @@ public abstract class AbstractWbApiClient {
             int maxRetries,
             long retryDelayMs
     ) {
+        return executeWithRetry(url, apiKey, requestBody, maxRetries, retryDelayMs, "POST-запрос");
+    }
+
+    protected <T> ResponseEntity<String> executeWithRetry(
+            String url,
+            String apiKey,
+            T requestBody,
+            int maxRetries,
+            long retryDelayMs,
+            String operationName
+    ) {
+        String endpoint = extractEndpointPath(url);
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 HttpEntity<T> entity = new HttpEntity<>(requestBody, createJsonAuthHeaders(apiKey));
@@ -102,20 +121,20 @@ public abstract class AbstractWbApiClient {
                 ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
 
                 if (response.getStatusCode().value() == 429 && attempt < maxRetries) {
-                    log429Metric();
+                    log429Metric(endpoint, operationName);
                     log.warn("Получен 429 Too Many Requests (попытка {}/{}). Ожидание {} мс...", attempt, maxRetries, retryDelayMs);
                     sleep(retryDelayMs);
                     continue;
                 }
                 if (response.getStatusCode().value() == 429) {
-                    log429Metric();
+                    log429Metric(endpoint, operationName);
                     throw new RestClientException("429 Too Many Requests: " + response.getBody());
                 }
                 validateResponse(response);
                 return response;
             } catch (RestClientException e) {
                 if (is429Error(e) && attempt < maxRetries) {
-                    log429Metric();
+                    log429Metric(endpoint, operationName);
                     sleep(retryDelayMs);
                     continue;
                 }
@@ -185,8 +204,18 @@ public abstract class AbstractWbApiClient {
     }
 
     protected void log429Metric() {
+        log429Metric(UNKNOWN_ENDPOINT, UNKNOWN_OPERATION);
+    }
+
+    protected void log429Metric(String endpoint, String operationName) {
         long count = WbApiRateLimiter.increment429AndGet(getApiCategory());
-        log.warn("Метрика 429: category={}, total429={}", getApiCategory(), count);
+        String endpointValue = endpoint == null || endpoint.isBlank() ? UNKNOWN_ENDPOINT : endpoint;
+        String operationValue = operationName == null || operationName.isBlank() ? UNKNOWN_OPERATION : operationName;
+        long endpointCount = TOO_MANY_REQUESTS_BY_ENDPOINT
+                .computeIfAbsent(endpointValue, ignored -> new AtomicLong())
+                .incrementAndGet();
+        log.warn("Метрика 429: endpoint={}, operation={}, category={}, endpoint429={}, total429={}",
+                endpointValue, operationValue, getApiCategory(), endpointCount, count);
     }
 
     protected HttpHeaders createAuthHeaders(String apiKey) {
@@ -344,5 +373,17 @@ public abstract class AbstractWbApiClient {
 
     private static String truncateBody(String body) {
         return body.length() > MAX_BODY_LOG_LENGTH ? body.substring(0, MAX_BODY_LOG_LENGTH) + "..." : body;
+    }
+
+    protected String extractEndpointPath(String url) {
+        if (url == null || url.isBlank()) {
+            return UNKNOWN_ENDPOINT;
+        }
+        try {
+            URI uri = URI.create(url);
+            return uri.getPath() != null && !uri.getPath().isBlank() ? uri.getPath() : UNKNOWN_ENDPOINT;
+        } catch (IllegalArgumentException ignored) {
+            return UNKNOWN_ENDPOINT;
+        }
     }
 }

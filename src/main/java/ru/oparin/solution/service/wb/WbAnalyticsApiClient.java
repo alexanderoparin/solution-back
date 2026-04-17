@@ -68,7 +68,8 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
                             apiKey,
                             request,
                             maxRetries429,
-                            retryDelayMs429
+                            retryDelayMs429,
+                            "воронка продаж по карточке"
                     )
             );
             return parseAnalyticsResponse(response, nmId);

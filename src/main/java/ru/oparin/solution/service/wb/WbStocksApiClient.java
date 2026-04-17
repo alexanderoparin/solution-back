@@ -26,6 +26,7 @@ public class WbStocksApiClient extends AbstractWbApiClient {
     }
 
     private static final String STOCKS_SIZES_ENDPOINT = "/api/v2/stocks-report/products/sizes";
+    private static final String STOCKS_SIZES_OPERATION = "остатки по размерам";
 
     @Value("${wb.api.analytics-base-url}")
     private String analyticsBaseUrl;
@@ -73,7 +74,7 @@ public class WbStocksApiClient extends AbstractWbApiClient {
                 return executeWithConnectionRetry(context, oneAttempt);
             } catch (HttpClientErrorException e) {
                 if (e.getStatusCode().value() == 429 && attempt < maxRetries) {
-                    log429Metric();
+                    log429Metric(STOCKS_SIZES_ENDPOINT, STOCKS_SIZES_OPERATION);
                     log.warn("Получен 429 Too Many Requests для nmID={} (попытка {}/{}). Ожидание {} мс перед повторной попыткой...",
                             request.getNmID(), attempt, maxRetries, retryDelayMs429);
                     sleep(retryDelayMs429);
@@ -84,7 +85,7 @@ public class WbStocksApiClient extends AbstractWbApiClient {
                 throw new RestClientException("Ошибка от WB API: " + e.getStatusCode() + " - " + e.getMessage(), e);
             } catch (RestClientException e) {
                 if (e.getMessage() != null && e.getMessage().contains("429") && attempt < maxRetries) {
-                    log429Metric();
+                    log429Metric(STOCKS_SIZES_ENDPOINT, STOCKS_SIZES_OPERATION);
                     log.warn("Ошибка 429 для nmID={} при попытке {}/{}. Повтор через {} мс...",
                             request.getNmID(), attempt, maxRetries, retryDelayMs429);
                     sleep(retryDelayMs429);

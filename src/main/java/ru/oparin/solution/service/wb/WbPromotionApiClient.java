@@ -34,9 +34,12 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     }
 
     private static final String PROMOTION_COUNT_ENDPOINT = "/adv/v1/promotion/count";
+    private static final String PROMOTION_COUNT_OPERATION = "количество кампаний";
     /** Актуальный эндпоинт деталей кампаний (типы 8 и 9). Устаревшие: /adv/v1/promotion/adverts, /adv/v0/auction/adverts */
     private static final String ADVERTS_V2_ENDPOINT = "/api/advert/v2/adverts";
+    private static final String ADVERTS_V2_OPERATION = "детали кампаний (v2)";
     private static final String PROMOTION_FULLSTATS_ENDPOINT = "/adv/v3/fullstats";
+    private static final String PROMOTION_FULLSTATS_OPERATION = "статистика кампаний";
     private static final int ADVERTS_V2_BATCH_SIZE = 50;
 
     @Value("${wb.api.promotion-base-url}")
@@ -54,7 +57,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
      * @return список кампаний по типам и статусам
      */
     public PromotionCountResponse getPromotionCount(String apiKey) {
-        return executeWith429Retry("количество кампаний по типам",
+        return executeWith429Retry("количество кампаний по типам", PROMOTION_COUNT_ENDPOINT, PROMOTION_COUNT_OPERATION,
                 () -> executeWithConnectionRetry("количество кампаний по типам", () -> getPromotionCountOnce(apiKey)));
     }
 
@@ -110,7 +113,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         if (campaignIds == null || campaignIds.isEmpty()) {
             return PromotionAdvertsResponse.builder().adverts(Collections.emptyList()).build();
         }
-        return executeWith429Retry("детали кампаний (v2)",
+        return executeWith429Retry("детали кампаний (v2)", ADVERTS_V2_ENDPOINT, ADVERTS_V2_OPERATION,
                 () -> executeWithConnectionRetry("детали кампаний (v2)", () -> getAdvertsV2Once(apiKey, campaignIds)));
     }
 
@@ -193,7 +196,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
      * @return статистика по кампаниям
      */
     public PromotionFullStatsResponse getPromotionFullStats(String apiKey, PromotionFullStatsRequest request) {
-        return executeWith429Retry("статистика кампаний за период", () -> executeWithConnectionRetry("статистика кампаний за период", () -> {
+        return executeWith429Retry("статистика кампаний за период", PROMOTION_FULLSTATS_ENDPOINT, PROMOTION_FULLSTATS_OPERATION, () -> executeWithConnectionRetry("статистика кампаний за период", () -> {
             HttpHeaders headers = createAuthHeaders(apiKey);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
@@ -245,19 +248,19 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         }));
     }
 
-    private <T> T executeWith429Retry(String context, Callable<T> attempt) {
+    private <T> T executeWith429Retry(String context, String endpoint, String operation, Callable<T> attempt) {
         for (int retry = 1; retry <= maxRetries429; retry++) {
             try {
                 return attempt.call();
             } catch (HttpClientErrorException e) {
                 if (e.getStatusCode().value() == 429 && retry < maxRetries429) {
-                    log429AndSleep(context, retry);
+                    log429AndSleep(context, endpoint, operation, retry);
                     continue;
                 }
                 throw e;
             } catch (RestClientException e) {
                 if (e.getMessage() != null && e.getMessage().contains("429") && retry < maxRetries429) {
-                    log429AndSleep(context, retry);
+                    log429AndSleep(context, endpoint, operation, retry);
                     continue;
                 }
                 throw e;
@@ -268,8 +271,8 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         throw new RestClientException("Не удалось выполнить " + context + " после " + maxRetries429 + " попыток");
     }
 
-    private void log429AndSleep(String context, int retry) {
-        log429Metric();
+    private void log429AndSleep(String context, String endpoint, String operation, int retry) {
+        log429Metric(endpoint, operation);
         log.warn("WB promotion 429 при {} (попытка {}/{}). Повтор через {} мс...",
                 context, retry, maxRetries429, retryDelayMs429);
         sleep(retryDelayMs429);
