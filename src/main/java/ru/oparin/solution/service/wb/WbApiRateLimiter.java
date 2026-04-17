@@ -13,6 +13,9 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Глобальный in-memory лимитер WB API по категориям.
  * Ограничивает минимальный интервал между вызовами одной категории по всему приложению.
+ * <p>
+ * Время «не раньше чем» для следующего запроса категории хранится в {@link #nextAllowedAtMs}
+ * (эпоха в миллисекундах). Интервалы задаются в {@code application.yaml} ({@code wb.rate-limit.*}).
  */
 @Component
 public class WbApiRateLimiter {
@@ -65,6 +68,21 @@ public class WbApiRateLimiter {
         return limiter.tooManyRequestsCounters
                 .computeIfAbsent(category, ignored -> new AtomicLong())
                 .incrementAndGet();
+    }
+
+    /**
+     * Минимальный интервал между запросами категории из конфигурации (мс).
+     * Для {@link WbEndpointRateLimitCoordinator}: если {@code X-Ratelimit-Remaining=0} без {@code X-Ratelimit-Reset}.
+     */
+    public static long minIntervalMsForCategory(WbApiCategory category) {
+        WbApiRateLimiter limiter = INSTANCE;
+        if (limiter == null) {
+            return 200L;
+        }
+        if (category == null) {
+            return Math.max(1L, limiter.defaultMinIntervalMs);
+        }
+        return Math.max(1L, limiter.categoryIntervals.getOrDefault(category, limiter.defaultMinIntervalMs));
     }
 
     private void acquireInternal(WbApiCategory category) {

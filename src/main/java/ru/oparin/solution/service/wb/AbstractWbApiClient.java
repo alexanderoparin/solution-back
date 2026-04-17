@@ -2,8 +2,13 @@ package ru.oparin.solution.service.wb;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
+import org.springframework.http.client.ClientHttpRequestExecution;
+import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.*;
 import ru.oparin.solution.dto.wb.WbApiProblemResponse;
 import ru.oparin.solution.dto.wb.WbApiSimpleErrorResponse;
@@ -33,12 +38,56 @@ public abstract class AbstractWbApiClient {
     private static final String UNKNOWN_OPERATION = "unknown-operation";
     private static final ConcurrentMap<String, AtomicLong> TOO_MANY_REQUESTS_BY_ENDPOINT = new ConcurrentHashMap<>();
 
-    protected final RestTemplate restTemplate;
+    protected RestTemplate restTemplate;
     protected final ObjectMapper objectMapper;
 
+    private WbEndpointRateLimitCoordinator wbEndpointRateLimitCoordinator;
+
     protected AbstractWbApiClient() {
-        this.restTemplate = new RestTemplate();
         this.objectMapper = createObjectMapper();
+    }
+
+    @Autowired(required = false)
+    void setWbEndpointRateLimitCoordinator(WbEndpointRateLimitCoordinator wbEndpointRateLimitCoordinator) {
+        this.wbEndpointRateLimitCoordinator = wbEndpointRateLimitCoordinator;
+    }
+
+    @PostConstruct
+    void initRestTemplate() {
+        this.restTemplate = createRestTemplateWithRateLimitInterceptor();
+    }
+
+    private RestTemplate createRestTemplateWithRateLimitInterceptor() {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        RestTemplate rt = new RestTemplate(requestFactory);
+        WbEndpointRateLimitCoordinator coord = this.wbEndpointRateLimitCoordinator;
+        rt.getInterceptors().add((HttpRequest request, byte[] body, ClientHttpRequestExecution execution) -> {
+            String auth = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+            URI uri = request.getURI();
+            String endpointKey = toRateLimitEndpointKey(uri);
+            if (coord != null && auth != null && !auth.isBlank() && !endpointKey.isBlank()) {
+                coord.beforeRequest(auth, endpointKey, getApiCategory());
+            }
+            ClientHttpResponse response = execution.execute(request, body);
+            if (coord != null && auth != null && !auth.isBlank() && !endpointKey.isBlank()) {
+                int status = response.getStatusCode().value();
+                HttpHeaders rh = response.getHeaders();
+                coord.afterResponse(auth, endpointKey, status, rh, getApiCategory());
+                Wb429RateLimitHeadersLogger.logRateLimitHeaders(log, endpointKey, status, rh);
+            }
+            return response;
+        });
+        return rt;
+    }
+
+    /**
+     * Ключ endpoint для лимитов WB (host + path), совпадает с {@link WbEndpointRateLimitCoordinator#endpointKeyFromUrl(String)}.
+     */
+    protected final String toRateLimitEndpointKey(URI uri) {
+        if (uri == null) {
+            return "";
+        }
+        return WbEndpointRateLimitCoordinator.endpointKeyFromUrl(uri.toString());
     }
 
     private static ObjectMapper createObjectMapper() {
@@ -100,19 +149,6 @@ public abstract class AbstractWbApiClient {
         return response;
     }
 
-    /**
-     * Запрос с ретраями при 429 (Too Many Requests).
-     */
-    protected <T> ResponseEntity<String> executeWithRetry(
-            String url,
-            String apiKey,
-            T requestBody,
-            int maxRetries,
-            long retryDelayMs
-    ) {
-        return executeWithRetry(url, apiKey, requestBody, maxRetries, retryDelayMs, "POST-запрос");
-    }
-
     protected <T> ResponseEntity<String> executeWithRetry(
             String url,
             String apiKey,
@@ -130,14 +166,12 @@ public abstract class AbstractWbApiClient {
 
                 if (response.getStatusCode().value() == 429 && attempt < maxRetries) {
                     log429Metric(endpoint, operationName);
-                    Wb429RateLimitHeadersLogger.logIf429(log, response.getStatusCode(), response.getHeaders());
                     log.warn("Получен 429 Too Many Requests (попытка {}/{}). Ожидание {} мс...", attempt, maxRetries, retryDelayMs);
                     sleep(retryDelayMs);
                     continue;
                 }
                 if (response.getStatusCode().value() == 429) {
                     log429Metric(endpoint, operationName);
-                    Wb429RateLimitHeadersLogger.logIf429(log, response.getStatusCode(), response.getHeaders());
                     throw new RestClientException("429 Too Many Requests: " + response.getBody());
                 }
                 validateResponse(response);
@@ -145,9 +179,6 @@ public abstract class AbstractWbApiClient {
             } catch (RestClientException e) {
                 if (is429Error(e) && attempt < maxRetries) {
                     log429Metric(endpoint, operationName);
-                    if (e instanceof HttpClientErrorException he && he.getStatusCode().value() == 429) {
-                        Wb429RateLimitHeadersLogger.logIf429(log, he);
-                    }
                     sleep(retryDelayMs);
                     continue;
                 }
@@ -201,7 +232,6 @@ public abstract class AbstractWbApiClient {
         String statusText = e.getStatusText();
         if (status == 429) {
             log429Metric(endpoint, operationName);
-            Wb429RateLimitHeadersLogger.logIf429(log, e.getStatusCode(), e.getResponseHeaders());
         }
 
         if (body.isBlank()) {

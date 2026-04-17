@@ -272,9 +272,6 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     }
 
     private void log429AndSleep(String context, String endpoint, String operation, int retry, HttpClientErrorException e) {
-        if (e != null) {
-            Wb429RateLimitHeadersLogger.logIf429(log, e);
-        }
         log429Metric(endpoint, operation);
         log.warn("WB promotion 429 при {} (попытка {}/{}). Повтор через {} мс...",
                 context, retry, maxRetries429, retryDelayMs429);

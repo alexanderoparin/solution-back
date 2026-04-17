@@ -13,6 +13,7 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.service.wb.Wb429RateLimitHeadersLogger;
 import ru.oparin.solution.service.wb.WbApiCategory;
 import ru.oparin.solution.service.wb.WbContentApiClient;
+import ru.oparin.solution.service.wb.WbEndpointRateLimitCoordinator;
 
 import java.time.LocalDateTime;
 import java.util.EnumMap;
@@ -30,6 +31,7 @@ public class WbApiKeyService {
     private final CabinetService cabinetService;
     private final WbContentApiClient contentApiClient;
     private final CabinetScopeStatusService cabinetScopeStatusService;
+    private final WbEndpointRateLimitCoordinator wbEndpointRateLimitCoordinator;
 
     /**
      * Клиент только для проверок /ping по разным доменам WB API.
@@ -152,6 +154,7 @@ public class WbApiKeyService {
      * Вызывает /ping для конкретной категории и записывает результат в cabinet_scope_status.
      */
     private void pingCategoryAndRecordStatus(Long cabinetId, String apiKey, WbApiCategory category, String url) {
+        String endpointKey = WbEndpointRateLimitCoordinator.endpointKeyFromUrl(url);
         try {
             HttpHeaders headers = new HttpHeaders();
             // Для /ping WB API принимает тот же заголовок Authorization, что и для обычных методов.
@@ -160,7 +163,10 @@ public class WbApiKeyService {
 
             log.info("Проверка доступа к категории WB API {} для кабинета {} через ping: {}", category.getDisplayName(), cabinetId, url);
 
+            wbEndpointRateLimitCoordinator.beforeRequest(apiKey, endpointKey, category);
             ResponseEntity<String> response = pingRestTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            wbEndpointRateLimitCoordinator.afterResponse(apiKey, endpointKey, response.getStatusCode().value(), response.getHeaders(), category);
+            Wb429RateLimitHeadersLogger.logRateLimitHeaders(log, endpointKey, response.getStatusCode().value(), response.getHeaders());
 
             if (response.getStatusCode().is2xxSuccessful()) {
                 cabinetScopeStatusService.recordSuccess(cabinetId, category);
@@ -169,8 +175,9 @@ public class WbApiKeyService {
                 cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
             }
         } catch (HttpClientErrorException e) {
+            wbEndpointRateLimitCoordinator.afterResponse(apiKey, endpointKey, e.getStatusCode().value(), e.getResponseHeaders(), category);
+            Wb429RateLimitHeadersLogger.logRateLimitHeaders(log, endpointKey, e.getStatusCode().value(), e.getResponseHeaders());
             if (e.getStatusCode() != null && e.getStatusCode().value() == 429) {
-                Wb429RateLimitHeadersLogger.logIf429(log, e);
                 // Лимит: максимум 3 запроса за 30 секунд на метод/домен — отдадим понятную ошибку пользователю.
                 throw new UserException(
                         "Слишком частая проверка токена к WB API. Попробуйте ещё раз через 30 секунд.",
