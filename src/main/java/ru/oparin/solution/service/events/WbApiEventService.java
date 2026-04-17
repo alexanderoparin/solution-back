@@ -618,6 +618,15 @@ public class WbApiEventService {
     }
 
     @Transactional
+    public int retryAllFailedFinalNow() {
+        return eventRepository.bulkRetryByStatus(
+                WbApiEventStatus.FAILED_FINAL,
+                WbApiEventStatus.CREATED,
+                LocalDateTime.now()
+        );
+    }
+
+    @Transactional
     public void cancel(Long eventId) {
         WbApiEvent event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new IllegalArgumentException("Событие не найдено: " + eventId));

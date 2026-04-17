@@ -94,6 +94,22 @@ public interface WbApiEventRepository extends JpaRepository<WbApiEvent, Long> {
 
     long countByStatus(WbApiEventStatus status);
 
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update WbApiEvent e
+               set e.status = :toStatus,
+                   e.nextAttemptAt = :now,
+                   e.lastError = null,
+                   e.finishedAt = null,
+                   e.updatedAt = :now
+             where e.status = :fromStatus
+            """)
+    int bulkRetryByStatus(
+            @Param("fromStatus") WbApiEventStatus fromStatus,
+            @Param("toStatus") WbApiEventStatus toStatus,
+            @Param("now") LocalDateTime now
+    );
+
     @Query("""
             select case when count(e) > 0 then true else false end
               from WbApiEvent e

@@ -156,6 +156,15 @@ public class AdminController {
         return ResponseEntity.ok(Map.of("message", "Событие отправлено на повторное выполнение"));
     }
 
+    @PostMapping("/wb-events/retry-failed-final")
+    public ResponseEntity<Map<String, String>> retryAllFailedFinalWbEvents() {
+        int updated = wbApiEventService.retryAllFailedFinalNow();
+        return ResponseEntity.ok(Map.of(
+                "message", "События отправлены на повторное выполнение",
+                "updatedCount", String.valueOf(updated)
+        ));
+    }
+
     @PostMapping("/wb-events/{eventId}/cancel")
     public ResponseEntity<Map<String, String>> cancelWbEvent(@PathVariable Long eventId) {
         wbApiEventService.cancel(eventId);
