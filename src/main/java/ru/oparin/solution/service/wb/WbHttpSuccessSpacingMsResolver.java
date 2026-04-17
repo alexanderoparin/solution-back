@@ -13,25 +13,25 @@ import org.springframework.stereotype.Component;
 public class WbHttpSuccessSpacingMsResolver {
 
     /** Если путь не сопоставлен с известными префиксами WB в этом резолвере. */
-    private static final long FALLBACK_UNKNOWN_PATH_MS = 1L;
+    private static final long FALLBACK_UNKNOWN_PATH_MS = 1001L;
 
-    @Value("${wb.stocks.request-delay-ms:20000}")
+    @Value("${wb.stocks.request-delay-ms}")
     private long stocksRequestDelayMs;
-    @Value("${wb.analytics.card-delay-ms:20000}")
+    @Value("${wb.analytics.card-delay-ms}")
     private long analyticsCardDelayMs;
-    @Value("${wb.content.cards-pagination-delay-ms:700}")
+    @Value("${wb.content.cards-pagination-delay-ms}")
     private long contentCardsPaginationDelayMs;
-    @Value("${wb.prices.api-call-delay-ms:600}")
+    @Value("${wb.prices.api-call-delay-ms}")
     private long pricesApiCallDelayMs;
-    @Value("${wb.promotion.adverts-delay-ms:200}")
+    @Value("${wb.promotion.adverts-delay-ms}")
     private long promotionAdvertsDelayMs;
-    @Value("${wb.promotion.statistics-delay-ms:20000}")
+    @Value("${wb.promotion.statistics-delay-ms}")
     private long promotionStatisticsDelayMs;
-    @Value("${wb.feedbacks.request-delay-ms:350}")
+    @Value("${wb.feedbacks.request-delay-ms}")
     private long feedbacksRequestDelayMs;
-    @Value("${wb.calendar.request-delay-ms:1000}")
+    @Value("${wb.calendar.request-delay-ms}")
     private long calendarRequestDelayMs;
-    @Value("${wb.warehouses.request-delay-ms:1000}")
+    @Value("${wb.warehouses.request-delay-ms}")
     private long warehousesRequestDelayMs;
 
     /**

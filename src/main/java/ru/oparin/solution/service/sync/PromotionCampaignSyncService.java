@@ -35,9 +35,9 @@ import java.util.stream.Collectors;
 public class PromotionCampaignSyncService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    @Value("${wb.promotion.statistics-batch-size:50}")
+    @Value("${wb.promotion.statistics-batch-size}")
     private int statisticsBatchSize;
-    @Value("${wb.promotion.campaigns-batch-size:50}")
+    @Value("${wb.promotion.campaigns-batch-size}")
     private int campaignsBatchSize;
 
     private final WbPromotionApiClient promotionApiClient;

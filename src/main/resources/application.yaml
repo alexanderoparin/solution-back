@@ -82,30 +82,30 @@ wb:
 
   # --- WB sync delays / retries ---
   content:
-    cards-pagination-delay-ms: 700
+    cards-pagination-delay-ms: 1700
   prices:
-    api-call-delay-ms: 600
+    api-call-delay-ms: 1600
   analytics:
-    card-delay-ms: 20000
+    card-delay-ms: 21000
     max-retries-429: 5
-    retry-delay-ms-429: 20000
+    retry-delay-ms-429: 21000
   stocks:
-    request-delay-ms: 20000
+    request-delay-ms: 21000
     max-retries-429: 5
-    retry-delay-ms-429: 20000
+    retry-delay-ms-429: 21000
   promotion:
     campaigns-batch-size: 50
     statistics-batch-size: 50
-    adverts-delay-ms: 200
-    statistics-delay-ms: 20000
+    adverts-delay-ms: 1200
+    statistics-delay-ms: 21000
     max-retries-429: 5
-    retry-delay-ms-429: 20000
+    retry-delay-ms-429: 21000
   feedbacks:
-    request-delay-ms: 350
+    request-delay-ms: 1350
   calendar:
-    request-delay-ms: 1000
+    request-delay-ms: 2000
   warehouses:
-    request-delay-ms: 1000
+    request-delay-ms: 2000
 
 app:
   frontend-url: "https://wb-solution.ru"
@@ -119,10 +119,10 @@ app:
     cabinet-queue-capacity: 100
     user-deletion-queue-capacity: 50
   wb-events:
-    poll-delay-ms: ${wb_events_poll_delay_ms:3000}
-    stuck-check-delay-ms: 15000
+    poll-delay-ms: ${wb_events_poll_delay_ms:4000}
+    stuck-check-delay-ms: 16000
     running-timeout-minutes: 15
-    event-await-timeout-seconds: 120
+    event-await-timeout-seconds: 121
     default-batch-size: 50
     batch-size-by-type:
       CONTENT_CARDS_LIST_PAGE: 20

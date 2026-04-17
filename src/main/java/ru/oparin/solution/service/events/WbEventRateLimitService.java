@@ -14,23 +14,23 @@ import java.util.concurrent.atomic.AtomicReference;
 @RequiredArgsConstructor
 public class WbEventRateLimitService {
 
-    @Value("${wb.content.cards-pagination-delay-ms:0}")
+    @Value("${wb.content.cards-pagination-delay-ms}")
     private long contentDelayMs;
-    @Value("${wb.analytics.card-delay-ms:0}")
+    @Value("${wb.analytics.card-delay-ms}")
     private long analyticsDelayMs;
-    @Value("${wb.prices.api-call-delay-ms:0}")
+    @Value("${wb.prices.api-call-delay-ms}")
     private long pricesDelayMs;
-    @Value("${wb.promotion.adverts-delay-ms:0}")
+    @Value("${wb.promotion.adverts-delay-ms}")
     private long promotionAdvertsDelayMs;
-    @Value("${wb.promotion.statistics-delay-ms:0}")
+    @Value("${wb.promotion.statistics-delay-ms}")
     private long promotionStatisticsDelayMs;
-    @Value("${wb.feedbacks.request-delay-ms:0}")
+    @Value("${wb.feedbacks.request-delay-ms}")
     private long feedbacksDelayMs;
-    @Value("${wb.stocks.request-delay-ms:0}")
+    @Value("${wb.stocks.request-delay-ms}")
     private long stocksDelayMs;
-    @Value("${wb.calendar.request-delay-ms:1000}")
+    @Value("${wb.calendar.request-delay-ms}")
     private long calendarDelayMs;
-    @Value("${wb.warehouses.request-delay-ms:1000}")
+    @Value("${wb.warehouses.request-delay-ms}")
     private long warehousesDelayMs;
     private final ConcurrentHashMap<String, LocalDateTime> lastCallByCabinetAndType = new ConcurrentHashMap<>();
 

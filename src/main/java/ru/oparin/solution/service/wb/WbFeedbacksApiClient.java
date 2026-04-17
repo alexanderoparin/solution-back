@@ -31,7 +31,7 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
     /** Максимум отзывов в одном ответе по документации. */
     private static final int MAX_TAKE = 5000;
     /** Задержка между запросами из-за лимита 3 req/s. */
-    private static long requestDelayMs = 350;
+    private static long requestDelayMs;
 
     @Value("${wb.api.feedbacks-base-url}")
     private String feedbacksBaseUrl;
