@@ -179,11 +179,15 @@ public abstract class AbstractWbApiClient {
      * Логирует ошибку WB API (4xx) без стектрейса: парсит тело и пишет одну строку.
      */
     protected void logWbApiError(String context, HttpClientErrorException e) {
+        logWbApiError(context, e, UNKNOWN_ENDPOINT, UNKNOWN_OPERATION);
+    }
+
+    protected void logWbApiError(String context, HttpClientErrorException e, String endpoint, String operationName) {
         String body = e.getResponseBodyAsString();
         int status = e.getStatusCode().value();
         String statusText = e.getStatusText();
         if (status == 429) {
-            log429Metric();
+            log429Metric(endpoint, operationName);
         }
 
         if (body.isBlank()) {

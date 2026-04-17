@@ -65,11 +65,13 @@ public class WbStocksApiClient extends AbstractWbApiClient {
         try {
             return executeWithConnectionRetry(context, oneAttempt);
         } catch (HttpClientErrorException e) {
-            if (e.getStatusCode().value() == 429) {
-                log429Metric(STOCKS_SIZES_ENDPOINT, STOCKS_SIZES_OPERATION);
-            }
             throwIf401ScopeNotAllowed(e);
-            logWbApiError("остатки по размерам на складах WB nmID=" + request.getNmID(), e);
+            logWbApiError(
+                    "остатки по размерам на складах WB nmID=" + request.getNmID(),
+                    e,
+                    STOCKS_SIZES_ENDPOINT,
+                    STOCKS_SIZES_OPERATION
+            );
             throw new RestClientException("Ошибка от WB API: " + e.getStatusCode() + " - " + e.getMessage(), e);
         } catch (RestClientException e) {
             logIoErrorOrFull("получении остатков по размерам на складах WB nmID=" + request.getNmID(), e);
