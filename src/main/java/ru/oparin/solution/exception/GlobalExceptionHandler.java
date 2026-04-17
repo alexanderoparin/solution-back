@@ -42,8 +42,11 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(UserException.class)
     public ResponseEntity<ErrorResponse> handleUserException(UserException ex) {
-        ErrorResponse error = createErrorResponse(ex.getMessage());
-        return ResponseEntity.status(ex.getHttpStatus()).body(error);
+        ErrorResponse.ErrorResponseBuilder builder = ErrorResponse.builder().error(ex.getMessage());
+        if (ex.getRetryAfterSeconds() != null) {
+            builder.retryAfterSeconds(ex.getRetryAfterSeconds().longValue());
+        }
+        return ResponseEntity.status(ex.getHttpStatus()).body(builder.build());
     }
 
     /**

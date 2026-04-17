@@ -254,13 +254,13 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                 return attempt.call();
             } catch (HttpClientErrorException e) {
                 if (e.getStatusCode().value() == 429 && retry < maxRetries429) {
-                    log429AndSleep(context, endpoint, operation, retry);
+                    log429AndSleep(context, endpoint, operation, retry, e);
                     continue;
                 }
                 throw e;
             } catch (RestClientException e) {
                 if (e.getMessage() != null && e.getMessage().contains("429") && retry < maxRetries429) {
-                    log429AndSleep(context, endpoint, operation, retry);
+                    log429AndSleep(context, endpoint, operation, retry, null);
                     continue;
                 }
                 throw e;
@@ -271,7 +271,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         throw new RestClientException("Не удалось выполнить " + context + " после " + maxRetries429 + " попыток");
     }
 
-    private void log429AndSleep(String context, String endpoint, String operation, int retry) {
+    private void log429AndSleep(String context, String endpoint, String operation, int retry, HttpClientErrorException e) {
+        if (e != null) {
+            Wb429RateLimitHeadersLogger.logIf429(log, e);
+        }
         log429Metric(endpoint, operation);
         log.warn("WB promotion 429 при {} (попытка {}/{}). Повтор через {} мс...",
                 context, retry, maxRetries429, retryDelayMs429);

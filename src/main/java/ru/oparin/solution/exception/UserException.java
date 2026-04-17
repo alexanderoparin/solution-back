@@ -10,20 +10,31 @@ import org.springframework.http.HttpStatus;
 public class UserException extends RuntimeException {
 
     private final HttpStatus httpStatus;
+    /**
+     * Подсказка клиенту: через сколько секунд можно повторить запрос (например, X-Ratelimit-Retry при 429).
+     */
+    private final Integer retryAfterSeconds;
 
     public UserException(String message) {
-        super(message);
-        this.httpStatus = HttpStatus.BAD_REQUEST;
+        this(message, HttpStatus.BAD_REQUEST, null, null);
     }
 
     public UserException(String message, HttpStatus httpStatus) {
-        super(message);
-        this.httpStatus = httpStatus;
+        this(message, httpStatus, null, null);
+    }
+
+    public UserException(String message, HttpStatus httpStatus, Integer retryAfterSeconds) {
+        this(message, httpStatus, retryAfterSeconds, null);
     }
 
     public UserException(String message, HttpStatus httpStatus, Throwable cause) {
+        this(message, httpStatus, null, cause);
+    }
+
+    private UserException(String message, HttpStatus httpStatus, Integer retryAfterSeconds, Throwable cause) {
         super(message, cause);
         this.httpStatus = httpStatus;
+        this.retryAfterSeconds = retryAfterSeconds;
     }
 }
 

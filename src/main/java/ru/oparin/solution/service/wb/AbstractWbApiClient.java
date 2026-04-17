@@ -67,6 +67,14 @@ public abstract class AbstractWbApiClient {
                 if (e instanceof HttpClientErrorException) {
                     throw e;
                 }
+                Throwable cause = e.getCause();
+                if (cause instanceof HttpClientErrorException hce) {
+                    throw hce;
+                }
+                // Ошибка не из класса «сеть / 504» — не ретраить (иначе 4xx в RestClientException дают 3 лишних вызова WB).
+                if (!is504GatewayTimeout(e) && !isTimeoutOrConnectionError(e)) {
+                    throw e;
+                }
                 RetryDecision decision = decideRetry(e, attemptNum);
                 if (decision != RetryDecision.GIVE_UP) {
                     logRetryAndSleep(decision, context, attemptNum);
@@ -122,12 +130,14 @@ public abstract class AbstractWbApiClient {
 
                 if (response.getStatusCode().value() == 429 && attempt < maxRetries) {
                     log429Metric(endpoint, operationName);
+                    Wb429RateLimitHeadersLogger.logIf429(log, response.getStatusCode(), response.getHeaders());
                     log.warn("Получен 429 Too Many Requests (попытка {}/{}). Ожидание {} мс...", attempt, maxRetries, retryDelayMs);
                     sleep(retryDelayMs);
                     continue;
                 }
                 if (response.getStatusCode().value() == 429) {
                     log429Metric(endpoint, operationName);
+                    Wb429RateLimitHeadersLogger.logIf429(log, response.getStatusCode(), response.getHeaders());
                     throw new RestClientException("429 Too Many Requests: " + response.getBody());
                 }
                 validateResponse(response);
@@ -135,6 +145,9 @@ public abstract class AbstractWbApiClient {
             } catch (RestClientException e) {
                 if (is429Error(e) && attempt < maxRetries) {
                     log429Metric(endpoint, operationName);
+                    if (e instanceof HttpClientErrorException he && he.getStatusCode().value() == 429) {
+                        Wb429RateLimitHeadersLogger.logIf429(log, he);
+                    }
                     sleep(retryDelayMs);
                     continue;
                 }
@@ -188,6 +201,7 @@ public abstract class AbstractWbApiClient {
         String statusText = e.getStatusText();
         if (status == 429) {
             log429Metric(endpoint, operationName);
+            Wb429RateLimitHeadersLogger.logIf429(log, e.getStatusCode(), e.getResponseHeaders());
         }
 
         if (body.isBlank()) {

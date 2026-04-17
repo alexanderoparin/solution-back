@@ -9,8 +9,11 @@ import org.springframework.data.domain.Sort.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.ManagedCabinetSortField;
 import ru.oparin.solution.dto.cabinet.*;
+import ru.oparin.solution.dto.wb.SellerInfoResponse;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
@@ -18,7 +21,10 @@ import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.repository.spec.CabinetManagedSpecifications;
+import ru.oparin.solution.service.wb.Wb429RateLimitHeadersLogger;
+import ru.oparin.solution.service.wb.WbCommonApiClient;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -36,12 +42,19 @@ public class CabinetService {
     private static final String CABINET_NOT_SELLER_OWNED = "Кабинет не принадлежит селлеру";
     private static final String SELLER_ONLY_CREATE = "Только продавец может создавать кабинеты";
     private static final String SUBSCRIPTION_REQUIRED = "Оформите подписку для создания кабинета";
+    private static final String WB_SELLER_INFO_ERROR = "Не удалось получить данные о продавце WB. Проверьте API ключ.";
+    private static final String NAME_REQUIRED_WITHOUT_KEY = "Укажите название кабинета, если не задаёте API ключ WB.";
+    /** Подсказка при лимите WB: создание кабинета без ключа по названию. */
+    private static final String CABINET_CREATE_WITHOUT_KEY_HINT =
+            " Можно создать кабинет, указав только название (не заполняя ключ WB).";
+    private static final int MAX_CABINET_NAME_LENGTH = 255;
 
     private final CabinetRepository cabinetRepository;
     private final UserRepository userRepository;
     private final CabinetDeletionService cabinetDeletionService;
     private final SubscriptionAccessService subscriptionAccessService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
+    private final WbCommonApiClient wbCommonApiClient;
 
     /**
      * Список кабинетов пользователя (продавца), отсортированный по дате создания (новые первые).
@@ -156,9 +169,32 @@ public class CabinetService {
             throw new UserException(SUBSCRIPTION_REQUIRED, HttpStatus.FORBIDDEN);
         }
 
+        String trimmedApiKey = request.getApiKey() != null ? request.getApiKey().trim() : null;
+        boolean hasApiKey = trimmedApiKey != null && !trimmedApiKey.isBlank();
+        String trimmedName = request.getName() != null ? request.getName().trim() : null;
+        boolean hasName = trimmedName != null && !trimmedName.isBlank();
+
+        if (!hasApiKey && !hasName) {
+            throw new UserException(NAME_REQUIRED_WITHOUT_KEY, HttpStatus.BAD_REQUEST);
+        }
+
+        final String cabinetName;
+        if (!hasApiKey) {
+            cabinetName = normalizeName(trimmedName);
+            if (cabinetName == null) {
+                throw new UserException(NAME_REQUIRED_WITHOUT_KEY, HttpStatus.BAD_REQUEST);
+            }
+        } else if (hasName) {
+            assertSellerInfoOrThrow(trimmedApiKey);
+            cabinetName = normalizeName(trimmedName);
+        } else {
+            cabinetName = resolveCabinetNameFromWb(trimmedApiKey);
+        }
+
         Cabinet cabinet = Cabinet.builder()
                 .user(user)
-                .name(request.getName().trim())
+                .name(cabinetName)
+                .apiKey(hasApiKey ? trimmedApiKey : null)
                 .build();
         cabinet = cabinetRepository.save(cabinet);
         return toDto(cabinet);
@@ -352,6 +388,107 @@ public class CabinetService {
 
     private boolean isSellerOwnedByManager(User seller, Long managerId) {
         return seller.getOwner() != null && seller.getOwner().getId().equals(managerId);
+    }
+
+    private void assertSellerInfoOrThrow(String apiKey) {
+        try {
+            wbCommonApiClient.getSellerInfo(apiKey);
+        } catch (HttpClientErrorException e) {
+            throw sellerInfoHttpException(e);
+        } catch (RestClientException e) {
+            throw new UserException(WB_SELLER_INFO_ERROR, HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private String resolveCabinetNameFromWb(String apiKey) {
+        try {
+            SellerInfoResponse sellerInfo = wbCommonApiClient.getSellerInfo(apiKey);
+            String nameFromWb = normalizeName(firstNotBlank(sellerInfo.getName(), sellerInfo.getTradeMark()));
+            if (nameFromWb != null) {
+                return nameFromWb;
+            }
+            throw new UserException(
+                    "WB не вернул название продавца. Укажите название кабинета вручную.",
+                    HttpStatus.BAD_REQUEST);
+        } catch (HttpClientErrorException e) {
+            throw sellerInfoHttpException(e);
+        } catch (UserException e) {
+            throw e;
+        } catch (RestClientException e) {
+            throw new UserException(WB_SELLER_INFO_ERROR, HttpStatus.BAD_REQUEST);
+        } catch (Exception e) {
+            throw new UserException(WB_SELLER_INFO_ERROR, HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private UserException sellerInfoHttpException(HttpClientErrorException e) {
+        int status = e.getStatusCode().value();
+        if (status == HttpStatus.TOO_MANY_REQUESTS.value()) {
+            Integer retry = Wb429RateLimitHeadersLogger.parseRetryAfterSeconds(e);
+            if (retry != null && retry > 0) {
+                return new UserException(
+                        "Превышен лимит запросов к WB API. Повторите попытку примерно через: "
+                                + formatSecondsAsHoursMinutesSeconds(retry) + "."
+                                + CABINET_CREATE_WITHOUT_KEY_HINT,
+                        HttpStatus.TOO_MANY_REQUESTS,
+                        retry);
+            }
+            return new UserException(
+                    "Превышен лимит запросов к WB API. Повторите попытку позже." + CABINET_CREATE_WITHOUT_KEY_HINT,
+                    HttpStatus.TOO_MANY_REQUESTS);
+        }
+        if (status == HttpStatus.UNAUTHORIZED.value()) {
+            return new UserException(
+                    "API ключ WB невалиден или истёк. Проверьте ключ.",
+                    HttpStatus.BAD_REQUEST);
+        }
+        return new UserException(WB_SELLER_INFO_ERROR + " (HTTP " + status + ")", HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Человекочитаемый интервал из секунд (заголовок WB X-Ratelimit-Retry): часы, минуты, секунды — только ненулевые части.
+     */
+    private static String formatSecondsAsHoursMinutesSeconds(int totalSeconds) {
+        if (totalSeconds <= 0) {
+            return "0 с";
+        }
+        int hours = totalSeconds / 3600;
+        int minutes = (totalSeconds % 3600) / 60;
+        int seconds = totalSeconds % 60;
+        List<String> parts = new ArrayList<>(3);
+        if (hours > 0) {
+            parts.add(hours + " ч");
+        }
+        if (minutes > 0) {
+            parts.add(minutes + " мин");
+        }
+        if (seconds > 0 || parts.isEmpty()) {
+            parts.add(seconds + " с");
+        }
+        return String.join(" ", parts);
+    }
+
+    private String normalizeName(String rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        String trimmedValue = rawValue.trim();
+        if (trimmedValue.isEmpty()) {
+            return null;
+        }
+        return trimmedValue.length() <= MAX_CABINET_NAME_LENGTH
+                ? trimmedValue
+                : trimmedValue.substring(0, MAX_CABINET_NAME_LENGTH);
+    }
+
+    private String firstNotBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        if (second != null && !second.isBlank()) {
+            return second;
+        }
+        return null;
     }
 
     private CabinetDto toDto(Cabinet cabinet) {

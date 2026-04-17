@@ -16,14 +16,12 @@ import ru.oparin.solution.service.events.WbApiEventService;
 @Slf4j
 public class WbApiEventsRetryScheduler {
 
-    private static final String HOURLY_RETRY_CRON = "0 0 */3 * * ?";
-
     private final WbApiEventService wbApiEventService;
 
     /**
-     * Каждые 3 часа переводит события в статусе FAILED_FINAL обратно в CREATED.
+     * Переводит события в статусе FAILED_FINAL обратно в CREATED.
      */
-    @Scheduled(cron = HOURLY_RETRY_CRON)
+    @Scheduled(cron = "0 0 */6 * * ?")
     @SchedulerLock(name = "wbApiEventsRetryFailedFinalHourly", lockAtLeastFor = "PT5S", lockAtMostFor = "PT10M")
     @Transactional
     public void retryFailedFinalEventsHourly() {

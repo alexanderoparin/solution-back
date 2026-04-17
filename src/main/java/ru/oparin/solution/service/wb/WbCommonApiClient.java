@@ -25,6 +25,9 @@ public class WbCommonApiClient extends AbstractWbApiClient {
     }
 
     private static final String SELLER_INFO_URL = "https://common-api.wildberries.ru/api/v1/seller-info";
+    /** Имя операции для метрик 429 (см. {@link AbstractWbApiClient#log429Metric}). */
+    private static final String SELLER_INFO_OPERATION = "seller-info";
+    private static final int MAX_RESPONSE_BODY_LOG_LENGTH = 2000;
 
     /**
      * Получение информации о продавце.
@@ -39,6 +42,7 @@ public class WbCommonApiClient extends AbstractWbApiClient {
         HttpEntity<String> entity = new HttpEntity<>(headers);
 
         logWbApiCall(SELLER_INFO_URL, "информация о продавце");
+        log.info("WB API seller-info: запрос GET {}, Authorization={}", SELLER_INFO_URL, maskTokenForLog(apiKey));
 
         try {
             ResponseEntity<SellerInfoResponse> response = restTemplate.exchange(
@@ -50,17 +54,54 @@ public class WbCommonApiClient extends AbstractWbApiClient {
             if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
                 throw new RestClientException("Неожиданный ответ от WB API: " + response.getStatusCode());
             }
+            logSellerInfoResponse(response.getStatusCode().value(), response.getBody());
             return response.getBody();
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
-            logWbApiError("информация о продавце WB", e);
-            throw new RestClientException("Ошибка при получении информации о продавце: " + e.getMessage(), e);
+            log.warn("WB API seller-info: ответ HTTP {} {}, тело: {}",
+                    e.getStatusCode().value(),
+                    e.getStatusText(),
+                    truncateForLog(e.getResponseBodyAsString()));
+            logWbApiError("информация о продавце WB", e, extractEndpointPath(SELLER_INFO_URL), SELLER_INFO_OPERATION);
+            throw e;
         } catch (RestClientException e) {
             throw e;
         } catch (Exception e) {
             logIoErrorOrFull("получении информации о продавце", e);
             throw new RestClientException("Ошибка при получении информации о продавце: " + e.getMessage(), e);
         }
+    }
+
+    private void logSellerInfoResponse(int httpStatus, SellerInfoResponse body) {
+        try {
+            String json = objectMapper.writeValueAsString(body);
+            log.info("WB API seller-info: ответ HTTP {}, тело: {}", httpStatus, truncateForLog(json));
+        } catch (Exception e) {
+            log.warn("WB API seller-info: не удалось сериализовать ответ в JSON для лога: {}", e.getMessage());
+            log.info("WB API seller-info: ответ HTTP {}, name={}, sid={}, tradeMark={}",
+                    httpStatus, body.getName(), body.getSid(), body.getTradeMark());
+        }
+    }
+
+    private static String maskTokenForLog(String apiKey) {
+        if (apiKey == null || apiKey.isBlank()) {
+            return "(пусто)";
+        }
+        String t = apiKey.trim();
+        if (t.length() <= 12) {
+            return "***";
+        }
+        return t.substring(0, 6) + "…" + t.substring(t.length() - 4);
+    }
+
+    private static String truncateForLog(String body) {
+        if (body == null) {
+            return "";
+        }
+        if (body.length() <= MAX_RESPONSE_BODY_LOG_LENGTH) {
+            return body;
+        }
+        return body.substring(0, MAX_RESPONSE_BODY_LOG_LENGTH) + "…";
     }
 }
 

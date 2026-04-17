@@ -10,6 +10,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.service.wb.Wb429RateLimitHeadersLogger;
 import ru.oparin.solution.service.wb.WbApiCategory;
 import ru.oparin.solution.service.wb.WbContentApiClient;
 
@@ -169,6 +170,7 @@ public class WbApiKeyService {
             }
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode() != null && e.getStatusCode().value() == 429) {
+                Wb429RateLimitHeadersLogger.logIf429(log, e);
                 // Лимит: максимум 3 запроса за 30 секунд на метод/домен — отдадим понятную ошибку пользователю.
                 throw new UserException(
                         "Слишком частая проверка токена к WB API. Попробуйте ещё раз через 30 секунд.",
