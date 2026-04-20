@@ -24,7 +24,7 @@ public class FeedbacksSyncCabinetEventExecutor implements WbApiEventExecutor {
 
     @Override
     public WbApiEventExecutionResult execute(WbApiEvent event) {
-        MainStepPayload payload = eventService.readPayload(event, MainStepPayload.class);
+        eventService.readPayload(event, MainStepPayload.class);
         var cabinet = cabinetService.findByIdWithUserOrThrow(event.getCabinet().getId());
         if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
             return WbApiEventExecutionResult.finalError("У кабинета отсутствует API ключ");

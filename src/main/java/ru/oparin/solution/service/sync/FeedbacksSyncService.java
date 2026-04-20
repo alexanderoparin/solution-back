@@ -28,6 +28,7 @@ import java.util.Map;
  * Синхронизация рейтинга и количества отзывов по товарам из API отзывов WB.
  * Запрашивает и обработанные (isAnswered=true), и необработанные (isAnswered=false) отзывы,
  * объединяет по nmId и считает общий рейтинг и количество отзывов.
+ * Пагинация в рамках одного вызова: пауза {@code wb.feedbacks.request-delay-ms} между полными страницами.
  */
 @Service
 @RequiredArgsConstructor
@@ -58,6 +59,7 @@ public class FeedbacksSyncService {
     public void syncFeedbacksForCabinet(Cabinet cabinet, String apiKey) {
         long cabinetId = cabinet.getId();
         Map<Long, RatingCount> byNmId = fetchAndAggregateFeedbacks(apiKey, true);
+        WbFeedbacksApiClient.delayBetweenRequests();
         Map<Long, RatingCount> unanswered = fetchAndAggregateFeedbacks(apiKey, false);
         mergeInto(byNmId, unanswered);
 
@@ -90,12 +92,12 @@ public class FeedbacksSyncService {
         List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
         log.info("Запуск синхронизации отзывов для {} кабинетов", cabinets.size());
         for (Cabinet cabinet : cabinets) {
-            String apiKey = cabinet.getApiKey();
-            if (apiKey == null || apiKey.isBlank()) {
+            String key = cabinet.getApiKey();
+            if (key == null || key.isBlank()) {
                 continue;
             }
             try {
-                syncFeedbacksForCabinet(cabinet, apiKey);
+                syncFeedbacksForCabinet(cabinet, key);
             } catch (Exception e) {
                 if (is401Unauthorized(e)) {
                     log.warn("Кабинет {}: ключ не привязан к категории «Вопросы и отзывы», доступ к отзывам недоступен", cabinet.getId());
@@ -108,6 +110,7 @@ public class FeedbacksSyncService {
 
     /**
      * Выгружает все отзывы с заданным флагом isAnswered и агрегирует по nmId (сумма оценок и количество).
+     * Между полными страницами — пауза в потоке (одно событие WB API до конца выгрузки).
      */
     private Map<Long, RatingCount> fetchAndAggregateFeedbacks(String apiKey, boolean isAnswered) {
         Map<Long, RatingCount> byNmId = new HashMap<>();
@@ -126,7 +129,9 @@ public class FeedbacksSyncService {
                 }
                 Long nmId = fb.getProductDetails().getNmId();
                 byNmId.compute(nmId, (k, v) -> {
-                    if (v == null) v = new RatingCount();
+                    if (v == null) {
+                        v = new RatingCount();
+                    }
                     v.add(fb.getProductValuation());
                     return v;
                 });
@@ -178,7 +183,9 @@ public class FeedbacksSyncService {
         }
 
         BigDecimal avg() {
-            if (count == 0) return null;
+            if (count == 0) {
+                return null;
+            }
             return BigDecimal.valueOf(sum).divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP);
         }
     }

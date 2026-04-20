@@ -8,9 +8,6 @@ import org.springframework.stereotype.Component;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
 
 import java.net.URI;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -65,10 +62,6 @@ public class WbEndpointRateLimitCoordinator {
         long until = slot.getNextAllowedAtMs();
         long now = System.currentTimeMillis();
         if (until > now) {
-            if (log.isDebugEnabled()) {
-                log.debug("WB endpoint slot defer: category={}, endpointKey={}, deferUntil={}",
-                        category != null ? category.name() : "?", endpointKey, toSystemLocalDateTime(until));
-            }
             throw WbRateLimitDeferException.untilEpochMilli(
                     "Лимит WB по endpoint (токен+path): следующий запрос не раньше указанного времени.",
                     until
@@ -102,10 +95,6 @@ public class WbEndpointRateLimitCoordinator {
 
     private static String slotKey(String apiKey, String endpointKey) {
         return Integer.toHexString(apiKey.trim().hashCode()) + "|" + endpointKey;
-    }
-
-    private static LocalDateTime toSystemLocalDateTime(long epochMs) {
-        return LocalDateTime.ofInstant(Instant.ofEpochMilli(epochMs), ZoneId.systemDefault());
     }
 
     private static final class RateSlot {

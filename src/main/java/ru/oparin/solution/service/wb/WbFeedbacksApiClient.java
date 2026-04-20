@@ -11,7 +11,6 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.FeedbacksResponse;
-import ru.oparin.solution.exception.WbRateLimitDeferException;
 
 /**
  * Клиент API отзывов WB (feedbacks-api).
@@ -30,7 +29,7 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
     private static final String FEEDBACKS_ENDPOINT = "/api/v1/feedbacks";
     /** Максимум отзывов в одном ответе по документации. */
     private static final int MAX_TAKE = 5000;
-    /** Задержка между запросами из-за лимита 3 req/s. */
+    /** Пауза между страницами пагинации (лимит WB на endpoint низкий, см. {@code wb.feedbacks.request-delay-ms}). */
     private static long requestDelayMs;
 
     @Value("${wb.api.feedbacks-base-url}")
@@ -88,13 +87,16 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
     }
 
     /**
-     * Пауза между страницами отзывов — без sleep: отложенный повтор через события ({@link WbRateLimitDeferException}).
+     * Пауза в потоке после полной страницы отзывов перед следующим запросом к тому же endpoint.
+     * Вся пагинация выполняется в одном запуске события/синка, без отложенного повтора по страницам.
      */
     public static void delayBetweenRequests() {
         long ms = Math.max(1L, requestDelayMs);
-        throw WbRateLimitDeferException.untilEpochMilli(
-                "Лимит WB API отзывов: следующая страница не раньше указанного времени.",
-                System.currentTimeMillis() + ms
-        );
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Прервана пауза между запросами отзывов WB", e);
+        }
     }
 }
