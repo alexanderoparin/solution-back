@@ -64,6 +64,8 @@ public interface WbApiEventRepository extends JpaRepository<WbApiEvent, Long> {
 
     List<WbApiEvent> findByStatusAndStartedAtBefore(WbApiEventStatus status, LocalDateTime startedAt);
 
+    List<WbApiEvent> findByStatus(WbApiEventStatus status);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update WbApiEvent e

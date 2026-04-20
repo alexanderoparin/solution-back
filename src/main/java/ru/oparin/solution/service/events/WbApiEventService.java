@@ -563,11 +563,33 @@ public class WbApiEventService {
         for (WbApiEvent event : stuck) {
             event.setStatus(WbApiEventStatus.FAILED_RETRYABLE);
             event.setLastError("Автовосстановление: событие было RUNNING дольше " + timeoutMinutes + " мин");
+            event.setStartedAt(null);
             event.setNextAttemptAt(LocalDateTime.now().plusSeconds(10));
             event.setUpdatedAt(LocalDateTime.now());
         }
         eventRepository.saveAll(stuck);
         return stuck.size();
+    }
+
+    /**
+     * После остановки JVM события могли остаться в RUNNING. Переводим их в повтор без увеличения счётчика попыток.
+     */
+    @Transactional
+    public int recoverRunningEventsAfterJvmStop() {
+        List<WbApiEvent> running = eventRepository.findByStatus(WbApiEventStatus.RUNNING);
+        if (running.isEmpty()) {
+            return 0;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (WbApiEvent event : running) {
+            event.setStatus(WbApiEventStatus.FAILED_RETRYABLE);
+            event.setStartedAt(null);
+            event.setLastError("Запуск приложения: сброс RUNNING после остановки процесса");
+            event.setNextAttemptAt(now);
+            event.setUpdatedAt(now);
+        }
+        eventRepository.saveAll(running);
+        return running.size();
     }
 
     /**
