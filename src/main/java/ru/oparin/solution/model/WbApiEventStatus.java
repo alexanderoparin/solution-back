@@ -8,6 +8,5 @@ public enum WbApiEventStatus {
     FAILED_FINAL,
     FAILED_WITH_FALLBACK,
     DEFERRED_RATE_LIMIT,
-    DUPLICATE_SKIPPED,
     CANCELLED
 }

@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.PageResponse;
 import ru.oparin.solution.dto.WbApiEventDto;
 import ru.oparin.solution.dto.WbApiEventStatsDto;
+import ru.oparin.solution.dto.WbApiEventTypeStatsDto;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.WbApiEventRepository;
@@ -613,6 +614,26 @@ public class WbApiEventService {
         return WbApiEventStatsDto.builder()
                 .total(eventRepository.count())
                 .byStatus(byStatus)
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public WbApiEventTypeStatsDto getStatsByType(WbApiEventStatus status) {
+        Map<String, Long> byType = new LinkedHashMap<>();
+        for (WbApiEventType type : WbApiEventType.values()) {
+            byType.put(type.name(), 0L);
+        }
+        List<Object[]> rows = eventRepository.countGroupedByEventType(status);
+        for (Object[] row : rows) {
+            WbApiEventType eventType = (WbApiEventType) row[0];
+            Long count = (Long) row[1];
+            byType.put(eventType.name(), count);
+        }
+        long total = byType.values().stream().mapToLong(Long::longValue).sum();
+        return WbApiEventTypeStatsDto.builder()
+                .baseStatus(status != null ? status.name() : null)
+                .total(total)
+                .byType(byType)
                 .build();
     }
 

@@ -150,6 +150,13 @@ public class AdminController {
         return ResponseEntity.ok(wbApiEventService.getStats());
     }
 
+    @GetMapping("/wb-events/stats-by-type")
+    public ResponseEntity<WbApiEventTypeStatsDto> getWbEventsStatsByType(
+            @RequestParam(required = false) WbApiEventStatus status
+    ) {
+        return ResponseEntity.ok(wbApiEventService.getStatsByType(status));
+    }
+
     @PostMapping("/wb-events/{eventId}/retry")
     public ResponseEntity<Map<String, String>> retryWbEvent(@PathVariable Long eventId) {
         wbApiEventService.retryNow(eventId);
