@@ -33,6 +33,8 @@ public class WbHttpSuccessSpacingMsResolver {
     private long calendarRequestDelayMs;
     @Value("${wb.warehouses.request-delay-ms}")
     private long warehousesRequestDelayMs;
+    @Value("${wb.orders.request-delay-ms}")
+    private long ordersRequestDelayMs;
 
     /**
      * Минимальная пауза до следующего запроса к тому же endpoint с тем же токеном после 2xx (мс).
@@ -67,6 +69,9 @@ public class WbHttpSuccessSpacingMsResolver {
         }
         if (endpointKey.contains("/api/v1/warehouses")) {
             return positiveMs(warehousesRequestDelayMs);
+        }
+        if (endpointKey.contains("/api/v1/supplier/orders")) {
+            return positiveMs(ordersRequestDelayMs);
         }
         return positiveMs(FALLBACK_UNKNOWN_PATH_MS);
     }

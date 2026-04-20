@@ -106,6 +106,8 @@ wb:
     request-delay-ms: 2000
   warehouses:
     request-delay-ms: 43200000
+  orders:
+    request-delay-ms: 60000
 
 app:
   frontend-url: "https://wb-solution.ru"
