@@ -12,6 +12,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.CalendarNomenclaturesResponse;
 import ru.oparin.solution.dto.wb.CalendarPromotionsResponse;
+import ru.oparin.solution.exception.WbRateLimitDeferException;
 
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -73,6 +74,9 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             validateResponse(response);
             return objectMapper.readValue(response.getBody(), CalendarPromotionsResponse.class);
+        } catch (WbRateLimitDeferException e) {
+            log.warn("Ошибка при получении списка акций календаря: {} (отложено до {})", e.getMessage(), e.getDeferUntil());
+            throw e;
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("список акций календаря WB", e);
@@ -132,6 +136,12 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
                     break;
                 }
                 offset += PAGE_SIZE;
+            } catch (WbRateLimitDeferException e) {
+                log.warn(
+                        "Ошибка при получении номенклатур акции {} (offset {}): {} (отложено до {})",
+                        promotionId, offset, e.getMessage(), e.getDeferUntil()
+                );
+                throw e;
             } catch (HttpClientErrorException e) {
                 throwIf401ScopeNotAllowed(e);
                 logWbApiError("номенклатуры акции WB (promotionId=" + promotionId + ")", e);

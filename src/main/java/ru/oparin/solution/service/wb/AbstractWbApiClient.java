@@ -289,9 +289,15 @@ public abstract class AbstractWbApiClient {
     }
 
     /**
-     * Логирует I/O (сеть, DNS) ошибки одной строкой без стектрейса; остальные — с полным стеком.
+     * Логирует I/O (сеть, DNS) и отложенные по лимиту WB вызовы одной строкой без стектрейса;
+     * остальные — с полным стеком.
      */
     protected void logIoErrorOrFull(String context, Throwable e) {
+        WbRateLimitDeferException defer = WbRateLimitDeferException.findInChain(e);
+        if (defer != null) {
+            log.warn("Ошибка при {}: {} (отложено до {})", context, defer.getMessage(), defer.getDeferUntil());
+            return;
+        }
         if (isConnectionIoError(e)) {
             log.warn("Ошибка при {}: {}", context, e.getMessage());
         } else {
