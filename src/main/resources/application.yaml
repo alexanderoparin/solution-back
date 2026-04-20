@@ -82,30 +82,30 @@ wb:
 
   # --- WB sync delays / retries ---
   content:
-    cards-pagination-delay-ms: 1700
+    cards-pagination-delay-ms: 1000
   prices:
-    api-call-delay-ms: 1600
+    api-call-delay-ms: 1000
   analytics:
-    card-delay-ms: 21000
+    card-delay-ms: 20000
     max-retries-429: 5
     retry-delay-ms-429: 21000
   stocks:
-    request-delay-ms: 21000
+    request-delay-ms: 1800000
     max-retries-429: 5
     retry-delay-ms-429: 21000
   promotion:
     campaigns-batch-size: 50
     statistics-batch-size: 50
-    adverts-delay-ms: 1200
-    statistics-delay-ms: 21000
+    adverts-delay-ms: 1000
+    statistics-delay-ms: 20000
     max-retries-429: 5
     retry-delay-ms-429: 21000
   feedbacks:
-    request-delay-ms: 1350
+    request-delay-ms: 1000
   calendar:
     request-delay-ms: 2000
   warehouses:
-    request-delay-ms: 2000
+    request-delay-ms: 43200000
 
 app:
   frontend-url: "https://wb-solution.ru"
