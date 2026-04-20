@@ -8,12 +8,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Sort.Order;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.oparin.solution.dto.PageResponse;
-import ru.oparin.solution.dto.WbApiEventDto;
-import ru.oparin.solution.dto.WbApiEventStatsDto;
-import ru.oparin.solution.dto.WbApiEventTypeStatsDto;
+import ru.oparin.solution.dto.*;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.WbApiEventRepository;
@@ -643,9 +641,12 @@ public class WbApiEventService {
             int size,
             WbApiEventStatus status,
             WbApiEventType eventType,
-            Long cabinetId
+            Long cabinetId,
+            WbApiEventSortField sortBy,
+            Sort.Direction sortDir
     ) {
-        Pageable pageable = PageRequest.of(page, Math.clamp(size, 1, 100), Sort.by(Sort.Direction.DESC, "createdAt"));
+        Sort sort = sortForAdminEvents(sortBy, sortDir);
+        Pageable pageable = PageRequest.of(page, Math.clamp(size, 1, 100), sort);
         Page<WbApiEvent> eventsPage = eventRepository.findAdminEvents(status, eventType, cabinetId, pageable);
         List<WbApiEventDto> content = eventsPage.getContent().stream().map(this::toDto).toList();
         return PageResponse.<WbApiEventDto>builder()
@@ -655,6 +656,18 @@ public class WbApiEventService {
                 .size(eventsPage.getSize())
                 .number(eventsPage.getNumber())
                 .build();
+    }
+
+    private static Sort sortForAdminEvents(WbApiEventSortField sortBy, Sort.Direction sortDir) {
+        WbApiEventSortField effectiveSortBy = sortBy != null ? sortBy : WbApiEventSortField.ID;
+        Sort.Direction effectiveDir = sortDir != null ? sortDir : Sort.Direction.DESC;
+        Order order = new Order(effectiveDir, effectiveSortBy.getFieldPath());
+        if (effectiveSortBy == WbApiEventSortField.STARTED_AT
+                || effectiveSortBy == WbApiEventSortField.FINISHED_AT
+                || effectiveSortBy == WbApiEventSortField.NEXT_ATTEMPT_AT) {
+            order = order.nullsLast();
+        }
+        return Sort.by(order);
     }
 
     @Transactional(readOnly = true)

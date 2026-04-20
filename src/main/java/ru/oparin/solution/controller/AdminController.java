@@ -135,9 +135,11 @@ public class AdminController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) WbApiEventStatus status,
             @RequestParam(required = false) WbApiEventType eventType,
-            @RequestParam(required = false) Long cabinetId
+            @RequestParam(required = false) Long cabinetId,
+            @RequestParam(defaultValue = WbApiEventSortField.DEFAULT_REQUEST_VALUE) WbApiEventSortField sortBy,
+            @RequestParam(defaultValue = "DESC") org.springframework.data.domain.Sort.Direction sortDir
     ) {
-        return ResponseEntity.ok(wbApiEventService.getEventsPage(page, size, status, eventType, cabinetId));
+        return ResponseEntity.ok(wbApiEventService.getEventsPage(page, size, status, eventType, cabinetId, sortBy, sortDir));
     }
 
     @GetMapping("/wb-events/{eventId}")
