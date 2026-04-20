@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
@@ -27,6 +28,7 @@ public class SellerContextService {
     /**
      * Создает контекст продавца из данных аутентификации.
      * Для SELLER использует текущего пользователя.
+     * Для WORKER — продавца-владельца ({@code owner}); параметр {@code sellerId} из запроса игнорируется.
      * Для ADMIN/MANAGER использует выбранного sellerId (если указан) или последнего активного селлера.
      * Кабинет: по умолчанию (последний созданный) или из cabinetId, если передан и принадлежит селлеру.
      *
@@ -35,12 +37,34 @@ public class SellerContextService {
      * @param cabinetId ID кабинета (опционально; если передан и принадлежит селлеру — используется этот кабинет)
      * @return контекст продавца
      */
+    @Transactional(readOnly = true)
     public SellerContext createContext(Authentication authentication, Long sellerId, Long cabinetId) {
         User currentUser = userService.findByEmail(authentication.getName());
 
         User seller;
         if (currentUser.getRole() == Role.SELLER) {
             seller = currentUser;
+        } else if (currentUser.getRole() == Role.WORKER) {
+            User owner = currentUser.getOwner();
+            if (owner == null) {
+                throw new UserException(
+                        "У сотрудника не указан продавец-владелец",
+                        HttpStatus.FORBIDDEN
+                );
+            }
+            if (owner.getRole() != Role.SELLER) {
+                throw new UserException(
+                        "Некорректные данные: владелец сотрудника не является продавцом",
+                        HttpStatus.FORBIDDEN
+                );
+            }
+            if (!Boolean.TRUE.equals(owner.getIsActive())) {
+                throw new UserException(
+                        "Нельзя просматривать аналитику: аккаунт продавца неактивен",
+                        HttpStatus.FORBIDDEN
+                );
+            }
+            seller = owner;
         } else if (currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER) {
             if (sellerId != null) {
                 seller = userRepository.findById(sellerId)
@@ -60,7 +84,7 @@ public class SellerContextService {
             }
         } else {
             throw new UserException(
-                    "Только SELLER, MANAGER или ADMIN могут просматривать аналитику",
+                    "Только SELLER, WORKER, MANAGER или ADMIN могут просматривать аналитику",
                     HttpStatus.FORBIDDEN
             );
         }
