@@ -21,7 +21,8 @@ import java.util.Map;
 
 /**
  * Блокирует доступ к API до подтверждения почты для всех ролей, кроме клиентов агентства ({@code isAgencyClient}).
- * Разрешены только запросы к профилю, смене пароля и отправке письма подтверждения (и связанные пути users/cabinets).
+ * Разрешены только запросы к профилю, смене пароля, подтверждению почты по ссылке и отправке письма подтверждения
+ * (и связанные пути users/cabinets).
  */
 @Component
 public class EmailConfirmationAccessFilter extends OncePerRequestFilter {
@@ -31,6 +32,7 @@ public class EmailConfirmationAccessFilter extends OncePerRequestFilter {
             "/api/user/profile",
             "/api/user/password",
             "/api/user/send-email-confirmation",
+            "/api/auth/confirm-email",
             "/api/cabinets",
             "/api/users"
     );
