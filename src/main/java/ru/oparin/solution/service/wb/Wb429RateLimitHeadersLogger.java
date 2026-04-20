@@ -31,7 +31,7 @@ public final class Wb429RateLimitHeadersLogger {
         if (isMissing(remaining) && isMissing(limit) && isMissing(reset) && isMissing(retry)) {
             return;
         }
-        log.info("WB API rate-limit headers: endpointKey={}, HTTP={}, {}={}, {}={}, {}={}, {}={}",
+        log.debug("WB API rate-limit headers: endpointKey={}, HTTP={}, {}={}, {}={}, {}={}, {}={}",
                 endpointKey != null ? endpointKey : "",
                 httpStatus,
                 X_RATELIMIT_REMAINING, orDash(remaining),
