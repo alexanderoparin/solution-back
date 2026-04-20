@@ -78,7 +78,7 @@ public class User {
     private Boolean emailConfirmed = false;
 
     /**
-     * Селлер является клиентом агентства (создан менеджером/админом, привязан к owner).
+     * Клиент агентства: у SELLER — создан под MANAGER/ADMIN ({@code owner}); у WORKER — совпадает с флагом селлера-создателя.
      */
     @Column(name = "is_agency_client", nullable = false)
     @Builder.Default

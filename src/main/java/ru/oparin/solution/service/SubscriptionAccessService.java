@@ -27,9 +27,11 @@ public class SubscriptionAccessService {
 
     /**
      * Проверяет, есть ли у пользователя доступ к продукту.
-     * ADMIN и MANAGER всегда имеют доступ. Клиенты агентства (owner != null) всегда имеют доступ.
-     * Обычные селлеры (не из агентства) должны подтвердить почту — иначе доступа нет.
-     * При выключенной оплате (billingEnabled=false) селлеры без владельца имеют доступ без проверки подписки.
+     * ADMIN всегда имеет доступ. Клиенты агентства ({@code isAgencyClient}) — без проверки почты.
+     * Остальные при неподтверждённой почте не имеют доступа.
+     * MANAGER после подтверждения почты имеет доступ без подписки.
+     * WORKER под селлером после подтверждения почты — доступ без своей подписки (кабинет селлера).
+     * При выключенной оплате после подтверждения почты — доступ без проверки подписки (кроме сценария с подпиской ниже).
      *
      * @param user пользователь
      * @return true, если доступ разрешён
@@ -39,16 +41,24 @@ public class SubscriptionAccessService {
             return false;
         }
 
-        if (user.getRole() == Role.ADMIN || user.getRole() == Role.MANAGER) {
+        if (user.getRole() == Role.ADMIN) {
             return true;
         }
 
-        if (user.getOwner() != null) {
+        if (Boolean.TRUE.equals(user.getIsAgencyClient())) {
             return true;
         }
 
-        if (user.getRole() == Role.SELLER && !Boolean.TRUE.equals(user.getEmailConfirmed())) {
+        if (!Boolean.TRUE.equals(user.getEmailConfirmed())) {
             return false;
+        }
+
+        if (user.getRole() == Role.MANAGER) {
+            return true;
+        }
+
+        if (user.getRole() == Role.WORKER && user.getOwner() != null) {
+            return true;
         }
 
         if (!subscriptionProperties.isBillingEnabled()) {

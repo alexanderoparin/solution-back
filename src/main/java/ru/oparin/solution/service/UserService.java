@@ -279,13 +279,20 @@ public class UserService {
 
         String encodedPassword = encodePassword(request.getPassword());
         User owner = getOwnerForNewUser(currentUser, request.getRole());
-        boolean isAgencyClient = request.getRole() == Role.SELLER && owner != null;
+        boolean isAgencyClient = switch (request.getRole()) {
+            case SELLER -> owner != null && Boolean.TRUE.equals(owner.getIsAgencyClient());
+            case WORKER -> Boolean.TRUE.equals(currentUser.getIsAgencyClient());
+            case MANAGER -> currentUser.getRole() == Role.ADMIN
+                    && (request.getIsAgencyManager() == null || Boolean.TRUE.equals(request.getIsAgencyManager()));
+            default -> false;
+        };
         User newUser = User.builder()
                 .email(request.getEmail())
                 .password(encodedPassword)
                 .role(request.getRole())
                 .isActive(true)
                 .isTemporaryPassword(true)
+                .emailConfirmed(false)
                 .owner(owner)
                 .isAgencyClient(isAgencyClient)
                 .build();

@@ -12,7 +12,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.UserService;
 
@@ -21,8 +20,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Для обычных селлеров (не из агентства) блокирует доступ к API до подтверждения почты.
- * Разрешены только запросы к профилю и отправке письма подтверждения.
+ * Блокирует доступ к API до подтверждения почты для всех ролей, кроме клиентов агентства ({@code isAgencyClient}).
+ * Разрешены только запросы к профилю, смене пароля и отправке письма подтверждения (и связанные пути users/cabinets).
  */
 @Component
 public class EmailConfirmationAccessFilter extends OncePerRequestFilter {
@@ -30,6 +29,7 @@ public class EmailConfirmationAccessFilter extends OncePerRequestFilter {
     private static final List<String> ALLOWED_PATHS = List.of(
             "/api/user/access",
             "/api/user/profile",
+            "/api/user/password",
             "/api/user/send-email-confirmation",
             "/api/cabinets",
             "/api/users"
@@ -72,7 +72,7 @@ public class EmailConfirmationAccessFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (user.getRole() != Role.SELLER || Boolean.TRUE.equals(user.getIsAgencyClient()) || Boolean.TRUE.equals(user.getEmailConfirmed())) {
+        if (Boolean.TRUE.equals(user.getIsAgencyClient()) || Boolean.TRUE.equals(user.getEmailConfirmed())) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -81,7 +81,7 @@ public class EmailConfirmationAccessFilter extends OncePerRequestFilter {
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
         response.getWriter().write(objectMapper.writeValueAsString(
-                Map.of("message", "Подтвердите почту для доступа к сервису. Перейдите в профиль и запросите письмо.")
+                Map.of("message", "Подтвердите почту для доступа к сервису. Откройте профиль и запросите письмо со ссылкой.")
         ));
     }
 }

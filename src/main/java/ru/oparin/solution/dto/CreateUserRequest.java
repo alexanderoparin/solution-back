@@ -34,5 +34,11 @@ public class CreateUserRequest {
      */
     @NotNull(message = "Роль обязательна")
     private Role role;
+
+    /**
+     * Только при создании MANAGER администратором: {@code true} — менеджер агентства (по умолчанию),
+     * {@code false} — сторонний менеджер (нужно подтверждение почты; заведённые им селлеры — не клиенты агентства).
+     */
+    private Boolean isAgencyManager;
 }
 

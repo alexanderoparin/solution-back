@@ -33,17 +33,14 @@ public class EmailConfirmationService {
 
     /**
      * Отправляет письмо для подтверждения email текущему пользователю.
-     * Только для сторонних селлеров с неподтверждённой почтой.
+     * Не применяется к клиентам агентства ({@code isAgencyClient}).
      * Повторная отправка не чаще 1 раза в 24 часа.
      *
      * @param user текущий пользователь
-     * @throws UserException если не селлер, клиент агентства, почта уже подтверждена или письмо уже отправлялось менее 24 ч назад
+     * @throws UserException если клиент агентства, почта уже подтверждена или письмо уже отправлялось менее 24 ч назад
      */
     @Transactional
     public void sendConfirmationEmail(User user) {
-        if (user.getRole() != Role.SELLER) {
-            throw new UserException("Подтверждение почты доступно только для продавцов", HttpStatus.FORBIDDEN);
-        }
         if (Boolean.TRUE.equals(user.getIsAgencyClient())) {
             throw new UserException("Клиентам агентства подтверждение почты не требуется", HttpStatus.BAD_REQUEST);
         }
@@ -105,7 +102,9 @@ public class EmailConfirmationService {
         User user = confirmationToken.getUser();
         user.setEmailConfirmed(true);
         userRepository.save(user);
-        userService.createTrialSubscriptionForUser(user);
+        if (user.getRole() == Role.SELLER && !Boolean.TRUE.equals(user.getIsAgencyClient())) {
+            userService.createTrialSubscriptionForUser(user);
+        }
         tokenRepository.delete(confirmationToken);
         log.info("Email подтверждён для пользователя {}", user.getEmail());
     }
