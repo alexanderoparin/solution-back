@@ -122,11 +122,16 @@ public class AnalyticsService {
      * Если onlyWithPhoto == true — только артикулы с заполненным фото.
      */
     @Transactional(readOnly = true)
-    public List<ArticleSummaryDto> getArticleList(User seller, Long cabinetId, Boolean onlyWithPhoto) {
+    public List<ArticleSummaryDto> getArticleList(User seller, Long cabinetId, Boolean onlyWithPhoto, Boolean onlyPriority) {
         List<ProductCard> allCards = getVisibleCards(seller.getId(), cabinetId, null);
         if (Boolean.TRUE.equals(onlyWithPhoto)) {
             allCards = allCards.stream()
                     .filter(this::cardHasAnyPhoto)
+                    .collect(Collectors.toList());
+        }
+        if (Boolean.TRUE.equals(onlyPriority)) {
+            allCards = allCards.stream()
+                    .filter(c -> Boolean.TRUE.equals(c.getIsPriority()))
                     .collect(Collectors.toList());
         }
         return mapToArticleSummaries(allCards);
@@ -153,13 +158,14 @@ public class AnalyticsService {
             String metricName,
             List<PeriodDto> periods,
             List<Long> excludedNmIds,
-            Boolean onlyWithPhoto
+            Boolean onlyWithPhoto,
+            Boolean onlyPriority
     ) {
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
         if (isAdvertisingMetric(metricName)) {
-            return getAdvertisingMetricGroup(seller, cabinetId, metricName, sortedPeriods, excludedNmIds, onlyWithPhoto);
+            return getAdvertisingMetricGroup(seller, cabinetId, metricName, sortedPeriods, excludedNmIds, onlyWithPhoto, onlyPriority);
         } else {
-            return getFunnelMetricGroup(seller, cabinetId, metricName, sortedPeriods, excludedNmIds, onlyWithPhoto);
+            return getFunnelMetricGroup(seller, cabinetId, metricName, sortedPeriods, excludedNmIds, onlyWithPhoto, onlyPriority);
         }
     }
 
@@ -169,12 +175,18 @@ public class AnalyticsService {
             String metricName,
             List<PeriodDto> periods,
             List<Long> excludedNmIds,
-            Boolean onlyWithPhoto
+            Boolean onlyWithPhoto,
+            Boolean onlyPriority
     ) {
         List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
         if (Boolean.TRUE.equals(onlyWithPhoto)) {
             visibleCards = visibleCards.stream()
                     .filter(this::cardHasAnyPhoto)
+                    .collect(Collectors.toList());
+        }
+        if (Boolean.TRUE.equals(onlyPriority)) {
+            visibleCards = visibleCards.stream()
+                    .filter(c -> Boolean.TRUE.equals(c.getIsPriority()))
                     .collect(Collectors.toList());
         }
 
@@ -196,12 +208,18 @@ public class AnalyticsService {
             String metricName,
             List<PeriodDto> periods,
             List<Long> excludedNmIds,
-            Boolean onlyWithPhoto
+            Boolean onlyWithPhoto,
+            Boolean onlyPriority
     ) {
         List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
         if (Boolean.TRUE.equals(onlyWithPhoto)) {
             visibleCards = visibleCards.stream()
                     .filter(this::cardHasAnyPhoto)
+                    .collect(Collectors.toList());
+        }
+        if (Boolean.TRUE.equals(onlyPriority)) {
+            visibleCards = visibleCards.stream()
+                    .filter(c -> Boolean.TRUE.equals(c.getIsPriority()))
                     .collect(Collectors.toList());
         }
         List<Long> campaignIds = getCampaignIdsForCabinet(seller.getId(), cabinetId);

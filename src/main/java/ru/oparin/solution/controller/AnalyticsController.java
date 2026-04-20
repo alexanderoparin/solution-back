@@ -40,6 +40,7 @@ public class AnalyticsController {
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
             @RequestParam(required = false) Boolean onlyWithPhoto,
+            @RequestParam(required = false) Boolean onlyPriority,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(
@@ -51,7 +52,8 @@ public class AnalyticsController {
         List<ArticleSummaryDto> response = analyticsService.getArticleList(
                 context.user(),
                 context.cabinetId(),
-                onlyWithPhoto
+                onlyWithPhoto,
+                onlyPriority
         );
         return ResponseEntity.ok(response);
     }
@@ -119,7 +121,8 @@ public class AnalyticsController {
                 decodedMetricName,
                 request.getPeriods(),
                 request.getExcludedNmIds(),
-                request.getOnlyWithPhoto()
+                request.getOnlyWithPhoto(),
+                request.getOnlyPriority()
         );
         
         return ResponseEntity.ok(response);
