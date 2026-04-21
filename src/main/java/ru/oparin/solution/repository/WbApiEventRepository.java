@@ -22,7 +22,7 @@ public interface WbApiEventRepository extends JpaRepository<WbApiEvent, Long> {
             join fetch e.cabinet
             where e.status in :statuses
               and e.nextAttemptAt <= :now
-            order by e.priority desc, e.nextAttemptAt asc, e.createdAt asc
+            order by e.priority desc, e.nextAttemptAt asc, e.id asc
             """)
     List<WbApiEvent> findReadyEvents(
             @Param("statuses") Collection<WbApiEventStatus> statuses,
