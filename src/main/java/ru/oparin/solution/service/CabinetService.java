@@ -383,11 +383,21 @@ public class CabinetService {
             return;
         }
 
+        if (allowSellerSelf && currentUser.getRole() == Role.WORKER && isWorkerOwnedBySeller(currentUser, seller.getId())) {
+            return;
+        }
+
         throw new UserException(CABINET_ACCESS_DENIED, HttpStatus.FORBIDDEN);
     }
 
     private boolean isSellerOwnedByManager(User seller, Long managerId) {
         return seller.getOwner() != null && seller.getOwner().getId().equals(managerId);
+    }
+
+    private boolean isWorkerOwnedBySeller(User worker, Long sellerId) {
+        return worker.getOwner() != null
+                && worker.getOwner().getRole() == Role.SELLER
+                && worker.getOwner().getId().equals(sellerId);
     }
 
     private void assertSellerInfoOrThrow(String apiKey) {
