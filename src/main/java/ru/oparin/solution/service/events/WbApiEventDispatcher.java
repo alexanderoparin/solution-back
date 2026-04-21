@@ -123,8 +123,13 @@ public class WbApiEventDispatcher {
             priorityNmIdsByCabinet.put(cabinetId, new HashSet<>(priorityNmIds));
         });
 
+        // Сначала события по приоритетным карточкам; среди равных по этому признаку — меньший id раньше (FIFO по очереди постановки).
         return events.stream()
-                .sorted(Comparator.comparing((WbApiEvent event) -> isPriorityNmEvent(event, priorityNmIdsByCabinet)).reversed())
+                .sorted(
+                        Comparator.comparing((WbApiEvent event) -> isPriorityNmEvent(event, priorityNmIdsByCabinet))
+                                .reversed()
+                                .thenComparing(WbApiEvent::getId, Comparator.nullsLast(Comparator.naturalOrder()))
+                )
                 .toList();
     }
 
