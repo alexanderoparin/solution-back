@@ -64,6 +64,11 @@ public class CabinetService {
         return findCabinetsByUserId(userId).stream().map(this::toDto).toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<CabinetDto> listByUserId(Long userId, boolean maskApiKey) {
+        return findCabinetsByUserId(userId).stream().map(c -> toDto(c, maskApiKey)).toList();
+    }
+
     /**
      * Сортировка для {@link #pageManagedCabinets(User, Pageable, String)}.
      */
@@ -153,6 +158,12 @@ public class CabinetService {
     public CabinetDto getByIdAndUserId(Long cabinetId, Long userId) {
         Cabinet cabinet = findCabinetByIdAndUserId(cabinetId, userId);
         return toDto(cabinet);
+    }
+
+    @Transactional(readOnly = true)
+    public CabinetDto getByIdAndUserId(Long cabinetId, Long userId, boolean maskApiKey) {
+        Cabinet cabinet = findCabinetByIdAndUserId(cabinetId, userId);
+        return toDto(cabinet, maskApiKey);
     }
 
     /**
@@ -502,7 +513,11 @@ public class CabinetService {
     }
 
     private CabinetDto toDto(Cabinet cabinet) {
-        CabinetDto.ApiKeyInfo apiKeyInfo = toApiKeyInfo(cabinet);
+        return toDto(cabinet, false);
+    }
+
+    private CabinetDto toDto(Cabinet cabinet, boolean maskApiKey) {
+        CabinetDto.ApiKeyInfo apiKeyInfo = toApiKeyInfo(cabinet, maskApiKey);
         List<CabinetDto.ScopeStatusDto> scopeStatuses = cabinetScopeStatusService.getStatusesByCabinetId(cabinet.getId())
                 .stream()
                 .map(s -> CabinetDto.ScopeStatusDto.builder()
@@ -526,12 +541,12 @@ public class CabinetService {
                 .build();
     }
 
-    private CabinetDto.ApiKeyInfo toApiKeyInfo(Cabinet cabinet) {
+    private CabinetDto.ApiKeyInfo toApiKeyInfo(Cabinet cabinet, boolean maskApiKey) {
         if (cabinet.getApiKey() == null && cabinet.getIsValid() == null) {
             return null;
         }
         return CabinetDto.ApiKeyInfo.builder()
-                .apiKey(cabinet.getApiKey())
+                .apiKey(maskApiKey ? maskApiKey(cabinet.getApiKey()) : cabinet.getApiKey())
                 .isValid(cabinet.getIsValid())
                 .lastValidatedAt(cabinet.getLastValidatedAt())
                 .validationError(cabinet.getValidationError())
@@ -539,5 +554,12 @@ public class CabinetService {
                 .lastDataUpdateRequestedAt(cabinet.getLastDataUpdateRequestedAt())
                 .lastStocksUpdateAt(cabinet.getLastStocksUpdateAt())
                 .build();
+    }
+
+    private String maskApiKey(String apiKey) {
+        if (apiKey == null || apiKey.isBlank()) return apiKey;
+        final int visible = 8;
+        if (apiKey.length() <= visible * 2) return "********";
+        return apiKey.substring(0, visible) + "..." + apiKey.substring(apiKey.length() - visible);
     }
 }

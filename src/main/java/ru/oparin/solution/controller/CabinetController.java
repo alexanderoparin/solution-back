@@ -43,7 +43,8 @@ public class CabinetController {
         if (ownerId == null) {
             throw new UserException("Доступ к кабинетам запрещён", HttpStatus.FORBIDDEN);
         }
-        List<CabinetDto> cabinets = cabinetService.listByUserId(ownerId);
+        boolean maskApiKey = user.getRole() == Role.WORKER;
+        List<CabinetDto> cabinets = cabinetService.listByUserId(ownerId, maskApiKey);
         return ResponseEntity.ok(cabinets);
     }
 
@@ -60,7 +61,8 @@ public class CabinetController {
         if (ownerId == null) {
             throw new UserException("Доступ к кабинетам запрещён", HttpStatus.FORBIDDEN);
         }
-        CabinetDto dto = cabinetService.getByIdAndUserId(id, ownerId);
+        boolean maskApiKey = user.getRole() == Role.WORKER;
+        CabinetDto dto = cabinetService.getByIdAndUserId(id, ownerId, maskApiKey);
         return ResponseEntity.ok(dto);
     }
 
