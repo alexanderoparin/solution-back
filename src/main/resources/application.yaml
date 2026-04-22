@@ -88,7 +88,7 @@ wb:
   analytics:
     card-delay-ms: 20000
     max-retries-429: 5
-    retry-delay-ms-429: 21000
+    retry-delay-ms-429: 1800000
   stocks:
     request-delay-ms: 1800000
     max-retries-429: 5
