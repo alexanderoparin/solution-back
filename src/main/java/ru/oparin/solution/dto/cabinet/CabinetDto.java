@@ -1,6 +1,7 @@
 package ru.oparin.solution.dto.cabinet;
 
 import lombok.*;
+import ru.oparin.solution.model.CabinetTokenType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -44,6 +45,7 @@ public class CabinetDto {
     @AllArgsConstructor
     public static class ApiKeyInfo {
         private String apiKey;
+        private CabinetTokenType tokenType;
         private Boolean isValid;
         private LocalDateTime lastValidatedAt;
         private String validationError;

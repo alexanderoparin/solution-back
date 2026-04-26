@@ -1,6 +1,7 @@
 package ru.oparin.solution.dto;
 
 import lombok.*;
+import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.Role;
 
 import java.time.Instant;
@@ -68,6 +69,11 @@ public class UserProfileResponse {
          * WB API ключ.
          */
         private String apiKey;
+
+        /**
+         * Тип WB API токена.
+         */
+        private CabinetTokenType tokenType;
 
         /**
          * Флаг валидности ключа.

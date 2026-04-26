@@ -46,6 +46,14 @@ public class Cabinet {
     private String apiKey;
 
     /**
+     * Тип WB API токена кабинета.
+     */
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "token_type", nullable = false, length = 32)
+    private CabinetTokenType tokenType = CabinetTokenType.BASIC;
+
+    /**
      * Флаг валидности ключа (null до первой проверки).
      */
     @Column(name = "is_valid")

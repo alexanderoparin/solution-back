@@ -256,6 +256,7 @@ public class UserController {
         return wbApiKeyService.findDefaultCabinetByUserIdOptional(userId)
                 .map(cabinet -> UserProfileResponse.ApiKeyInfo.builder()
                         .apiKey(cabinet.getApiKey())
+                        .tokenType(cabinet.getTokenType())
                         .isValid(cabinet.getIsValid())
                         .lastValidatedAt(cabinet.getLastValidatedAt())
                         .validationError(cabinet.getValidationError())

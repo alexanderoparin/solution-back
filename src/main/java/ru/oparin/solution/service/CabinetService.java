@@ -16,6 +16,7 @@ import ru.oparin.solution.dto.cabinet.*;
 import ru.oparin.solution.dto.wb.SellerInfoResponse;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.CabinetRepository;
@@ -206,6 +207,7 @@ public class CabinetService {
                 .user(user)
                 .name(cabinetName)
                 .apiKey(hasApiKey ? trimmedApiKey : null)
+                .tokenType(request.getTokenType() != null ? request.getTokenType() : CabinetTokenType.BASIC)
                 .build();
         cabinet = cabinetRepository.save(cabinet);
         return toDto(cabinet);
@@ -223,6 +225,9 @@ public class CabinetService {
         }
         if (request.getApiKey() != null) {
             resetValidationAndSetApiKey(cabinet, request.getApiKey());
+        }
+        if (request.getTokenType() != null) {
+            cabinet.setTokenType(request.getTokenType());
         }
 
         cabinet = cabinetRepository.save(cabinet);
@@ -547,6 +552,7 @@ public class CabinetService {
         }
         return CabinetDto.ApiKeyInfo.builder()
                 .apiKey(maskApiKey ? maskApiKey(cabinet.getApiKey()) : cabinet.getApiKey())
+                .tokenType(cabinet.getTokenType())
                 .isValid(cabinet.getIsValid())
                 .lastValidatedAt(cabinet.getLastValidatedAt())
                 .validationError(cabinet.getValidationError())

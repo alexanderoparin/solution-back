@@ -3,6 +3,7 @@ package ru.oparin.solution.dto.cabinet;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
+import ru.oparin.solution.model.CabinetTokenType;
 
 /**
  * Запрос на обновление кабинета (имя и/или API ключ).
@@ -22,4 +23,9 @@ public class UpdateCabinetRequest {
      */
     @Size(max = 500)
     private String apiKey;
+
+    /**
+     * Новый тип WB API токена (опционально).
+     */
+    private CabinetTokenType tokenType;
 }
