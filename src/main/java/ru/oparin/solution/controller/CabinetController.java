@@ -104,9 +104,12 @@ public class CabinetController {
             Authentication authentication
     ) {
         User user = userService.findByEmail(authentication.getName());
-        validateSellerRole(user);
-        wbApiKeyService.validateApiKey(id, user.getId());
-        Cabinet cabinet = cabinetService.findCabinetByIdAndUserId(id, user.getId());
+        Long ownerId = getCabinetOwnerUserId(user);
+        if (ownerId == null) {
+            throw new UserException("Доступ к кабинетам запрещён", HttpStatus.FORBIDDEN);
+        }
+        wbApiKeyService.validateApiKey(id, ownerId);
+        Cabinet cabinet = cabinetService.findCabinetByIdAndUserId(id, ownerId);
         String message = Boolean.TRUE.equals(cabinet.getIsValid())
                 ? "API ключ валиден"
                 : (cabinet.getValidationError() != null ? "API ключ невалиден: " + cabinet.getValidationError() : "API ключ невалиден");
