@@ -2,7 +2,6 @@ package ru.oparin.solution.service.wb;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.repository.CabinetRepository;
 
@@ -29,7 +28,7 @@ public class WbApiTokenTypeResolver {
             return CabinetTokenType.BASIC;
         }
         return cabinetRepository.findTopByApiKeyOrderByIdDesc(normalized)
-                .map(Cabinet::getTokenType)
+                .map(c -> c.getTokenType() != null ? c.getTokenType() : CabinetTokenType.BASIC)
                 .orElse(CabinetTokenType.BASIC);
     }
 

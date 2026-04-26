@@ -93,10 +93,10 @@ wb:
     max-retries-429-basic: 5
     max-retries-429-personal: 5
     retry-delay-ms-429-basic: 1800000
-    retry-delay-ms-429-personal: 20000
+    retry-delay-ms-429-personal: 1800000
   stocks:
     request-basic-ms: 1800000
-    request-personal-ms: 20000
+    request-personal-ms: 1800000
     max-retries-429-basic: 5
     max-retries-429-personal: 5
     retry-delay-ms-429-basic: 21000
