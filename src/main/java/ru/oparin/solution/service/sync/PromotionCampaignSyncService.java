@@ -10,6 +10,7 @@ import ru.oparin.solution.dto.wb.PromotionFullStatsRequest;
 import ru.oparin.solution.dto.wb.PromotionFullStatsResponse;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.PromotionCampaign;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
@@ -35,10 +36,14 @@ import java.util.stream.Collectors;
 public class PromotionCampaignSyncService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    @Value("${wb.promotion.statistics-batch-size}")
-    private int statisticsBatchSize;
-    @Value("${wb.promotion.campaigns-batch-size}")
-    private int campaignsBatchSize;
+    @Value("${wb.promotion.statistics-batch-size-basic}")
+    private int statisticsBatchSizeBasic;
+    @Value("${wb.promotion.statistics-batch-size-personal}")
+    private int statisticsBatchSizePersonal;
+    @Value("${wb.promotion.campaigns-batch-size-basic}")
+    private int campaignsBatchSizeBasic;
+    @Value("${wb.promotion.campaigns-batch-size-personal}")
+    private int campaignsBatchSizePersonal;
 
     private final WbPromotionApiClient promotionApiClient;
     private final PromotionCampaignService promotionCampaignService;
@@ -112,11 +117,19 @@ public class PromotionCampaignSyncService {
     }
 
     public int getCampaignsBatchSize() {
-        return campaignsBatchSize;
+        return campaignsBatchSizeBasic;
     }
 
     public int getStatisticsBatchSize() {
-        return statisticsBatchSize;
+        return statisticsBatchSizeBasic;
+    }
+
+    public int getCampaignsBatchSize(CabinetTokenType tokenType) {
+        return tokenType == CabinetTokenType.PERSONAL ? campaignsBatchSizePersonal : campaignsBatchSizeBasic;
+    }
+
+    public int getStatisticsBatchSize(CabinetTokenType tokenType) {
+        return tokenType == CabinetTokenType.PERSONAL ? statisticsBatchSizePersonal : statisticsBatchSizeBasic;
     }
 
     /**
@@ -256,6 +269,7 @@ public class PromotionCampaignSyncService {
      */
     private List<PromotionAdvertsResponse.Campaign> fetchAdvertsV2InBatches(String apiKey, List<Long> campaignIds) {
         List<PromotionAdvertsResponse.Campaign> allCampaigns = new ArrayList<>();
+        int campaignsBatchSize = campaignsBatchSizeBasic;
         int totalBatches = (campaignIds.size() + campaignsBatchSize - 1) / campaignsBatchSize;
 
         log.info("Загрузка детальной информации о {} кампаниях (v2) батчами по {} (всего батчей: {})",
@@ -291,6 +305,7 @@ public class PromotionCampaignSyncService {
             LocalDate dateTo
     ) {
         List<PromotionFullStatsResponse.CampaignStats> allStats = new ArrayList<>();
+        int statisticsBatchSize = statisticsBatchSizeBasic;
         int totalBatches = (campaignIds.size() + statisticsBatchSize - 1) / statisticsBatchSize;
         String dateFromStr = dateFrom.format(DATE_FORMATTER);
         String dateToStr = dateTo.format(DATE_FORMATTER);

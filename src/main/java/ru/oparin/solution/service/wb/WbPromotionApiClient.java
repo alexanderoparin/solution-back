@@ -1,6 +1,7 @@
 package ru.oparin.solution.service.wb;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -12,6 +13,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.*;
+import ru.oparin.solution.model.CabinetTokenType;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,6 +28,7 @@ import java.util.stream.Collectors;
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class WbPromotionApiClient extends AbstractWbApiClient {
 
     @Override
@@ -44,10 +47,16 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
     @Value("${wb.api.promotion-base-url}")
     private String promotionBaseUrl;
-    @Value("${wb.promotion.max-retries-429}")
-    private int maxRetries429;
-    @Value("${wb.promotion.retry-delay-ms-429}")
-    private long retryDelayMs429;
+    @Value("${wb.promotion.max-retries-429-basic}")
+    private int maxRetries429Basic;
+    @Value("${wb.promotion.max-retries-429-personal}")
+    private int maxRetries429Personal;
+    @Value("${wb.promotion.retry-delay-ms-429-basic}")
+    private long retryDelayMs429Basic;
+    @Value("${wb.promotion.retry-delay-ms-429-personal}")
+    private long retryDelayMs429Personal;
+
+    private final WbApiTokenTypeResolver tokenTypeResolver;
 
     /**
      * Получение списка кампаний, сгруппированных по типам и статусам.
@@ -57,7 +66,9 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
      * @return список кампаний по типам и статусам
      */
     public PromotionCountResponse getPromotionCount(String apiKey) {
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
         return executeWith429Retry("количество кампаний по типам", PROMOTION_COUNT_ENDPOINT, PROMOTION_COUNT_OPERATION,
+                tokenType,
                 () -> executeWithConnectionRetry("количество кампаний по типам", () -> getPromotionCountOnce(apiKey)));
     }
 
@@ -113,7 +124,9 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         if (campaignIds == null || campaignIds.isEmpty()) {
             return PromotionAdvertsResponse.builder().adverts(Collections.emptyList()).build();
         }
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
         return executeWith429Retry("детали кампаний (v2)", ADVERTS_V2_ENDPOINT, ADVERTS_V2_OPERATION,
+                tokenType,
                 () -> executeWithConnectionRetry("детали кампаний (v2)", () -> getAdvertsV2Once(apiKey, campaignIds)));
     }
 
@@ -196,7 +209,8 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
      * @return статистика по кампаниям
      */
     public PromotionFullStatsResponse getPromotionFullStats(String apiKey, PromotionFullStatsRequest request) {
-        return executeWith429Retry("статистика кампаний за период", PROMOTION_FULLSTATS_ENDPOINT, PROMOTION_FULLSTATS_OPERATION, () -> executeWithConnectionRetry("статистика кампаний за период", () -> {
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
+        return executeWith429Retry("статистика кампаний за период", PROMOTION_FULLSTATS_ENDPOINT, PROMOTION_FULLSTATS_OPERATION, tokenType, () -> executeWithConnectionRetry("статистика кампаний за период", () -> {
             HttpHeaders headers = createAuthHeaders(apiKey);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
@@ -248,18 +262,25 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         }));
     }
 
-    private <T> T executeWith429Retry(String context, String endpoint, String operation, Callable<T> attempt) {
+    private <T> T executeWith429Retry(
+            String context,
+            String endpoint,
+            String operation,
+            CabinetTokenType tokenType,
+            Callable<T> attempt
+    ) {
+        int maxRetries429 = tokenType == CabinetTokenType.PERSONAL ? maxRetries429Personal : maxRetries429Basic;
         for (int retry = 1; retry <= maxRetries429; retry++) {
             try {
                 return attempt.call();
             } catch (HttpClientErrorException e) {
                 if (e.getStatusCode().value() == 429 && retry < maxRetries429) {
-                    log429AndDefer(context, endpoint, operation, retry, e);
+                    log429AndDefer(context, endpoint, operation, retry, maxRetries429, tokenType, e);
                 }
                 throw e;
             } catch (RestClientException e) {
                 if (e.getMessage() != null && e.getMessage().contains("429") && retry < maxRetries429) {
-                    log429AndDefer(context, endpoint, operation, retry, null);
+                    log429AndDefer(context, endpoint, operation, retry, maxRetries429, tokenType, null);
                 }
                 throw e;
             } catch (Exception e) {
@@ -269,9 +290,17 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         throw new RestClientException("Не удалось выполнить " + context + " после " + maxRetries429 + " попыток");
     }
 
-    private void log429AndDefer(String context, String endpoint, String operation, int retry, HttpClientErrorException e) {
+    private void log429AndDefer(
+            String context,
+            String endpoint,
+            String operation,
+            int retry,
+            int maxRetries429,
+            CabinetTokenType tokenType,
+            HttpClientErrorException e
+    ) {
         log429Metric(endpoint, operation);
-        long delayMs = retryDelayMs429;
+        long delayMs = tokenType == CabinetTokenType.PERSONAL ? retryDelayMs429Personal : retryDelayMs429Basic;
         if (e != null) {
             Integer sec = Wb429RateLimitHeadersLogger.parseRetryAfterSeconds(e);
             if (sec != null && sec > 0) {

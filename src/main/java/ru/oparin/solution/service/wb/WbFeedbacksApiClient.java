@@ -1,5 +1,6 @@
 package ru.oparin.solution.service.wb;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -11,6 +12,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.FeedbacksResponse;
+import ru.oparin.solution.model.CabinetTokenType;
 
 /**
  * Клиент API отзывов WB (feedbacks-api).
@@ -19,6 +21,7 @@ import ru.oparin.solution.dto.wb.FeedbacksResponse;
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class WbFeedbacksApiClient extends AbstractWbApiClient {
 
     @Override
@@ -29,15 +32,16 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
     private static final String FEEDBACKS_ENDPOINT = "/api/v1/feedbacks";
     /** Максимум отзывов в одном ответе по документации. */
     private static final int MAX_TAKE = 5000;
-    /** Пауза между страницами пагинации (лимит WB на endpoint низкий, см. {@code wb.feedbacks.request-delay-ms}). */
-    private static long requestDelayMs;
+    /** Пауза между страницами пагинации по типу токена. */
+    @Value("${wb.feedbacks.request-basic-ms}")
+    private long requestDelayBasicMs;
+    @Value("${wb.feedbacks.request-personal-ms}")
+    private long requestDelayPersonalMs;
+
+    private final WbApiTokenTypeResolver tokenTypeResolver;
 
     @Value("${wb.api.feedbacks-base-url}")
     private String feedbacksBaseUrl;
-    @Value("${wb.feedbacks.request-delay-ms}")
-    private void setRequestDelayMs(long configuredDelayMs) {
-        requestDelayMs = configuredDelayMs;
-    }
 
     /**
      * Получить обработанные отзывы с пагинацией.
@@ -90,8 +94,10 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
      * Пауза в потоке после полной страницы отзывов перед следующим запросом к тому же endpoint.
      * Вся пагинация выполняется в одном запуске события/синка, без отложенного повтора по страницам.
      */
-    public static void delayBetweenRequests() {
-        long ms = Math.max(1L, requestDelayMs);
+    public void delayBetweenRequests(String apiKey) {
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
+        long configured = tokenType == CabinetTokenType.PERSONAL ? requestDelayPersonalMs : requestDelayBasicMs;
+        long ms = Math.max(1L, configured);
         try {
             Thread.sleep(ms);
         } catch (InterruptedException e) {

@@ -80,34 +80,52 @@ wb:
     feedbacks-base-url: https://feedbacks-api.wildberries.ru
     timeout: 30000
 
-  # --- WB sync delays / retries ---
+  # --- WB sync delays / retries by token type ---
   content:
-    cards-pagination-delay-ms: 1000
+    cards-pagination-basic-ms: 1000
+    cards-pagination-personal-ms: 1000
   prices:
-    api-call-delay-ms: 1000
+    api-call-basic-ms: 1000
+    api-call-personal-ms: 1000
   analytics:
-    card-delay-ms: 20000
-    max-retries-429: 5
-    retry-delay-ms-429: 1800000
+    card-basic-ms: 20000
+    card-personal-ms: 20000
+    max-retries-429-basic: 5
+    max-retries-429-personal: 5
+    retry-delay-ms-429-basic: 1800000
+    retry-delay-ms-429-personal: 1800000
   stocks:
-    request-delay-ms: 1800000
-    max-retries-429: 5
-    retry-delay-ms-429: 21000
+    request-basic-ms: 1800000
+    request-personal-ms: 1800000
+    max-retries-429-basic: 5
+    max-retries-429-personal: 5
+    retry-delay-ms-429-basic: 21000
+    retry-delay-ms-429-personal: 21000
   promotion:
-    campaigns-batch-size: 50
-    statistics-batch-size: 50
-    adverts-delay-ms: 1000
-    statistics-delay-ms: 20000
-    max-retries-429: 5
-    retry-delay-ms-429: 21000
+    campaigns-batch-size-basic: 50
+    campaigns-batch-size-personal: 50
+    statistics-batch-size-basic: 50
+    statistics-batch-size-personal: 50
+    adverts-basic-ms: 1000
+    adverts-personal-ms: 1000
+    statistics-basic-ms: 20000
+    statistics-personal-ms: 20000
+    max-retries-429-basic: 5
+    max-retries-429-personal: 5
+    retry-delay-ms-429-basic: 21000
+    retry-delay-ms-429-personal: 21000
   feedbacks:
-    request-delay-ms: 1000
+    request-basic-ms: 1000
+    request-personal-ms: 1000
   calendar:
-    request-delay-ms: 2000
+    request-basic-ms: 2000
+    request-personal-ms: 2000
   warehouses:
-    request-delay-ms: 43200000
+    request-basic-ms: 43200000
+    request-personal-ms: 43200000
   orders:
-    request-delay-ms: 60000
+    request-basic-ms: 60000
+    request-personal-ms: 60000
 
 app:
   frontend-url: "https://wb-solution.ru"

@@ -28,7 +28,7 @@ import java.util.Map;
  * Синхронизация рейтинга и количества отзывов по товарам из API отзывов WB.
  * Запрашивает и обработанные (isAnswered=true), и необработанные (isAnswered=false) отзывы,
  * объединяет по nmId и считает общий рейтинг и количество отзывов.
- * Пагинация в рамках одного вызова: пауза {@code wb.feedbacks.request-delay-ms} между полными страницами.
+ * Пагинация в рамках одного вызова: пауза между полными страницами зависит от типа токена.
  */
 @Service
 @RequiredArgsConstructor
@@ -59,7 +59,7 @@ public class FeedbacksSyncService {
     public void syncFeedbacksForCabinet(Cabinet cabinet, String apiKey) {
         long cabinetId = cabinet.getId();
         Map<Long, RatingCount> byNmId = fetchAndAggregateFeedbacks(apiKey, true);
-        WbFeedbacksApiClient.delayBetweenRequests();
+        feedbacksApiClient.delayBetweenRequests(apiKey);
         Map<Long, RatingCount> unanswered = fetchAndAggregateFeedbacks(apiKey, false);
         mergeInto(byNmId, unanswered);
 
@@ -140,7 +140,7 @@ public class FeedbacksSyncService {
                 hasMore = false;
             } else {
                 skip += feedbacks.size();
-                WbFeedbacksApiClient.delayBetweenRequests();
+                feedbacksApiClient.delayBetweenRequests(apiKey);
             }
         }
         return byNmId;

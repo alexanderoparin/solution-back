@@ -24,6 +24,11 @@ public interface CabinetRepository extends JpaRepository<Cabinet, Long>, JpaSpec
     List<Cabinet> findByUser_IdOrderByCreatedAtDesc(Long userId);
 
     /**
+     * Последний кабинет с заданным API-ключом (для определения типа токена по ключу).
+     */
+    Optional<Cabinet> findTopByApiKeyOrderByIdDesc(String apiKey);
+
+    /**
      * Проверка, что кабинет принадлежит пользователю (для контроля доступа).
      */
     boolean existsByIdAndUser_Id(Long id, Long userId);

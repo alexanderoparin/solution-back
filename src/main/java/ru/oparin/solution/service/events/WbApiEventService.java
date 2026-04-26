@@ -341,7 +341,10 @@ public class WbApiEventService {
 
     @Transactional
     public void enqueuePromotionAdvertsBatchEvents(Long cabinetId, MainStepPayload payload, List<Long> campaignIds, String triggerSource) {
-        int size = promotionCampaignSyncService.getCampaignsBatchSize();
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        int size = promotionCampaignSyncService.getCampaignsBatchSize(
+                cabinet.getTokenType() != null ? cabinet.getTokenType() : ru.oparin.solution.model.CabinetTokenType.BASIC);
         for (int i = 0, batchIndex = 0; i < campaignIds.size(); i += size, batchIndex++) {
             int end = Math.min(i + size, campaignIds.size());
             List<Long> batch = campaignIds.subList(i, end);
@@ -384,7 +387,10 @@ public class WbApiEventService {
         )) {
             return;
         }
-        int statBatchSize = promotionCampaignSyncService.getStatisticsBatchSize();
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        int statBatchSize = promotionCampaignSyncService.getStatisticsBatchSize(
+                cabinet.getTokenType() != null ? cabinet.getTokenType() : ru.oparin.solution.model.CabinetTokenType.BASIC);
         for (int i = 0, batchIndex = 0; i < needing.size(); i += statBatchSize, batchIndex++) {
             int end = Math.min(i + statBatchSize, needing.size());
             List<Long> batch = needing.subList(i, end);

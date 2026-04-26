@@ -6,6 +6,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
+import ru.oparin.solution.model.CabinetTokenType;
 
 import java.net.URI;
 import java.util.Locale;
@@ -36,6 +37,7 @@ public class WbEndpointRateLimitCoordinator {
     private static final long CALENDAR_BUSY_WAIT_BUDGET_MS = 120_000L;
 
     private final WbHttpSuccessSpacingMsResolver httpSuccessSpacingMs;
+    private final WbApiTokenTypeResolver tokenTypeResolver;
 
     private final ConcurrentMap<String, RateSlot> slots = new ConcurrentHashMap<>();
 
@@ -110,6 +112,7 @@ public class WbEndpointRateLimitCoordinator {
             return;
         }
         RateSlot slot = slots.computeIfAbsent(slotKey(apiKey, endpointKey), k -> new RateSlot());
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByAuthorizationHeader(apiKey);
 
         long now = System.currentTimeMillis();
         if (httpStatus == HttpStatus.TOO_MANY_REQUESTS.value()) {
@@ -122,10 +125,10 @@ public class WbEndpointRateLimitCoordinator {
             } else if (resetSec != null && resetSec > 0) {
                 slot.setNextAllowedAtMs(now + resetSec * 1000L);
             } else {
-                slot.setNextAllowedAtMs(now + httpSuccessSpacingMs.spacingAfter2xxMs(endpointKey));
+                slot.setNextAllowedAtMs(now + httpSuccessSpacingMs.spacingAfter2xxMs(endpointKey, tokenType));
             }
         } else if (httpStatus >= 200 && httpStatus <= 299) {
-            slot.setNextAllowedAtMs(now + httpSuccessSpacingMs.spacingAfter2xxMs(endpointKey));
+            slot.setNextAllowedAtMs(now + httpSuccessSpacingMs.spacingAfter2xxMs(endpointKey, tokenType));
         }
     }
 

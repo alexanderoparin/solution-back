@@ -1,5 +1,6 @@
 package ru.oparin.solution.service.wb;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -9,6 +10,7 @@ import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.SaleFunnelHistoryRequest;
 import ru.oparin.solution.dto.wb.SaleFunnelHistoryResponse;
 import ru.oparin.solution.dto.wb.SaleFunnelResponse;
+import ru.oparin.solution.model.CabinetTokenType;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -23,6 +25,7 @@ import java.util.List;
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class WbAnalyticsApiClient extends AbstractWbApiClient {
 
     @Override
@@ -35,10 +38,16 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
 
     @Value("${wb.api.analytics-base-url}")
     private String analyticsBaseUrl;
-    @Value("${wb.analytics.max-retries-429}")
-    private int maxRetries429;
-    @Value("${wb.analytics.retry-delay-ms-429}")
-    private long retryDelayMs429;
+    @Value("${wb.analytics.max-retries-429-basic}")
+    private int maxRetries429Basic;
+    @Value("${wb.analytics.max-retries-429-personal}")
+    private int maxRetries429Personal;
+    @Value("${wb.analytics.retry-delay-ms-429-basic}")
+    private long retryDelayMs429Basic;
+    @Value("${wb.analytics.retry-delay-ms-429-personal}")
+    private long retryDelayMs429Personal;
+
+    private final WbApiTokenTypeResolver tokenTypeResolver;
 
     /**
      * Получение аналитики воронки продаж по карточке товара.
@@ -57,6 +66,9 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
                     validatedFromDate, validatedToDate, nmId);
         }
         SaleFunnelHistoryRequest request = buildAnalyticsRequest(nmId, validatedFromDate, validatedToDate);
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
+        int maxRetries429 = tokenType == CabinetTokenType.PERSONAL ? maxRetries429Personal : maxRetries429Basic;
+        long retryDelayMs429 = tokenType == CabinetTokenType.PERSONAL ? retryDelayMs429Personal : retryDelayMs429Basic;
 
         try {
             // Сначала даём executeWithRetry обрабатывать 429 (Too Many Requests),
