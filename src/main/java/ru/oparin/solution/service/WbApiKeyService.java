@@ -19,6 +19,7 @@ import ru.oparin.solution.service.wb.WbEndpointRateLimitCoordinator;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.EnumMap;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -268,14 +269,14 @@ public class WbApiKeyService {
                         HttpStatus.TOO_MANY_REQUESTS
                 );
             }
-            String msg = extractUserFriendlyErrorMessage(e);
+            String msg = messageForCategoryPingFailure(e);
             cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
             log.warn("Ping категории WB API {} для кабинета {} завершился ошибкой: статус={}, тело={}",
                     category.getDisplayName(), cabinetId, e.getStatusCode(), e.getResponseBodyAsString());
             return false;
         } catch (RestClientException e) {
             HttpClientErrorException hce = findHttpClientErrorInChain(e);
-            String msg = hce != null ? extractUserFriendlyErrorMessage(hce) : resolveFriendlyValidationMessage(e);
+            String msg = hce != null ? messageForCategoryPingFailure(hce) : resolveFriendlyValidationMessage(e);
             cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
             log.warn("Ping категории WB API {} для кабинета {} завершился ошибкой соединения: {}",
                     category.getDisplayName(), cabinetId, e.getMessage());
@@ -283,7 +284,8 @@ public class WbApiKeyService {
         } catch (UserException e) {
             throw e;
         } catch (Exception e) {
-            String msg = resolveFriendlyValidationMessage(e);
+            HttpClientErrorException hce = findHttpClientErrorInChain(e);
+            String msg = hce != null ? messageForCategoryPingFailure(hce) : resolveFriendlyValidationMessage(e);
             cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
             log.warn("Неожиданная ошибка при ping категории WB API {} для кабинета {}: {}",
                     category.getDisplayName(), cabinetId, e.getMessage());
@@ -324,6 +326,29 @@ public class WbApiKeyService {
             return extractUserFriendlyErrorMessage(hce);
         }
         return "Не удалось проверить API ключ. Проверьте подключение и попробуйте снова.";
+    }
+
+    /**
+     * Сообщение для строки «доступ к категории» в UI при неуспешном /ping по домену категории.
+     * Отличается от {@link #extractUserFriendlyErrorMessage(HttpClientErrorException)}: при ответе WB
+     * «token scope not allowed» это отсутствие категории у токена, а не «весь ключ невалиден».
+     */
+    private String messageForCategoryPingFailure(HttpClientErrorException e) {
+        if (isWbTokenScopeNotAllowedInBody(e.getResponseBodyAsString())) {
+            return "Для этой категории API у токена не включены права (нет scope). Добавьте категорию при создании токена в личном кабинете продавца WB.";
+        }
+        return extractUserFriendlyErrorMessage(e);
+    }
+
+    /**
+     * Типичное тело 401 от WB при отсутствии категории у персонального токена.
+     */
+    private boolean isWbTokenScopeNotAllowedInBody(String body) {
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        String lower = body.toLowerCase(Locale.ROOT);
+        return lower.contains("token scope not allowed");
     }
 
     /**
