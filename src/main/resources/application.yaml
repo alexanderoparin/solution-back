@@ -87,18 +87,17 @@ wb:
   prices:
     api-call-basic-ms: 1000
     api-call-personal-ms: 1000
+  retries:
+    max-429-basic: 5
+    max-429-personal: 5
   analytics:
     card-basic-ms: 20000
     card-personal-ms: 20000
-    max-retries-429-basic: 5
-    max-retries-429-personal: 5
     retry-delay-ms-429-basic: 1800000
     retry-delay-ms-429-personal: 1800000
   stocks:
     request-basic-ms: 1800000
     request-personal-ms: 1800000
-    max-retries-429-basic: 5
-    max-retries-429-personal: 5
     retry-delay-ms-429-basic: 21000
     retry-delay-ms-429-personal: 21000
   promotion:
@@ -110,8 +109,6 @@ wb:
     adverts-personal-ms: 1000
     statistics-basic-ms: 20000
     statistics-personal-ms: 20000
-    max-retries-429-basic: 5
-    max-retries-429-personal: 5
     retry-delay-ms-429-basic: 21000
     retry-delay-ms-429-personal: 21000
   feedbacks:

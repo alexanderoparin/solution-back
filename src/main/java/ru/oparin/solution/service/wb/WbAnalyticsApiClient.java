@@ -38,9 +38,9 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
 
     @Value("${wb.api.analytics-base-url}")
     private String analyticsBaseUrl;
-    @Value("${wb.analytics.max-retries-429-basic}")
+    @Value("${wb.retries.max-429-basic}")
     private int maxRetries429Basic;
-    @Value("${wb.analytics.max-retries-429-personal}")
+    @Value("${wb.retries.max-429-personal}")
     private int maxRetries429Personal;
     @Value("${wb.analytics.retry-delay-ms-429-basic}")
     private long retryDelayMs429Basic;
