@@ -15,6 +15,11 @@ public enum WbApiEventType {
             "/content/v2/get/cards/list",
             1L,
             1L),
+    CONTENT_CARDS_TRASH(
+            WbApiBaseUrl.CONTENT,
+            "/content/v2/get/cards/trash",
+            1L,
+            1L),
     ANALYTICS_SALES_FUNNEL_NMID(
             WbApiBaseUrl.ANALYTICS,
             "/api/analytics/v3/sales-funnel/products/history",
@@ -50,6 +55,11 @@ public enum WbApiEventType {
             "/api/v1/calendar/promotions",
             3_600L,
             1L),
+    PROMOTION_CALENDAR_NOMENCLATURES(
+            WbApiBaseUrl.DP_CALENDAR,
+            "/api/v1/calendar/promotions/nomenclatures",
+            3_600L,
+            20L),
     WAREHOUSES_SYNC_CABINET(
             WbApiBaseUrl.SUPPLIES,
             "/api/v1/warehouses",
@@ -59,7 +69,18 @@ public enum WbApiEventType {
             WbApiBaseUrl.ANALYTICS,
             "/api/v2/stocks-report/products/sizes",
             1_800L,
-            20L);
+            20L),
+    COMMON_SELLER_INFO(
+            WbApiBaseUrl.COMMON,
+            "/api/v1/seller-info",
+            1L,
+            1L),
+    /** Заказы продавца за дату (statistics-api); паузы совпадают с {@code WbHttpSuccessSpacingMsResolver} для этого пути. */
+    STATISTICS_SUPPLIER_ORDERS(
+            WbApiBaseUrl.STATISTICS,
+            "/api/v1/supplier/orders",
+            60L,
+            60L);
 
     /** Базовый URL группы WB API для данного события. */
     private final WbApiBaseUrl baseUrl;

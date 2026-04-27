@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.WbWarehouseResponse;
-import ru.oparin.solution.model.WbApiBaseUrl;
+import ru.oparin.solution.model.WbApiEventType;
 
 import java.util.List;
 
@@ -28,10 +28,6 @@ public class WbWarehousesApiClient extends AbstractWbApiClient {
         return WbApiCategory.MARKETPLACE;
     }
 
-    private static final String WAREHOUSES_ENDPOINT = "/api/v1/warehouses";
-
-    private static final String SUPPLIES_BASE_URL = WbApiBaseUrl.SUPPLIES.getDefaultBaseUrl();
-
     /**
      * Получение списка всех складов WB.
      * При таймауте или ошибке соединения выполняются ретраи.
@@ -43,7 +39,7 @@ public class WbWarehousesApiClient extends AbstractWbApiClient {
     private List<WbWarehouseResponse> getWbOfficesOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        String url = SUPPLIES_BASE_URL + WAREHOUSES_ENDPOINT;
+        String url = WbApiEventType.WAREHOUSES_SYNC_CABINET.getDefaultUrl();
 
         logWbApiCall(url, "список складов WB");
 

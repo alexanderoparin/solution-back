@@ -14,7 +14,6 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.*;
 import ru.oparin.solution.model.CabinetTokenType;
-import ru.oparin.solution.model.WbApiBaseUrl;
 import ru.oparin.solution.model.WbApiEventType;
 
 import java.util.ArrayList;
@@ -38,17 +37,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         return WbApiCategory.PROMOTION;
     }
 
-    private static final String PROMOTION_COUNT_ENDPOINT = "/adv/v1/promotion/count";
     private static final String PROMOTION_COUNT_OPERATION = "количество кампаний";
-    /** Актуальный эндпоинт деталей кампаний (типы 8 и 9). Устаревшие: /adv/v1/promotion/adverts, /adv/v0/auction/adverts */
-    private static final String ADVERTS_V2_ENDPOINT = "/api/advert/v2/adverts";
     private static final String ADVERTS_V2_OPERATION = "детали кампаний (v2)";
-    private static final String PROMOTION_FULLSTATS_ENDPOINT = "/adv/v3/fullstats";
     private static final String PROMOTION_FULLSTATS_OPERATION = "статистика кампаний";
     private static final int ADVERTS_V2_BATCH_SIZE = 50;
-
-    /** Базовый URL домена продвижения WB — см. {@link WbApiBaseUrl#PROMOTION}. */
-    private static final String PROMOTION_BASE_URL = WbApiBaseUrl.PROMOTION.getDefaultBaseUrl();
 
     @Value("${wb.retries.max-429-basic}")
     private int maxRetries429Basic;
@@ -66,7 +58,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
      */
     public PromotionCountResponse getPromotionCount(String apiKey) {
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
-        return executeWith429Retry("количество кампаний по типам", PROMOTION_COUNT_ENDPOINT, PROMOTION_COUNT_OPERATION,
+        return executeWith429Retry(
+                "количество кампаний по типам",
+                WbApiEventType.PROMOTION_COUNT.getUri(),
+                PROMOTION_COUNT_OPERATION,
                 tokenType,
                 () -> executeWithConnectionRetry("количество кампаний по типам", () -> getPromotionCountOnce(apiKey)));
     }
@@ -74,7 +69,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     private PromotionCountResponse getPromotionCountOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        String url = PROMOTION_BASE_URL + PROMOTION_COUNT_ENDPOINT;
+        String url = WbApiEventType.PROMOTION_COUNT.getDefaultUrl();
         logWbApiCall(url, "количество кампаний по типам");
 
         try {
@@ -124,7 +119,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             return PromotionAdvertsResponse.builder().adverts(Collections.emptyList()).build();
         }
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
-        return executeWith429Retry("детали кампаний (v2)", ADVERTS_V2_ENDPOINT, ADVERTS_V2_OPERATION,
+        return executeWith429Retry(
+                "детали кампаний (v2)",
+                WbApiEventType.PROMOTION_ADVERTS_BATCH.getUri(),
+                ADVERTS_V2_OPERATION,
                 tokenType,
                 () -> executeWithConnectionRetry("детали кампаний (v2)", () -> getAdvertsV2Once(apiKey, campaignIds)));
     }
@@ -136,7 +134,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(PROMOTION_BASE_URL + ADVERTS_V2_ENDPOINT)
+        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(WbApiEventType.PROMOTION_ADVERTS_BATCH.getDefaultUrl())
                 .queryParam("ids", batch.stream().map(String::valueOf).collect(Collectors.joining(",")));
         String url = uriBuilder.toUriString();
         logWbApiCall(url, "детали кампаний (v2)");
@@ -209,11 +207,16 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
      */
     public PromotionFullStatsResponse getPromotionFullStats(String apiKey, PromotionFullStatsRequest request) {
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
-        return executeWith429Retry("статистика кампаний за период", PROMOTION_FULLSTATS_ENDPOINT, PROMOTION_FULLSTATS_OPERATION, tokenType, () -> executeWithConnectionRetry("статистика кампаний за период", () -> {
+        return executeWith429Retry(
+                "статистика кампаний за период",
+                WbApiEventType.PROMOTION_STATS_BATCH.getUri(),
+                PROMOTION_FULLSTATS_OPERATION,
+                tokenType,
+                () -> executeWithConnectionRetry("статистика кампаний за период", () -> {
             HttpHeaders headers = createAuthHeaders(apiKey);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
-            UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(PROMOTION_BASE_URL + PROMOTION_FULLSTATS_ENDPOINT);
+            UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(WbApiEventType.PROMOTION_STATS_BATCH.getDefaultUrl());
             addQueryParameters(uriBuilder, request);
             String url = uriBuilder.toUriString();
             logWbApiCall(url, "статистика кампаний за период");
@@ -313,10 +316,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     }
 
     private WbApiEventType resolveEventTypeByEndpoint(String endpoint) {
-        if (PROMOTION_FULLSTATS_ENDPOINT.equals(endpoint)) {
+        if (WbApiEventType.PROMOTION_STATS_BATCH.getUri().equals(endpoint)) {
             return WbApiEventType.PROMOTION_STATS_BATCH;
         }
-        if (ADVERTS_V2_ENDPOINT.equals(endpoint)) {
+        if (WbApiEventType.PROMOTION_ADVERTS_BATCH.getUri().equals(endpoint)) {
             return WbApiEventType.PROMOTION_ADVERTS_BATCH;
         }
         return WbApiEventType.PROMOTION_COUNT;

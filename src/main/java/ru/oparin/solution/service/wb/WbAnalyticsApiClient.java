@@ -11,7 +11,6 @@ import ru.oparin.solution.dto.wb.SaleFunnelHistoryRequest;
 import ru.oparin.solution.dto.wb.SaleFunnelHistoryResponse;
 import ru.oparin.solution.dto.wb.SaleFunnelResponse;
 import ru.oparin.solution.model.CabinetTokenType;
-import ru.oparin.solution.model.WbApiBaseUrl;
 import ru.oparin.solution.model.WbApiEventType;
 
 import java.time.LocalDate;
@@ -35,10 +34,7 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
         return WbApiCategory.ANALYTICS;
     }
 
-    private static final String SALE_FUNNEL_PRODUCT_HISTORY_ENDPOINT = "/api/analytics/v3/sales-funnel/products/history";
     private static final int MAX_ANALYTICS_PERIOD_DAYS = 7;
-
-    private static final String ANALYTICS_BASE_URL = WbApiBaseUrl.ANALYTICS.getDefaultBaseUrl();
 
     @Value("${wb.retries.max-429-basic}")
     private int maxRetries429Basic;
@@ -51,7 +47,7 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
      * Получение аналитики воронки продаж по карточке товара.
      */
     public SaleFunnelResponse getSaleFunnelProduct(String apiKey, Long nmId, String dateFrom, String dateTo) {
-        String fullUrl = ANALYTICS_BASE_URL + SALE_FUNNEL_PRODUCT_HISTORY_ENDPOINT;
+        String fullUrl = WbApiEventType.ANALYTICS_SALES_FUNNEL_NMID.getDefaultUrl();
         logWbApiCall(fullUrl, "воронка продаж по карточке", nmId);
 
         LocalDate validatedFromDate = validateAndAdjustDateFrom(dateFrom, nmId);

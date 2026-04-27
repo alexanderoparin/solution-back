@@ -7,7 +7,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.ProductPricesRequest;
 import ru.oparin.solution.dto.wb.ProductPricesResponse;
-import ru.oparin.solution.model.WbApiBaseUrl;
+import ru.oparin.solution.model.WbApiEventType;
 
 /**
  * Клиент для работы с Products API Wildberries (discounts-prices).
@@ -23,10 +23,6 @@ public class WbProductsApiClient extends AbstractWbApiClient {
         return WbApiCategory.PRICES_AND_DISCOUNTS;
     }
 
-    private static final String PRODUCT_PRICES_ENDPOINT = "/api/v2/list/goods/filter";
-
-    private static final String DISCOUNTS_PRICES_BASE_URL = WbApiBaseUrl.DISCOUNTS_PRICES.getDefaultBaseUrl();
-
     /**
      * Получение цен и скидок товаров по артикулам. Ретраи при таймауте/ошибке соединения/DNS — в базовом клиенте.
      */
@@ -34,7 +30,7 @@ public class WbProductsApiClient extends AbstractWbApiClient {
         HttpHeaders headers = createAuthHeaders(apiKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<ProductPricesRequest> entity = new HttpEntity<>(request, headers);
-        String url = DISCOUNTS_PRICES_BASE_URL + PRODUCT_PRICES_ENDPOINT;
+        String url = WbApiEventType.PRICES_CABINET_WITH_SPP.getDefaultUrl();
         logWbApiCall(url, "цены и скидки товаров");
 
         return executeWithConnectionRetry("запрос цен товаров", () -> {

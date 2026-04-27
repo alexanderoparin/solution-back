@@ -12,7 +12,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.CalendarNomenclaturesResponse;
 import ru.oparin.solution.dto.wb.CalendarPromotionsResponse;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
-import ru.oparin.solution.model.WbApiBaseUrl;
+import ru.oparin.solution.model.WbApiEventType;
 
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -34,12 +34,8 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
         return WbApiCategory.PRICES_AND_DISCOUNTS;
     }
 
-    private static final String PROMOTIONS_ENDPOINT = "/api/v1/calendar/promotions";
-    private static final String NOMENCLATURES_ENDPOINT = "/api/v1/calendar/promotions/nomenclatures";
     private static final int PAGE_SIZE = 1000;
     private static final DateTimeFormatter WB_CALENDAR_DATETIME = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
-
-    private static final String DP_CALENDAR_BASE_URL = WbApiBaseUrl.DP_CALENDAR.getDefaultBaseUrl();
 
     /**
      * Список акций за период (на одну дату — передать start и end на этот день).
@@ -56,7 +52,7 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
     }
 
     private CalendarPromotionsResponse getPromotionsOnce(String apiKey, String startDateTime, String endDateTime, boolean allPromo) {
-        String url = UriComponentsBuilder.fromHttpUrl(DP_CALENDAR_BASE_URL + PROMOTIONS_ENDPOINT)
+        String url = UriComponentsBuilder.fromHttpUrl(WbApiEventType.PROMOTION_CALENDAR_SYNC_CABINET.getDefaultUrl())
                 .queryParam("startDateTime", startDateTime)
                 .queryParam("endDateTime", endDateTime)
                 .queryParam("allPromo", allPromo)
@@ -101,7 +97,7 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
         int offset = 0;
 
         while (true) {
-            String url = UriComponentsBuilder.fromHttpUrl(DP_CALENDAR_BASE_URL + NOMENCLATURES_ENDPOINT)
+            String url = UriComponentsBuilder.fromHttpUrl(WbApiEventType.PROMOTION_CALENDAR_NOMENCLATURES.getDefaultUrl())
                     .queryParam("promotionID", promotionId)
                     .queryParam("inAction", inAction)
                     .queryParam("limit", PAGE_SIZE)

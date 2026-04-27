@@ -12,7 +12,6 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.FeedbacksResponse;
 import ru.oparin.solution.model.CabinetTokenType;
-import ru.oparin.solution.model.WbApiBaseUrl;
 import ru.oparin.solution.model.WbApiEventType;
 
 /**
@@ -30,12 +29,9 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
         return WbApiCategory.FEEDBACKS_AND_QUESTIONS;
     }
 
-    private static final String FEEDBACKS_ENDPOINT = "/api/v1/feedbacks";
     /** Максимум отзывов в одном ответе по документации. */
     private static final int MAX_TAKE = 5000;
     private final WbApiTokenTypeResolver tokenTypeResolver;
-
-    private static final String FEEDBACKS_BASE_URL = WbApiBaseUrl.FEEDBACKS.getDefaultBaseUrl();
 
     /**
      * Получить обработанные отзывы с пагинацией.
@@ -53,7 +49,7 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
     }
 
     private FeedbacksResponse getFeedbacksOnce(String apiKey, boolean isAnswered, Long nmId, int take, int skip) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(FEEDBACKS_BASE_URL + FEEDBACKS_ENDPOINT)
+        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(WbApiEventType.FEEDBACKS_SYNC_CABINET.getDefaultUrl())
                 .queryParam("isAnswered", isAnswered)
                 .queryParam("take", Math.min(take, MAX_TAKE))
                 .queryParam("skip", skip)

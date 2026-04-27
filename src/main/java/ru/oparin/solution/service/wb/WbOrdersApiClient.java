@@ -11,7 +11,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.OrdersResponse;
-import ru.oparin.solution.model.WbApiBaseUrl;
+import ru.oparin.solution.model.WbApiEventType;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -31,7 +31,6 @@ public class WbOrdersApiClient extends AbstractWbApiClient {
         return WbApiCategory.STATISTICS;
     }
 
-    private static final String ORDERS_PATH = "/api/v1/supplier/orders";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     /**
@@ -52,7 +51,7 @@ public class WbOrdersApiClient extends AbstractWbApiClient {
         HttpEntity<String> entity = new HttpEntity<>(headers);
 
         UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(
-                        WbApiBaseUrl.STATISTICS.getDefaultBaseUrl() + ORDERS_PATH)
+                        WbApiEventType.STATISTICS_SUPPLIER_ORDERS.getDefaultUrl())
                 .queryParam("dateFrom", dateFrom.format(DATE_FORMATTER));
 
         if (flag != null) {
