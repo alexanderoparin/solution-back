@@ -13,6 +13,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.FeedbacksResponse;
 import ru.oparin.solution.model.CabinetTokenType;
+import ru.oparin.solution.model.WbApiEventType;
 
 /**
  * Клиент API отзывов WB (feedbacks-api).
@@ -32,12 +33,6 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
     private static final String FEEDBACKS_ENDPOINT = "/api/v1/feedbacks";
     /** Максимум отзывов в одном ответе по документации. */
     private static final int MAX_TAKE = 5000;
-    /** Пауза между страницами пагинации по типу токена. */
-    @Value("${wb.feedbacks.request-basic-ms}")
-    private long requestDelayBasicMs;
-    @Value("${wb.feedbacks.request-personal-ms}")
-    private long requestDelayPersonalMs;
-
     private final WbApiTokenTypeResolver tokenTypeResolver;
 
     @Value("${wb.api.feedbacks-base-url}")
@@ -96,7 +91,7 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
      */
     public void delayBetweenRequests(String apiKey) {
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
-        long configured = tokenType == CabinetTokenType.PERSONAL ? requestDelayPersonalMs : requestDelayBasicMs;
+        long configured = WbApiEventType.FEEDBACKS_SYNC_CABINET.getRequestDelayMs(tokenType);
         long ms = Math.max(1L, configured);
         try {
             Thread.sleep(ms);

@@ -80,49 +80,15 @@ wb:
     feedbacks-base-url: https://feedbacks-api.wildberries.ru
     timeout: 30000
 
-  # --- WB sync delays / retries by token type ---
-  content:
-    cards-pagination-basic-ms: 1000
-    cards-pagination-personal-ms: 1000
-  prices:
-    api-call-basic-ms: 1000
-    api-call-personal-ms: 1000
+  # --- WB retries / batching ---
   retries:
     max-429-basic: 5
     max-429-personal: 5
-  analytics:
-    card-basic-ms: 20000
-    card-personal-ms: 20000
-    retry-delay-ms-429-basic: 1800000
-    retry-delay-ms-429-personal: 1800000
-  stocks:
-    request-basic-ms: 1800000
-    request-personal-ms: 1800000
-    retry-delay-ms-429-basic: 21000
-    retry-delay-ms-429-personal: 21000
   promotion:
     campaigns-batch-size-basic: 50
     campaigns-batch-size-personal: 50
     statistics-batch-size-basic: 50
     statistics-batch-size-personal: 50
-    adverts-basic-ms: 1000
-    adverts-personal-ms: 1000
-    statistics-basic-ms: 20000
-    statistics-personal-ms: 20000
-    retry-delay-ms-429-basic: 21000
-    retry-delay-ms-429-personal: 21000
-  feedbacks:
-    request-basic-ms: 1000
-    request-personal-ms: 1000
-  calendar:
-    request-basic-ms: 2000
-    request-personal-ms: 2000
-  warehouses:
-    request-basic-ms: 43200000
-    request-personal-ms: 43200000
-  orders:
-    request-basic-ms: 60000
-    request-personal-ms: 60000
 
 app:
   frontend-url: "https://wb-solution.ru"

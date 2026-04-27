@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.*;
 import ru.oparin.solution.model.CabinetTokenType;
+import ru.oparin.solution.model.WbApiEventType;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -51,10 +52,6 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     private int maxRetries429Basic;
     @Value("${wb.retries.max-429-personal}")
     private int maxRetries429Personal;
-    @Value("${wb.promotion.retry-delay-ms-429-basic}")
-    private long retryDelayMs429Basic;
-    @Value("${wb.promotion.retry-delay-ms-429-personal}")
-    private long retryDelayMs429Personal;
 
     private final WbApiTokenTypeResolver tokenTypeResolver;
 
@@ -300,7 +297,8 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             HttpClientErrorException e
     ) {
         log429Metric(endpoint, operation);
-        long delayMs = tokenType == CabinetTokenType.PERSONAL ? retryDelayMs429Personal : retryDelayMs429Basic;
+        WbApiEventType eventType = resolveEventTypeByEndpoint(endpoint);
+        long delayMs = eventType.getRequestDelayMs(tokenType);
         if (e != null) {
             Integer sec = Wb429RateLimitHeadersLogger.parseRetryAfterSeconds(e);
             if (sec != null && sec > 0) {
@@ -310,6 +308,16 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         log.warn("WB promotion 429 при {} (попытка {}/{}). Отложенный повтор через {} мс (без sleep).",
                 context, retry, maxRetries429, delayMs);
         throwDeferAfterMillis("WB promotion 429 при " + context, delayMs);
+    }
+
+    private WbApiEventType resolveEventTypeByEndpoint(String endpoint) {
+        if (PROMOTION_FULLSTATS_ENDPOINT.equals(endpoint)) {
+            return WbApiEventType.PROMOTION_STATS_BATCH;
+        }
+        if (ADVERTS_V2_ENDPOINT.equals(endpoint)) {
+            return WbApiEventType.PROMOTION_ADVERTS_BATCH;
+        }
+        return WbApiEventType.PROMOTION_COUNT;
     }
 
     private void addQueryParameters(UriComponentsBuilder uriBuilder, PromotionFullStatsRequest request) {

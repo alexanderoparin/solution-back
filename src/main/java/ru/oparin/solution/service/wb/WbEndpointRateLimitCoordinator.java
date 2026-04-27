@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.CabinetTokenType;
+import ru.oparin.solution.model.WbApiEventType;
 
 import java.net.URI;
 import java.util.Locale;
@@ -18,7 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * Учёт лимитов WB по паре «токен (отпечаток) + endpoint».
  * <p>
  * Цель — не доводить до 429 (в т.ч. из‑за возможных штрафных лимитов WB). На каждом успешном ответе
- * {@code 2xx} для слота выставляется «не раньше чем» {@code now +} пауза из блока {@code wb.*} sync delays
+ * {@code 2xx} для слота выставляется «не раньше чем» {@code now +} пауза из {@link WbApiEventType}
  * ({@link WbHttpSuccessSpacingMsResolver}), по тем же величинам, что и {@code WbEventRateLimitService}.
  * Для неизвестных путей — минимальный fallback в {@link WbHttpSuccessSpacingMsResolver}.
  * На {@code 429} — {@code X-Ratelimit-Retry} / {@code X-Ratelimit-Reset}, иначе пауза как после 2xx.

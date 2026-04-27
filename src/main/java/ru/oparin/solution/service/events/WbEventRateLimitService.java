@@ -1,7 +1,6 @@
 package ru.oparin.solution.service.events;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.WbApiEvent;
@@ -14,43 +13,6 @@ import java.util.concurrent.atomic.AtomicReference;
 @Service
 @RequiredArgsConstructor
 public class WbEventRateLimitService {
-
-    @Value("${wb.content.cards-pagination-basic-ms}")
-    private long contentDelayBasicMs;
-    @Value("${wb.content.cards-pagination-personal-ms}")
-    private long contentDelayPersonalMs;
-    @Value("${wb.analytics.card-basic-ms}")
-    private long analyticsDelayBasicMs;
-    @Value("${wb.analytics.card-personal-ms}")
-    private long analyticsDelayPersonalMs;
-    @Value("${wb.prices.api-call-basic-ms}")
-    private long pricesDelayBasicMs;
-    @Value("${wb.prices.api-call-personal-ms}")
-    private long pricesDelayPersonalMs;
-    @Value("${wb.promotion.adverts-basic-ms}")
-    private long promotionAdvertsDelayBasicMs;
-    @Value("${wb.promotion.adverts-personal-ms}")
-    private long promotionAdvertsDelayPersonalMs;
-    @Value("${wb.promotion.statistics-basic-ms}")
-    private long promotionStatisticsDelayBasicMs;
-    @Value("${wb.promotion.statistics-personal-ms}")
-    private long promotionStatisticsDelayPersonalMs;
-    @Value("${wb.feedbacks.request-basic-ms}")
-    private long feedbacksDelayBasicMs;
-    @Value("${wb.feedbacks.request-personal-ms}")
-    private long feedbacksDelayPersonalMs;
-    @Value("${wb.stocks.request-basic-ms}")
-    private long stocksDelayBasicMs;
-    @Value("${wb.stocks.request-personal-ms}")
-    private long stocksDelayPersonalMs;
-    @Value("${wb.calendar.request-basic-ms}")
-    private long calendarDelayBasicMs;
-    @Value("${wb.calendar.request-personal-ms}")
-    private long calendarDelayPersonalMs;
-    @Value("${wb.warehouses.request-basic-ms}")
-    private long warehousesDelayBasicMs;
-    @Value("${wb.warehouses.request-personal-ms}")
-    private long warehousesDelayPersonalMs;
     private final ConcurrentHashMap<String, LocalDateTime> lastCallByCabinetAndType = new ConcurrentHashMap<>();
 
     /**
@@ -92,20 +54,7 @@ public class WbEventRateLimitService {
     }
 
     private int resolveRateLimitSeconds(WbApiEventType type, CabinetTokenType tokenType) {
-        boolean personal = tokenType == CabinetTokenType.PERSONAL;
-        long delayMs = switch (type) {
-            case CONTENT_CARDS_LIST_PAGE -> personal ? contentDelayPersonalMs : contentDelayBasicMs;
-            case ANALYTICS_SALES_FUNNEL_NMID -> personal ? analyticsDelayPersonalMs : analyticsDelayBasicMs;
-            case PRICES_CABINET_WITH_SPP -> personal ? pricesDelayPersonalMs : pricesDelayBasicMs;
-            case PROMOTION_COUNT, PROMOTION_ADVERTS_BATCH ->
-                    personal ? promotionAdvertsDelayPersonalMs : promotionAdvertsDelayBasicMs;
-            case PROMOTION_STATS_BATCH ->
-                    personal ? promotionStatisticsDelayPersonalMs : promotionStatisticsDelayBasicMs;
-            case FEEDBACKS_SYNC_CABINET -> personal ? feedbacksDelayPersonalMs : feedbacksDelayBasicMs;
-            case STOCKS_BY_NMID -> personal ? stocksDelayPersonalMs : stocksDelayBasicMs;
-            case PROMOTION_CALENDAR_SYNC_CABINET -> personal ? calendarDelayPersonalMs : calendarDelayBasicMs;
-            case WAREHOUSES_SYNC_CABINET -> personal ? warehousesDelayPersonalMs : warehousesDelayBasicMs;
-        };
+        long delayMs = type.getRequestDelayMs(tokenType);
         if (delayMs <= 0) {
             return 0;
         }
