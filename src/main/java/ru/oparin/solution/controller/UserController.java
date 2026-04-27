@@ -3,6 +3,7 @@ package ru.oparin.solution.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -78,12 +79,11 @@ public class UserController {
         Cabinet cabinet = wbApiKeyService.findDefaultCabinetByUserId(user.getId());
         if (TRUE.equals(cabinet.getIsValid())) {
             return ResponseEntity.ok(createSuccessMessage("API ключ валиден"));
-        } else {
-            String errorMsg = cabinet.getValidationError() != null
-                    ? "API ключ невалиден: " + cabinet.getValidationError()
-                    : "API ключ невалиден";
-            return ResponseEntity.ok(createSuccessMessage(errorMsg));
         }
+        String errorMsg = cabinet.getValidationError() != null
+                ? cabinet.getValidationError()
+                : "API ключ не прошёл проверку";
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(createSuccessMessage(errorMsg));
     }
 
     /**

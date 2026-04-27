@@ -9,6 +9,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import ru.oparin.solution.exception.UserException;
+import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.WbApiBaseUrl;
@@ -122,8 +123,24 @@ public class WbApiKeyService {
             updateValidationStatus(cabinet, false, userFriendlyMessage);
             log.error("Ошибка при валидации WB API ключа для кабинета {}: статус={}, сообщение={}",
                     cabinet.getId(), e.getStatusCode(), e.getMessage());
+        } catch (WbApiUnauthorizedScopeException e) {
+            HttpClientErrorException cause = findHttpClientErrorInChain(e);
+            String userFriendlyMessage = cause != null
+                    ? extractUserFriendlyErrorMessage(cause)
+                    : resolveFriendlyValidationMessage(e);
+            updateValidationStatus(cabinet, false, userFriendlyMessage);
+            log.error("Ошибка при валидации WB API ключа для кабинета {} (401 scope): {}",
+                    cabinet.getId(), cause != null ? cause.getStatusCode() : "unknown");
+        } catch (RestClientException e) {
+            HttpClientErrorException cause = findHttpClientErrorInChain(e);
+            String userFriendlyMessage = cause != null
+                    ? extractUserFriendlyErrorMessage(cause)
+                    : resolveFriendlyValidationMessage(e);
+            updateValidationStatus(cabinet, false, userFriendlyMessage);
+            log.error("Ошибка при валидации WB API ключа для кабинета {}: {}",
+                    cabinet.getId(), e.getMessage());
         } catch (Exception e) {
-            String errorMessage = "Ошибка при валидации: " + e.getMessage();
+            String errorMessage = resolveFriendlyValidationMessage(e);
             updateValidationStatus(cabinet, false, errorMessage);
             log.error("Ошибка при валидации WB API ключа для кабинета {}: {}",
                     cabinet.getId(), e.getMessage());
@@ -200,17 +217,18 @@ public class WbApiKeyService {
                         HttpStatus.TOO_MANY_REQUESTS
                 );
             }
-            String body = e.getResponseBodyAsString();
-            String msg = (body != null && !body.isBlank()) ? body : ("HTTP " + e.getStatusCode());
+            String msg = extractUserFriendlyErrorMessage(e);
             cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
             log.warn("Ping категории WB API {} для кабинета {} завершился ошибкой: статус={}, тело={}",
-                    category.getDisplayName(), cabinetId, e.getStatusCode(), body);
+                    category.getDisplayName(), cabinetId, e.getStatusCode(), e.getResponseBodyAsString());
         } catch (RestClientException e) {
-            cabinetScopeStatusService.recordFailure(cabinetId, category, e.getMessage());
+            HttpClientErrorException hce = findHttpClientErrorInChain(e);
+            String msg = hce != null ? extractUserFriendlyErrorMessage(hce) : resolveFriendlyValidationMessage(e);
+            cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
             log.warn("Ping категории WB API {} для кабинета {} завершился ошибкой соединения: {}",
                     category.getDisplayName(), cabinetId, e.getMessage());
         } catch (Exception e) {
-            cabinetScopeStatusService.recordFailure(cabinetId, category, e.getMessage());
+            cabinetScopeStatusService.recordFailure(cabinetId, category, resolveFriendlyValidationMessage(e));
             log.warn("Неожиданная ошибка при ping категории WB API {} для кабинета {}: {}",
                     category.getDisplayName(), cabinetId, e.getMessage());
         }
@@ -226,6 +244,34 @@ public class WbApiKeyService {
         }
     }
 
+    /**
+     * Ищет в цепочке причин исключение HTTP-клиента WB (для размотки обёрток RestClientException и пр.).
+     */
+    private HttpClientErrorException findHttpClientErrorInChain(Throwable e) {
+        Throwable current = e;
+        while (current != null) {
+            if (current instanceof HttpClientErrorException hce) {
+                return hce;
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
+    /**
+     * Человекочитаемое сообщение для любого сбоя валидации без утечки тела ответа WB в UI.
+     */
+    private String resolveFriendlyValidationMessage(Throwable e) {
+        HttpClientErrorException hce = findHttpClientErrorInChain(e);
+        if (hce != null) {
+            return extractUserFriendlyErrorMessage(hce);
+        }
+        return "Не удалось проверить API ключ. Проверьте подключение и попробуйте снова.";
+    }
+
+    /**
+     * Преобразует ответ WB с кодом статуса в короткое сообщение для пользователя (без JSON и технических деталей).
+     */
     private String extractUserFriendlyErrorMessage(HttpClientErrorException e) {
         HttpStatusCode statusCode = e.getStatusCode();
         if (statusCode.value() == 401) {

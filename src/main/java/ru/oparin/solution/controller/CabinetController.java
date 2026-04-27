@@ -110,10 +110,17 @@ public class CabinetController {
         }
         wbApiKeyService.validateApiKey(id, ownerId);
         Cabinet cabinet = cabinetService.findCabinetByIdAndUserId(id, ownerId);
-        String message = Boolean.TRUE.equals(cabinet.getIsValid())
-                ? "API ключ валиден"
-                : (cabinet.getValidationError() != null ? "API ключ невалиден: " + cabinet.getValidationError() : "API ключ невалиден");
-        return ResponseEntity.ok(MessageResponse.builder().message(message).build());
+        boolean valid = Boolean.TRUE.equals(cabinet.getIsValid());
+        MessageResponse body = MessageResponse.builder()
+                .message(valid
+                        ? "API ключ валиден"
+                        : (cabinet.getValidationError() != null
+                                ? cabinet.getValidationError()
+                                : "API ключ не прошёл проверку"))
+                .build();
+        return valid
+                ? ResponseEntity.ok(body)
+                : ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
     /**

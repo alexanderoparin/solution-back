@@ -368,10 +368,14 @@ public class UsersManagementController {
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
         Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
         wbApiKeyService.validateApiKeyByCabinet(cabinet);
-        String message = Boolean.TRUE.equals(cabinet.getIsValid())
+        boolean valid = Boolean.TRUE.equals(cabinet.getIsValid());
+        String message = valid
                 ? "API ключ валиден"
-                : (cabinet.getValidationError() != null ? "API ключ невалиден: " + cabinet.getValidationError() : "API ключ невалиден");
-        return okMessageResponse(message);
+                : (cabinet.getValidationError() != null
+                        ? cabinet.getValidationError()
+                        : "API ключ не прошёл проверку");
+        return valid ? okMessageResponse(message)
+                : ResponseEntity.status(HttpStatus.BAD_REQUEST).body(MessageResponse.builder().message(message).build());
     }
 
     /**

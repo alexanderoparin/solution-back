@@ -32,7 +32,6 @@ public final class CabinetManagedSpecifications {
 
             if (!isCountQuery(query)) {
                 root.fetch("user", JoinType.INNER);
-                query.distinct(true);
             }
 
             Predicate isSeller = cb.equal(userJoin.get("role"), Role.SELLER);
@@ -74,7 +73,7 @@ public final class CabinetManagedSpecifications {
 
             if (!isCountQuery(query)) {
                 root.fetch("user", JoinType.INNER);
-                query.distinct(true);
+                // См. комментарий в {@link #managedList(User, String)} — без DISTINCT (PostgreSQL + ORDER BY lower).
             }
 
             Predicate isSeller = cb.equal(userJoin.get("role"), Role.SELLER);
