@@ -35,21 +35,11 @@ public enum WbApiBaseUrl {
     private final String defaultBaseUrl;
 
     /**
-     * Хост для {@code /ping} категории «Контент»: по документации WB доступны
-     * {@code content-api} и {@code content-api-sandbox}; для проверки токена без конфликта
-     * с лимитами боевого контент-API используется sandbox.
-     */
-    private static final String CONTENT_PING_BASE = "https://content-api-sandbox.wildberries.ru";
-
-    /**
      * Полный URL метода {@code /ping} для проверки доступа к домену.
      *
      * @return базовый URL + {@code /ping}
      */
     public String getPingUrl() {
-        if (this == CONTENT) {
-            return CONTENT_PING_BASE + "/ping";
-        }
         return defaultBaseUrl + "/ping";
     }
 

@@ -9,13 +9,11 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.WbApiBaseUrl;
 import ru.oparin.solution.service.wb.Wb429RateLimitHeadersLogger;
 import ru.oparin.solution.service.wb.WbApiCategory;
-import ru.oparin.solution.service.wb.WbContentApiClient;
 import ru.oparin.solution.service.wb.WbEndpointRateLimitCoordinator;
 
 import java.time.LocalDateTime;
@@ -33,7 +31,6 @@ import java.util.Map;
 public class WbApiKeyService {
 
     private final CabinetService cabinetService;
-    private final WbContentApiClient contentApiClient;
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final WbEndpointRateLimitCoordinator wbEndpointRateLimitCoordinator;
 
@@ -114,46 +111,92 @@ public class WbApiKeyService {
             markAllCategoriesAsNoAccess(cabinet, "API ключ не задан");
             return;
         }
-        try {
-            contentApiClient.ping(cabinet.getApiKey());
-            updateValidationStatus(cabinet, true, null);
-            log.info("WB API ключ для кабинета {} валиден", cabinet.getId());
-        } catch (HttpClientErrorException e) {
-            String userFriendlyMessage = extractUserFriendlyErrorMessage(e);
-            updateValidationStatus(cabinet, false, userFriendlyMessage);
-            log.error("Ошибка при валидации WB API ключа для кабинета {}: статус={}, сообщение={}",
-                    cabinet.getId(), e.getStatusCode(), e.getMessage());
-        } catch (WbApiUnauthorizedScopeException e) {
-            HttpClientErrorException cause = findHttpClientErrorInChain(e);
-            String userFriendlyMessage = cause != null
-                    ? extractUserFriendlyErrorMessage(cause)
-                    : resolveFriendlyValidationMessage(e);
-            updateValidationStatus(cabinet, false, userFriendlyMessage);
-            log.error("Ошибка при валидации WB API ключа для кабинета {} (401 scope): {}",
-                    cabinet.getId(), cause != null ? cause.getStatusCode() : "unknown");
-        } catch (RestClientException e) {
-            HttpClientErrorException cause = findHttpClientErrorInChain(e);
-            String userFriendlyMessage = cause != null
-                    ? extractUserFriendlyErrorMessage(cause)
-                    : resolveFriendlyValidationMessage(e);
-            updateValidationStatus(cabinet, false, userFriendlyMessage);
-            log.error("Ошибка при валидации WB API ключа для кабинета {}: {}",
-                    cabinet.getId(), e.getMessage());
-        } catch (Exception e) {
-            String errorMessage = resolveFriendlyValidationMessage(e);
-            updateValidationStatus(cabinet, false, errorMessage);
-            log.error("Ошибка при валидации WB API ключа для кабинета {}: {}",
-                    cabinet.getId(), e.getMessage());
-        }
 
-        // После базовой проверки ключа (контент) дополнительно проверяем доступ к категориям через /ping.
-        // Запросов немного (по одному на домен), они укладываются в лимит 3 запроса за 30 секунд на метод/домен.
+        /*
+         * Признак «ключ валиден» (поля кабинета is_valid / validation_error) задаёт только
+         * GET common-api.wildberries.ru/ping — см. документацию WB. Дальше — детализация по категориям в cabinet_scope_status.
+         */
+        validateTokenByCommonPing(cabinet);
         checkScopesWithPing(cabinet);
     }
 
     /**
+     * Проверка токена через официальный «общий» ping Wildberries (common-api).
+     * Результат записывает в {@link Cabinet#setIsValid(Boolean)} и {@link Cabinet#setValidationError(String)}.
+     */
+    private void validateTokenByCommonPing(Cabinet cabinet) {
+        Long cabinetId = cabinet.getId();
+        String apiKey = cabinet.getApiKey();
+        String url = WbApiBaseUrl.COMMON.getPingUrl();
+        String endpointKey = WbEndpointRateLimitCoordinator.endpointKeyFromUrl(url);
+        WbApiCategory category = WbApiCategory.COMMON;
+
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", apiKey);
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+            log.info("Проверка WB API ключа кабинета {} через common-api /ping: {}", cabinetId, url);
+
+            try {
+                wbEndpointRateLimitCoordinator.beforeRequest(apiKey, endpointKey, category);
+            } catch (WbRateLimitDeferException e) {
+                int retryAfter = (int) Math.min(
+                        Integer.MAX_VALUE,
+                        Math.max(1L, ChronoUnit.SECONDS.between(LocalDateTime.now(), e.getDeferUntil()))
+                );
+                throw new UserException(
+                        "Лимит WB: повторите проверку ключа позже.",
+                        HttpStatus.TOO_MANY_REQUESTS,
+                        retryAfter
+                );
+            }
+
+            ResponseEntity<String> response = pingRestTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            wbEndpointRateLimitCoordinator.afterResponse(apiKey, endpointKey, response.getStatusCode().value(),
+                    response.getHeaders(), category);
+            Wb429RateLimitHeadersLogger.logRateLimitHeaders(log, endpointKey, response.getStatusCode().value(),
+                    response.getHeaders());
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                updateValidationStatus(cabinet, true, null);
+                log.info("WB API ключ для кабинета {} признан валидным (common-api /ping)", cabinetId);
+                return;
+            }
+            String msg = "Код ответа: " + response.getStatusCode().value();
+            updateValidationStatus(cabinet, false, msg);
+            log.warn("common-api /ping для кабинета {}: неуспешный статус {}", cabinetId, response.getStatusCode());
+        } catch (HttpClientErrorException e) {
+            wbEndpointRateLimitCoordinator.afterResponse(apiKey, endpointKey, e.getStatusCode().value(),
+                    e.getResponseHeaders(), category);
+            Wb429RateLimitHeadersLogger.logRateLimitHeaders(log, endpointKey, e.getStatusCode().value(),
+                    e.getResponseHeaders());
+            if (e.getStatusCode() != null && e.getStatusCode().value() == 429) {
+                throw new UserException(
+                        "Слишком частая проверка токена к WB API. Попробуйте ещё раз через 30 секунд.",
+                        HttpStatus.TOO_MANY_REQUESTS
+                );
+            }
+            String msg = extractUserFriendlyErrorMessage(e);
+            updateValidationStatus(cabinet, false, msg);
+            log.warn("common-api /ping для кабинета {}: HTTP {}", cabinetId, e.getStatusCode());
+        } catch (RestClientException e) {
+            HttpClientErrorException hce = findHttpClientErrorInChain(e);
+            String msg = hce != null ? extractUserFriendlyErrorMessage(hce) : resolveFriendlyValidationMessage(e);
+            updateValidationStatus(cabinet, false, msg);
+            log.warn("common-api /ping для кабинета {}: {}", cabinetId, e.getMessage());
+        } catch (UserException e) {
+            throw e;
+        } catch (Exception e) {
+            String msg = resolveFriendlyValidationMessage(e);
+            updateValidationStatus(cabinet, false, msg);
+            log.warn("common-api /ping для кабинета {}: {}", cabinetId, e.getMessage());
+        }
+    }
+
+    /**
      * Пошаговая проверка токена через /ping для основных категорий WB API и запись результата в cabinet_scope_status.
-     * Используется на экране профиля в блоке «Доступ к категориям WB API».
+     * Общий признак валидности ключа задаётся только {@link #validateTokenByCommonPing(Cabinet)}.
      */
     private void checkScopesWithPing(Cabinet cabinet) {
         Long cabinetId = cabinet.getId();
@@ -172,8 +215,15 @@ public class WbApiKeyService {
 
     /**
      * Вызывает /ping для конкретной категории и записывает результат в cabinet_scope_status.
+     *
+     * @return {@code true}, если WB вернул успешный HTTP-код для /ping
      */
-    private void pingCategoryAndRecordStatus(Long cabinetId, String apiKey, WbApiCategory category, String url) {
+    private boolean pingCategoryAndRecordStatus(
+            Long cabinetId,
+            String apiKey,
+            WbApiCategory category,
+            String url
+    ) {
         String endpointKey = WbEndpointRateLimitCoordinator.endpointKeyFromUrl(url);
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -203,10 +253,11 @@ public class WbApiKeyService {
 
             if (response.getStatusCode().is2xxSuccessful()) {
                 cabinetScopeStatusService.recordSuccess(cabinetId, category);
-            } else {
-                String msg = "Код ответа: " + response.getStatusCode().value();
-                cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
+                return true;
             }
+            String msg = "Код ответа: " + response.getStatusCode().value();
+            cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
+            return false;
         } catch (HttpClientErrorException e) {
             wbEndpointRateLimitCoordinator.afterResponse(apiKey, endpointKey, e.getStatusCode().value(), e.getResponseHeaders(), category);
             Wb429RateLimitHeadersLogger.logRateLimitHeaders(log, endpointKey, e.getStatusCode().value(), e.getResponseHeaders());
@@ -221,16 +272,22 @@ public class WbApiKeyService {
             cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
             log.warn("Ping категории WB API {} для кабинета {} завершился ошибкой: статус={}, тело={}",
                     category.getDisplayName(), cabinetId, e.getStatusCode(), e.getResponseBodyAsString());
+            return false;
         } catch (RestClientException e) {
             HttpClientErrorException hce = findHttpClientErrorInChain(e);
             String msg = hce != null ? extractUserFriendlyErrorMessage(hce) : resolveFriendlyValidationMessage(e);
             cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
             log.warn("Ping категории WB API {} для кабинета {} завершился ошибкой соединения: {}",
                     category.getDisplayName(), cabinetId, e.getMessage());
+            return false;
+        } catch (UserException e) {
+            throw e;
         } catch (Exception e) {
-            cabinetScopeStatusService.recordFailure(cabinetId, category, resolveFriendlyValidationMessage(e));
+            String msg = resolveFriendlyValidationMessage(e);
+            cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
             log.warn("Неожиданная ошибка при ping категории WB API {} для кабинета {}: {}",
                     category.getDisplayName(), cabinetId, e.getMessage());
+            return false;
         }
     }
 
