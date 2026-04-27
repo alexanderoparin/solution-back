@@ -1,7 +1,6 @@
 package ru.oparin.solution.service.wb;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
@@ -9,6 +8,7 @@ import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.CardsListRequest;
 import ru.oparin.solution.dto.wb.CardsListResponse;
 import ru.oparin.solution.dto.wb.PingResponse;
+import ru.oparin.solution.model.WbApiBaseUrl;
 
 /**
  * Клиент для работы с Content API Wildberries.
@@ -30,8 +30,7 @@ public class WbContentApiClient extends AbstractWbApiClient {
     private static final int DEFAULT_LIMIT = 100;
     private static final int WITH_PHOTO_ALL = -1;
 
-    @Value("${wb.api.content-base-url}")
-    private String contentBaseUrl;
+    private static final String CONTENT_BASE_URL = WbApiBaseUrl.CONTENT.getDefaultBaseUrl();
 
     /**
      * Получение списка карточек товаров селлера.
@@ -45,7 +44,7 @@ public class WbContentApiClient extends AbstractWbApiClient {
         HttpHeaders headers = createAuthHeadersWithBearer(apiKey);
         CardsListRequest requestBody = buildCardsListRequestBody(request);
         HttpEntity<CardsListRequest> entity = new HttpEntity<>(requestBody, headers);
-        String url = contentBaseUrl + CARDS_LIST_ENDPOINT;
+        String url = CONTENT_BASE_URL + CARDS_LIST_ENDPOINT;
         logWbApiCall(url, "список карточек товаров");
 
         try {
@@ -76,7 +75,7 @@ public class WbContentApiClient extends AbstractWbApiClient {
         headers.setContentType(MediaType.APPLICATION_JSON);
         CardsListRequest requestBody = buildTrashRequestBody(request);
         HttpEntity<CardsListRequest> entity = new HttpEntity<>(requestBody, headers);
-        String url = contentBaseUrl + CARDS_TRASH_ENDPOINT;
+        String url = CONTENT_BASE_URL + CARDS_TRASH_ENDPOINT;
         logWbApiCall(url, "карточки из корзины");
 
         try {
@@ -113,7 +112,7 @@ public class WbContentApiClient extends AbstractWbApiClient {
     private PingResponse pingOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        String url = contentBaseUrl + PING_ENDPOINT;
+        String url = CONTENT_BASE_URL + PING_ENDPOINT;
         logWbApiCall(url, "проверка подключения (ping)");
 
         try {

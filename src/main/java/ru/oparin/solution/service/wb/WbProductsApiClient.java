@@ -1,13 +1,13 @@
 package ru.oparin.solution.service.wb;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.ProductPricesRequest;
 import ru.oparin.solution.dto.wb.ProductPricesResponse;
+import ru.oparin.solution.model.WbApiBaseUrl;
 
 /**
  * Клиент для работы с Products API Wildberries (discounts-prices).
@@ -25,8 +25,7 @@ public class WbProductsApiClient extends AbstractWbApiClient {
 
     private static final String PRODUCT_PRICES_ENDPOINT = "/api/v2/list/goods/filter";
 
-    @Value("${wb.api.discounts-prices-base-url}")
-    private String discountsPricesBaseUrl;
+    private static final String DISCOUNTS_PRICES_BASE_URL = WbApiBaseUrl.DISCOUNTS_PRICES.getDefaultBaseUrl();
 
     /**
      * Получение цен и скидок товаров по артикулам. Ретраи при таймауте/ошибке соединения/DNS — в базовом клиенте.
@@ -35,7 +34,7 @@ public class WbProductsApiClient extends AbstractWbApiClient {
         HttpHeaders headers = createAuthHeaders(apiKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<ProductPricesRequest> entity = new HttpEntity<>(request, headers);
-        String url = discountsPricesBaseUrl + PRODUCT_PRICES_ENDPOINT;
+        String url = DISCOUNTS_PRICES_BASE_URL + PRODUCT_PRICES_ENDPOINT;
         logWbApiCall(url, "цены и скидки товаров");
 
         return executeWithConnectionRetry("запрос цен товаров", () -> {

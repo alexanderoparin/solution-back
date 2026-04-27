@@ -67,19 +67,7 @@ jwt:
   expiration: ${JWT_EXPIRATION:1209600000}
 
 wb:
-  # --- WB endpoints ---
-  api:
-    base-url: https://statistics-api.wildberries.ru
-    content-base-url: https://content-api.wildberries.ru
-    analytics-base-url: https://seller-analytics-api.wildberries.ru
-    promotion-base-url: https://advert-api.wildberries.ru
-    discounts-prices-base-url: https://discounts-prices-api.wildberries.ru
-    dp-calendar-base-url: https://dp-calendar-api.wildberries.ru
-    marketplace-base-url: https://marketplace-api.wildberries.ru
-    supplies-base-url: https://supplies-api.wildberries.ru
-    feedbacks-base-url: https://feedbacks-api.wildberries.ru
-    timeout: 30000
-
+  # Базовые URL WB задаются только в enum WbApiBaseUrl (не в конфиге).
   # --- WB retries / batching ---
   retries:
     max-429-basic: 5

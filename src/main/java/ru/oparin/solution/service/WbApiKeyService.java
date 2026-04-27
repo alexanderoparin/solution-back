@@ -11,6 +11,7 @@ import org.springframework.web.client.RestTemplate;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.WbApiBaseUrl;
 import ru.oparin.solution.service.wb.Wb429RateLimitHeadersLogger;
 import ru.oparin.solution.service.wb.WbApiCategory;
 import ru.oparin.solution.service.wb.WbContentApiClient;
@@ -48,13 +49,13 @@ public class WbApiKeyService {
     private static final Map<WbApiCategory, String> PING_URLS = new EnumMap<>(WbApiCategory.class);
 
     static {
-        PING_URLS.put(WbApiCategory.CONTENT, "https://content-api.wildberries.ru/ping");
-        PING_URLS.put(WbApiCategory.ANALYTICS, "https://seller-analytics-api.wildberries.ru/ping");
-        PING_URLS.put(WbApiCategory.PRICES_AND_DISCOUNTS, "https://discounts-prices-api.wildberries.ru/ping");
-        PING_URLS.put(WbApiCategory.STATISTICS, "https://statistics-api.wildberries.ru/ping");
-        PING_URLS.put(WbApiCategory.PROMOTION, "https://advert-api.wildberries.ru/ping");
-        PING_URLS.put(WbApiCategory.FEEDBACKS_AND_QUESTIONS, "https://feedbacks-api.wildberries.ru/ping");
-        PING_URLS.put(WbApiCategory.MARKETPLACE, "https://marketplace-api.wildberries.ru/ping");
+        PING_URLS.put(WbApiCategory.CONTENT, WbApiBaseUrl.CONTENT.getPingUrl());
+        PING_URLS.put(WbApiCategory.ANALYTICS, WbApiBaseUrl.ANALYTICS.getPingUrl());
+        PING_URLS.put(WbApiCategory.PRICES_AND_DISCOUNTS, WbApiBaseUrl.DISCOUNTS_PRICES.getPingUrl());
+        PING_URLS.put(WbApiCategory.STATISTICS, WbApiBaseUrl.STATISTICS.getPingUrl());
+        PING_URLS.put(WbApiCategory.PROMOTION, WbApiBaseUrl.PROMOTION.getPingUrl());
+        PING_URLS.put(WbApiCategory.FEEDBACKS_AND_QUESTIONS, WbApiBaseUrl.FEEDBACKS.getPingUrl());
+        PING_URLS.put(WbApiCategory.MARKETPLACE, WbApiBaseUrl.MARKETPLACE.getPingUrl());
     }
 
     /**

@@ -2,7 +2,6 @@ package ru.oparin.solution.service.wb;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -13,6 +12,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.FeedbacksResponse;
 import ru.oparin.solution.model.CabinetTokenType;
+import ru.oparin.solution.model.WbApiBaseUrl;
 import ru.oparin.solution.model.WbApiEventType;
 
 /**
@@ -35,8 +35,7 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
     private static final int MAX_TAKE = 5000;
     private final WbApiTokenTypeResolver tokenTypeResolver;
 
-    @Value("${wb.api.feedbacks-base-url}")
-    private String feedbacksBaseUrl;
+    private static final String FEEDBACKS_BASE_URL = WbApiBaseUrl.FEEDBACKS.getDefaultBaseUrl();
 
     /**
      * Получить обработанные отзывы с пагинацией.
@@ -54,7 +53,7 @@ public class WbFeedbacksApiClient extends AbstractWbApiClient {
     }
 
     private FeedbacksResponse getFeedbacksOnce(String apiKey, boolean isAnswered, Long nmId, int take, int skip) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(feedbacksBaseUrl + FEEDBACKS_ENDPOINT)
+        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(FEEDBACKS_BASE_URL + FEEDBACKS_ENDPOINT)
                 .queryParam("isAnswered", isAnswered)
                 .queryParam("take", Math.min(take, MAX_TAKE))
                 .queryParam("skip", skip)

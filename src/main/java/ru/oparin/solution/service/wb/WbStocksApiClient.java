@@ -1,13 +1,13 @@
 package ru.oparin.solution.service.wb;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.WbStocksSizesRequest;
 import ru.oparin.solution.dto.wb.WbStocksSizesResponse;
+import ru.oparin.solution.model.WbApiBaseUrl;
 
 import java.util.concurrent.Callable;
 
@@ -28,8 +28,7 @@ public class WbStocksApiClient extends AbstractWbApiClient {
     private static final String STOCKS_SIZES_ENDPOINT = "/api/v2/stocks-report/products/sizes";
     private static final String STOCKS_SIZES_OPERATION = "остатки по размерам";
 
-    @Value("${wb.api.analytics-base-url}")
-    private String analyticsBaseUrl;
+    private static final String ANALYTICS_BASE_URL = WbApiBaseUrl.ANALYTICS.getDefaultBaseUrl();
 
     /**
      * Получение остатков товаров по размерам на складах WB.
@@ -40,7 +39,7 @@ public class WbStocksApiClient extends AbstractWbApiClient {
         HttpHeaders headers = createAuthHeaders(apiKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<WbStocksSizesRequest> entity = new HttpEntity<>(request, headers);
-        String url = analyticsBaseUrl + STOCKS_SIZES_ENDPOINT;
+        String url = ANALYTICS_BASE_URL + STOCKS_SIZES_ENDPOINT;
         logWbApiCall(url, "остатки по размерам на складах WB", request.getNmID());
 
         String context = "запрос остатков для nmID " + request.getNmID();

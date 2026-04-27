@@ -16,6 +16,7 @@ import ru.oparin.solution.dto.wb.WbStocksSizesResponse;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductBarcode;
 import ru.oparin.solution.model.ProductStock;
+import ru.oparin.solution.model.WbApiBaseUrl;
 import ru.oparin.solution.repository.ProductBarcodeRepository;
 import ru.oparin.solution.repository.ProductStockRepository;
 import ru.oparin.solution.service.wb.WbStocksApiClient;
@@ -38,7 +39,7 @@ public class ProductStocksService {
     private static final String ORDER_FIELD_STOCK_COUNT = "stockCount";
     private static final String ORDER_MODE_ASC = "asc";
     private static final long DEFAULT_STOCK_COUNT = 0L;
-    private static final String WB_ANALYTICS_HOST = "seller-analytics-api.wildberries.ru";
+    private static final String WB_ANALYTICS_HOST = WbApiBaseUrl.ANALYTICS.getHost();
 
     private final WbStocksApiClient stocksApiClient;
     private final ProductStockRepository stockRepository;

@@ -1,7 +1,6 @@
 package ru.oparin.solution.service.wb;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -13,6 +12,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.CalendarNomenclaturesResponse;
 import ru.oparin.solution.dto.wb.CalendarPromotionsResponse;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
+import ru.oparin.solution.model.WbApiBaseUrl;
 
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -39,8 +39,7 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
     private static final int PAGE_SIZE = 1000;
     private static final DateTimeFormatter WB_CALENDAR_DATETIME = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
 
-    @Value("${wb.api.dp-calendar-base-url}")
-    private String dpCalendarBaseUrl;
+    private static final String DP_CALENDAR_BASE_URL = WbApiBaseUrl.DP_CALENDAR.getDefaultBaseUrl();
 
     /**
      * Список акций за период (на одну дату — передать start и end на этот день).
@@ -57,7 +56,7 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
     }
 
     private CalendarPromotionsResponse getPromotionsOnce(String apiKey, String startDateTime, String endDateTime, boolean allPromo) {
-        String url = UriComponentsBuilder.fromHttpUrl(dpCalendarBaseUrl + PROMOTIONS_ENDPOINT)
+        String url = UriComponentsBuilder.fromHttpUrl(DP_CALENDAR_BASE_URL + PROMOTIONS_ENDPOINT)
                 .queryParam("startDateTime", startDateTime)
                 .queryParam("endDateTime", endDateTime)
                 .queryParam("allPromo", allPromo)
@@ -102,7 +101,7 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
         int offset = 0;
 
         while (true) {
-            String url = UriComponentsBuilder.fromHttpUrl(dpCalendarBaseUrl + NOMENCLATURES_ENDPOINT)
+            String url = UriComponentsBuilder.fromHttpUrl(DP_CALENDAR_BASE_URL + NOMENCLATURES_ENDPOINT)
                     .queryParam("promotionID", promotionId)
                     .queryParam("inAction", inAction)
                     .queryParam("limit", PAGE_SIZE)

@@ -20,10 +20,6 @@ services:
       # JWT
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRATION=${JWT_EXPIRATION:-86400000}
-      # WB API
-      - WB_API_BASE_URL=${WB_API_BASE_URL:-https://statistics-api.wildberries.ru}
-      - WB_API_CONTENT_BASE_URL=${WB_API_CONTENT_BASE_URL:-https://content-api.wildberries.ru}
-      - WB_API_TIMEOUT=${WB_API_TIMEOUT:-30000}
       # Робокасса
       - ROBOKASSA_PASSWORD1=${ROBOKASSA_PASSWORD1}
       - ROBOKASSA_PASSWORD2=${ROBOKASSA_PASSWORD2}

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.SellerInfoResponse;
+import ru.oparin.solution.model.WbApiBaseUrl;
 
 /**
  * Клиент для работы с Common API Wildberries.
@@ -24,7 +25,7 @@ public class WbCommonApiClient extends AbstractWbApiClient {
         return WbApiCategory.COMMON;
     }
 
-    private static final String SELLER_INFO_URL = "https://common-api.wildberries.ru/api/v1/seller-info";
+    private static final String SELLER_INFO_URL = WbApiBaseUrl.COMMON.getDefaultBaseUrl() + "/api/v1/seller-info";
     /** Имя операции для метрик 429 (см. {@link AbstractWbApiClient#log429Metric}). */
     private static final String SELLER_INFO_OPERATION = "seller-info";
     private static final int MAX_RESPONSE_BODY_LOG_LENGTH = 2000;

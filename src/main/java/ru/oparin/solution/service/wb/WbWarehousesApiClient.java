@@ -2,7 +2,6 @@ package ru.oparin.solution.service.wb;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -11,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.wb.WbWarehouseResponse;
+import ru.oparin.solution.model.WbApiBaseUrl;
 
 import java.util.List;
 
@@ -30,8 +30,7 @@ public class WbWarehousesApiClient extends AbstractWbApiClient {
 
     private static final String WAREHOUSES_ENDPOINT = "/api/v1/warehouses";
 
-    @Value("${wb.api.supplies-base-url}")
-    private String suppliesBaseUrl;
+    private static final String SUPPLIES_BASE_URL = WbApiBaseUrl.SUPPLIES.getDefaultBaseUrl();
 
     /**
      * Получение списка всех складов WB.
@@ -44,7 +43,7 @@ public class WbWarehousesApiClient extends AbstractWbApiClient {
     private List<WbWarehouseResponse> getWbOfficesOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        String url = suppliesBaseUrl + WAREHOUSES_ENDPOINT;
+        String url = SUPPLIES_BASE_URL + WAREHOUSES_ENDPOINT;
 
         logWbApiCall(url, "список складов WB");
 

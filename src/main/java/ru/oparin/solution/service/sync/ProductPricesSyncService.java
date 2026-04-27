@@ -11,6 +11,7 @@ import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.ProductPriceHistory;
+import ru.oparin.solution.model.WbApiBaseUrl;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.service.CabinetScopeStatusService;
 import ru.oparin.solution.service.ProductPriceService;
@@ -223,8 +224,8 @@ public class ProductPricesSyncService {
 
     private static void handleResourceAccessError(Cabinet cabinet, ResourceAccessException e, String context) {
         if (e.getCause() instanceof UnknownHostException) {
-            log.error("Ошибка при {} для кабинета (ID: {}): не удалось разрешить хост WB API (DNS). Проверьте доступность discounts-prices-api.wildberries.ru и настройки DNS на сервере.",
-                    context, cabinet.getId());
+            log.error("Ошибка при {} для кабинета (ID: {}): не удалось разрешить хост WB API (DNS). Проверьте доступность {} и настройки DNS на сервере.",
+                    context, cabinet.getId(), WbApiBaseUrl.DISCOUNTS_PRICES.getHost());
         } else {
             log.error("Ошибка при {} для кабинета (ID: {}): {}", context, cabinet.getId(), e.getMessage(), e);
         }

@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.*;
 import ru.oparin.solution.model.CabinetTokenType;
+import ru.oparin.solution.model.WbApiBaseUrl;
 import ru.oparin.solution.model.WbApiEventType;
 
 import java.util.ArrayList;
@@ -46,8 +47,9 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     private static final String PROMOTION_FULLSTATS_OPERATION = "статистика кампаний";
     private static final int ADVERTS_V2_BATCH_SIZE = 50;
 
-    @Value("${wb.api.promotion-base-url}")
-    private String promotionBaseUrl;
+    /** Базовый URL домена продвижения WB — см. {@link WbApiBaseUrl#PROMOTION}. */
+    private static final String PROMOTION_BASE_URL = WbApiBaseUrl.PROMOTION.getDefaultBaseUrl();
+
     @Value("${wb.retries.max-429-basic}")
     private int maxRetries429Basic;
     @Value("${wb.retries.max-429-personal}")
@@ -72,7 +74,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     private PromotionCountResponse getPromotionCountOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        String url = promotionBaseUrl + PROMOTION_COUNT_ENDPOINT;
+        String url = PROMOTION_BASE_URL + PROMOTION_COUNT_ENDPOINT;
         logWbApiCall(url, "количество кампаний по типам");
 
         try {
@@ -134,7 +136,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(promotionBaseUrl + ADVERTS_V2_ENDPOINT)
+        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(PROMOTION_BASE_URL + ADVERTS_V2_ENDPOINT)
                 .queryParam("ids", batch.stream().map(String::valueOf).collect(Collectors.joining(",")));
         String url = uriBuilder.toUriString();
         logWbApiCall(url, "детали кампаний (v2)");
@@ -211,7 +213,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             HttpHeaders headers = createAuthHeaders(apiKey);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
-            UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(promotionBaseUrl + PROMOTION_FULLSTATS_ENDPOINT);
+            UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(PROMOTION_BASE_URL + PROMOTION_FULLSTATS_ENDPOINT);
             addQueryParameters(uriBuilder, request);
             String url = uriBuilder.toUriString();
             logWbApiCall(url, "статистика кампаний за период");
