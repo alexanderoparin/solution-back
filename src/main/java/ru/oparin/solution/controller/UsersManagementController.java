@@ -388,8 +388,8 @@ public class UsersManagementController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
-        if (request.getApiKey() != null) {
-            CabinetDto updated = cabinetService.updateApiKey(cabinetId, request.getApiKey());
+        if (request.getApiKey() != null || request.getTokenType() != null) {
+            CabinetDto updated = cabinetService.updateApiKey(cabinetId, request.getApiKey(), request.getTokenType());
             return ResponseEntity.ok(updated);
         }
         if (request.getName() != null && !request.getName().isBlank()) {

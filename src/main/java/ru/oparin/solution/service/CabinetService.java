@@ -239,9 +239,14 @@ public class CabinetService {
      * Проверка доступа выполняется в контроллере.
      */
     @Transactional
-    public CabinetDto updateApiKey(Long cabinetId, String apiKey) {
+    public CabinetDto updateApiKey(Long cabinetId, String apiKey, CabinetTokenType tokenType) {
         Cabinet cabinet = findByIdWithUserOrThrow(cabinetId);
-        resetValidationAndSetApiKey(cabinet, apiKey);
+        if (apiKey != null) {
+            resetValidationAndSetApiKey(cabinet, apiKey);
+        }
+        if (tokenType != null) {
+            cabinet.setTokenType(tokenType);
+        }
         cabinet = cabinetRepository.save(cabinet);
         return toDto(cabinet);
     }
