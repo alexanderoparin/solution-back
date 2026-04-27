@@ -18,7 +18,7 @@ public enum WbApiEventType {
     ANALYTICS_SALES_FUNNEL_NMID(
             WbApiBaseUrl.ANALYTICS,
             "/api/analytics/v3/sales-funnel/products/history",
-            20L,
+            1_800L,
             20L),
     PRICES_CABINET_WITH_SPP(
             WbApiBaseUrl.DISCOUNTS_PRICES,
@@ -28,38 +28,38 @@ public enum WbApiEventType {
     PROMOTION_COUNT(
             WbApiBaseUrl.PROMOTION,
             "/adv/v1/promotion/count",
-            1L,
+            900L,
             1L),
     PROMOTION_ADVERTS_BATCH(
             WbApiBaseUrl.PROMOTION,
             "/api/advert/v2/adverts",
-            1L,
+            3_600L,
             1L),
     PROMOTION_STATS_BATCH(
             WbApiBaseUrl.PROMOTION,
             "/adv/v3/fullstats",
-            20L,
+            3_600L,
             20L),
     FEEDBACKS_SYNC_CABINET(
             WbApiBaseUrl.FEEDBACKS,
             "/api/v1/feedbacks",
-            1L,
+            720L,
             1L),
     PROMOTION_CALENDAR_SYNC_CABINET(
             WbApiBaseUrl.DP_CALENDAR,
             "/api/v1/calendar/promotions",
-            2L,
-            2L),
+            3_600L,
+            1L),
     WAREHOUSES_SYNC_CABINET(
             WbApiBaseUrl.SUPPLIES,
             "/api/v1/warehouses",
             43_200L,
-            43_200L),
+            10L),
     STOCKS_BY_NMID(
             WbApiBaseUrl.ANALYTICS,
-            "/api/v1/analytics/stocks-report",
+            "/api/v2/stocks-report/products/sizes",
             1_800L,
-            1_800L);
+            20L);
 
     /** Базовый URL группы WB API для данного события. */
     private final WbApiBaseUrl baseUrl;
