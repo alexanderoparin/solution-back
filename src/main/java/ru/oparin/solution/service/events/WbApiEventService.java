@@ -664,6 +664,29 @@ public class WbApiEventService {
     }
 
     @Transactional(readOnly = true)
+    public WbApiEventCabinetStatsDto getStatsByCabinet(WbApiEventStatus status, WbApiEventType eventType) {
+        List<WbApiEventCabinetStatsItemDto> byCabinet = new ArrayList<>();
+        List<Object[]> rows = eventRepository.countGroupedByCabinetId(status, eventType);
+        for (Object[] row : rows) {
+            Long cabinetId = (Long) row[0];
+            String cabinetName = (String) row[1];
+            Long count = (Long) row[2];
+            byCabinet.add(WbApiEventCabinetStatsItemDto.builder()
+                    .cabinetId(cabinetId)
+                    .cabinetName(cabinetName)
+                    .count(count != null ? count : 0L)
+                    .build());
+        }
+        long total = byCabinet.stream().mapToLong(WbApiEventCabinetStatsItemDto::count).sum();
+        return WbApiEventCabinetStatsDto.builder()
+                .baseStatus(status != null ? status.name() : null)
+                .baseEventType(eventType != null ? eventType.name() : null)
+                .total(total)
+                .byCabinet(byCabinet)
+                .build();
+    }
+
+    @Transactional(readOnly = true)
     public PageResponse<WbApiEventDto> getEventsPage(
             int page,
             int size,

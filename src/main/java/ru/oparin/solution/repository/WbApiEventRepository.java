@@ -104,6 +104,19 @@ public interface WbApiEventRepository extends JpaRepository<WbApiEvent, Long> {
             """)
     List<Object[]> countGroupedByEventType(@Param("status") WbApiEventStatus status);
 
+    @Query("""
+            select e.cabinet.id, c.name, count(e)
+              from WbApiEvent e
+              join e.cabinet c
+             where (:status is null or e.status = :status)
+               and (:eventType is null or e.eventType = :eventType)
+             group by e.cabinet.id, c.name
+            """)
+    List<Object[]> countGroupedByCabinetId(
+            @Param("status") WbApiEventStatus status,
+            @Param("eventType") WbApiEventType eventType
+    );
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update WbApiEvent e
