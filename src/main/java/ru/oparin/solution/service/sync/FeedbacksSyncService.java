@@ -63,19 +63,27 @@ public class FeedbacksSyncService {
             FeedbacksSyncStepPayload step,
             String triggerSource
     ) {
+        log.info("Старт шага синхронизации отзывов: runId={}, cabinetId={}, isAnswered={}, skip={}, triggerSource={}",
+                step.runId(), cabinet.getId(), step.isAnswered(), step.skip(), triggerSource);
         FeedbacksSyncRun run = feedbacksSyncRunRepository.findById(step.runId())
-                .orElseThrow(() -> new IllegalArgumentException("Feedbacks run не найден: " + step.runId()));
+                .orElseThrow(() -> new IllegalArgumentException("Запуск синхронизации отзывов не найден: " + step.runId()));
         if (run.getStatus() != FeedbacksSyncRunStatus.RUNNING) {
+            log.info("Шаг синхронизации отзывов пропущен: runId={}, cabinetId={}, runStatus={}",
+                    step.runId(), cabinet.getId(), run.getStatus());
             return new FeedbacksStepProcessingResult(run.getStatus() == FeedbacksSyncRunStatus.COMPLETED);
         }
         if (feedbacksSyncPageCheckpointRepository.existsByRunIdAndIsAnsweredAndSkipValue(
                 step.runId(), step.isAnswered(), step.skip())) {
+            log.info("Чекпоинт страницы уже существует: runId={}, cabinetId={}, isAnswered={}, skip={}",
+                    step.runId(), cabinet.getId(), step.isAnswered(), step.skip());
             return new FeedbacksStepProcessingResult(false);
         }
 
         FeedbacksResponse response = feedbacksApiClient.getFeedbacks(apiKey, step.isAnswered(), null, PAGE_SIZE, step.skip());
         List<FeedbackItem> feedbacks = response.getData() != null ? response.getData().getFeedbacks() : null;
         List<FeedbackItem> page = (feedbacks == null) ? List.of() : feedbacks;
+        log.info("Страница отзывов получена: runId={}, cabinetId={}, isAnswered={}, skip={}, pageSize={}",
+                step.runId(), cabinet.getId(), step.isAnswered(), step.skip(), page.size());
 
         feedbacksSyncPageCheckpointRepository.save(FeedbacksSyncPageCheckpoint.builder()
                 .runId(step.runId())
@@ -103,6 +111,8 @@ public class FeedbacksSyncService {
             );
             run.setUpdatedAt(LocalDateTime.now());
             feedbacksSyncRunRepository.save(run);
+            log.info("Есть следующая страница отзывов: runId={}, cabinetId={}, isAnswered={}, nextSkip={}",
+                    step.runId(), cabinet.getId(), step.isAnswered(), step.skip() + page.size());
             return new FeedbacksStepProcessingResult(false);
         }
 
@@ -122,9 +132,12 @@ public class FeedbacksSyncService {
             );
             run.setUpdatedAt(LocalDateTime.now());
             feedbacksSyncRunRepository.save(run);
+            log.info("Переключение фазы run отзывов: runId={}, cabinetId={}, phase=UNANSWERED",
+                    step.runId(), cabinet.getId());
             return new FeedbacksStepProcessingResult(false);
         }
 
+        log.info("Старт финализации run отзывов: runId={}, cabinetId={}", step.runId(), cabinet.getId());
         applyAccumulatorToProductCards(cabinet.getId(), step.runId());
         cabinetScopeStatusService.recordSuccess(cabinet.getId(), WbApiCategory.FEEDBACKS_AND_QUESTIONS);
         feedbacksSyncAccumulatorRepository.deleteById_RunId(step.runId());
@@ -134,6 +147,7 @@ public class FeedbacksSyncService {
         run.setUpdatedAt(LocalDateTime.now());
         run.setFinishedAt(LocalDateTime.now());
         feedbacksSyncRunRepository.save(run);
+        log.info("Run синхронизации отзывов завершён успешно: runId={}, cabinetId={}", step.runId(), cabinet.getId());
         return new FeedbacksStepProcessingResult(true);
     }
 
@@ -277,6 +291,7 @@ public class FeedbacksSyncService {
             });
         }
         if (delta.isEmpty()) {
+            log.debug("Слияние в аккумулятор пропущено: runId={}, deltaEmpty=true", runId);
             return;
         }
         List<FeedbacksSyncAccumulator> existing = feedbacksSyncAccumulatorRepository.findByRunIdAndNmIdIn(runId, delta.keySet());
@@ -301,6 +316,8 @@ public class FeedbacksSyncService {
             }
             feedbacksSyncAccumulatorRepository.save(acc);
         }
+        log.info("Слияние в аккумулятор выполнено: runId={}, pageItems={}, nmIdDelta={}",
+                runId, page.size(), delta.size());
     }
 
     /**
@@ -330,6 +347,9 @@ public class FeedbacksSyncService {
         if (!cards.isEmpty()) {
             productCardRepository.saveAll(cards);
         }
+        int withReviews = (int) cards.stream().filter(c -> byNmId.containsKey(c.getNmId())).count();
+        log.info("Финализация отзывов применена: runId={}, cabinetId={}, cardsTotal={}, cardsWithReviews={}, nmIdAggregated={}",
+                runId, cabinetId, cards.size(), withReviews, byNmId.size());
     }
 
     private static boolean is401Unauthorized(Throwable e) {

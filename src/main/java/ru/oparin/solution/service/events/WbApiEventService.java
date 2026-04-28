@@ -167,6 +167,8 @@ public class WbApiEventService {
                 .updatedAt(LocalDateTime.now())
                 .build();
         run = feedbacksSyncRunRepository.save(run);
+        log.info("Создан run синхронизации отзывов: runId={}, cabinetId={}, tokenType={}, triggerSource={}",
+                run.getId(), cabinetId, tokenType, triggerSource);
         FeedbacksSyncStepPayload stepPayload = FeedbacksSyncStepPayload.builder()
                 .runId(run.getId())
                 .isAnswered(true)
@@ -189,6 +191,8 @@ public class WbApiEventService {
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
         long delayMs = WbApiEventType.FEEDBACKS_SYNC_CABINET.getRequestDelayMs(tokenType != null ? tokenType : CabinetTokenType.BASIC);
         LocalDateTime nextAttemptAt = LocalDateTime.now().plusNanos(delayMs * 1_000_000L);
+        log.info("Запланирован следующий шаг run отзывов: runId={}, cabinetId={}, isAnswered={}, skip={}, delayMs={}, nextAttemptAt={}",
+                payload.runId(), cabinetId, payload.isAnswered(), payload.skip(), delayMs, nextAttemptAt);
         enqueueFeedbacksStepEvent(cabinet, payload, triggerSource, nextAttemptAt, SIDECAR_EVENT_PRIORITY);
     }
 
@@ -203,6 +207,8 @@ public class WbApiEventService {
             run.setUpdatedAt(LocalDateTime.now());
             run.setFinishedAt(LocalDateTime.now());
             feedbacksSyncRunRepository.save(run);
+            log.warn("Run синхронизации отзывов завершён с ошибкой: runId={}, cabinetId={}, error={}",
+                    runId, run.getCabinet() != null ? run.getCabinet().getId() : null, error);
         });
     }
 
@@ -237,6 +243,8 @@ public class WbApiEventService {
                 .updatedAt(LocalDateTime.now())
                 .build();
         eventRepository.save(event);
+        log.info("Создано событие шага синхронизации отзывов: eventId={}, runId={}, cabinetId={}, isAnswered={}, skip={}, nextAttemptAt={}",
+                event.getId(), payload.runId(), cabinet.getId(), payload.isAnswered(), payload.skip(), nextAttemptAt);
     }
 
     @Transactional

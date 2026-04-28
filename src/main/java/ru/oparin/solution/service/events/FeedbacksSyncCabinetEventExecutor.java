@@ -65,6 +65,8 @@ public class FeedbacksSyncCabinetEventExecutor implements WbApiEventExecutor {
                             payload,
                             event.getTriggerSource()
                     );
+            log.info("Шаг синхронизации отзывов завершён: eventId={}, runId={}, cabinetId={}, completedRun={}",
+                    event.getId(), payload.runId(), cabinet.getId(), result.completedRun());
             if (result.completedRun() && !isAdminBulkStandalone(event.getTriggerSource())) {
                 eventService.tryFinalizeMain(cabinet.getId(), event.getId());
             }
