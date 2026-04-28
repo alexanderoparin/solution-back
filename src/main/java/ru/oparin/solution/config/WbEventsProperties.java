@@ -41,5 +41,4 @@ public class WbEventsProperties {
      * Лимит событий данного типа за один poll: отдельный SQL-запрос на тип + верхняя граница после дедупа (кабинет+тип).
      */
     private Map<String, Integer> batchSizeByType = new HashMap<>();
-
 }
