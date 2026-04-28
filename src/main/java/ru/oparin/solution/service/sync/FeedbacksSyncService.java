@@ -9,17 +9,21 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.dto.wb.FeedbackItem;
 import ru.oparin.solution.dto.wb.FeedbacksResponse;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.ProductCard;
-import ru.oparin.solution.model.Role;
+import ru.oparin.solution.model.*;
+import ru.oparin.solution.repository.FeedbacksSyncAccumulatorRepository;
+import ru.oparin.solution.repository.FeedbacksSyncPageCheckpointRepository;
+import ru.oparin.solution.repository.FeedbacksSyncRunRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.service.CabinetScopeStatusService;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.events.WbApiEventService;
+import ru.oparin.solution.service.events.payload.FeedbacksSyncStepPayload;
 import ru.oparin.solution.service.wb.WbApiCategory;
 import ru.oparin.solution.service.wb.WbFeedbacksApiClient;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +45,97 @@ public class FeedbacksSyncService {
     private final ProductCardRepository productCardRepository;
     private final CabinetService cabinetService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
+    private final FeedbacksSyncRunRepository feedbacksSyncRunRepository;
+    private final FeedbacksSyncAccumulatorRepository feedbacksSyncAccumulatorRepository;
+    private final FeedbacksSyncPageCheckpointRepository feedbacksSyncPageCheckpointRepository;
+    private final WbApiEventService wbApiEventService;
+
+    public record FeedbacksStepProcessingResult(boolean completedRun) {}
+
+    /**
+     * Обрабатывает один шаг (одну страницу) run-пайплайна отзывов.
+     * Идемпотентность страницы обеспечивается checkpoint (runId + isAnswered + skip).
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public FeedbacksStepProcessingResult processFeedbacksStepInNewTransaction(
+            Cabinet cabinet,
+            String apiKey,
+            FeedbacksSyncStepPayload step,
+            String triggerSource
+    ) {
+        FeedbacksSyncRun run = feedbacksSyncRunRepository.findById(step.runId())
+                .orElseThrow(() -> new IllegalArgumentException("Feedbacks run не найден: " + step.runId()));
+        if (run.getStatus() != FeedbacksSyncRunStatus.RUNNING) {
+            return new FeedbacksStepProcessingResult(run.getStatus() == FeedbacksSyncRunStatus.COMPLETED);
+        }
+        if (feedbacksSyncPageCheckpointRepository.existsByRunIdAndIsAnsweredAndSkipValue(
+                step.runId(), step.isAnswered(), step.skip())) {
+            return new FeedbacksStepProcessingResult(false);
+        }
+
+        FeedbacksResponse response = feedbacksApiClient.getFeedbacks(apiKey, step.isAnswered(), null, PAGE_SIZE, step.skip());
+        List<FeedbackItem> feedbacks = response.getData() != null ? response.getData().getFeedbacks() : null;
+        List<FeedbackItem> page = (feedbacks == null) ? List.of() : feedbacks;
+
+        feedbacksSyncPageCheckpointRepository.save(FeedbacksSyncPageCheckpoint.builder()
+                .runId(step.runId())
+                .isAnswered(step.isAnswered())
+                .skipValue(step.skip())
+                .createdAt(LocalDateTime.now())
+                .build());
+
+        mergePageIntoAccumulator(step.runId(), page);
+
+        boolean hasMore = page.size() >= PAGE_SIZE;
+        if (hasMore) {
+            wbApiEventService.enqueueNextFeedbacksSyncStepEvent(
+                    cabinet.getId(),
+                    FeedbacksSyncStepPayload.builder()
+                            .runId(step.runId())
+                            .isAnswered(step.isAnswered())
+                            .skip(step.skip() + page.size())
+                            .dateFrom(step.dateFrom())
+                            .dateTo(step.dateTo())
+                            .includeStocks(step.includeStocks())
+                            .build(),
+                    triggerSource,
+                    run.getTokenTypeSnapshot()
+            );
+            run.setUpdatedAt(LocalDateTime.now());
+            feedbacksSyncRunRepository.save(run);
+            return new FeedbacksStepProcessingResult(false);
+        }
+
+        if (step.isAnswered()) {
+            wbApiEventService.enqueueNextFeedbacksSyncStepEvent(
+                    cabinet.getId(),
+                    FeedbacksSyncStepPayload.builder()
+                            .runId(step.runId())
+                            .isAnswered(false)
+                            .skip(0)
+                            .dateFrom(step.dateFrom())
+                            .dateTo(step.dateTo())
+                            .includeStocks(step.includeStocks())
+                            .build(),
+                    triggerSource,
+                    run.getTokenTypeSnapshot()
+            );
+            run.setUpdatedAt(LocalDateTime.now());
+            feedbacksSyncRunRepository.save(run);
+            return new FeedbacksStepProcessingResult(false);
+        }
+
+        applyAccumulatorToProductCards(cabinet.getId(), step.runId());
+        cabinetScopeStatusService.recordSuccess(cabinet.getId(), WbApiCategory.FEEDBACKS_AND_QUESTIONS);
+        feedbacksSyncAccumulatorRepository.deleteById_RunId(step.runId());
+        feedbacksSyncPageCheckpointRepository.deleteByRunId(step.runId());
+        run.setStatus(FeedbacksSyncRunStatus.COMPLETED);
+        run.setLastError(null);
+        run.setUpdatedAt(LocalDateTime.now());
+        run.setFinishedAt(LocalDateTime.now());
+        feedbacksSyncRunRepository.save(run);
+        return new FeedbacksStepProcessingResult(true);
+    }
 
     /**
      * Синхронизирует отзывы в отдельной транзакции. Вызывать из полного обновления кабинета,
@@ -157,6 +252,83 @@ public class FeedbacksSyncService {
                 v.add(e.getValue());
                 return v;
             });
+        }
+    }
+
+    /**
+     * Агрегирует страницу в staging-таблицу run.
+     */
+    private void mergePageIntoAccumulator(Long runId, List<FeedbackItem> page) {
+        if (page == null || page.isEmpty()) {
+            return;
+        }
+        Map<Long, RatingCount> delta = new HashMap<>();
+        for (FeedbackItem fb : page) {
+            if (fb.getProductValuation() == null || fb.getProductDetails() == null || fb.getProductDetails().getNmId() == null) {
+                continue;
+            }
+            Long nmId = fb.getProductDetails().getNmId();
+            delta.compute(nmId, (k, v) -> {
+                if (v == null) {
+                    v = new RatingCount();
+                }
+                v.add(fb.getProductValuation());
+                return v;
+            });
+        }
+        if (delta.isEmpty()) {
+            return;
+        }
+        List<FeedbacksSyncAccumulator> existing = feedbacksSyncAccumulatorRepository.findByRunIdAndNmIdIn(runId, delta.keySet());
+        Map<Long, FeedbacksSyncAccumulator> existingByNmId = new HashMap<>();
+        for (FeedbacksSyncAccumulator acc : existing) {
+            existingByNmId.put(acc.getId().getNmId(), acc);
+        }
+
+        for (Map.Entry<Long, RatingCount> entry : delta.entrySet()) {
+            Long nmId = entry.getKey();
+            RatingCount rc = entry.getValue();
+            FeedbacksSyncAccumulator acc = existingByNmId.get(nmId);
+            if (acc == null) {
+                acc = FeedbacksSyncAccumulator.builder()
+                        .id(new FeedbacksSyncAccumulatorId(runId, nmId))
+                        .valuationSum((long) rc.sum)
+                        .reviewsCount((long) rc.count)
+                        .build();
+            } else {
+                acc.setValuationSum(acc.getValuationSum() + rc.sum);
+                acc.setReviewsCount(acc.getReviewsCount() + rc.count);
+            }
+            feedbacksSyncAccumulatorRepository.save(acc);
+        }
+    }
+
+    /**
+     * Финализирует run: переносит агрегаты в product_cards.
+     */
+    private void applyAccumulatorToProductCards(Long cabinetId, Long runId) {
+        List<FeedbacksSyncAccumulator> acc = feedbacksSyncAccumulatorRepository.findByRunId(runId);
+        Map<Long, RatingCount> byNmId = new HashMap<>();
+        for (FeedbacksSyncAccumulator a : acc) {
+            RatingCount rc = new RatingCount();
+            rc.sum = Math.toIntExact(a.getValuationSum());
+            rc.count = Math.toIntExact(a.getReviewsCount());
+            byNmId.put(a.getId().getNmId(), rc);
+        }
+
+        List<ProductCard> cards = productCardRepository.findByCabinet_Id(cabinetId);
+        for (ProductCard card : cards) {
+            RatingCount rc = byNmId.get(card.getNmId());
+            if (rc == null) {
+                card.setRating(null);
+                card.setReviewsCount(0);
+            } else {
+                card.setRating(rc.avg());
+                card.setReviewsCount(rc.count);
+            }
+        }
+        if (!cards.isEmpty()) {
+            productCardRepository.saveAll(cards);
         }
     }
 

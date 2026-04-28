@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.*;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
+import ru.oparin.solution.repository.FeedbacksSyncRunRepository;
 import ru.oparin.solution.repository.WbApiEventRepository;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.ProductCardService;
@@ -78,6 +79,7 @@ public class WbApiEventService {
 
     private final WbApiEventRepository eventRepository;
     private final CabinetRepository cabinetRepository;
+    private final FeedbacksSyncRunRepository feedbacksSyncRunRepository;
     private final CabinetService cabinetService;
     private final ProductCardService productCardService;
     private final PromotionCampaignSyncService promotionCampaignSyncService;
@@ -155,6 +157,70 @@ public class WbApiEventService {
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        CabinetTokenType tokenType = cabinet.getTokenType() != null ? cabinet.getTokenType() : CabinetTokenType.BASIC;
+        FeedbacksSyncRun run = FeedbacksSyncRun.builder()
+                .cabinet(cabinet)
+                .status(FeedbacksSyncRunStatus.RUNNING)
+                .triggerSource(triggerSource)
+                .tokenTypeSnapshot(tokenType)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        run = feedbacksSyncRunRepository.save(run);
+        FeedbacksSyncStepPayload stepPayload = FeedbacksSyncStepPayload.builder()
+                .runId(run.getId())
+                .isAnswered(true)
+                .skip(0)
+                .dateFrom(payload.dateFrom())
+                .dateTo(payload.dateTo())
+                .includeStocks(payload.includeStocks())
+                .build();
+        enqueueFeedbacksStepEvent(cabinet, stepPayload, triggerSource, LocalDateTime.now(), SIDECAR_EVENT_PRIORITY);
+    }
+
+    @Transactional
+    public void enqueueNextFeedbacksSyncStepEvent(
+            Long cabinetId,
+            FeedbacksSyncStepPayload payload,
+            String triggerSource,
+            CabinetTokenType tokenType
+    ) {
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        long delayMs = WbApiEventType.FEEDBACKS_SYNC_CABINET.getRequestDelayMs(tokenType != null ? tokenType : CabinetTokenType.BASIC);
+        LocalDateTime nextAttemptAt = LocalDateTime.now().plusNanos(delayMs * 1_000_000L);
+        enqueueFeedbacksStepEvent(cabinet, payload, triggerSource, nextAttemptAt, SIDECAR_EVENT_PRIORITY);
+    }
+
+    @Transactional
+    public void markFeedbacksRunFailed(Long runId, String error) {
+        if (runId == null) {
+            return;
+        }
+        feedbacksSyncRunRepository.findById(runId).ifPresent(run -> {
+            run.setStatus(FeedbacksSyncRunStatus.FAILED);
+            run.setLastError(error);
+            run.setUpdatedAt(LocalDateTime.now());
+            run.setFinishedAt(LocalDateTime.now());
+            feedbacksSyncRunRepository.save(run);
+        });
+    }
+
+    private void enqueueFeedbacksStepEvent(
+            Cabinet cabinet,
+            FeedbacksSyncStepPayload payload,
+            String triggerSource,
+            LocalDateTime nextAttemptAt,
+            int priority
+    ) {
+        String dedupKey = "FEEDBACKS_SYNC_STEP:"
+                + payload.runId() + ":"
+                + payload.isAnswered() + ":"
+                + payload.skip();
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("WB API feedbacks step уже существует (dedupKey={}), создание пропущено", dedupKey);
+            return;
+        }
         WbApiEvent event = WbApiEvent.builder()
                 .eventType(WbApiEventType.FEEDBACKS_SYNC_CABINET)
                 .status(WbApiEventStatus.CREATED)
@@ -164,8 +230,8 @@ public class WbApiEventService {
                 .dedupKey(dedupKey)
                 .attemptCount(0)
                 .maxAttempts(SIDECAR_EVENT_MAX_ATTEMPTS)
-                .nextAttemptAt(LocalDateTime.now())
-                .priority(SIDECAR_EVENT_PRIORITY)
+                .nextAttemptAt(nextAttemptAt)
+                .priority(priority)
                 .triggerSource(triggerSource)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
