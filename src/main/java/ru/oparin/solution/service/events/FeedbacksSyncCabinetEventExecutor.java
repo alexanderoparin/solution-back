@@ -29,6 +29,9 @@ public class FeedbacksSyncCabinetEventExecutor implements WbApiEventExecutor {
         MainStepPayload legacyPayload = null;
         try {
             payload = eventService.readPayload(event, FeedbacksSyncStepPayload.class);
+            if (payload == null || payload.runId() == null) {
+                legacyPayload = eventService.readPayload(event, MainStepPayload.class);
+            }
         } catch (Exception ignored) {
             legacyPayload = eventService.readPayload(event, MainStepPayload.class);
         }
