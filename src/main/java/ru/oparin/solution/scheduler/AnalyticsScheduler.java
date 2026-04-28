@@ -38,7 +38,7 @@ public class AnalyticsScheduler {
      * Автоматическая ночная загрузка аналитики:
      * main-обновление всех кабинетов, затем единый этап обновления остатков.
      */
-    @Scheduled(cron = "0 30 0 * * ?")
+    @Scheduled(cron = "0 5 0 * * ?")
     public void loadAnalyticsForAllActiveSellers() {
         runNightlyFullAnalyticsUpdate();
     }

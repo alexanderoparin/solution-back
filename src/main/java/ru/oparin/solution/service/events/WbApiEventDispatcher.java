@@ -43,9 +43,7 @@ public class WbApiEventDispatcher {
         events = prioritizeEventsForPriorityCards(events);
         log.info("WB events poll: получено событий к обработке {}", events.size());
 
-        List<CompletableFuture<EventExecutionOutcome>> futures = events.stream()
-                .map(event -> CompletableFuture.supplyAsync(() -> executeSingle(event), cabinetUpdateExecutor))
-                .toList();
+        List<CompletableFuture<EventExecutionOutcome>> futures = buildGroupedExecutionPlan(events);
 
         int timeoutSeconds = Math.max(1, wbEventsProperties.getEventAwaitTimeoutSeconds());
         int deferredCount = 0;
@@ -72,6 +70,42 @@ public class WbApiEventDispatcher {
                 "WB events poll: выполнено {}, отложено по rate-limit {}, пропущено {}, таймаут {} (всего выбрано {})",
                 executedCount, deferredCount, skippedCount, timeoutCount, events.size()
         );
+    }
+
+    /**
+     * Формирует план выполнения событий:
+     * <ul>
+     *     <li>между разными (cabinetId, eventType) — параллельно;</li>
+     *     <li>внутри одной пары (cabinetId, eventType) — строго последовательно.</li>
+     * </ul>
+     * Это сохраняет throughput, но устраняет «перемешивание» порядка внутри одной группы.
+     */
+    private List<CompletableFuture<EventExecutionOutcome>> buildGroupedExecutionPlan(List<WbApiEvent> events) {
+        Map<String, CompletableFuture<EventExecutionOutcome>> tailsByGroup = new HashMap<>();
+        List<CompletableFuture<EventExecutionOutcome>> plan = new ArrayList<>(events.size());
+
+        for (WbApiEvent event : events) {
+            String groupKey = executionGroupKey(event);
+            CompletableFuture<EventExecutionOutcome> prevTail = tailsByGroup.get(groupKey);
+            CompletableFuture<EventExecutionOutcome> nextFuture;
+            if (prevTail == null) {
+                nextFuture = CompletableFuture.supplyAsync(() -> executeSingle(event), cabinetUpdateExecutor);
+            } else {
+                // Продолжаем цепочку даже если предыдущий future завершился с исключением/отменой.
+                nextFuture = prevTail
+                        .handle((ignored, ex) -> null)
+                        .thenCompose(ignored -> CompletableFuture.supplyAsync(() -> executeSingle(event), cabinetUpdateExecutor));
+            }
+            tailsByGroup.put(groupKey, nextFuture);
+            plan.add(nextFuture);
+        }
+        return plan;
+    }
+
+    private String executionGroupKey(WbApiEvent event) {
+        Long cabinetId = event.getCabinet() != null ? event.getCabinet().getId() : null;
+        String eventType = event.getEventType() != null ? event.getEventType().name() : "UNKNOWN";
+        return (cabinetId != null ? cabinetId : -1L) + "|" + eventType;
     }
 
     private EventExecutionOutcome awaitOutcome(CompletableFuture<EventExecutionOutcome> future, Long eventId, int timeoutSeconds) {
