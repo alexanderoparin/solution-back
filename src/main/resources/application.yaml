@@ -67,8 +67,6 @@ jwt:
   expiration: ${JWT_EXPIRATION:1209600000}
 
 wb:
-  # Базовые URL WB задаются только в enum WbApiBaseUrl (не в конфиге).
-  # --- WB retries / batching ---
   retries:
     max-429-basic: 5
     max-429-personal: 5
@@ -82,7 +80,6 @@ app:
   frontend-url: "https://wb-solution.ru"
   mail:
     from: support@wb-solution.ru
-  # --- Full update executors tuning ---
   executors:
     core-pool-size: 4
     max-pool-size: 6
