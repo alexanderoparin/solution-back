@@ -4,9 +4,9 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
-import java.util.Map;
-
+/**
+ * Настройки диспетчера WB API событий (планировщика {@code WbApiEventDispatcher}).
+ */
 @Component
 @ConfigurationProperties(prefix = "app.wb-events")
 @Data
@@ -31,14 +31,4 @@ public class WbEventsProperties {
      * Таймаут ожидания завершения одного async-события в poll (секунды).
      */
     private int eventAwaitTimeoutSeconds;
-
-    /**
-     * Базовый лимит вычитки на тип, если тип не задан в map.
-     */
-    private int defaultBatchSize;
-
-    /**
-     * Лимит событий данного типа за один poll: отдельный SQL-запрос на тип + верхняя граница после дедупа (кабинет+тип).
-     */
-    private Map<String, Integer> batchSizeByType = new HashMap<>();
 }

@@ -94,18 +94,6 @@ app:
     stuck-check-delay-ms: 16000
     running-timeout-minutes: 15
     event-await-timeout-seconds: 121
-    default-batch-size: 50
-    batch-size-by-type:
-      CONTENT_CARDS_LIST_PAGE: 20
-      ANALYTICS_SALES_FUNNEL_NMID: 30
-      PRICES_CABINET_WITH_SPP: 8
-      PROMOTION_COUNT: 12
-      PROMOTION_ADVERTS_BATCH: 15
-      PROMOTION_STATS_BATCH: 10
-      FEEDBACKS_SYNC_CABINET: 15
-      PROMOTION_CALENDAR_SYNC_CABINET: 15
-      WAREHOUSES_SYNC_CABINET: 12
-      STOCKS_BY_NMID: 20
   uploads:
     directory: /app/uploads
     max-file-size: 31457280  # 30 MB по умолчанию
