@@ -154,7 +154,9 @@ public class AnalyticsController {
                 nmId,
                 request.getPeriods(),
                 request.getCampaignDateFrom(),
-                request.getCampaignDateTo()
+                request.getCampaignDateTo(),
+                request.getDailyDataDateFrom(),
+                request.getDailyDataDateTo()
         );
         
         return ResponseEntity.ok(response);

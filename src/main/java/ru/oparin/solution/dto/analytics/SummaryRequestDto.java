@@ -92,5 +92,17 @@ public class SummaryRequestDto {
      * Окончание периода для метрик РК в блоке «Список РК» (опционально).
      */
     private LocalDate campaignDateTo;
+
+    /**
+     * Начало диапазона дней для поля {@code dailyData} в ответе {@code POST /analytics/article/{nmId}} (опционально).
+     * Если заданы оба {@code dailyDataDateFrom} и {@code dailyDataDateTo} — подгружаются дневные строки за этот интервал
+     * (с ограничением по длине на бэке). Если любое из полей {@code null} — используется прежнее окно «вчера минус 13 дней».
+     */
+    private LocalDate dailyDataDateFrom;
+
+    /**
+     * Конец диапазона дней для {@code dailyData} включительно (опционально). См. {@link #dailyDataDateFrom}.
+     */
+    private LocalDate dailyDataDateTo;
 }
 

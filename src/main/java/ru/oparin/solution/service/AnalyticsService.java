@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -29,6 +30,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class AnalyticsService {
+
+    /** Дней в суточной выборке по умолчанию (вчера и ещё 13 дней назад). */
+    private static final int DEFAULT_DAILY_DATA_SPAN_DAYS = 14;
+
+    /** Максимум календарных дней в одном запросе {@code dailyData} (защита от слишком тяжёлых выборок). */
+    private static final int MAX_DAILY_DATA_SPAN_DAYS = 120;
 
     private final ProductCardRepository productCardRepository;
     private final ProductCardAnalyticsRepository analyticsRepository;
@@ -500,14 +507,17 @@ public class AnalyticsService {
      * Получает детальную информацию по артикулу.
      * @param campaignDateFrom начало периода для метрик РК (опционально)
      * @param campaignDateTo конец периода для метрик РК (опционально)
+     * @param dailyDataDateFrom начало диапазона для {@code dailyData} (опционально, вместе с {@code dailyDataDateTo})
+     * @param dailyDataDateTo конец диапазона для {@code dailyData} включительно (опционально)
      */
     @Transactional(readOnly = true)
     public ArticleResponseDto getArticle(User seller, Long cabinetId, Long nmId, List<PeriodDto> periods,
-                                         LocalDate campaignDateFrom, LocalDate campaignDateTo) {
+                                         LocalDate campaignDateFrom, LocalDate campaignDateTo,
+                                         LocalDate dailyDataDateFrom, LocalDate dailyDataDateTo) {
         ProductCard card = findCardBySeller(nmId, seller.getId(), cabinetId);
         Long cardCabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
 
-        List<DailyDataDto> dailyData = getDailyData(nmId, cardCabinetId);
+        List<DailyDataDto> dailyData = getDailyData(nmId, cardCabinetId, dailyDataDateFrom, dailyDataDateTo);
         List<PromotionParticipation> participations = cardCabinetId != null
                 ? promotionParticipationRepository.findByCabinet_IdAndNmId(cardCabinetId, nmId)
                 : Collections.emptyList();
@@ -793,9 +803,35 @@ public class AnalyticsService {
         return withoutSize.orElseGet(() -> prices.get(0));
     }
 
-    private List<DailyDataDto> getDailyData(Long nmId, Long cabinetId) {
-        LocalDate endDate = LocalDate.now().minusDays(1);
-        LocalDate startDate = endDate.minusDays(13);
+    /**
+     * Суточные строки для графика/таблицы: либо явный диапазон {@code from}/{@code to}, либо последние {@value #DEFAULT_DAILY_DATA_SPAN_DAYS} дней до вчера.
+     * Конец не позже «вчера»; длина ограничена {@value #MAX_DAILY_DATA_SPAN_DAYS} днями (при перегрузе отрезается начало интервала).
+     */
+    private List<DailyDataDto> getDailyData(Long nmId, Long cabinetId, LocalDate from, LocalDate to) {
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+        LocalDate startDate;
+        LocalDate endDate;
+        if (from != null && to != null) {
+            LocalDate a = from;
+            LocalDate b = to;
+            if (a.isAfter(b)) {
+                LocalDate tmp = a;
+                a = b;
+                b = tmp;
+            }
+            endDate = b.isAfter(yesterday) ? yesterday : b;
+            startDate = a;
+            if (startDate.isAfter(endDate)) {
+                startDate = endDate;
+            }
+            long span = ChronoUnit.DAYS.between(startDate, endDate) + 1;
+            if (span > MAX_DAILY_DATA_SPAN_DAYS) {
+                startDate = endDate.minusDays(MAX_DAILY_DATA_SPAN_DAYS - 1);
+            }
+        } else {
+            endDate = yesterday;
+            startDate = endDate.minusDays(DEFAULT_DAILY_DATA_SPAN_DAYS - 1);
+        }
 
         List<ProductCardAnalytics> funnelData = cabinetId != null
                 ? analyticsRepository.findByCabinet_IdAndProductCardNmIdAndDateBetween(cabinetId, nmId, startDate, endDate)
