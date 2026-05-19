@@ -16,7 +16,8 @@ import java.util.List;
  * Репозиторий статистики по поисковым кластерам рекламных кампаний.
  */
 @Repository
-public interface PromotionNormQueryStatisticsRepository extends JpaRepository<PromotionNormQueryStatistics, Long> {
+public interface PromotionNormQueryStatisticsRepository
+        extends JpaRepository<PromotionNormQueryStatistics, Long>, PromotionNormQueryStatisticsRepositoryCustom {
 
     @Modifying
     @Query("DELETE FROM PromotionNormQueryStatistics s WHERE s.campaign.advertId IN :campaignIds "
@@ -33,57 +34,6 @@ public interface PromotionNormQueryStatisticsRepository extends JpaRepository<Pr
 
     @Query("SELECT s.id FROM PromotionNormQueryStatistics s WHERE s.campaign.cabinet.id = :cabinetId")
     List<Long> findIdByCampaign_Cabinet_Id(@Param("cabinetId") Long cabinetId, Pageable pageable);
-
-    @Query(value = """
-            SELECT
-                s.norm_query AS normQuery,
-                CASE WHEN COALESCE(SUM(s.clicks), 0) > 0
-                    THEN SUM(s.avg_pos * s.clicks) / SUM(s.clicks)
-                    ELSE AVG(s.avg_pos) END AS avgPos,
-                COALESCE(SUM(s.clicks), 0) AS clicks,
-                COALESCE(SUM(s.atbs), 0) AS atbs,
-                COALESCE(SUM(s.orders), 0) AS orders,
-                COALESCE(SUM(s.spend), 0) AS spend,
-                CASE WHEN COALESCE(SUM(s.clicks), 0) > 0
-                    THEN SUM(s.spend) / SUM(s.clicks)
-                    ELSE NULL END AS cpc
-            FROM solution.promotion_norm_query_statistics s
-            WHERE s.campaign_id = :campaignId
-              AND s.date BETWEEN :dateFrom AND :dateTo
-              AND (:nmId IS NULL OR s.nm_id = :nmId)
-            GROUP BY s.norm_query
-            ORDER BY COALESCE(SUM(s.clicks), 0) DESC
-            """, nativeQuery = true)
-    List<NormQueryClusterAggregateRow> findAggregatedByCampaignAndPeriod(
-            @Param("campaignId") Long campaignId,
-            @Param("dateFrom") LocalDate dateFrom,
-            @Param("dateTo") LocalDate dateTo,
-            @Param("nmId") Long nmId
-    );
-
-    @Query(value = """
-            SELECT
-                CASE WHEN COALESCE(SUM(s.clicks), 0) > 0
-                    THEN SUM(s.avg_pos * s.clicks) / SUM(s.clicks)
-                    ELSE AVG(s.avg_pos) END AS avgPos,
-                COALESCE(SUM(s.clicks), 0) AS clicks,
-                COALESCE(SUM(s.atbs), 0) AS atbs,
-                COALESCE(SUM(s.orders), 0) AS orders,
-                COALESCE(SUM(s.spend), 0) AS spend,
-                CASE WHEN COALESCE(SUM(s.clicks), 0) > 0
-                    THEN SUM(s.spend) / SUM(s.clicks)
-                    ELSE NULL END AS cpc
-            FROM solution.promotion_norm_query_statistics s
-            WHERE s.campaign_id = :campaignId
-              AND s.date BETWEEN :dateFrom AND :dateTo
-              AND (:nmId IS NULL OR s.nm_id = :nmId)
-            """, nativeQuery = true)
-    NormQueryClusterTotalsRow findTotalsByCampaignAndPeriod(
-            @Param("campaignId") Long campaignId,
-            @Param("dateFrom") LocalDate dateFrom,
-            @Param("dateTo") LocalDate dateTo,
-            @Param("nmId") Long nmId
-    );
 
     @Query("SELECT MAX(s.updatedAt) FROM PromotionNormQueryStatistics s "
             + "WHERE s.campaign.advertId = :campaignId AND s.date BETWEEN :dateFrom AND :dateTo "

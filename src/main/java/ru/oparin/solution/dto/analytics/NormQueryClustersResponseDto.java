@@ -25,9 +25,21 @@ public class NormQueryClustersResponseDto {
     private NormQueryClusterRowDto totals;
 
     /**
-     * Список кластеров, отсортированный по убыванию кликов.
+     * Страница кластеров (размер задаётся параметром {@code size}, по умолчанию 20).
      */
     private List<NormQueryClusterRowDto> rows;
+
+    /** Общее число кластеров с учётом поиска. */
+    private long totalElements;
+
+    /** Номер страницы (0-based). */
+    private int page;
+
+    /** Размер страницы. */
+    private int size;
+
+    /** Есть ли ещё данные для подгрузки. */
+    private boolean hasMore;
 
     /**
      * Время последнего обновления данных в БД по выбранному фильтру;

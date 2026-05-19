@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -1254,6 +1255,7 @@ public class AnalyticsService {
      * Агрегированная статистика по поисковым кластерам кампании за период.
      *
      * @param nmId если задан — только по артикулу; иначе по всем артикулам комбо
+     * @param search подстрока для фильтра по названию кластера
      */
     @Transactional(readOnly = true)
     public NormQueryClustersResponseDto getCampaignNormQueryClusters(
@@ -1262,7 +1264,12 @@ public class AnalyticsService {
             Long sellerId,
             LocalDate dateFrom,
             LocalDate dateTo,
-            Long nmId
+            Long nmId,
+            String search,
+            String sortBy,
+            String sortDir,
+            Integer page,
+            Integer size
     ) {
         PromotionCampaign campaign = resolveCampaignForDetail(campaignId, cabinetId, sellerId);
         if (campaign == null) {
@@ -1275,7 +1282,17 @@ public class AnalyticsService {
             from = to;
             to = tmp;
         }
-        return normQueryStatisticsService.getAggregatedClusters(campaign.getAdvertId(), from, to, nmId);
+        return normQueryStatisticsService.getAggregatedClustersPage(
+                campaign.getAdvertId(),
+                from,
+                to,
+                nmId,
+                search,
+                NormQueryClusterSortField.fromParam(sortBy),
+                Sort.Direction.fromOptionalString(sortDir).orElse(Sort.Direction.DESC),
+                page != null ? page : 0,
+                size != null ? size : 20
+        );
     }
 
     private PromotionCampaign resolveCampaignForDetail(Long campaignId, Long cabinetId, Long sellerId) {

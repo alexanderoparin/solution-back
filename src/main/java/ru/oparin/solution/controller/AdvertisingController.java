@@ -139,6 +139,11 @@ public class AdvertisingController {
             @RequestParam(required = false) LocalDate from,
             @RequestParam(required = false) LocalDate to,
             @RequestParam(required = false) Long nmId,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false, defaultValue = "clicks") String sortBy,
+            @RequestParam(required = false, defaultValue = "desc") String sortDir,
+            @RequestParam(required = false, defaultValue = "0") int page,
+            @RequestParam(required = false, defaultValue = "20") int size,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(
@@ -149,7 +154,7 @@ public class AdvertisingController {
         Long resolvedCabinetId = context.cabinet() != null ? context.cabinet().getId() : null;
         Long resolvedSellerId = context.user() != null ? context.user().getId() : null;
         NormQueryClustersResponseDto response = analyticsService.getCampaignNormQueryClusters(
-                id, resolvedCabinetId, resolvedSellerId, from, to, nmId);
+                id, resolvedCabinetId, resolvedSellerId, from, to, nmId, search, sortBy, sortDir, page, size);
         if (response == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }

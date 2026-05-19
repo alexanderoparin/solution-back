@@ -2,9 +2,11 @@ package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.analytics.NormQueryClusterRowDto;
+import ru.oparin.solution.dto.analytics.NormQueryClusterSortField;
 import ru.oparin.solution.dto.analytics.NormQueryClustersResponseDto;
 import ru.oparin.solution.dto.wb.NormQueryStatsResponse;
 import ru.oparin.solution.model.PromotionCampaign;
@@ -29,6 +31,8 @@ public class PromotionNormQueryStatisticsService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final int MIN_DATE_STRING_LENGTH = 10;
+    private static final int DEFAULT_PAGE_SIZE = 20;
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final PromotionNormQueryStatisticsRepository repository;
     private final PromotionCampaignRepository campaignRepository;
@@ -98,28 +102,78 @@ public class PromotionNormQueryStatisticsService {
         }
     }
 
+    /**
+     * Агрегированные кластеры за период: постранично, с поиском и сортировкой.
+     *
+     * @param search подстрока для фильтра по {@code norm_query} (без учёта регистра)
+     */
     @Transactional(readOnly = true)
-    public NormQueryClustersResponseDto getAggregatedClusters(
+    public NormQueryClustersResponseDto getAggregatedClustersPage(
             Long campaignId,
             LocalDate dateFrom,
             LocalDate dateTo,
-            Long nmId
+            Long nmId,
+            String search,
+            NormQueryClusterSortField sortBy,
+            Sort.Direction sortDir,
+            int page,
+            int size
     ) {
+        int safePage = Math.max(page, 0);
+        int safeSize = size <= 0 ? DEFAULT_PAGE_SIZE : Math.min(size, MAX_PAGE_SIZE);
+        String searchPattern = toSearchPattern(search);
+        NormQueryClusterSortField resolvedSortBy = sortBy != null ? sortBy : NormQueryClusterSortField.CLICKS;
+        Sort.Direction resolvedSortDir = sortDir != null ? sortDir : Sort.Direction.DESC;
+
+        long totalElements = repository.countAggregatedClusters(
+                campaignId, dateFrom, dateTo, nmId, searchPattern);
         List<PromotionNormQueryStatisticsRepository.NormQueryClusterAggregateRow> rows =
-                repository.findAggregatedByCampaignAndPeriod(campaignId, dateFrom, dateTo, nmId);
-        PromotionNormQueryStatisticsRepository.NormQueryClusterTotalsRow totalsRow =
-                repository.findTotalsByCampaignAndPeriod(campaignId, dateFrom, dateTo, nmId);
+                repository.findAggregatedClustersPage(
+                        campaignId,
+                        dateFrom,
+                        dateTo,
+                        nmId,
+                        searchPattern,
+                        resolvedSortBy,
+                        resolvedSortDir,
+                        safeSize,
+                        safePage * safeSize
+                );
         LocalDateTime lastSyncedAt = repository.findMaxUpdatedAt(campaignId, dateFrom, dateTo, nmId);
+
+        NormQueryClusterRowDto totals = null;
+        if (safePage == 0) {
+            PromotionNormQueryStatisticsRepository.NormQueryClusterTotalsRow totalsRow =
+                    repository.findTotalsByCampaignAndPeriod(
+                            campaignId, dateFrom, dateTo, nmId, searchPattern);
+            totals = mapTotalsRow(totalsRow);
+        }
 
         List<NormQueryClusterRowDto> rowDtos = rows.stream()
                 .map(this::mapAggregateRow)
                 .toList();
+        boolean hasMore = (long) (safePage + 1) * safeSize < totalElements;
 
         return NormQueryClustersResponseDto.builder()
-                .totals(mapTotalsRow(totalsRow))
+                .totals(totals)
                 .rows(rowDtos)
+                .totalElements(totalElements)
+                .page(safePage)
+                .size(safeSize)
+                .hasMore(hasMore)
                 .lastSyncedAt(lastSyncedAt)
                 .build();
+    }
+
+    private static String toSearchPattern(String search) {
+        if (search == null) {
+            return null;
+        }
+        String trimmed = search.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return "%" + trimmed.toLowerCase() + "%";
     }
 
     private NormQueryClusterRowDto mapAggregateRow(
