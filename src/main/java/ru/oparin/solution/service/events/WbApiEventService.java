@@ -36,6 +36,7 @@ public class WbApiEventService {
     public static final String PROMOTION_COUNT_EXECUTOR_BEAN = "promotionCountEventExecutor";
     public static final String PROMOTION_ADVERTS_BATCH_EXECUTOR_BEAN = "promotionAdvertsBatchEventExecutor";
     public static final String PROMOTION_STATS_BATCH_EXECUTOR_BEAN = "promotionStatsBatchEventExecutor";
+    public static final String PROMOTION_NORMQUERY_STATS_BATCH_EXECUTOR_BEAN = "promotionNormQueryStatsBatchEventExecutor";
     public static final String FEEDBACKS_SYNC_EXECUTOR_BEAN = "feedbacksSyncCabinetEventExecutor";
     public static final String PROMOTION_CALENDAR_SYNC_EXECUTOR_BEAN = "promotionCalendarSyncCabinetEventExecutor";
     public static final String WAREHOUSES_SYNC_EXECUTOR_BEAN = "warehousesSyncCabinetEventExecutor";
@@ -73,6 +74,7 @@ public class WbApiEventService {
             WbApiEventType.PROMOTION_COUNT,
             WbApiEventType.PROMOTION_ADVERTS_BATCH,
             WbApiEventType.PROMOTION_STATS_BATCH,
+            WbApiEventType.PROMOTION_NORMQUERY_STATS_BATCH,
             WbApiEventType.FEEDBACKS_SYNC_CABINET,
             WbApiEventType.PROMOTION_CALENDAR_SYNC_CABINET
     );
@@ -483,6 +485,113 @@ public class WbApiEventService {
         );
     }
 
+    /**
+     * После завершения всех батчей fullstats ставит в очередь загрузку normquery stats.
+     */
+    @Transactional
+    public void schedulePromotionNormQueryStatsIfReady(
+            Long cabinetId,
+            LocalDate dateFrom,
+            LocalDate dateTo,
+            boolean includeStocks,
+            String triggerSource,
+            long excludeStatsBatchEventId
+    ) {
+        if (eventRepository.existsOtherByCabinet_IdAndEventTypeAndStatusInAndDedupKeyPrefix(
+                cabinetId,
+                WbApiEventType.PROMOTION_STATS_BATCH,
+                ACTIVE_STATUSES,
+                promotionStatsDedupPrefix(cabinetId, dateFrom, dateTo),
+                excludeStatsBatchEventId
+        )) {
+            return;
+        }
+        List<Long> campaignIds = promotionCampaignSyncService.listCampaignIdsNeedingStatisticsForPeriod(
+                cabinetId, dateFrom, dateTo);
+        if (campaignIds.isEmpty()) {
+            tryFinalizeMain(cabinetId, excludeStatsBatchEventId);
+            return;
+        }
+        String normqueryPrefix = promotionNormQueryStatsDedupPrefix(cabinetId, dateFrom, dateTo);
+        if (eventRepository.existsByCabinet_IdAndEventTypeAndStatusInAndDedupKeyPrefix(
+                cabinetId,
+                WbApiEventType.PROMOTION_NORMQUERY_STATS_BATCH,
+                ACTIVE_STATUSES,
+                normqueryPrefix
+        )) {
+            return;
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        int batchSize = promotionCampaignSyncService.getNormqueryCampaignsBatchSize(
+                cabinet.getTokenType() != null ? cabinet.getTokenType() : CabinetTokenType.BASIC);
+        MainStepPayload payload = MainStepPayload.builder()
+                .dateFrom(dateFrom)
+                .dateTo(dateTo)
+                .includeStocks(includeStocks)
+                .build();
+        for (int i = 0, batchIndex = 0; i < campaignIds.size(); i += batchSize, batchIndex++) {
+            int end = Math.min(i + batchSize, campaignIds.size());
+            List<Long> batch = campaignIds.subList(i, end);
+            enqueuePromotionNormQueryStatsBatchEvent(cabinetId, batch, batchIndex, payload, triggerSource);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasOtherActivePromotionNormQueryStatsBatches(
+            Long cabinetId,
+            Long excludeEventId,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+        return eventRepository.existsOtherByCabinet_IdAndEventTypeAndStatusInAndDedupKeyPrefix(
+                cabinetId,
+                WbApiEventType.PROMOTION_NORMQUERY_STATS_BATCH,
+                ACTIVE_STATUSES,
+                promotionNormQueryStatsDedupPrefix(cabinetId, dateFrom, dateTo),
+                excludeEventId
+        );
+    }
+
+    private void enqueuePromotionNormQueryStatsBatchEvent(
+            Long cabinetId,
+            List<Long> campaignIds,
+            int batchIndex,
+            MainStepPayload payload,
+            String triggerSource
+    ) {
+        String dedupKey = promotionNormQueryStatsDedupPrefix(cabinetId, payload.dateFrom(), payload.dateTo()) + batchIndex;
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("WB API promotion normquery batch уже существует (dedupKey={}), создание пропущено", dedupKey);
+            return;
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        PromotionNormQueryStatsBatchPayload batchPayload = PromotionNormQueryStatsBatchPayload.builder()
+                .campaignIds(campaignIds)
+                .batchIndex(batchIndex)
+                .dateFrom(payload.dateFrom())
+                .dateTo(payload.dateTo())
+                .includeStocks(payload.includeStocks())
+                .build();
+        WbApiEvent event = WbApiEvent.builder()
+                .eventType(WbApiEventType.PROMOTION_NORMQUERY_STATS_BATCH)
+                .status(WbApiEventStatus.CREATED)
+                .executorBeanName(PROMOTION_NORMQUERY_STATS_BATCH_EXECUTOR_BEAN)
+                .cabinet(cabinet)
+                .payloadJson(writePayload(batchPayload))
+                .dedupKey(dedupKey)
+                .attemptCount(0)
+                .maxAttempts(PROMOTION_EVENT_MAX_ATTEMPTS)
+                .nextAttemptAt(LocalDateTime.now())
+                .priority(PROMOTION_EVENT_PRIORITY)
+                .triggerSource(triggerSource)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        eventRepository.save(event);
+    }
+
     private void enqueuePromotionAdvertsBatchEvent(
             Long cabinetId,
             List<Long> campaignIds,
@@ -571,6 +680,10 @@ public class WbApiEventService {
 
     private static String promotionStatsDedupPrefix(Long cabinetId, LocalDate from, LocalDate to) {
         return "PROMOTION_STATS_BATCH:" + promotionPeriodKey(cabinetId, from, to) + ":";
+    }
+
+    private static String promotionNormQueryStatsDedupPrefix(Long cabinetId, LocalDate from, LocalDate to) {
+        return "PROMOTION_NORMQUERY_STATS_BATCH:" + promotionPeriodKey(cabinetId, from, to) + ":";
     }
 
     @Transactional(readOnly = true)

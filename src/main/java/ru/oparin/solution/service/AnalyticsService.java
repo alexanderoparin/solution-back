@@ -50,6 +50,7 @@ public class AnalyticsService {
     private final AdvertisingMetricsCalculator advertisingMetricsCalculator;
     private final MetricValueCalculator metricValueCalculator;
     private final CampaignStatisticsAggregator campaignStatisticsAggregator;
+    private final PromotionNormQueryStatisticsService normQueryStatisticsService;
     private final PromotionParticipationRepository promotionParticipationRepository;
     private final CabinetService cabinetService;
     private final ArticleAdCampaignGoalService articleAdCampaignGoalService;
@@ -1212,23 +1213,10 @@ public class AnalyticsService {
      */
     @Transactional(readOnly = true)
     public CampaignDetailDto getCampaignDetail(Long campaignId, Long cabinetId, Long sellerId) {
-        PromotionCampaign campaign = null;
+        PromotionCampaign campaign = resolveCampaignForDetail(campaignId, cabinetId, sellerId);
         Long cabinetIdForArticles = cabinetId;
-
-        if (cabinetId != null) {
-            campaign = campaignRepository.findByAdvertIdAndCabinet_Id(campaignId, cabinetId).orElse(null);
-        }
-        if (campaign == null && sellerId != null) {
-            campaign = campaignRepository.findById(campaignId).orElse(null);
-            if (campaign != null
-                    && (campaign.getCabinet() == null
-                    || campaign.getCabinet().getUser() == null
-                    || !campaign.getCabinet().getUser().getId().equals(sellerId))) {
-                campaign = null;
-            }
-            if (campaign != null) {
-                cabinetIdForArticles = campaign.getCabinet() != null ? campaign.getCabinet().getId() : cabinetId;
-            }
+        if (campaign != null && campaign.getCabinet() != null) {
+            cabinetIdForArticles = campaign.getCabinet().getId();
         }
         if (campaign == null) {
             return null;
@@ -1260,6 +1248,51 @@ public class AnalyticsService {
                 .articles(articles)
                 .createdAt(campaign.getCreateTime())
                 .build();
+    }
+
+    /**
+     * Агрегированная статистика по поисковым кластерам кампании за период.
+     *
+     * @param nmId если задан — только по артикулу; иначе по всем артикулам комбо
+     */
+    @Transactional(readOnly = true)
+    public NormQueryClustersResponseDto getCampaignNormQueryClusters(
+            Long campaignId,
+            Long cabinetId,
+            Long sellerId,
+            LocalDate dateFrom,
+            LocalDate dateTo,
+            Long nmId
+    ) {
+        PromotionCampaign campaign = resolveCampaignForDetail(campaignId, cabinetId, sellerId);
+        if (campaign == null) {
+            return null;
+        }
+        LocalDate from = dateFrom != null ? dateFrom : LocalDate.now().minusDays(DEFAULT_DAILY_DATA_SPAN_DAYS - 1);
+        LocalDate to = dateTo != null ? dateTo : LocalDate.now();
+        if (from.isAfter(to)) {
+            LocalDate tmp = from;
+            from = to;
+            to = tmp;
+        }
+        return normQueryStatisticsService.getAggregatedClusters(campaign.getAdvertId(), from, to, nmId);
+    }
+
+    private PromotionCampaign resolveCampaignForDetail(Long campaignId, Long cabinetId, Long sellerId) {
+        PromotionCampaign campaign = null;
+        if (cabinetId != null) {
+            campaign = campaignRepository.findByAdvertIdAndCabinet_Id(campaignId, cabinetId).orElse(null);
+        }
+        if (campaign == null && sellerId != null) {
+            campaign = campaignRepository.findById(campaignId).orElse(null);
+            if (campaign != null
+                    && (campaign.getCabinet() == null
+                    || campaign.getCabinet().getUser() == null
+                    || !campaign.getCabinet().getUser().getId().equals(sellerId))) {
+                campaign = null;
+            }
+        }
+        return campaign;
     }
 
     /**

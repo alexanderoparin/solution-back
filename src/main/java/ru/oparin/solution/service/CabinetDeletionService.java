@@ -28,6 +28,7 @@ public class CabinetDeletionService {
     private static final int BATCH_SIZE = 50;
 
     private final PromotionCampaignStatisticsRepository promotionCampaignStatisticsRepository;
+    private final PromotionNormQueryStatisticsRepository promotionNormQueryStatisticsRepository;
     private final CampaignArticleRepository campaignArticleRepository;
     private final PromotionCampaignRepository promotionCampaignRepository;
     private final ProductPriceHistoryRepository productPriceHistoryRepository;
@@ -41,6 +42,9 @@ public class CabinetDeletionService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void deleteStepStatisticsAndArticles(Long cabinetId) {
+        deleteByIdBatches("Статистика поисковых кластеров",
+                () -> promotionNormQueryStatisticsRepository.findIdByCampaign_Cabinet_Id(cabinetId, PageRequest.of(0, BATCH_SIZE)),
+                promotionNormQueryStatisticsRepository::deleteAllById);
         deleteByIdBatches("Статистика кампаний",
                 () -> promotionCampaignStatisticsRepository.findIdByCampaign_Cabinet_Id(cabinetId, PageRequest.of(0, BATCH_SIZE)),
                 promotionCampaignStatisticsRepository::deleteAllById);

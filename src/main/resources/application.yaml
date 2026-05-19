@@ -75,6 +75,9 @@ wb:
     campaigns-batch-size-personal: 50
     statistics-batch-size-basic: 50
     statistics-batch-size-personal: 50
+    normquery-items-batch-size: 100
+    normquery-campaigns-batch-size-basic: 20
+    normquery-campaigns-batch-size-personal: 20
 
 app:
   frontend-url: "https://wb-solution.ru"

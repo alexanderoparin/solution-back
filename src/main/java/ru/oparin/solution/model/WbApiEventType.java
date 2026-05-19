@@ -45,6 +45,11 @@ public enum WbApiEventType {
             "/adv/v3/fullstats",
             3_600L,
             20L),
+    PROMOTION_NORMQUERY_STATS_BATCH(
+            WbApiBaseUrl.PROMOTION,
+            "/adv/v1/normquery/stats",
+            1_800L,
+            6L),
     FEEDBACKS_SYNC_CABINET(
             WbApiBaseUrl.FEEDBACKS,
             "/api/v1/feedbacks",

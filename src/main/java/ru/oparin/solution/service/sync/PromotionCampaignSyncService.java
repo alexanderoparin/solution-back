@@ -4,18 +4,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import ru.oparin.solution.dto.wb.PromotionAdvertsResponse;
-import ru.oparin.solution.dto.wb.PromotionCountResponse;
-import ru.oparin.solution.dto.wb.PromotionFullStatsRequest;
-import ru.oparin.solution.dto.wb.PromotionFullStatsResponse;
+import ru.oparin.solution.dto.wb.*;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.CabinetTokenType;
-import ru.oparin.solution.model.PromotionCampaign;
-import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.*;
+import ru.oparin.solution.repository.CampaignArticleRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
+import ru.oparin.solution.repository.PromotionCampaignStatisticsRepository;
 import ru.oparin.solution.service.PromotionCampaignService;
 import ru.oparin.solution.service.PromotionCampaignStatisticsService;
+import ru.oparin.solution.service.PromotionNormQueryStatisticsService;
 import ru.oparin.solution.service.wb.AbstractWbApiClient;
 import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
@@ -44,11 +41,20 @@ public class PromotionCampaignSyncService {
     private int campaignsBatchSizeBasic;
     @Value("${wb.promotion.campaigns-batch-size-personal}")
     private int campaignsBatchSizePersonal;
+    @Value("${wb.promotion.normquery-items-batch-size}")
+    private int normqueryItemsBatchSize;
+    @Value("${wb.promotion.normquery-campaigns-batch-size-basic}")
+    private int normqueryCampaignsBatchSizeBasic;
+    @Value("${wb.promotion.normquery-campaigns-batch-size-personal}")
+    private int normqueryCampaignsBatchSizePersonal;
 
     private final WbPromotionApiClient promotionApiClient;
     private final PromotionCampaignService promotionCampaignService;
     private final PromotionCampaignStatisticsService campaignStatisticsService;
+    private final PromotionNormQueryStatisticsService normQueryStatisticsService;
     private final PromotionCampaignRepository campaignRepository;
+    private final CampaignArticleRepository campaignArticleRepository;
+    private final PromotionCampaignStatisticsRepository campaignStatisticsRepository;
 
     public PromotionCountResponse fetchPromotionCount(String apiKey) {
         return promotionApiClient.getPromotionCount(apiKey);
@@ -130,6 +136,80 @@ public class PromotionCampaignSyncService {
 
     public int getStatisticsBatchSize(CabinetTokenType tokenType) {
         return tokenType == CabinetTokenType.PERSONAL ? statisticsBatchSizePersonal : statisticsBatchSizeBasic;
+    }
+
+    public int getNormqueryCampaignsBatchSize(CabinetTokenType tokenType) {
+        return tokenType == CabinetTokenType.PERSONAL
+                ? normqueryCampaignsBatchSizePersonal
+                : normqueryCampaignsBatchSizeBasic;
+    }
+
+    /**
+     * Загрузка и сохранение статистики поисковых кластеров для батча кампаний.
+     */
+    public void loadAndSaveNormQueryStatsBatch(
+            String apiKey,
+            List<Long> campaignIds,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+        if (campaignIds == null || campaignIds.isEmpty()) {
+            return;
+        }
+        List<NormQueryStatsRequest.Item> items = buildNormQueryItems(campaignIds);
+        if (items.isEmpty()) {
+            log.info("Нет пар advertId/nmId для normquery stats, кампании: {}", campaignIds);
+            return;
+        }
+        String from = dateFrom.format(DATE_FORMATTER);
+        String to = dateTo.format(DATE_FORMATTER);
+        NormQueryStatsResponse merged = NormQueryStatsResponse.builder().items(new ArrayList<>()).build();
+        for (int i = 0; i < items.size(); i += normqueryItemsBatchSize) {
+            int end = Math.min(i + normqueryItemsBatchSize, items.size());
+            List<NormQueryStatsRequest.Item> chunk = items.subList(i, end);
+            NormQueryStatsRequest request = NormQueryStatsRequest.builder()
+                    .from(from)
+                    .to(to)
+                    .items(chunk)
+                    .build();
+            try {
+                NormQueryStatsResponse batchResponse = promotionApiClient.postNormQueryStats(apiKey, request);
+                if (batchResponse != null && batchResponse.getItems() != null) {
+                    merged.getItems().addAll(batchResponse.getItems());
+                }
+            } catch (Exception e) {
+                if (AbstractWbApiClient.isConnectionIoError(e)) {
+                    log.warn("Ошибка IO при загрузке normquery stats: {}", e.getMessage());
+                } else {
+                    log.error("Ошибка при загрузке normquery stats: {}", e.getMessage(), e);
+                }
+            }
+        }
+        normQueryStatisticsService.replaceStatisticsForCampaigns(merged, campaignIds, dateFrom, dateTo);
+    }
+
+    private List<NormQueryStatsRequest.Item> buildNormQueryItems(List<Long> campaignIds) {
+        List<CampaignArticle> articles = campaignArticleRepository.findByCampaignIdIn(campaignIds);
+        List<NormQueryStatsRequest.Item> items = new ArrayList<>();
+        if (!articles.isEmpty()) {
+            for (CampaignArticle article : articles) {
+                items.add(NormQueryStatsRequest.Item.builder()
+                        .advertId(article.getCampaignId())
+                        .nmId(article.getNmId())
+                        .build());
+            }
+            return items;
+        }
+        for (Long campaignId : campaignIds) {
+            List<Long> nmIds = campaignStatisticsRepository.findDistinctNmIdsByCampaignAdvertId(campaignId);
+            for (Long nmId : nmIds) {
+                items.add(NormQueryStatsRequest.Item.builder()
+                        .advertId(campaignId)
+                        .nmId(nmId)
+                        .build());
+            }
+        }
+        return items;
     }
 
     /**

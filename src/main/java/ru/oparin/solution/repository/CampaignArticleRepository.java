@@ -24,6 +24,8 @@ public interface CampaignArticleRepository extends JpaRepository<CampaignArticle
      */
     List<CampaignArticle> findByCampaignId(Long campaignId);
 
+    List<CampaignArticle> findByCampaignIdIn(List<Long> campaignIds);
+
     /**
      * Поиск всех кампаний для артикула.
      *

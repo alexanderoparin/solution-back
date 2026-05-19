@@ -7,6 +7,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.analytics.CampaignDetailDto;
 import ru.oparin.solution.dto.analytics.CampaignDto;
+import ru.oparin.solution.dto.analytics.NormQueryClustersResponseDto;
 import ru.oparin.solution.dto.analytics.PromotionSyncEnqueueResponse;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.service.AnalyticsService;
@@ -125,5 +126,33 @@ public class AdvertisingController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
         return ResponseEntity.ok(detail);
+    }
+
+    /**
+     * Статистика по поисковым кластерам кампании за период (из БД после синхронизации normquery).
+     */
+    @GetMapping("/campaigns/{id}/normquery-clusters")
+    public ResponseEntity<NormQueryClustersResponseDto> getCampaignNormQueryClusters(
+            @PathVariable Long id,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to,
+            @RequestParam(required = false) Long nmId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                sellerId,
+                cabinetId
+        );
+        Long resolvedCabinetId = context.cabinet() != null ? context.cabinet().getId() : null;
+        Long resolvedSellerId = context.user() != null ? context.user().getId() : null;
+        NormQueryClustersResponseDto response = analyticsService.getCampaignNormQueryClusters(
+                id, resolvedCabinetId, resolvedSellerId, from, to, nmId);
+        if (response == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+        return ResponseEntity.ok(response);
     }
 }

@@ -5,12 +5,12 @@ import org.springframework.stereotype.Component;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.service.CabinetService;
-import ru.oparin.solution.service.events.payload.PromotionStatsBatchPayload;
+import ru.oparin.solution.service.events.payload.PromotionNormQueryStatsBatchPayload;
 import ru.oparin.solution.service.sync.PromotionCampaignSyncService;
 
-@Component("promotionStatsBatchEventExecutor")
+@Component("promotionNormQueryStatsBatchEventExecutor")
 @RequiredArgsConstructor
-public class PromotionStatsBatchEventExecutor implements WbApiEventExecutor {
+public class PromotionNormQueryStatsBatchEventExecutor implements WbApiEventExecutor {
 
     private final WbApiEventService eventService;
     private final CabinetService cabinetService;
@@ -18,33 +18,26 @@ public class PromotionStatsBatchEventExecutor implements WbApiEventExecutor {
 
     @Override
     public WbApiEventExecutionResult execute(WbApiEvent event) {
-        PromotionStatsBatchPayload payload = eventService.readPayload(event, PromotionStatsBatchPayload.class);
+        PromotionNormQueryStatsBatchPayload payload =
+                eventService.readPayload(event, PromotionNormQueryStatsBatchPayload.class);
         var cabinet = cabinetService.findByIdWithUserOrThrow(event.getCabinet().getId());
         if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
             return WbApiEventExecutionResult.finalError("У кабинета отсутствует API ключ");
         }
         try {
-            promotionCampaignSyncService.loadAndSaveStatisticsBatch(
-                    cabinet.getUser(),
+            promotionCampaignSyncService.loadAndSaveNormQueryStatsBatch(
                     cabinet.getApiKey(),
                     payload.campaignIds(),
                     payload.dateFrom(),
                     payload.dateTo()
             );
-            if (!eventService.hasOtherActivePromotionStatsBatches(
+            if (!eventService.hasOtherActivePromotionNormQueryStatsBatches(
                     cabinet.getId(),
                     event.getId(),
                     payload.dateFrom(),
                     payload.dateTo()
             )) {
-                eventService.schedulePromotionNormQueryStatsIfReady(
-                        cabinet.getId(),
-                        payload.dateFrom(),
-                        payload.dateTo(),
-                        payload.includeStocks(),
-                        event.getTriggerSource(),
-                        event.getId()
-                );
+                eventService.tryFinalizeMain(cabinet.getId(), event.getId());
             }
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (WbApiUnauthorizedScopeException e) {

@@ -40,6 +40,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     private static final String PROMOTION_COUNT_OPERATION = "количество кампаний";
     private static final String ADVERTS_V2_OPERATION = "детали кампаний (v2)";
     private static final String PROMOTION_FULLSTATS_OPERATION = "статистика кампаний";
+    private static final String NORMQUERY_STATS_OPERATION = "статистика поисковых кластеров";
     private static final int ADVERTS_V2_BATCH_SIZE = 50;
 
     @Value("${wb.retries.max-429-basic}")
@@ -264,6 +265,52 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         }));
     }
 
+    /**
+     * Статистика по поисковым кластерам с детализацией по дням.
+     * POST /adv/v1/normquery/stats
+     */
+    public NormQueryStatsResponse postNormQueryStats(String apiKey, NormQueryStatsRequest request) {
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
+        return executeWith429Retry(
+                "статистика поисковых кластеров",
+                WbApiEventType.PROMOTION_NORMQUERY_STATS_BATCH.getUri(),
+                NORMQUERY_STATS_OPERATION,
+                tokenType,
+                () -> executeWithConnectionRetry("статистика поисковых кластеров", () -> {
+                    HttpHeaders headers = createAuthHeaders(apiKey);
+                    headers.set("Content-Type", "application/json");
+                    HttpEntity<NormQueryStatsRequest> entity = new HttpEntity<>(request, headers);
+                    String url = WbApiEventType.PROMOTION_NORMQUERY_STATS_BATCH.getDefaultUrl();
+                    logWbApiCall(url, "статистика поисковых кластеров");
+                    try {
+                        ResponseEntity<String> response = restTemplate.exchange(
+                                url,
+                                HttpMethod.POST,
+                                entity,
+                                String.class
+                        );
+                        validateResponse(response);
+                        NormQueryStatsResponse body = objectMapper.readValue(
+                                response.getBody(),
+                                NormQueryStatsResponse.class
+                        );
+                        int items = body != null && body.getItems() != null ? body.getItems().size() : 0;
+                        log.info("Получено элементов normquery stats: {}", items);
+                        return body;
+                    } catch (HttpClientErrorException e) {
+                        throwIf401ScopeNotAllowed(e);
+                        logWbApiError("статистика поисковых кластеров WB", e);
+                        throw e;
+                    } catch (RestClientException e) {
+                        throw e;
+                    } catch (Exception e) {
+                        logIoErrorOrFull("получении статистики поисковых кластеров", e);
+                        throw new RestClientException(
+                                "Ошибка при получении статистики поисковых кластеров: " + e.getMessage(), e);
+                    }
+                }));
+    }
+
     private <T> T executeWith429Retry(
             String context,
             String endpoint,
@@ -318,6 +365,9 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     private WbApiEventType resolveEventTypeByEndpoint(String endpoint) {
         if (WbApiEventType.PROMOTION_STATS_BATCH.getUri().equals(endpoint)) {
             return WbApiEventType.PROMOTION_STATS_BATCH;
+        }
+        if (WbApiEventType.PROMOTION_NORMQUERY_STATS_BATCH.getUri().equals(endpoint)) {
+            return WbApiEventType.PROMOTION_NORMQUERY_STATS_BATCH;
         }
         if (WbApiEventType.PROMOTION_ADVERTS_BATCH.getUri().equals(endpoint)) {
             return WbApiEventType.PROMOTION_ADVERTS_BATCH;
