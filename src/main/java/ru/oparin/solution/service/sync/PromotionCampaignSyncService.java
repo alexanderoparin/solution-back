@@ -14,6 +14,7 @@ import ru.oparin.solution.service.PromotionCampaignService;
 import ru.oparin.solution.service.PromotionCampaignStatisticsService;
 import ru.oparin.solution.service.PromotionNormQueryStatisticsService;
 import ru.oparin.solution.service.wb.AbstractWbApiClient;
+import ru.oparin.solution.service.wb.WbApiTokenTypeResolver;
 import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
 import java.time.LocalDate;
@@ -55,6 +56,7 @@ public class PromotionCampaignSyncService {
     private final PromotionCampaignRepository campaignRepository;
     private final CampaignArticleRepository campaignArticleRepository;
     private final PromotionCampaignStatisticsRepository campaignStatisticsRepository;
+    private final WbApiTokenTypeResolver tokenTypeResolver;
 
     public PromotionCountResponse fetchPromotionCount(String apiKey) {
         return promotionApiClient.getPromotionCount(apiKey);
@@ -163,6 +165,8 @@ public class PromotionCampaignSyncService {
         }
         String from = dateFrom.format(DATE_FORMATTER);
         String to = dateTo.format(DATE_FORMATTER);
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
+        boolean singleRequestPerRun = tokenType != CabinetTokenType.PERSONAL;
         NormQueryStatsResponse merged = NormQueryStatsResponse.builder().items(new ArrayList<>()).build();
         for (int i = 0; i < items.size(); i += normqueryItemsBatchSize) {
             int end = Math.min(i + normqueryItemsBatchSize, items.size());
@@ -183,6 +187,17 @@ public class PromotionCampaignSyncService {
                 } else {
                     log.error("Ошибка при загрузке normquery stats: {}", e.getMessage(), e);
                 }
+            }
+            if (singleRequestPerRun) {
+                if (items.size() > normqueryItemsBatchSize) {
+                    log.info(
+                            "Базовый токен WB: за один запуск загружен первый чанк normquery ({} из {} пар), "
+                                    + "остальные — при следующих событиях очереди (пауза 30 мин)",
+                            normqueryItemsBatchSize,
+                            items.size()
+                    );
+                }
+                break;
             }
         }
         normQueryStatisticsService.replaceStatisticsForCampaigns(merged, campaignIds, dateFrom, dateTo);
