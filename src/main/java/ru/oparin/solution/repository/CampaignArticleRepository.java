@@ -54,5 +54,26 @@ public interface CampaignArticleRepository extends JpaRepository<CampaignArticle
 
     @Query("SELECT c.campaignId, COUNT(c) FROM CampaignArticle c WHERE c.campaignId IN :ids GROUP BY c.campaignId")
     List<Object[]> countByCampaignIdIn(@Param("ids") List<Long> ids);
+
+    @Query("SELECT DISTINCT a.nmId FROM CampaignArticle a WHERE a.campaignId IN :campaignIds")
+    List<Long> findDistinctNmIdsByCampaignIdIn(@Param("campaignIds") List<Long> campaignIds);
+
+    /**
+     * Кампании из списка, в которых есть хотя бы один приоритетный артикул кабинета.
+     */
+    @Query("""
+            SELECT DISTINCT a.campaignId FROM CampaignArticle a
+            WHERE a.campaignId IN :campaignIds
+              AND EXISTS (
+                  SELECT 1 FROM ProductCard c
+                  WHERE c.cabinet.id = :cabinetId
+                    AND c.nmId = a.nmId
+                    AND c.isPriority = true
+              )
+            """)
+    List<Long> findCampaignIdsWithPriorityArticles(
+            @Param("cabinetId") Long cabinetId,
+            @Param("campaignIds") List<Long> campaignIds
+    );
 }
 
