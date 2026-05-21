@@ -14,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.*;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
-import ru.oparin.solution.repository.CampaignArticleRepository;
 import ru.oparin.solution.repository.FeedbacksSyncRunRepository;
 import ru.oparin.solution.repository.WbApiEventRepository;
 import ru.oparin.solution.service.CabinetService;
@@ -82,7 +81,6 @@ public class WbApiEventService {
 
     private final WbApiEventRepository eventRepository;
     private final CabinetRepository cabinetRepository;
-    private final CampaignArticleRepository campaignArticleRepository;
     private final FeedbacksSyncRunRepository feedbacksSyncRunRepository;
     private final CabinetService cabinetService;
     private final ProductCardService productCardService;
@@ -508,10 +506,8 @@ public class WbApiEventService {
         )) {
             return;
         }
-        List<Long> campaignIds = sortCampaignIdsByPriority(
-                cabinetId,
-                promotionCampaignSyncService.listCampaignIdsNeedingStatisticsForPeriod(cabinetId, dateFrom, dateTo)
-        );
+        List<Long> campaignIds = promotionCampaignSyncService.listCampaignIdsNeedingStatisticsForPeriod(
+                cabinetId, dateFrom, dateTo);
         if (campaignIds.isEmpty()) {
             tryFinalizeMain(cabinetId, excludeStatsBatchEventId);
             return;
@@ -588,7 +584,7 @@ public class WbApiEventService {
                 .attemptCount(0)
                 .maxAttempts(PROMOTION_EVENT_MAX_ATTEMPTS)
                 .nextAttemptAt(LocalDateTime.now())
-                .priority(resolvePromotionNormQueryBatchPriority(cabinetId, campaignIds))
+                .priority(PROMOTION_EVENT_PRIORITY)
                 .triggerSource(triggerSource)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
@@ -1045,39 +1041,6 @@ public class WbApiEventService {
         return productCardService.findByNmIdAndCabinetId(nmId, cabinetId)
                 .map(card -> Boolean.TRUE.equals(card.getIsPriority()) ? basePriority + PRIORITY_CARD_EVENT_BOOST : basePriority)
                 .orElse(basePriority);
-    }
-
-    /**
-     * Повышенный приоритет батча normquery, если в нём есть кампании с приоритетными артикулами.
-     */
-    private int resolvePromotionNormQueryBatchPriority(Long cabinetId, List<Long> campaignIds) {
-        if (cabinetId == null || campaignIds == null || campaignIds.isEmpty()) {
-            return PROMOTION_EVENT_PRIORITY;
-        }
-        List<Long> priorityCampaigns = campaignArticleRepository.findCampaignIdsWithPriorityArticles(
-                cabinetId, campaignIds);
-        return priorityCampaigns.isEmpty()
-                ? PROMOTION_EVENT_PRIORITY
-                : PROMOTION_EVENT_PRIORITY + PRIORITY_CARD_EVENT_BOOST;
-    }
-
-    /**
-     * Кампании с приоритетными артикулами ставятся в начало очереди батчей normquery.
-     */
-    private List<Long> sortCampaignIdsByPriority(Long cabinetId, List<Long> campaignIds) {
-        if (cabinetId == null || campaignIds == null || campaignIds.size() <= 1) {
-            return campaignIds != null ? campaignIds : List.of();
-        }
-        List<Long> priorityCampaignIds = campaignArticleRepository.findCampaignIdsWithPriorityArticles(
-                cabinetId, campaignIds);
-        if (priorityCampaignIds.isEmpty()) {
-            return campaignIds;
-        }
-        Set<Long> prioritySet = new HashSet<>(priorityCampaignIds);
-        List<Long> sorted = new ArrayList<>(campaignIds.size());
-        campaignIds.stream().filter(prioritySet::contains).forEach(sorted::add);
-        campaignIds.stream().filter(id -> !prioritySet.contains(id)).forEach(sorted::add);
-        return sorted;
     }
 
     private String buildContentDedupKey(Long cabinetId, Long cursorNmId, String cursorUpdatedAt, LocalDate from, LocalDate to) {

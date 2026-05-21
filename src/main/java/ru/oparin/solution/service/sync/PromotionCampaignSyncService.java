@@ -8,7 +8,6 @@ import ru.oparin.solution.dto.wb.*;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CampaignArticleRepository;
-import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
 import ru.oparin.solution.repository.PromotionCampaignStatisticsRepository;
 import ru.oparin.solution.service.PromotionCampaignService;
@@ -20,7 +19,10 @@ import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -53,7 +55,6 @@ public class PromotionCampaignSyncService {
     private final PromotionNormQueryStatisticsService normQueryStatisticsService;
     private final PromotionCampaignRepository campaignRepository;
     private final CampaignArticleRepository campaignArticleRepository;
-    private final ProductCardRepository productCardRepository;
     private final PromotionCampaignStatisticsRepository campaignStatisticsRepository;
     private final WbApiTokenTypeResolver tokenTypeResolver;
 
@@ -150,7 +151,6 @@ public class PromotionCampaignSyncService {
      */
     public void loadAndSaveNormQueryStatsBatch(
             String apiKey,
-            Long cabinetId,
             List<Long> campaignIds,
             LocalDate dateFrom,
             LocalDate dateTo
@@ -158,7 +158,7 @@ public class PromotionCampaignSyncService {
         if (campaignIds == null || campaignIds.isEmpty()) {
             return;
         }
-        List<NormQueryStatsRequest.Item> items = buildNormQueryItems(campaignIds, cabinetId);
+        List<NormQueryStatsRequest.Item> items = buildNormQueryItems(campaignIds);
         if (items.isEmpty()) {
             log.info("Нет пар advertId/nmId для normquery stats, кампании: {}", campaignIds);
             return;
@@ -203,7 +203,7 @@ public class PromotionCampaignSyncService {
         normQueryStatisticsService.replaceStatisticsForCampaigns(merged, campaignIds, dateFrom, dateTo);
     }
 
-    private List<NormQueryStatsRequest.Item> buildNormQueryItems(List<Long> campaignIds, Long cabinetId) {
+    private List<NormQueryStatsRequest.Item> buildNormQueryItems(List<Long> campaignIds) {
         List<CampaignArticle> articles = campaignArticleRepository.findByCampaignIdIn(campaignIds);
         List<NormQueryStatsRequest.Item> items = new ArrayList<>();
         if (!articles.isEmpty()) {
@@ -213,41 +213,18 @@ public class PromotionCampaignSyncService {
                         .nmId(article.getNmId())
                         .build());
             }
-        } else {
-            for (Long campaignId : campaignIds) {
-                List<Long> nmIds = campaignStatisticsRepository.findDistinctNmIdsByCampaignAdvertId(campaignId);
-                for (Long nmId : nmIds) {
-                    items.add(NormQueryStatsRequest.Item.builder()
-                            .advertId(campaignId)
-                            .nmId(nmId)
-                            .build());
-                }
+            return items;
+        }
+        for (Long campaignId : campaignIds) {
+            List<Long> nmIds = campaignStatisticsRepository.findDistinctNmIdsByCampaignAdvertId(campaignId);
+            for (Long nmId : nmIds) {
+                items.add(NormQueryStatsRequest.Item.builder()
+                        .advertId(campaignId)
+                        .nmId(nmId)
+                        .build());
             }
         }
-        return sortNormQueryItemsByPriority(cabinetId, items);
-    }
-
-    /**
-     * Пары advertId/nmId с приоритетными карточками — в начале списка (важно для basic-токена: один чанк за запуск).
-     */
-    private List<NormQueryStatsRequest.Item> sortNormQueryItemsByPriority(
-            Long cabinetId,
-            List<NormQueryStatsRequest.Item> items
-    ) {
-        if (cabinetId == null || items.size() <= 1) {
-            return items;
-        }
-        List<Long> nmIds = items.stream().map(NormQueryStatsRequest.Item::getNmId).filter(Objects::nonNull).distinct().toList();
-        if (nmIds.isEmpty()) {
-            return items;
-        }
-        Set<Long> priorityNmIds = new HashSet<>(productCardRepository.findPriorityNmIdsByCabinetAndNmIdIn(cabinetId, nmIds));
-        if (priorityNmIds.isEmpty()) {
-            return items;
-        }
-        return items.stream()
-                .sorted(Comparator.comparing((NormQueryStatsRequest.Item item) -> !priorityNmIds.contains(item.getNmId())))
-                .toList();
+        return items;
     }
 
     /**

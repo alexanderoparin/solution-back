@@ -27,7 +27,6 @@ public class PromotionNormQueryStatsBatchEventExecutor implements WbApiEventExec
         try {
             promotionCampaignSyncService.loadAndSaveNormQueryStatsBatch(
                     cabinet.getApiKey(),
-                    cabinet.getId(),
                     payload.campaignIds(),
                     payload.dateFrom(),
                     payload.dateTo()

@@ -12,10 +12,8 @@ import ru.oparin.solution.config.WbEventsProperties;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.model.WbApiEventType;
-import ru.oparin.solution.repository.CampaignArticleRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.service.events.payload.AnalyticsSalesFunnelPayload;
-import ru.oparin.solution.service.events.payload.PromotionNormQueryStatsBatchPayload;
 import ru.oparin.solution.service.events.payload.StocksByNmIdPayload;
 
 import java.time.LocalDateTime;
@@ -32,7 +30,6 @@ public class WbApiEventDispatcher {
     private final ApplicationContext applicationContext;
     private final WbEventsProperties wbEventsProperties;
     private final ProductCardRepository productCardRepository;
-    private final CampaignArticleRepository campaignArticleRepository;
     @Qualifier("cabinetUpdateExecutor")
     private final Executor cabinetUpdateExecutor;
 
@@ -174,53 +171,39 @@ public class WbApiEventDispatcher {
         Map<Long, Set<Long>> result = new HashMap<>();
         for (WbApiEvent event : events) {
             Long cabinetId = event.getCabinet() != null ? event.getCabinet().getId() : null;
-            if (cabinetId == null) {
+            Long nmId = extractNmId(event);
+            if (cabinetId == null || nmId == null) {
                 continue;
             }
-            for (Long nmId : extractNmIdsForPriority(event)) {
-                result.computeIfAbsent(cabinetId, ignored -> new HashSet<>()).add(nmId);
-            }
+            result.computeIfAbsent(cabinetId, ignored -> new HashSet<>()).add(nmId);
         }
         return result;
     }
 
     private boolean isPriorityNmEvent(WbApiEvent event, Map<Long, Set<Long>> priorityNmIdsByCabinet) {
         Long cabinetId = event.getCabinet() != null ? event.getCabinet().getId() : null;
-        if (cabinetId == null) {
+        Long nmId = extractNmId(event);
+        if (cabinetId == null || nmId == null) {
             return false;
         }
-        Set<Long> priorityNmIds = priorityNmIdsByCabinet.getOrDefault(cabinetId, Set.of());
-        for (Long nmId : extractNmIdsForPriority(event)) {
-            if (priorityNmIds.contains(nmId)) {
-                return true;
-            }
-        }
-        return false;
+        return priorityNmIdsByCabinet.getOrDefault(cabinetId, Set.of()).contains(nmId);
     }
 
-    private Set<Long> extractNmIdsForPriority(WbApiEvent event) {
+    private Long extractNmId(WbApiEvent event) {
         try {
             if (event.getEventType() == WbApiEventType.ANALYTICS_SALES_FUNNEL_NMID) {
                 AnalyticsSalesFunnelPayload payload = eventService.readPayload(event, AnalyticsSalesFunnelPayload.class);
-                return payload.nmId() != null ? Set.of(payload.nmId()) : Set.of();
+                return payload.nmId();
             }
             if (event.getEventType() == WbApiEventType.STOCKS_BY_NMID) {
                 StocksByNmIdPayload payload = eventService.readPayload(event, StocksByNmIdPayload.class);
-                return payload.nmId() != null ? Set.of(payload.nmId()) : Set.of();
-            }
-            if (event.getEventType() == WbApiEventType.PROMOTION_NORMQUERY_STATS_BATCH) {
-                PromotionNormQueryStatsBatchPayload payload =
-                        eventService.readPayload(event, PromotionNormQueryStatsBatchPayload.class);
-                if (payload.campaignIds() == null || payload.campaignIds().isEmpty()) {
-                    return Set.of();
-                }
-                return new HashSet<>(campaignArticleRepository.findDistinctNmIdsByCampaignIdIn(payload.campaignIds()));
+                return payload.nmId();
             }
         } catch (Exception e) {
             log.warn("Не удалось извлечь nmId из payload события id={}, type={}: {}",
                     event.getId(), event.getEventType(), e.getMessage());
         }
-        return Set.of();
+        return null;
     }
 
     @Scheduled(fixedDelayString = "${app.wb-events.stuck-check-delay-ms}")
