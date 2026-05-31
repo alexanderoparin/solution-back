@@ -45,6 +45,7 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
 
         List<Predicate> predicates = buildPredicates(cb, root, currentUser, email, onlySellers);
         cq.where(predicates.toArray(new Predicate[0]));
+        root.fetch(USER_OWNER_FIELD, JoinType.LEFT);
 
         applySorting(cb, cq, root, sortBy, sortDir);
 
@@ -124,6 +125,23 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
             cq.orderBy(
                     cb.asc(nullRank),
                     asc ? cb.asc(aggregateSubquery) : cb.desc(aggregateSubquery),
+                    cb.asc(root.get(USER_ID_FIELD))
+            );
+            return;
+        }
+
+        if (sortBy == UserSortField.OWNER_EMAIL) {
+            Join<User, User> ownerJoin = root.join(USER_OWNER_FIELD, JoinType.LEFT);
+            Expression<String> ownerEmail = ownerJoin.get(USER_EMAIL_FIELD);
+
+            Expression<Integer> nullRank = cb.<Integer>selectCase()
+                    .when(cb.isNull(ownerEmail), asc ? 0 : 1)
+                    .otherwise(asc ? 1 : 0);
+
+            Expression<String> ownerEmailLower = cb.lower(ownerEmail);
+            cq.orderBy(
+                    cb.asc(nullRank),
+                    asc ? cb.asc(ownerEmailLower) : cb.desc(ownerEmailLower),
                     cb.asc(root.get(USER_ID_FIELD))
             );
             return;

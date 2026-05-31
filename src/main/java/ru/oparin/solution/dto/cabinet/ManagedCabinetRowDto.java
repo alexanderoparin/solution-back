@@ -16,5 +16,7 @@ public class ManagedCabinetRowDto {
     private String sellerEmail;
     /** Клиент агентства (флаг селлера-владельца кабинета). */
     private Boolean sellerAgencyClient;
+    /** Email владельца селлера ({@code users.owner_id}), если задан. */
+    private String sellerOwnerEmail;
     private CabinetDto cabinet;
 }

@@ -31,7 +31,7 @@ public final class CabinetManagedSpecifications {
             Join<Cabinet, User> userJoin = root.join("user", JoinType.INNER);
 
             if (!isCountQuery(query)) {
-                root.fetch("user", JoinType.INNER);
+                root.fetch("user", JoinType.INNER).fetch("owner", JoinType.LEFT);
             }
 
             Predicate isSeller = cb.equal(userJoin.get("role"), Role.SELLER);
