@@ -196,6 +196,26 @@ public class WbApiKeyService {
     }
 
     /**
+     * Проверка доступа к одной категории WB API через /ping и запись в cabinet_scope_status.
+     * Вызывается из {@link CabinetScopeStatusService} после 401 при синхронизации «Маркетплейс».
+     */
+    @Transactional
+    public void pingCategoryForCabinet(Long cabinetId, WbApiCategory category) {
+        String url = PING_URLS.get(category);
+        if (url == null) {
+            log.warn("Ping не настроен для категории WB API {} (кабинет {})", category.getDisplayName(), cabinetId);
+            return;
+        }
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+        String apiKey = cabinet.getApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            cabinetScopeStatusService.recordFailureFromPing(cabinetId, category, "API ключ не задан");
+            return;
+        }
+        pingCategoryAndRecordStatus(cabinetId, apiKey, category, url);
+    }
+
+    /**
      * Пошаговая проверка токена через /ping для основных категорий WB API и запись результата в cabinet_scope_status.
      * Общий признак валидности ключа задаётся только {@link #validateTokenByCommonPing(Cabinet)}.
      */
@@ -241,7 +261,7 @@ public class WbApiKeyService {
                         Integer.MAX_VALUE,
                         Math.max(1L, ChronoUnit.SECONDS.between(LocalDateTime.now(), e.getDeferUntil()))
                 );
-                cabinetScopeStatusService.recordFailure(cabinetId, category, e.getMessage());
+                cabinetScopeStatusService.recordFailureFromPing(cabinetId, category, e.getMessage());
                 throw new UserException(
                         "Лимит WB: повторите проверку доступа к категории позже.",
                         HttpStatus.TOO_MANY_REQUESTS,
@@ -257,7 +277,7 @@ public class WbApiKeyService {
                 return true;
             }
             String msg = "Код ответа: " + response.getStatusCode().value();
-            cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
+            cabinetScopeStatusService.recordFailureFromPing(cabinetId, category, msg);
             return false;
         } catch (HttpClientErrorException e) {
             wbEndpointRateLimitCoordinator.afterResponse(apiKey, endpointKey, e.getStatusCode().value(), e.getResponseHeaders(), category);
@@ -270,14 +290,14 @@ public class WbApiKeyService {
                 );
             }
             String msg = messageForCategoryPingFailure(e);
-            cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
+            cabinetScopeStatusService.recordFailureFromPing(cabinetId, category, msg);
             log.warn("Ping категории WB API {} для кабинета {} завершился ошибкой: статус={}, тело={}",
                     category.getDisplayName(), cabinetId, e.getStatusCode(), e.getResponseBodyAsString());
             return false;
         } catch (RestClientException e) {
             HttpClientErrorException hce = findHttpClientErrorInChain(e);
             String msg = hce != null ? messageForCategoryPingFailure(hce) : resolveFriendlyValidationMessage(e);
-            cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
+            cabinetScopeStatusService.recordFailureFromPing(cabinetId, category, msg);
             log.warn("Ping категории WB API {} для кабинета {} завершился ошибкой соединения: {}",
                     category.getDisplayName(), cabinetId, e.getMessage());
             return false;
@@ -286,7 +306,7 @@ public class WbApiKeyService {
         } catch (Exception e) {
             HttpClientErrorException hce = findHttpClientErrorInChain(e);
             String msg = hce != null ? messageForCategoryPingFailure(hce) : resolveFriendlyValidationMessage(e);
-            cabinetScopeStatusService.recordFailure(cabinetId, category, msg);
+            cabinetScopeStatusService.recordFailureFromPing(cabinetId, category, msg);
             log.warn("Неожиданная ошибка при ping категории WB API {} для кабинета {}: {}",
                     category.getDisplayName(), cabinetId, e.getMessage());
             return false;
@@ -299,7 +319,7 @@ public class WbApiKeyService {
     private void markAllCategoriesAsNoAccess(Cabinet cabinet, String message) {
         Long cabinetId = cabinet.getId();
         for (WbApiCategory category : PING_URLS.keySet()) {
-            cabinetScopeStatusService.recordFailure(cabinetId, category, message);
+            cabinetScopeStatusService.recordFailureFromPing(cabinetId, category, message);
         }
     }
 

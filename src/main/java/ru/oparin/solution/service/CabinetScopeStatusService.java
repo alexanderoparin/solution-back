@@ -2,6 +2,7 @@ package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.model.Cabinet;
@@ -12,6 +13,7 @@ import ru.oparin.solution.service.wb.WbApiCategory;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -29,6 +31,8 @@ public class CabinetScopeStatusService {
 
     private final CabinetScopeStatusRepository repository;
     private final CabinetRepository cabinetRepository;
+    @Lazy
+    private final WbApiKeyService wbApiKeyService;
 
     /**
      * Записать успешное завершение блока обновлений по категории для кабинета.
@@ -48,10 +52,28 @@ public class CabinetScopeStatusService {
 
     /**
      * Записать неуспех (401 или иная ошибка доступа) по категории для кабинета.
-     * В БД пишется очищенное сообщение: без &lt;EOL&gt;, при возможности — только поле "detail" из JSON ответа WB.
+     * Для «Маркетплейс» при 401 сразу обновляет статус через /ping (без записи сырого ответа синка).
      */
     @Transactional
     public void recordFailure(Long cabinetId, WbApiCategory category, String errorMessage) {
+        if (category == WbApiCategory.MARKETPLACE && isUnauthorizedScopeError(errorMessage)) {
+            log.debug("Кабинет {}: категория {} — 401, обновляем статус через /ping",
+                    cabinetId, category.getDisplayName());
+            wbApiKeyService.pingCategoryForCabinet(cabinetId, WbApiCategory.MARKETPLACE);
+            return;
+        }
+        saveFailure(cabinetId, category, errorMessage);
+    }
+
+    /**
+     * Записать неуспех без повторного /ping (используется самим {@link WbApiKeyService} после /ping).
+     */
+    @Transactional
+    public void recordFailureFromPing(Long cabinetId, WbApiCategory category, String errorMessage) {
+        saveFailure(cabinetId, category, errorMessage);
+    }
+
+    private void saveFailure(Long cabinetId, WbApiCategory category, String errorMessage) {
         LocalDateTime now = LocalDateTime.now();
         CabinetScopeStatus status = findOrCreate(cabinetId, category);
         status.setLastCheckedAt(now);
@@ -59,6 +81,16 @@ public class CabinetScopeStatusService {
         status.setErrorMessage(sanitizeErrorMessage(errorMessage));
         repository.save(status);
         log.debug("Кабинет {}: категория {} — неуспех: {}", cabinetId, category.getDisplayName(), errorMessage);
+    }
+
+    private static boolean isUnauthorizedScopeError(String errorMessage) {
+        if (errorMessage == null || errorMessage.isBlank()) {
+            return false;
+        }
+        String lower = errorMessage.toLowerCase(Locale.ROOT);
+        return lower.contains("401")
+                || lower.contains("unauthorized")
+                || lower.contains("token scope not allowed");
     }
 
     /**
