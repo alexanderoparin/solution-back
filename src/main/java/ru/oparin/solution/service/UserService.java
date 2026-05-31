@@ -521,6 +521,7 @@ public class UserService {
                 .isTemporaryPassword(user.getIsTemporaryPassword())
                 .createdAt(user.getCreatedAt())
                 .ownerEmail(user.getOwner() != null ? user.getOwner().getEmail() : null)
+                .isAgencyClient(user.getIsAgencyClient())
                 .lastDataUpdateAt(lastDataUpdateAt)
                 .lastDataUpdateRequestedAt(lastDataUpdateRequestedAt)
                 .build();

@@ -26,7 +26,7 @@ public final class CabinetManagedSpecifications {
         return Long.class.equals(rt) || long.class.equals(rt);
     }
 
-    public static Specification<Cabinet> managedList(User currentUser, String searchRaw) {
+    public static Specification<Cabinet> managedList(User currentUser, String searchRaw, boolean onlyActiveUsers) {
         return (root, query, cb) -> {
             Join<Cabinet, User> userJoin = root.join("user", JoinType.INNER);
 
@@ -43,6 +43,10 @@ public final class CabinetManagedSpecifications {
                 scope = cb.and(isSeller, cb.equal(owner.get("id"), currentUser.getId()));
             } else {
                 return cb.disjunction();
+            }
+
+            if (onlyActiveUsers) {
+                scope = cb.and(scope, cb.isTrue(userJoin.get("isActive")));
             }
 
             if (!StringUtils.hasText(searchRaw)) {
@@ -65,7 +69,7 @@ public final class CabinetManagedSpecifications {
     }
 
     /**
-     * Та же зона видимости, что у {@link #managedList(User, String)}, но только кабинеты с непустым API-ключом.
+     * Та же зона видимости, что у {@link #managedList(User, String, boolean)}, но только кабинеты с непустым API-ключом.
      */
     public static Specification<Cabinet> managedListWithApiKey(User currentUser) {
         return (root, query, cb) -> {
@@ -73,7 +77,7 @@ public final class CabinetManagedSpecifications {
 
             if (!isCountQuery(query)) {
                 root.fetch("user", JoinType.INNER);
-                // См. комментарий в {@link #managedList(User, String)} — без DISTINCT (PostgreSQL + ORDER BY lower).
+                // См. комментарий в {@link #managedList(User, String, boolean)} — без DISTINCT (PostgreSQL + ORDER BY lower).
             }
 
             Predicate isSeller = cb.equal(userJoin.get("role"), Role.SELLER);

@@ -9,6 +9,7 @@ public enum UserSortField {
     EMAIL("email"),
     ROLE("role"),
     IS_ACTIVE("isActive"),
+    IS_AGENCY_CLIENT("isAgencyClient"),
     CREATED_AT("createdAt"),
     LAST_DATA_UPDATE_AT("lastDataUpdateAt"),
     LAST_DATA_UPDATE_REQUESTED_AT("lastDataUpdateRequestedAt");

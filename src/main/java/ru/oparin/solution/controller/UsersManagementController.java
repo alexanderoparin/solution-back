@@ -227,6 +227,7 @@ public class UsersManagementController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "true") boolean onlyActive,
             @RequestParam(defaultValue = ManagedCabinetSortField.DEFAULT_REQUEST_VALUE) ManagedCabinetSortField sortBy,
             @RequestParam(defaultValue = "ASC") Sort.Direction sortDir,
             Authentication authentication
@@ -236,7 +237,7 @@ public class UsersManagementController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         Pageable pageable = PageRequest.of(page, Math.clamp(size, 1, 100), CabinetService.sortForManagedList(sortBy, sortDir));
-        var cabinetPage = cabinetService.pageManagedCabinets(currentUser, pageable, search);
+        var cabinetPage = cabinetService.pageManagedCabinets(currentUser, pageable, search, onlyActive);
         PageResponse<ManagedCabinetRowDto> response = PageResponse.<ManagedCabinetRowDto>builder()
                 .content(cabinetPage.getContent())
                 .totalElements(cabinetPage.getTotalElements())
@@ -520,6 +521,7 @@ public class UsersManagementController {
                 .isTemporaryPassword(user.getIsTemporaryPassword())
                 .createdAt(user.getCreatedAt())
                 .ownerEmail(user.getOwner() != null ? user.getOwner().getEmail() : null)
+                .isAgencyClient(user.getIsAgencyClient())
                 .build();
     }
 }

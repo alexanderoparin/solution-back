@@ -133,6 +133,7 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
             case EMAIL -> root.get(USER_EMAIL_FIELD);
             case ROLE -> root.get(USER_ROLE_FIELD);
             case IS_ACTIVE -> root.get("isActive");
+            case IS_AGENCY_CLIENT -> root.get("isAgencyClient");
             default -> root.get("createdAt");
         };
 

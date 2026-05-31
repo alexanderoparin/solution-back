@@ -71,13 +71,14 @@ public class CabinetService {
     }
 
     /**
-     * Сортировка для {@link #pageManagedCabinets(User, Pageable, String)}.
+     * Сортировка для {@link #pageManagedCabinets(User, Pageable, String, boolean)}.
      */
     public static Sort sortForManagedList(ManagedCabinetSortField field, Sort.Direction direction) {
         return switch (field) {
             case CABINET_ID -> Sort.by(new Order(direction, "id"));
             case CABINET_NAME -> Sort.by(new Order(direction, "name").ignoreCase());
             case SELLER_EMAIL -> Sort.by(new Order(direction, "user.email").ignoreCase());
+            case SELLER_AGENCY_CLIENT -> Sort.by(new Order(direction, "user.isAgencyClient"));
             case LAST_DATA_UPDATE_AT -> Sort.by(
                     direction == Sort.Direction.ASC
                             ? Order.asc("lastDataUpdateAt").nullsLast()
@@ -93,15 +94,21 @@ public class CabinetService {
      * Постраничный плоский список кабинетов (ADMIN / MANAGER) с поиском и сортировкой.
      */
     @Transactional(readOnly = true)
-    public Page<ManagedCabinetRowDto> pageManagedCabinets(User currentUser, Pageable pageable, String search) {
+    public Page<ManagedCabinetRowDto> pageManagedCabinets(
+            User currentUser,
+            Pageable pageable,
+            String search,
+            boolean onlyActiveUsers
+    ) {
         if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
             throw new UserException(CABINET_ACCESS_DENIED, HttpStatus.FORBIDDEN);
         }
-        var spec = CabinetManagedSpecifications.managedList(currentUser, search);
+        var spec = CabinetManagedSpecifications.managedList(currentUser, search, onlyActiveUsers);
         return cabinetRepository.findAll(spec, pageable)
                 .map(c -> ManagedCabinetRowDto.builder()
                         .sellerId(c.getUser().getId())
                         .sellerEmail(c.getUser().getEmail())
+                        .sellerAgencyClient(c.getUser().getIsAgencyClient())
                         .cabinet(toDto(c))
                         .build());
     }
