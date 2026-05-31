@@ -2,7 +2,7 @@ package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Lazy;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.model.Cabinet;
@@ -31,8 +31,7 @@ public class CabinetScopeStatusService {
 
     private final CabinetScopeStatusRepository repository;
     private final CabinetRepository cabinetRepository;
-    @Lazy
-    private final WbApiKeyService wbApiKeyService;
+    private final ObjectProvider<WbApiKeyService> wbApiKeyServiceProvider;
 
     /**
      * Записать успешное завершение блока обновлений по категории для кабинета.
@@ -59,7 +58,7 @@ public class CabinetScopeStatusService {
         if (category == WbApiCategory.MARKETPLACE && isUnauthorizedScopeError(errorMessage)) {
             log.debug("Кабинет {}: категория {} — 401, обновляем статус через /ping",
                     cabinetId, category.getDisplayName());
-            wbApiKeyService.pingCategoryForCabinet(cabinetId, WbApiCategory.MARKETPLACE);
+            wbApiKeyServiceProvider.getObject().pingCategoryForCabinet(cabinetId, WbApiCategory.MARKETPLACE);
             return;
         }
         saveFailure(cabinetId, category, errorMessage);
