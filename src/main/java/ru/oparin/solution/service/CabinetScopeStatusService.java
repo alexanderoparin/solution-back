@@ -11,7 +11,9 @@ import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.CabinetScopeStatusRepository;
 import ru.oparin.solution.service.wb.WbApiCategory;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -28,6 +30,14 @@ import static java.util.stream.Collectors.toMap;
 @RequiredArgsConstructor
 @Slf4j
 public class CabinetScopeStatusService {
+
+    /** Длительность блокировки start/pause РК после read-only токена WB. */
+    public static final Duration PROMOTION_WRITE_BLOCK_DURATION = Duration.ofHours(1);
+
+    public static final String PROMOTION_READ_ONLY_WRITE_MESSAGE =
+            "API-ключ кабинета только для чтения. Для запуска и паузы РК создайте в ЛК WB токен "
+                    + "с правом изменения в категории «Продвижение» и обновите ключ в профиле. "
+                    + "Повторная попытка будет доступна через 1 час.";
 
     private final CabinetScopeStatusRepository repository;
     private final CabinetRepository cabinetRepository;
@@ -168,6 +178,78 @@ public class CabinetScopeStatusService {
                 s.getLastCheckedAt(),
                 s.getSuccess(),
                 s.getErrorMessage());
+    }
+
+    /**
+     * Активная блокировка записи по категории «Продвижение» (start/pause РК).
+     */
+    @Transactional
+    public Optional<PromotionWriteBlock> getActivePromotionWriteBlock(Long cabinetId) {
+        return getActiveWriteBlock(cabinetId, WbApiCategory.PROMOTION, true);
+    }
+
+    /**
+     * Блокирует start/pause РК на {@link #PROMOTION_WRITE_BLOCK_DURATION} после read-only токена.
+     */
+    @Transactional
+    public void recordPromotionWriteReadOnlyBlock(Long cabinetId) {
+        CabinetScopeStatus status = findOrCreate(cabinetId, WbApiCategory.PROMOTION);
+        LocalDateTime now = LocalDateTime.now();
+        status.setLastCheckedAt(now);
+        status.setWriteBlockedUntil(now.plus(PROMOTION_WRITE_BLOCK_DURATION));
+        status.setErrorMessage(PROMOTION_READ_ONLY_WRITE_MESSAGE);
+        repository.save(status);
+        log.debug("Кабинет {}: блокировка записи PROMOTION до {}", cabinetId, status.getWriteBlockedUntil());
+    }
+
+    /**
+     * Снимает блокировку записи по «Продвижению» (успешный start/pause или смена API-ключа).
+     */
+    @Transactional
+    public void clearPromotionWriteBlock(Long cabinetId) {
+        repository.findByCabinetIdAndCategory(cabinetId, WbApiCategory.PROMOTION).ifPresent(status -> {
+            status.setWriteBlockedUntil(null);
+            if (PROMOTION_READ_ONLY_WRITE_MESSAGE.equals(status.getErrorMessage())) {
+                status.setErrorMessage(null);
+            }
+            repository.save(status);
+        });
+    }
+
+    private Optional<PromotionWriteBlock> getActiveWriteBlock(
+            Long cabinetId,
+            WbApiCategory category,
+            boolean clearIfExpired
+    ) {
+        Optional<CabinetScopeStatus> row = repository.findByCabinetIdAndCategory(cabinetId, category);
+        if (row.isEmpty()) {
+            return Optional.empty();
+        }
+        CabinetScopeStatus status = row.get();
+        LocalDateTime until = status.getWriteBlockedUntil();
+        if (until == null) {
+            return Optional.empty();
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if (!now.isBefore(until)) {
+            if (clearIfExpired) {
+                status.setWriteBlockedUntil(null);
+                if (PROMOTION_READ_ONLY_WRITE_MESSAGE.equals(status.getErrorMessage())) {
+                    status.setErrorMessage(null);
+                }
+                repository.save(status);
+            }
+            return Optional.empty();
+        }
+        long seconds = ChronoUnit.SECONDS.between(now, until);
+        String message = status.getErrorMessage() != null ? status.getErrorMessage() : PROMOTION_READ_ONLY_WRITE_MESSAGE;
+        return Optional.of(new PromotionWriteBlock(until, message, Math.max(1L, seconds)));
+    }
+
+    /**
+     * Блокировка операций записи по категории WB API.
+     */
+    public record PromotionWriteBlock(LocalDateTime blockedUntil, String message, long secondsRemaining) {
     }
 
     private CabinetScopeStatus findOrCreate(Long cabinetId, WbApiCategory category) {

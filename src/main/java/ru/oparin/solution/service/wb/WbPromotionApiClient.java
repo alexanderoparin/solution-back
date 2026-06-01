@@ -15,6 +15,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.*;
 import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.WbApiEventType;
+import ru.oparin.solution.service.PromotionCampaignControlWriteService;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -189,6 +190,9 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     }
 
     private String extractCampaignControlErrorMessage(HttpClientErrorException e) {
+        if (PromotionCampaignControlWriteService.isReadOnlyTokenError(e)) {
+            return PromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE;
+        }
         String body = e.getResponseBodyAsString();
         if (body == null || body.isBlank()) {
             if (e.getStatusCode().value() == 422) {

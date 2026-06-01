@@ -9,6 +9,7 @@ import ru.oparin.solution.dto.analytics.*;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.service.AnalyticsService;
 import ru.oparin.solution.service.PromotionCampaignControlService;
+import ru.oparin.solution.service.PromotionCampaignControlWriteService;
 import ru.oparin.solution.service.SellerContextService;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.MainStepPayload;
@@ -31,6 +32,7 @@ public class AdvertisingController {
     private final AnalyticsService analyticsService;
     private final WbApiEventService wbApiEventService;
     private final PromotionCampaignControlService promotionCampaignControlService;
+    private final PromotionCampaignControlWriteService promotionCampaignControlWriteService;
 
     /**
      * Список рекламных кампаний текущего кабинета (с агрегацией статистики за период).
@@ -104,6 +106,27 @@ public class AdvertisingController {
     }
 
     /**
+     * Доступность запуска/паузы РК для кабинета (временная блокировка при read-only токене).
+     */
+    @GetMapping("/campaigns/control-capabilities")
+    public ResponseEntity<PromotionControlCapabilitiesDto> getControlCapabilities(
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                sellerId,
+                cabinetId
+        );
+        Cabinet cabinet = context.cabinet();
+        if (cabinet == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(promotionCampaignControlWriteService.getCapabilities(cabinet));
+    }
+
+    /**
      * Поставить в очередь запуск рекламной кампании (WB GET /adv/v0/start).
      */
     @PostMapping("/campaigns/{advertId}/start")
@@ -158,6 +181,13 @@ public class AdvertisingController {
                             formatRateLimitMessage(e.getNextAvailableInSeconds()),
                             "nextAvailableInSeconds",
                             e.getNextAvailableInSeconds()
+                    ));
+        } catch (PromotionCampaignControlWriteService.CampaignControlWriteBlockedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of(
+                            "message", e.getMessage(),
+                            "nextAvailableInSeconds", e.getNextAvailableInSeconds(),
+                            "canControl", false
                     ));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

@@ -271,6 +271,16 @@ public class CabinetService {
         cabinet.setValidationError(null);
         cabinet.setLastValidatedAt(null);
         cabinet.setApiKey(apiKey != null ? apiKey.trim() : null);
+        clearPromotionWriteBlockIfPersisted(cabinet);
+    }
+
+    /**
+     * Снимает временную блокировку start/pause РК после смены API-ключа.
+     */
+    public void clearPromotionWriteBlockIfPersisted(Cabinet cabinet) {
+        if (cabinet != null && cabinet.getId() != null) {
+            cabinetScopeStatusService.clearPromotionWriteBlock(cabinet.getId());
+        }
     }
 
     /**

@@ -97,7 +97,8 @@ public class UserService {
 
         resetApiKeyValidation(cabinet);
         cabinet.setApiKey(newApiKey);
-        cabinetService.save(cabinet);
+        cabinet = cabinetService.save(cabinet);
+        cabinetService.clearPromotionWriteBlockIfPersisted(cabinet);
     }
 
     /**

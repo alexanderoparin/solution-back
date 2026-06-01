@@ -40,4 +40,10 @@ public class CabinetScopeStatus {
 
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
+
+    /**
+     * До этого времени запрещены операции записи по категории (start/pause РК при read-only токене WB).
+     */
+    @Column(name = "write_blocked_until")
+    private LocalDateTime writeBlockedUntil;
 }

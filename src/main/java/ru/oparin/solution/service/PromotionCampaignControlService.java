@@ -26,6 +26,7 @@ public class PromotionCampaignControlService {
     private final PromotionCampaignRepository campaignRepository;
     private final WbApiEventService wbApiEventService;
     private final WbEventRateLimitService rateLimitService;
+    private final PromotionCampaignControlWriteService promotionControlWriteService;
 
     /**
      * Ставит в очередь запуск кампании.
@@ -35,6 +36,7 @@ public class PromotionCampaignControlService {
      */
     public CampaignControlEnqueueResponse enqueueStart(Cabinet cabinet, Long advertId) {
         validateApiKey(cabinet);
+        promotionControlWriteService.ensureControlAllowed(cabinet);
         PromotionCampaign campaign = findCampaignOrThrow(cabinet.getId(), advertId);
         validateStatusForStart(campaign);
         checkRateLimit(cabinet, WbApiEventType.PROMOTION_CAMPAIGN_START);
@@ -55,6 +57,7 @@ public class PromotionCampaignControlService {
      */
     public CampaignControlEnqueueResponse enqueuePause(Cabinet cabinet, Long advertId) {
         validateApiKey(cabinet);
+        promotionControlWriteService.ensureControlAllowed(cabinet);
         PromotionCampaign campaign = findCampaignOrThrow(cabinet.getId(), advertId);
         validateStatusForPause(campaign);
         checkRateLimit(cabinet, WbApiEventType.PROMOTION_CAMPAIGN_PAUSE);
