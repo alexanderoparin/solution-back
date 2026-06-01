@@ -1,0 +1,52 @@
+package ru.oparin.solution.service.events;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
+import ru.oparin.solution.model.WbApiEvent;
+import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.events.payload.PromotionCampaignControlPayload;
+import ru.oparin.solution.service.sync.PromotionCampaignSyncService;
+import ru.oparin.solution.service.wb.WbPromotionApiClient;
+
+import java.util.List;
+
+/**
+ * Выполняет запуск рекламной кампании через WB API и обновляет данные в БД.
+ */
+@Component("promotionCampaignStartEventExecutor")
+@RequiredArgsConstructor
+public class PromotionCampaignStartEventExecutor implements WbApiEventExecutor {
+
+    private final WbApiEventService eventService;
+    private final CabinetService cabinetService;
+    private final WbPromotionApiClient promotionApiClient;
+    private final PromotionCampaignSyncService promotionCampaignSyncService;
+
+    @Override
+    public WbApiEventExecutionResult execute(WbApiEvent event) {
+        PromotionCampaignControlPayload payload = eventService.readPayload(event, PromotionCampaignControlPayload.class);
+        if (payload.advertId() == null) {
+            return WbApiEventExecutionResult.finalError("Не указан ID кампании");
+        }
+        var cabinet = cabinetService.findByIdWithUserOrThrow(event.getCabinet().getId());
+        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+            return WbApiEventExecutionResult.finalError("У кабинета отсутствует API ключ");
+        }
+        try {
+            promotionApiClient.startCampaign(cabinet.getApiKey(), payload.advertId());
+            promotionCampaignSyncService.loadAndSaveAdvertsBatch(
+                    cabinet, cabinet.getApiKey(), List.of(payload.advertId()));
+            return WbApiEventExecutionResult.completedSuccessfully();
+        } catch (WbApiUnauthorizedScopeException e) {
+            return WbApiEventExecutionResult.finalError(e.getMessage());
+        } catch (org.springframework.web.client.RestClientException e) {
+            if (e.getMessage() != null && !e.getMessage().contains("429")) {
+                return WbApiEventExecutionResult.finalError(e.getMessage());
+            }
+            return WbEventExecutionErrors.wrapDeferOrRetryable(e);
+        } catch (Exception e) {
+            return WbEventExecutionErrors.wrapDeferOrRetryable(e);
+        }
+    }
+}

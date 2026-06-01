@@ -41,6 +41,8 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     private static final String ADVERTS_V2_OPERATION = "детали кампаний (v2)";
     private static final String PROMOTION_FULLSTATS_OPERATION = "статистика кампаний";
     private static final String NORMQUERY_STATS_OPERATION = "статистика поисковых кластеров";
+    private static final String CAMPAIGN_START_OPERATION = "запуск кампании";
+    private static final String CAMPAIGN_PAUSE_OPERATION = "пауза кампании";
     private static final int ADVERTS_V2_BATCH_SIZE = 50;
 
     @Value("${wb.retries.max-429-basic}")
@@ -126,6 +128,96 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                 ADVERTS_V2_OPERATION,
                 tokenType,
                 () -> executeWithConnectionRetry("детали кампаний (v2)", () -> getAdvertsV2Once(apiKey, campaignIds)));
+    }
+
+    /**
+     * Запуск рекламной кампании (GET /adv/v0/start). Допустимые статусы WB: 4, 11.
+     *
+     * @param apiKey API-ключ кабинета
+     * @param advertId ID кампании в WB
+     */
+    public void startCampaign(String apiKey, long advertId) {
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
+        executeWith429Retry(
+                CAMPAIGN_START_OPERATION,
+                WbApiEventType.PROMOTION_CAMPAIGN_START.getUri(),
+                CAMPAIGN_START_OPERATION,
+                tokenType,
+                () -> executeWithConnectionRetry(CAMPAIGN_START_OPERATION,
+                        () -> invokeCampaignControlOnce(apiKey, advertId, WbApiEventType.PROMOTION_CAMPAIGN_START)));
+    }
+
+    /**
+     * Пауза рекламной кампании (GET /adv/v0/pause). Допустимый статус WB: 9.
+     *
+     * @param apiKey API-ключ кабинета
+     * @param advertId ID кампании в WB
+     */
+    public void pauseCampaign(String apiKey, long advertId) {
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
+        executeWith429Retry(
+                CAMPAIGN_PAUSE_OPERATION,
+                WbApiEventType.PROMOTION_CAMPAIGN_PAUSE.getUri(),
+                CAMPAIGN_PAUSE_OPERATION,
+                tokenType,
+                () -> executeWithConnectionRetry(CAMPAIGN_PAUSE_OPERATION,
+                        () -> invokeCampaignControlOnce(apiKey, advertId, WbApiEventType.PROMOTION_CAMPAIGN_PAUSE)));
+    }
+
+    private Void invokeCampaignControlOnce(String apiKey, long advertId, WbApiEventType eventType) {
+        HttpHeaders headers = createAuthHeaders(apiKey);
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+        String url = UriComponentsBuilder.fromHttpUrl(eventType.getDefaultUrl())
+                .queryParam("id", advertId)
+                .toUriString();
+        logWbApiCall(url, eventType == WbApiEventType.PROMOTION_CAMPAIGN_START ? CAMPAIGN_START_OPERATION : CAMPAIGN_PAUSE_OPERATION);
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            validateResponse(response);
+            return null;
+        } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
+            String userMessage = extractCampaignControlErrorMessage(e);
+            logWbApiError(eventType.getUri(), e);
+            throw new RestClientException(userMessage != null ? userMessage : e.getMessage(), e);
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            logIoErrorOrFull(eventType.getUri(), e);
+            throw new RestClientException("Ошибка при управлении кампанией: " + e.getMessage(), e);
+        }
+    }
+
+    private String extractCampaignControlErrorMessage(HttpClientErrorException e) {
+        String body = e.getResponseBodyAsString();
+        if (body == null || body.isBlank()) {
+            if (e.getStatusCode().value() == 422) {
+                return "Статус кампании не изменён";
+            }
+            return null;
+        }
+        if (body.contains("\"detail\"")) {
+            try {
+                WbApiProblemResponse problem = objectMapper.readValue(body, WbApiProblemResponse.class);
+                if (problem.getDetail() != null && !problem.getDetail().isBlank()) {
+                    return problem.getDetail();
+                }
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+        try {
+            WbApiSimpleErrorResponse simple = objectMapper.readValue(body, WbApiSimpleErrorResponse.class);
+            if (simple.getErrorText() != null && !simple.getErrorText().isBlank()) {
+                return simple.getErrorText();
+            }
+        } catch (Exception ignored) {
+            // fall through
+        }
+        if (e.getStatusCode().value() == 422) {
+            return body.length() > 200 ? body.substring(0, 200) : body;
+        }
+        return null;
     }
 
     private PromotionAdvertsResponse getAdvertsV2Once(String apiKey, List<Long> campaignIds) {
@@ -371,6 +463,12 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         }
         if (WbApiEventType.PROMOTION_ADVERTS_BATCH.getUri().equals(endpoint)) {
             return WbApiEventType.PROMOTION_ADVERTS_BATCH;
+        }
+        if (WbApiEventType.PROMOTION_CAMPAIGN_START.getUri().equals(endpoint)) {
+            return WbApiEventType.PROMOTION_CAMPAIGN_START;
+        }
+        if (WbApiEventType.PROMOTION_CAMPAIGN_PAUSE.getUri().equals(endpoint)) {
+            return WbApiEventType.PROMOTION_CAMPAIGN_PAUSE;
         }
         return WbApiEventType.PROMOTION_COUNT;
     }

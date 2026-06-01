@@ -50,6 +50,18 @@ public enum WbApiEventType {
             "/adv/v1/normquery/stats",
             30 * 60L,
             6L),
+    /** Запуск рекламной кампании (GET /adv/v0/start). */
+    PROMOTION_CAMPAIGN_START(
+            WbApiBaseUrl.PROMOTION,
+            "/adv/v0/start",
+            720L,
+            1L),
+    /** Пауза рекламной кампании (GET /adv/v0/pause). */
+    PROMOTION_CAMPAIGN_PAUSE(
+            WbApiBaseUrl.PROMOTION,
+            "/adv/v0/pause",
+            720L,
+            1L),
     FEEDBACKS_SYNC_CABINET(
             WbApiBaseUrl.FEEDBACKS,
             "/api/v1/feedbacks",

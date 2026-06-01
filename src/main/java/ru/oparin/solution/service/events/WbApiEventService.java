@@ -37,6 +37,8 @@ public class WbApiEventService {
     public static final String PROMOTION_ADVERTS_BATCH_EXECUTOR_BEAN = "promotionAdvertsBatchEventExecutor";
     public static final String PROMOTION_STATS_BATCH_EXECUTOR_BEAN = "promotionStatsBatchEventExecutor";
     public static final String PROMOTION_NORMQUERY_STATS_BATCH_EXECUTOR_BEAN = "promotionNormQueryStatsBatchEventExecutor";
+    public static final String PROMOTION_CAMPAIGN_START_EXECUTOR_BEAN = "promotionCampaignStartEventExecutor";
+    public static final String PROMOTION_CAMPAIGN_PAUSE_EXECUTOR_BEAN = "promotionCampaignPauseEventExecutor";
     public static final String FEEDBACKS_SYNC_EXECUTOR_BEAN = "feedbacksSyncCabinetEventExecutor";
     public static final String PROMOTION_CALENDAR_SYNC_EXECUTOR_BEAN = "promotionCalendarSyncCabinetEventExecutor";
     public static final String WAREHOUSES_SYNC_EXECUTOR_BEAN = "warehousesSyncCabinetEventExecutor";
@@ -52,6 +54,7 @@ public class WbApiEventService {
     private static final int PRICES_EVENT_PRIORITY = 85;
     private static final int PROMOTION_EVENT_MAX_ATTEMPTS = 5;
     private static final int PROMOTION_EVENT_PRIORITY = 85;
+    private static final int PROMOTION_CAMPAIGN_CONTROL_PRIORITY = 95;
     private static final int SIDECAR_EVENT_MAX_ATTEMPTS = 5;
     private static final int SIDECAR_EVENT_PRIORITY = 84;
     private static final int WAREHOUSES_EVENT_MAX_ATTEMPTS = 5;
@@ -387,6 +390,77 @@ public class WbApiEventService {
     /**
      * @return {@code true}, если создано новое событие PROMOTION_COUNT; {@code false}, если активная задача с тем же периодом уже есть
      */
+    /**
+     * Поставить в очередь запуск рекламной кампании.
+     *
+     * @return id созданного события или {@code null}, если задача уже в очереди
+     */
+    @Transactional
+    public Long enqueuePromotionCampaignStart(Long cabinetId, Long advertId, String triggerSource) {
+        return enqueuePromotionCampaignControl(
+                cabinetId,
+                advertId,
+                WbApiEventType.PROMOTION_CAMPAIGN_START,
+                PROMOTION_CAMPAIGN_START_EXECUTOR_BEAN,
+                "PROMOTION_START",
+                triggerSource
+        );
+    }
+
+    /**
+     * Поставить в очередь паузу рекламной кампании.
+     *
+     * @return id созданного события или {@code null}, если задача уже в очереди
+     */
+    @Transactional
+    public Long enqueuePromotionCampaignPause(Long cabinetId, Long advertId, String triggerSource) {
+        return enqueuePromotionCampaignControl(
+                cabinetId,
+                advertId,
+                WbApiEventType.PROMOTION_CAMPAIGN_PAUSE,
+                PROMOTION_CAMPAIGN_PAUSE_EXECUTOR_BEAN,
+                "PROMOTION_PAUSE",
+                triggerSource
+        );
+    }
+
+    private Long enqueuePromotionCampaignControl(
+            Long cabinetId,
+            Long advertId,
+            WbApiEventType eventType,
+            String executorBean,
+            String dedupPrefix,
+            String triggerSource
+    ) {
+        String dedupKey = dedupPrefix + ":" + cabinetId + ":" + advertId;
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("WB API {} уже в очереди (dedupKey={})", eventType, dedupKey);
+            return null;
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        PromotionCampaignControlPayload payload = PromotionCampaignControlPayload.builder()
+                .advertId(advertId)
+                .build();
+        WbApiEvent event = WbApiEvent.builder()
+                .eventType(eventType)
+                .status(WbApiEventStatus.CREATED)
+                .executorBeanName(executorBean)
+                .cabinet(cabinet)
+                .payloadJson(writePayload(payload))
+                .dedupKey(dedupKey)
+                .attemptCount(0)
+                .maxAttempts(PROMOTION_EVENT_MAX_ATTEMPTS)
+                .nextAttemptAt(LocalDateTime.now())
+                .priority(PROMOTION_CAMPAIGN_CONTROL_PRIORITY)
+                .triggerSource(triggerSource)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        event = eventRepository.save(event);
+        return event.getId();
+    }
+
     @Transactional
     public boolean enqueuePromotionRequestLevelEvents(Long cabinetId, MainStepPayload payload, String triggerSource) {
         String dedupKey = "PROMOTION_COUNT:" + promotionPeriodKey(cabinetId, payload.dateFrom(), payload.dateTo());

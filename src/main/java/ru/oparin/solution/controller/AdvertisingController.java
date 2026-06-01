@@ -5,12 +5,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import ru.oparin.solution.dto.analytics.CampaignDetailDto;
-import ru.oparin.solution.dto.analytics.CampaignDto;
-import ru.oparin.solution.dto.analytics.NormQueryClustersResponseDto;
-import ru.oparin.solution.dto.analytics.PromotionSyncEnqueueResponse;
+import ru.oparin.solution.dto.analytics.*;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.service.AnalyticsService;
+import ru.oparin.solution.service.PromotionCampaignControlService;
 import ru.oparin.solution.service.SellerContextService;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.MainStepPayload;
@@ -32,6 +30,7 @@ public class AdvertisingController {
     private final SellerContextService sellerContextService;
     private final AnalyticsService analyticsService;
     private final WbApiEventService wbApiEventService;
+    private final PromotionCampaignControlService promotionCampaignControlService;
 
     /**
      * Список рекламных кампаний текущего кабинета (с агрегацией статистики за период).
@@ -102,6 +101,76 @@ public class AdvertisingController {
                 "ADVERTISING_UI"
         );
         return ResponseEntity.ok(new PromotionSyncEnqueueResponse(enqueued));
+    }
+
+    /**
+     * Поставить в очередь запуск рекламной кампании (WB GET /adv/v0/start).
+     */
+    @PostMapping("/campaigns/{advertId}/start")
+    public ResponseEntity<?> startCampaign(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        return enqueueCampaignControl(advertId, sellerId, cabinetId, authentication, true);
+    }
+
+    /**
+     * Поставить в очередь паузу рекламной кампании (WB GET /adv/v0/pause).
+     */
+    @PostMapping("/campaigns/{advertId}/pause")
+    public ResponseEntity<?> pauseCampaign(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        return enqueueCampaignControl(advertId, sellerId, cabinetId, authentication, false);
+    }
+
+    private ResponseEntity<?> enqueueCampaignControl(
+            Long advertId,
+            Long sellerId,
+            Long cabinetId,
+            Authentication authentication,
+            boolean start
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                sellerId,
+                cabinetId
+        );
+        Cabinet cabinet = context.cabinet();
+        if (cabinet == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Кабинет не выбран"));
+        }
+        try {
+            CampaignControlEnqueueResponse response = start
+                    ? promotionCampaignControlService.enqueueStart(cabinet, advertId)
+                    : promotionCampaignControlService.enqueuePause(cabinet, advertId);
+            return ResponseEntity.status(response.enqueued() ? HttpStatus.ACCEPTED : HttpStatus.OK)
+                    .body(response);
+        } catch (PromotionCampaignControlService.CampaignControlRateLimitException e) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(Map.of(
+                            "message",
+                            formatRateLimitMessage(e.getNextAvailableInSeconds()),
+                            "nextAvailableInSeconds",
+                            e.getNextAvailableInSeconds()
+                    ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static String formatRateLimitMessage(long seconds) {
+        if (seconds >= 60) {
+            long minutes = (seconds + 59) / 60;
+            return "Превышен лимит запросов к WB API. Повторите примерно через "
+                    + minutes + " мин.";
+        }
+        return "Превышен лимит запросов к WB API. Повторите через " + seconds + " сек.";
     }
 
     /**

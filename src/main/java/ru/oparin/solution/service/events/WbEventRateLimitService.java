@@ -6,6 +6,7 @@ import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.model.WbApiEventType;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -20,6 +21,40 @@ public class WbEventRateLimitService {
      *
      * @return null, если вызов можно выполнять сейчас; иначе время, когда вызов станет допустим.
      */
+    /**
+     * Проверяет лимит без обновления счётчика вызовов (для ответа API до постановки в очередь).
+     *
+     * @return время, когда запрос станет доступен, или {@code null}, если сейчас можно вызывать
+     */
+    public LocalDateTime peekDeferUntil(Long cabinetId, WbApiEventType eventType, CabinetTokenType tokenType) {
+        if (cabinetId == null || eventType == null) {
+            return null;
+        }
+        int intervalSeconds = resolveRateLimitSeconds(eventType, tokenType != null ? tokenType : CabinetTokenType.BASIC);
+        if (intervalSeconds <= 0) {
+            return null;
+        }
+        String key = buildKey(eventType, cabinetId);
+        LocalDateTime lastCallAt = lastCallByCabinetAndType.get(key);
+        if (lastCallAt == null) {
+            return null;
+        }
+        LocalDateTime allowedAt = lastCallAt.plusSeconds(intervalSeconds);
+        return LocalDateTime.now().isBefore(allowedAt) ? allowedAt : null;
+    }
+
+    /**
+     * Секунды до разрешённого следующего вызова (0 — можно сейчас).
+     */
+    public long secondsUntilAvailable(Long cabinetId, WbApiEventType eventType, CabinetTokenType tokenType) {
+        LocalDateTime deferUntil = peekDeferUntil(cabinetId, eventType, tokenType);
+        if (deferUntil == null) {
+            return 0L;
+        }
+        long sec = Duration.between(LocalDateTime.now(), deferUntil).getSeconds();
+        return Math.max(1L, sec);
+    }
+
     public LocalDateTime acquireOrDefer(WbApiEvent event) {
         Long cabinetId = event.getCabinet() != null ? event.getCabinet().getId() : null;
         if (cabinetId == null) {
