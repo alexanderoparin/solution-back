@@ -558,6 +558,8 @@ public class CabinetService {
                         .lastCheckedAt(s.lastCheckedAt())
                         .success(s.success())
                         .errorMessage(s.errorMessage())
+                        .writeBlockedUntil(s.writeBlockedUntil())
+                        .writeReadOnly(s.writeReadOnly())
                         .build())
                 .toList();
         return CabinetDto.builder()

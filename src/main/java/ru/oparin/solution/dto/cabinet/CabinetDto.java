@@ -67,5 +67,9 @@ public class CabinetDto {
         private LocalDateTime lastCheckedAt;
         private Boolean success;
         private String errorMessage;
+        /** До этого времени запись по категории недоступна (read-only токен WB). */
+        private LocalDateTime writeBlockedUntil;
+        /** Токен только для чтения по операциям записи (например start/pause РК). */
+        private Boolean writeReadOnly;
     }
 }

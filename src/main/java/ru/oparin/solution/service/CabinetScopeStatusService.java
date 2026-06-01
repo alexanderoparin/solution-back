@@ -166,17 +166,23 @@ public class CabinetScopeStatusService {
                         cat.getDisplayName(),
                         null,
                         null,
-                        null)))
+                        null,
+                        null,
+                        false)))
                 .collect(Collectors.toList());
     }
 
     private static CabinetScopeStatusDto toDto(CabinetScopeStatus s) {
+        LocalDateTime until = s.getWriteBlockedUntil();
+        boolean writeReadOnly = until != null && LocalDateTime.now().isBefore(until);
         return new CabinetScopeStatusDto(
                 s.getCategory().name(),
                 s.getCategory().getDisplayName(),
                 s.getLastCheckedAt(),
                 s.getSuccess(),
-                s.getErrorMessage());
+                s.getErrorMessage(),
+                until,
+                writeReadOnly);
     }
 
     /**
@@ -208,11 +214,21 @@ public class CabinetScopeStatusService {
     public void clearPromotionWriteBlock(Long cabinetId) {
         repository.findByCabinetIdAndCategory(cabinetId, WbApiCategory.PROMOTION).ifPresent(status -> {
             status.setWriteBlockedUntil(null);
-            if (PROMOTION_READ_ONLY_WRITE_MESSAGE.equals(status.getErrorMessage())) {
+            if (isPromotionReadOnlyErrorMessage(status.getErrorMessage())) {
                 status.setErrorMessage(null);
             }
             repository.save(status);
         });
+    }
+
+    private static boolean isPromotionReadOnlyErrorMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        String lower = message.toLowerCase(Locale.ROOT);
+        return lower.contains("read-only")
+                || lower.contains("readonly")
+                || lower.contains("только для чтения");
     }
 
     private Optional<PromotionWriteBlock> getActiveWriteBlock(
@@ -233,7 +249,7 @@ public class CabinetScopeStatusService {
         if (!now.isBefore(until)) {
             if (clearIfExpired) {
                 status.setWriteBlockedUntil(null);
-                if (PROMOTION_READ_ONLY_WRITE_MESSAGE.equals(status.getErrorMessage())) {
+                if (isPromotionReadOnlyErrorMessage(status.getErrorMessage())) {
                     status.setErrorMessage(null);
                 }
                 repository.save(status);
@@ -275,6 +291,10 @@ public class CabinetScopeStatusService {
             String categoryDisplayName,
             LocalDateTime lastCheckedAt,
             Boolean success,
-            String errorMessage
+            String errorMessage,
+            /** До этого времени запись по категории заблокирована (read-only токен). */
+            LocalDateTime writeBlockedUntil,
+            /** Активна блокировка записи (только чтение для start/pause РК). */
+            boolean writeReadOnly
     ) {}
 }
