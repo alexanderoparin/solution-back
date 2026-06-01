@@ -11,7 +11,7 @@ spring:
   mail:
     host: smtp.timeweb.ru
     port: 587
-    username: support@wb-solution.ru
+    username: support@click-i.ru
     password: ${MAIL_PASSWORD}
     properties:
       mail:
@@ -82,7 +82,7 @@ wb:
 app:
   frontend-url: "https://click-i.ru"
   mail:
-    from: support@wb-solution.ru
+    from: support@click-i.ru
   executors:
     core-pool-size: 4
     max-pool-size: 6
