@@ -36,8 +36,7 @@ public class CabinetScopeStatusService {
 
     public static final String PROMOTION_READ_ONLY_WRITE_MESSAGE =
             "API-ключ кабинета только для чтения. Для запуска и паузы РК создайте в ЛК WB токен "
-                    + "с правом изменения в категории «Продвижение» и обновите ключ в профиле. "
-                    + "Повторная попытка будет доступна через 1 час.";
+                    + "с правом изменения в категории «Продвижение» и обновите ключ в профиле.";
 
     private final CabinetScopeStatusRepository repository;
     private final CabinetRepository cabinetRepository;
