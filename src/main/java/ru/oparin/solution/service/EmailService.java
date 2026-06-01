@@ -24,6 +24,9 @@ public class EmailService {
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
+    @Value("${app.brand-name:Click-I}")
+    private String brandName;
+
     /**
      * Отправляет письмо со ссылкой для сброса пароля.
      *
@@ -32,12 +35,12 @@ public class EmailService {
      */
     public void sendPasswordResetEmail(String toEmail, String token) {
         String resetLink = buildResetLink(token);
-        String subject = "Восстановление пароля — WB-Solution";
+        String subject = "Восстановление пароля — " + brandName;
         String text = "Здравствуйте!\n\n"
                 + "Вы запросили сброс пароля. Перейдите по ссылке для установки нового пароля:\n\n"
                 + resetLink + "\n\n"
                 + "Ссылка действительна 24 часа. Если вы не запрашивали сброс, проигнорируйте это письмо.\n\n"
-                + "— WB-Solution";
+                + "— " + brandName;
 
         try {
             SimpleMailMessage message = new SimpleMailMessage();
@@ -64,12 +67,12 @@ public class EmailService {
      */
     public void sendEmailConfirmationEmail(String toEmail, String token) {
         String confirmLink = buildConfirmEmailLink(token);
-        String subject = "Подтверждение email — WB-Solution";
+        String subject = "Подтверждение email — " + brandName;
         String text = "Здравствуйте!\n\n"
                 + "Подтвердите, что это ваш email, перейдя по ссылке:\n\n"
                 + confirmLink + "\n\n"
-                + "Ссылка действительна 24 часа. Если вы не регистрировались в WB-Solution, проигнорируйте это письмо.\n\n"
-                + "— WB-Solution";
+                + "Ссылка действительна 24 часа. Если вы не регистрировались в " + brandName + ", проигнорируйте это письмо.\n\n"
+                + "— " + brandName;
 
         try {
             SimpleMailMessage message = new SimpleMailMessage();

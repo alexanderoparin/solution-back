@@ -81,6 +81,7 @@ wb:
 
 app:
   frontend-url: "https://click-i.ru"
+  brand-name: "Click-I"
   mail:
     from: corp@click-i.ru
   executors:
