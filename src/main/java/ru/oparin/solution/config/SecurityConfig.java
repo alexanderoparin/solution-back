@@ -41,6 +41,9 @@ public class SecurityConfig {
     private static final int BCRYPT_STRENGTH = 12;
     private static final List<String> ALLOWED_ORIGINS = List.of(
             "http://localhost:5173",
+            "https://click-i.ru",
+            "https://www.click-i.ru",
+            "http://click-i.ru",
             "https://wb-solution.ru",
             "http://wb-solution.ru",
             "http://109.68.213.220",
