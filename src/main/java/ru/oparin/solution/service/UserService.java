@@ -117,6 +117,7 @@ public class UserService {
         
         updateUserPassword(user, newPassword);
         userRepository.save(user);
+        log.info("Пароль изменён: {} (userId={})", user.getEmail(), userId);
     }
 
     /**
