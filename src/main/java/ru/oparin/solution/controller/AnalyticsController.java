@@ -156,7 +156,8 @@ public class AnalyticsController {
                 request.getCampaignDateFrom(),
                 request.getCampaignDateTo(),
                 request.getDailyDataDateFrom(),
-                request.getDailyDataDateTo()
+                request.getDailyDataDateTo(),
+                request.getDailyDataCampaignAdvertId()
         );
         
         return ResponseEntity.ok(response);

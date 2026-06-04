@@ -103,6 +103,20 @@ public interface PromotionCampaignStatisticsRepository extends JpaRepository<Pro
     );
 
     /**
+     * Статистика по артикулу в рамках одной рекламной кампании за период.
+     */
+    @Query("SELECT s FROM PromotionCampaignStatistics s "
+            + "WHERE s.campaign.advertId = :campaignAdvertId "
+            + "AND s.nmId = :nmId "
+            + "AND s.date BETWEEN :dateFrom AND :dateTo")
+    List<PromotionCampaignStatistics> findByCampaignAdvertIdAndNmIdAndDateBetween(
+            @Param("campaignAdvertId") Long campaignAdvertId,
+            @Param("nmId") Long nmId,
+            @Param("dateFrom") LocalDate dateFrom,
+            @Param("dateTo") LocalDate dateTo
+    );
+
+    /**
      * Список уникальных артикулов (nm_id) по кампании.
      * Используется для восстановления связей campaign_articles, когда WB API не возвращает nmIds.
      *

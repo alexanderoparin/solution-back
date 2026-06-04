@@ -511,15 +511,17 @@ public class AnalyticsService {
      * @param campaignDateTo конец периода для метрик РК (опционально)
      * @param dailyDataDateFrom начало диапазона для {@code dailyData} (опционально, вместе с {@code dailyDataDateTo})
      * @param dailyDataDateTo конец диапазона для {@code dailyData} включительно (опционально)
+     * @param dailyDataCampaignAdvertId если задан — рекламные метрики в {@code dailyData} только по этой РК
      */
     @Transactional(readOnly = true)
     public ArticleResponseDto getArticle(User seller, Long cabinetId, Long nmId, List<PeriodDto> periods,
                                          LocalDate campaignDateFrom, LocalDate campaignDateTo,
-                                         LocalDate dailyDataDateFrom, LocalDate dailyDataDateTo) {
+                                         LocalDate dailyDataDateFrom, LocalDate dailyDataDateTo,
+                                         Long dailyDataCampaignAdvertId) {
         ProductCard card = findCardBySeller(nmId, seller.getId(), cabinetId);
         Long cardCabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
 
-        List<DailyDataDto> dailyData = getDailyData(nmId, cardCabinetId, dailyDataDateFrom, dailyDataDateTo);
+        List<DailyDataDto> dailyData = getDailyData(nmId, cardCabinetId, dailyDataDateFrom, dailyDataDateTo, dailyDataCampaignAdvertId);
         List<PromotionParticipation> participations = cardCabinetId != null
                 ? promotionParticipationRepository.findByCabinet_IdAndNmId(cardCabinetId, nmId)
                 : Collections.emptyList();
@@ -809,37 +811,17 @@ public class AnalyticsService {
      * Суточные строки для графика/таблицы: либо явный диапазон {@code from}/{@code to}, либо последние {@value #DEFAULT_DAILY_DATA_SPAN_DAYS} дней до вчера.
      * Конец не позже «вчера»; длина ограничена {@value #MAX_DAILY_DATA_SPAN_DAYS} днями (при перегрузе отрезается начало интервала).
      */
-    private List<DailyDataDto> getDailyData(Long nmId, Long cabinetId, LocalDate from, LocalDate to) {
-        LocalDate yesterday = LocalDate.now().minusDays(1);
-        LocalDate startDate;
-        LocalDate endDate;
-        if (from != null && to != null) {
-            LocalDate a = from;
-            LocalDate b = to;
-            if (a.isAfter(b)) {
-                LocalDate tmp = a;
-                a = b;
-                b = tmp;
-            }
-            endDate = b.isAfter(yesterday) ? yesterday : b;
-            startDate = a;
-            if (startDate.isAfter(endDate)) {
-                startDate = endDate;
-            }
-            long span = ChronoUnit.DAYS.between(startDate, endDate) + 1;
-            if (span > MAX_DAILY_DATA_SPAN_DAYS) {
-                startDate = endDate.minusDays(MAX_DAILY_DATA_SPAN_DAYS - 1);
-            }
-        } else {
-            endDate = yesterday;
-            startDate = endDate.minusDays(DEFAULT_DAILY_DATA_SPAN_DAYS - 1);
-        }
+    private List<DailyDataDto> getDailyData(Long nmId, Long cabinetId, LocalDate from, LocalDate to, Long campaignAdvertId) {
+        AnalyticsDateRange range = resolveAnalyticsDateRange(from, to);
+        LocalDate startDate = range.startDate();
+        LocalDate endDate = range.endDate();
 
         List<ProductCardAnalytics> funnelData = cabinetId != null
                 ? analyticsRepository.findByCabinet_IdAndProductCardNmIdAndDateBetween(cabinetId, nmId, startDate, endDate)
                 : analyticsRepository.findByProductCardNmIdAndDateBetween(nmId, startDate, endDate);
 
-        List<PromotionCampaignStatistics> advertisingData = campaignStatisticsRepository.findByNmIdAndDateBetween(nmId, startDate, endDate);
+        List<PromotionCampaignStatistics> advertisingData = resolveAdvertisingStatsForDailyData(
+                nmId, cabinetId, startDate, endDate, campaignAdvertId);
 
         List<ProductPriceHistory> priceData = cabinetId != null
                 ? priceHistoryRepository.findByNmIdAndDateBetweenAndCabinet_Id(nmId, startDate, endDate, cabinetId)
@@ -905,16 +887,21 @@ public class AnalyticsService {
                                 .costs(advertising.costs)
                                 .cpc(advertising.cpc)
                                 .ctr(advertising.ctr);
-                        // СРО и ДРР считаем по тем же «Заказали», что и в таблице (воронка), чтобы строка была консистентна
-                        if (funnel != null && funnel.getOrders() != null && funnel.getOrders() > 0 && advertising.costs != null) {
-                            builder.cpo(MathUtils.divideSafely(advertising.costs, BigDecimal.valueOf(funnel.getOrders())));
+                        boolean scopedToCampaign = campaignAdvertId != null;
+                        if (scopedToCampaign) {
+                            builder.cpo(advertising.cpo).drr(advertising.drr);
                         } else {
-                            builder.cpo(advertising.cpo);
-                        }
-                        if (funnel != null && funnel.getOrdersSum() != null && funnel.getOrdersSum().compareTo(BigDecimal.ZERO) > 0 && advertising.costs != null) {
-                            builder.drr(MathUtils.calculatePercentage(advertising.costs, funnel.getOrdersSum()));
-                        } else {
-                            builder.drr(advertising.drr);
+                            // СРО и ДРР по «Заказали» из воронки карточки — консистентность с блоком «Общая»
+                            if (funnel != null && funnel.getOrders() != null && funnel.getOrders() > 0 && advertising.costs != null) {
+                                builder.cpo(MathUtils.divideSafely(advertising.costs, BigDecimal.valueOf(funnel.getOrders())));
+                            } else {
+                                builder.cpo(advertising.cpo);
+                            }
+                            if (funnel != null && funnel.getOrdersSum() != null && funnel.getOrdersSum().compareTo(BigDecimal.ZERO) > 0 && advertising.costs != null) {
+                                builder.drr(MathUtils.calculatePercentage(advertising.costs, funnel.getOrdersSum()));
+                            } else {
+                                builder.drr(advertising.drr);
+                            }
                         }
                     }
                     
@@ -980,6 +967,28 @@ public class AnalyticsService {
         return MathUtils.calculatePercentage(orders, addToCart);
     }
 
+    /**
+     * Рекламная статистика для {@code dailyData}: по всем РК артикула или только по указанной кампании кабинета.
+     */
+    private List<PromotionCampaignStatistics> resolveAdvertisingStatsForDailyData(
+            Long nmId,
+            Long cabinetId,
+            LocalDate startDate,
+            LocalDate endDate,
+            Long campaignAdvertId
+    ) {
+        if (campaignAdvertId == null) {
+            return campaignStatisticsRepository.findByNmIdAndDateBetween(nmId, startDate, endDate);
+        }
+        if (cabinetId == null) {
+            return Collections.emptyList();
+        }
+        return campaignRepository.findByAdvertIdAndCabinet_Id(campaignAdvertId, cabinetId)
+                .map(c -> campaignStatisticsRepository.findByCampaignAdvertIdAndNmIdAndDateBetween(
+                        campaignAdvertId, nmId, startDate, endDate))
+                .orElse(Collections.emptyList());
+    }
+
     private AdvertisingDailyStats aggregateAdvertisingStats(List<PromotionCampaignStatistics> stats) {
         int views = 0;
         int clicks = 0;
@@ -1030,16 +1039,23 @@ public class AnalyticsService {
             return Collections.emptyList();
         }
 
-        boolean withMetrics = campaignDateFrom != null && campaignDateTo != null && !campaignDateFrom.isAfter(campaignDateTo);
+        boolean withMetrics = campaignDateFrom != null && campaignDateTo != null;
+        AnalyticsDateRange metricsRange = withMetrics
+                ? resolveAnalyticsDateRange(campaignDateFrom, campaignDateTo)
+                : null;
         Map<Long, List<PromotionCampaignStatistics>> statsByCampaign = new HashMap<>();
-        if (withMetrics) {
+        Map<Long, FunnelNmTotals> funnelByNmId = Collections.emptyMap();
+        if (withMetrics && metricsRange != null) {
             List<Long> campaignIds = campaigns.stream().map(PromotionCampaign::getAdvertId).collect(Collectors.toList());
             List<PromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
-                    campaignIds, campaignDateFrom, campaignDateTo);
+                    campaignIds, metricsRange.startDate(), metricsRange.endDate());
             statsByCampaign = allStats.stream().collect(Collectors.groupingBy(s -> s.getCampaign().getAdvertId()));
+            funnelByNmId = buildFunnelTotalsByNmId(cabinetId, Set.of(nmId), metricsRange.startDate(), metricsRange.endDate());
         }
 
         final Map<Long, List<PromotionCampaignStatistics>> statsByCampaignFinal = statsByCampaign;
+        final Map<Long, FunnelNmTotals> funnelByNmIdFinal = funnelByNmId;
+        final Set<Long> scopeNmIds = Set.of(nmId);
         return campaigns.stream()
                 .map(c -> {
                     CampaignDto.CampaignDtoBuilder b = CampaignDto.builder()
@@ -1052,24 +1068,7 @@ public class AnalyticsService {
                             .updatedAt(resolveCampaignUpdatedAt(c));
                     if (withMetrics) {
                         List<PromotionCampaignStatistics> stats = statsByCampaignFinal.getOrDefault(c.getAdvertId(), Collections.emptyList());
-                        int views = 0, clicks = 0, orders = 0, cart = 0;
-                        BigDecimal sum = BigDecimal.ZERO;
-                        for (PromotionCampaignStatistics s : stats) {
-                            if (s.getViews() != null) views += s.getViews();
-                            if (s.getClicks() != null) clicks += s.getClicks();
-                            if (s.getSum() != null) sum = sum.add(s.getSum());
-                            if (s.getOrders() != null) orders += s.getOrders();
-                            if (s.getAtbs() != null) cart += s.getAtbs();
-                        }
-                        BigDecimal ctr = MathUtils.calculatePercentage(clicks, views);
-                        BigDecimal cpc = (clicks > 0 && sum != null) ? sum.divide(BigDecimal.valueOf(clicks), 2, RoundingMode.HALF_UP) : null;
-                        b.views(views > 0 ? views : null)
-                                .clicks(clicks > 0 ? clicks : null)
-                                .ctr(ctr)
-                                .cpc(cpc)
-                                .costs(sum != null && sum.compareTo(BigDecimal.ZERO) > 0 ? sum : null)
-                                .cart(cart > 0 ? cart : null)
-                                .orders(orders > 0 ? orders : null);
+                        applyCampaignPeriodMetrics(b, scopeNmIds, stats, funnelByNmIdFinal);
                     }
                     return b.build();
                 })
@@ -1134,6 +1133,111 @@ public class AnalyticsService {
 
     private static final int DEFAULT_CAMPAIGNS_PERIOD_DAYS = 14;
 
+    /**
+     * Нормализованный период для {@code dailyData} и списка РК: конец не позже вчера, длина ограничена.
+     */
+    private AnalyticsDateRange resolveAnalyticsDateRange(LocalDate from, LocalDate to) {
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+        LocalDate startDate;
+        LocalDate endDate;
+        if (from != null && to != null) {
+            LocalDate a = from;
+            LocalDate b = to;
+            if (a.isAfter(b)) {
+                LocalDate tmp = a;
+                a = b;
+                b = tmp;
+            }
+            endDate = b.isAfter(yesterday) ? yesterday : b;
+            startDate = a;
+            if (startDate.isAfter(endDate)) {
+                startDate = endDate;
+            }
+            long span = ChronoUnit.DAYS.between(startDate, endDate) + 1;
+            if (span > MAX_DAILY_DATA_SPAN_DAYS) {
+                startDate = endDate.minusDays(MAX_DAILY_DATA_SPAN_DAYS - 1);
+            }
+        } else {
+            endDate = yesterday;
+            startDate = endDate.minusDays(DEFAULT_DAILY_DATA_SPAN_DAYS - 1);
+        }
+        return new AnalyticsDateRange(startDate, endDate);
+    }
+
+    private record AnalyticsDateRange(LocalDate startDate, LocalDate endDate) {
+    }
+
+    /** Суммы воронки карточки (корзина / заказы) по артикулу за период. */
+    private record FunnelNmTotals(int cart, int orders) {
+    }
+
+    /**
+     * Метрики кампании за период — те же правила, что строка «Весь период» на карточке РК (все артикулы комбо).
+     */
+    private void applyCampaignPeriodMetrics(
+            CampaignDto.CampaignDtoBuilder builder,
+            Set<Long> scopeNmIds,
+            List<PromotionCampaignStatistics> campaignStats,
+            Map<Long, FunnelNmTotals> funnelByNmId
+    ) {
+        int views = 0;
+        int clicks = 0;
+        int cart = 0;
+        int orders = 0;
+        BigDecimal sum = BigDecimal.ZERO;
+
+        for (PromotionCampaignStatistics s : campaignStats) {
+            if (!scopeNmIds.isEmpty() && !scopeNmIds.contains(s.getNmId())) {
+                continue;
+            }
+            views += MathUtils.getValueOrZero(s.getViews());
+            clicks += MathUtils.getValueOrZero(s.getClicks());
+            if (s.getSum() != null) {
+                sum = sum.add(s.getSum());
+            }
+        }
+
+        for (Long nmId : scopeNmIds) {
+            FunnelNmTotals funnel = funnelByNmId.get(nmId);
+            if (funnel != null) {
+                cart += funnel.cart();
+                orders += funnel.orders();
+            }
+        }
+
+        BigDecimal ctr = MathUtils.calculatePercentage(clicks, views);
+        BigDecimal cpc = clicks > 0
+                ? sum.divide(BigDecimal.valueOf(clicks), 2, RoundingMode.HALF_UP)
+                : null;
+
+        builder.views(views > 0 ? views : null)
+                .clicks(clicks > 0 ? clicks : null)
+                .ctr(ctr)
+                .cpc(cpc)
+                .costs(sum.compareTo(BigDecimal.ZERO) > 0 ? sum : null)
+                .cart(cart > 0 ? cart : null)
+                .orders(orders > 0 ? orders : null);
+    }
+
+    private Map<Long, FunnelNmTotals> buildFunnelTotalsByNmId(Long cabinetId, Collection<Long> nmIds, LocalDate from, LocalDate to) {
+        if (cabinetId == null || nmIds == null || nmIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<ProductCardAnalytics> rows = analyticsRepository.findByCabinet_IdAndProductCardNmIdInAndDateBetween(
+                cabinetId, new ArrayList<>(nmIds), from, to);
+        Map<Long, FunnelNmTotals> result = new HashMap<>();
+        for (ProductCardAnalytics row : rows) {
+            if (row.getProductCard() == null) {
+                continue;
+            }
+            Long nmId = row.getProductCard().getNmId();
+            int cart = MathUtils.getValueOrZero(row.getAddToCart());
+            int orders = MathUtils.getValueOrZero(row.getOrders());
+            result.merge(nmId, new FunnelNmTotals(cart, orders), (a, b) -> new FunnelNmTotals(a.cart() + b.cart(), a.orders() + b.orders()));
+        }
+        return result;
+    }
+
     private static LocalDateTime resolveCampaignUpdatedAt(PromotionCampaign c) {
         if (c.getChangeTime() != null) {
             return c.getChangeTime();
@@ -1150,11 +1254,9 @@ public class AnalyticsService {
         if (cabinetId == null) {
             return Collections.emptyList();
         }
-        LocalDate to = dateTo != null ? dateTo : LocalDate.now();
-        LocalDate from = dateFrom != null ? dateFrom : to.minusDays(DEFAULT_CAMPAIGNS_PERIOD_DAYS - 1);
-        if (from.isAfter(to)) {
-            from = to.minusDays(DEFAULT_CAMPAIGNS_PERIOD_DAYS - 1);
-        }
+        AnalyticsDateRange range = resolveAnalyticsDateRange(dateFrom, dateTo);
+        LocalDate from = range.startDate();
+        LocalDate to = range.endDate();
 
         List<PromotionCampaign> campaigns = campaignRepository.findByCabinet_Id(cabinetId).stream()
                 .filter(c -> c.getStatus() != CampaignStatus.FINISHED)
@@ -1168,42 +1270,38 @@ public class AnalyticsService {
         Map<Long, List<PromotionCampaignStatistics>> statsByCampaign = allStats.stream()
                 .collect(Collectors.groupingBy(s -> s.getCampaign().getAdvertId()));
 
+        Map<Long, Set<Long>> nmIdsByCampaign = campaignArticleRepository.findByCampaignIdIn(campaignIds).stream()
+                .collect(Collectors.groupingBy(
+                        CampaignArticle::getCampaignId,
+                        Collectors.mapping(CampaignArticle::getNmId, Collectors.toSet())
+                ));
+
+        Set<Long> allNmIds = nmIdsByCampaign.values().stream()
+                .flatMap(Set::stream)
+                .collect(Collectors.toSet());
+        Map<Long, FunnelNmTotals> funnelByNmId = buildFunnelTotalsByNmId(cabinetId, allNmIds, from, to);
+
         List<Object[]> articleCounts = campaignArticleRepository.countByCampaignIdIn(campaignIds);
         Map<Long, Integer> articlesCountByCampaign = articleCounts.stream()
                 .collect(Collectors.toMap(row -> (Long) row[0], row -> ((Number) row[1]).intValue()));
 
         return campaigns.stream()
                 .map(c -> {
-                    List<PromotionCampaignStatistics> stats = statsByCampaign.getOrDefault(c.getAdvertId(), Collections.emptyList());
-                    int views = 0, clicks = 0, orders = 0, cart = 0;
-                    BigDecimal sum = BigDecimal.ZERO;
-                    for (PromotionCampaignStatistics s : stats) {
-                        if (s.getViews() != null) views += s.getViews();
-                        if (s.getClicks() != null) clicks += s.getClicks();
-                        if (s.getSum() != null) sum = sum.add(s.getSum());
-                        if (s.getOrders() != null) orders += s.getOrders();
-                        if (s.getAtbs() != null) cart += s.getAtbs();
-                    }
-                    BigDecimal ctr = MathUtils.calculatePercentage(clicks, views);
-                    BigDecimal cpc = (clicks > 0 && sum != null) ? sum.divide(BigDecimal.valueOf(clicks), 2, RoundingMode.HALF_UP) : null;
-                    Integer articlesCount = articlesCountByCampaign.getOrDefault(c.getAdvertId(), 0);
-                    return CampaignDto.builder()
-                            .id(c.getAdvertId())
+                    Long advertId = c.getAdvertId();
+                    Set<Long> scopeNmIds = nmIdsByCampaign.getOrDefault(advertId, Collections.emptySet());
+                    List<PromotionCampaignStatistics> stats = statsByCampaign.getOrDefault(advertId, Collections.emptyList());
+                    Integer articlesCount = articlesCountByCampaign.getOrDefault(advertId, 0);
+                    CampaignDto.CampaignDtoBuilder builder = CampaignDto.builder()
+                            .id(advertId)
                             .name(c.getName())
                             .type(c.getType() != null ? c.getType().getDescription() : null)
                             .status(c.getStatus() != null ? c.getStatus().getCode() : null)
                             .statusName(c.getStatus() != null ? c.getStatus().getDescription() : null)
                             .createdAt(c.getCreateTime())
                             .updatedAt(resolveCampaignUpdatedAt(c))
-                            .articlesCount(articlesCount)
-                            .views(views > 0 ? views : null)
-                            .clicks(clicks > 0 ? clicks : null)
-                            .ctr(ctr)
-                            .cpc(cpc)
-                            .costs(sum != null && sum.compareTo(BigDecimal.ZERO) > 0 ? sum : null)
-                            .cart(cart > 0 ? cart : null)
-                            .orders(orders > 0 ? orders : null)
-                            .build();
+                            .articlesCount(articlesCount);
+                    applyCampaignPeriodMetrics(builder, scopeNmIds, stats, funnelByNmId);
+                    return builder.build();
                 })
                 .collect(Collectors.toList());
     }

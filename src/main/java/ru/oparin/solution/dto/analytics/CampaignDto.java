@@ -62,9 +62,9 @@ public class CampaignDto {
     private BigDecimal cpc;
     /** Затраты, руб. */
     private BigDecimal costs;
-    /** Добавлено в корзину. */
+    /** Положили в корзину. */
     private Integer cart;
-    /** Заказы. */
+    /** Заказали товаров, шт. */
     private Integer orders;
 
     /** Количество артикулов в кампании. */

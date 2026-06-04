@@ -104,5 +104,10 @@ public class SummaryRequestDto {
      * Конец диапазона дней для {@code dailyData} включительно (опционально). См. {@link #dailyDataDateFrom}.
      */
     private LocalDate dailyDataDateTo;
+
+    /**
+     * ID рекламной кампании (advert_id). Если задан — рекламные метрики в {@code dailyData} только по этой РК
+     */
+    private Long dailyDataCampaignAdvertId;
 }
 
