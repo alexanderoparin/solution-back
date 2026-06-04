@@ -191,11 +191,21 @@ public abstract class AbstractWbApiClient {
     }
 
     protected void validateResponse(ResponseEntity<String> response) {
+        validateResponse(response, false);
+    }
+
+    /**
+     * Проверка успешного ответа WB API.
+     *
+     * @param allowEmptyBody {@code true} для эндпоинтов, где при 200 тело отсутствует
+     *                       (например GET {@code /adv/v0/start}, {@code /adv/v0/pause})
+     */
+    protected void validateResponse(ResponseEntity<String> response, boolean allowEmptyBody) {
         if (!response.getStatusCode().is2xxSuccessful()) {
             log.error("Ошибка от WB API: статус={}", response.getStatusCode());
             throw new RestClientException("Ошибка от WB API: " + response.getStatusCode());
         }
-        if (response.getBody() == null || response.getBody().isEmpty()) {
+        if (!allowEmptyBody && (response.getBody() == null || response.getBody().isBlank())) {
             log.error("Тело ответа от WB API пустое");
             throw new RestClientException("Тело ответа от WB API пустое");
         }

@@ -174,7 +174,8 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         logWbApiCall(url, eventType == WbApiEventType.PROMOTION_CAMPAIGN_START ? CAMPAIGN_START_OPERATION : CAMPAIGN_PAUSE_OPERATION);
         try {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-            validateResponse(response);
+            // Swagger: 200 «Успешно» без content (08-promotion.yaml — /adv/v0/start, /adv/v0/pause)
+            validateResponse(response, true);
             return null;
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
