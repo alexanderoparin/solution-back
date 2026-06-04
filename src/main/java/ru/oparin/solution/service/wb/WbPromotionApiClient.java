@@ -4,10 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
@@ -44,6 +41,9 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     private static final String NORMQUERY_STATS_OPERATION = "статистика поисковых кластеров";
     private static final String CAMPAIGN_START_OPERATION = "запуск кампании";
     private static final String CAMPAIGN_PAUSE_OPERATION = "пауза кампании";
+    private static final String BALANCE_OPERATION = "баланс продвижения";
+    private static final String BUDGET_OPERATION = "бюджет кампании";
+    private static final String BUDGET_DEPOSIT_OPERATION = "пополнение бюджета кампании";
     private static final int ADVERTS_V2_BATCH_SIZE = 50;
 
     @Value("${wb.retries.max-429-basic}")
@@ -476,6 +476,108 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             return WbApiEventType.PROMOTION_CAMPAIGN_PAUSE;
         }
         return WbApiEventType.PROMOTION_COUNT;
+    }
+
+    /**
+     * Баланс кабинета продвижения (GET /adv/v1/balance).
+     */
+    public PromotionBalanceResponse getBalance(String apiKey) {
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
+        return executeWith429Retry(
+                BALANCE_OPERATION,
+                WbApiEventType.PROMOTION_BALANCE.getUri(),
+                BALANCE_OPERATION,
+                tokenType,
+                () -> executeWithConnectionRetry(BALANCE_OPERATION, () -> getBalanceOnce(apiKey)));
+    }
+
+    /**
+     * Бюджет кампании (GET /adv/v1/budget).
+     */
+    public PromotionBudgetResponse getCampaignBudget(String apiKey, long advertId) {
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
+        return executeWith429Retry(
+                BUDGET_OPERATION,
+                WbApiEventType.PROMOTION_BUDGET_GET.getUri(),
+                BUDGET_OPERATION,
+                tokenType,
+                () -> executeWithConnectionRetry(BUDGET_OPERATION, () -> getCampaignBudgetOnce(apiKey, advertId)));
+    }
+
+    /**
+     * Пополнение бюджета кампании (POST /adv/v1/budget/deposit).
+     */
+    public void depositCampaignBudget(String apiKey, long advertId, PromotionBudgetDepositRequest request) {
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
+        executeWith429Retry(
+                BUDGET_DEPOSIT_OPERATION,
+                WbApiEventType.PROMOTION_BUDGET_DEPOSIT.getUri(),
+                BUDGET_DEPOSIT_OPERATION,
+                tokenType,
+                () -> executeWithConnectionRetry(BUDGET_DEPOSIT_OPERATION,
+                        () -> depositCampaignBudgetOnce(apiKey, advertId, request)));
+    }
+
+    private PromotionBalanceResponse getBalanceOnce(String apiKey) {
+        HttpHeaders headers = createAuthHeaders(apiKey);
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+        String url = WbApiEventType.PROMOTION_BALANCE.getDefaultUrl();
+        logWbApiCall(url, BALANCE_OPERATION);
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            validateResponse(response);
+            return objectMapper.readValue(response.getBody(), PromotionBalanceResponse.class);
+        } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
+            logWbApiError(BALANCE_OPERATION, e);
+            throw new RestClientException("Ошибка при получении баланса: " + e.getMessage(), e);
+        } catch (Exception e) {
+            logIoErrorOrFull(BALANCE_OPERATION, e);
+            throw new RestClientException("Ошибка при получении баланса: " + e.getMessage(), e);
+        }
+    }
+
+    private PromotionBudgetResponse getCampaignBudgetOnce(String apiKey, long advertId) {
+        HttpHeaders headers = createAuthHeaders(apiKey);
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+        String url = UriComponentsBuilder.fromHttpUrl(WbApiEventType.PROMOTION_BUDGET_GET.getDefaultUrl())
+                .queryParam("id", advertId)
+                .toUriString();
+        logWbApiCall(url, BUDGET_OPERATION);
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            validateResponse(response);
+            return objectMapper.readValue(response.getBody(), PromotionBudgetResponse.class);
+        } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
+            logWbApiError(BUDGET_OPERATION, e);
+            throw new RestClientException("Ошибка при получении бюджета: " + e.getMessage(), e);
+        } catch (Exception e) {
+            logIoErrorOrFull(BUDGET_OPERATION, e);
+            throw new RestClientException("Ошибка при получении бюджета: " + e.getMessage(), e);
+        }
+    }
+
+    private Void depositCampaignBudgetOnce(String apiKey, long advertId, PromotionBudgetDepositRequest request) {
+        HttpHeaders headers = createAuthHeaders(apiKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<PromotionBudgetDepositRequest> entity = new HttpEntity<>(request, headers);
+        String url = UriComponentsBuilder.fromHttpUrl(WbApiEventType.PROMOTION_BUDGET_DEPOSIT.getDefaultUrl())
+                .queryParam("id", advertId)
+                .toUriString();
+        logWbApiCall(url, BUDGET_DEPOSIT_OPERATION);
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
+            validateResponse(response, true);
+            return null;
+        } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
+            logWbApiError(BUDGET_DEPOSIT_OPERATION, e);
+            throw new RestClientException("Ошибка при пополнении бюджета: " + e.getMessage(), e);
+        } catch (Exception e) {
+            logIoErrorOrFull(BUDGET_DEPOSIT_OPERATION, e);
+            throw new RestClientException("Ошибка при пополнении бюджета: " + e.getMessage(), e);
+        }
     }
 
     private void addQueryParameters(UriComponentsBuilder uriBuilder, PromotionFullStatsRequest request) {

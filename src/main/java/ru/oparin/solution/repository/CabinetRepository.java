@@ -29,6 +29,13 @@ public interface CabinetRepository extends JpaRepository<Cabinet, Long>, JpaSpec
     Optional<Cabinet> findTopByApiKeyOrderByIdDesc(String apiKey);
 
     /**
+     * Проверка, что API-ключ уже привязан к другому кабинету.
+     */
+    boolean existsByApiKeyAndIdNot(String apiKey, Long id);
+
+    boolean existsByApiKey(String apiKey);
+
+    /**
      * Проверка, что кабинет принадлежит пользователю (для контроля доступа).
      */
     boolean existsByIdAndUser_Id(Long id, Long userId);

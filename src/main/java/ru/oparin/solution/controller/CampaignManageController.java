@@ -1,0 +1,212 @@
+package ru.oparin.solution.controller;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
+import ru.oparin.solution.dto.analytics.CampaignControlEnqueueResponse;
+import ru.oparin.solution.dto.analytics.manage.*;
+import ru.oparin.solution.service.PromotionCampaignControlService;
+import ru.oparin.solution.service.PromotionCampaignControlWriteService;
+import ru.oparin.solution.service.SellerContextService;
+import ru.oparin.solution.service.campaign.CampaignManageService;
+
+import java.util.Map;
+import java.util.function.Supplier;
+
+/**
+ * API управления рекламной кампанией (автопополнение, расписание, журнал).
+ */
+@RestController
+@RequestMapping("/advertising/campaigns/{advertId}/manage")
+@RequiredArgsConstructor
+public class CampaignManageController {
+
+    private final SellerContextService sellerContextService;
+    private final CampaignManageService manageService;
+
+    @GetMapping
+    public ResponseEntity<CampaignManageResponseDto> getManage(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        Long resolvedCabinetId = ctx.cabinet() != null ? ctx.cabinet().getId() : null;
+        Long resolvedSellerId = ctx.user() != null ? ctx.user().getId() : null;
+        CampaignManageResponseDto dto = manageService.getManage(advertId, resolvedCabinetId, resolvedSellerId);
+        if (dto == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(dto);
+    }
+
+    @GetMapping("/balance-sources")
+    public ResponseEntity<BalanceSourcesResponseDto> balanceSources(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        if (ctx.cabinet() == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(manageService.balanceSources(ctx.cabinet().getId()));
+    }
+
+    @PutMapping("/auto-budget")
+    public ResponseEntity<?> saveAutoBudget(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @RequestBody CampaignAutoBudgetRequestDto request,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        return write(context, () -> manageService.saveAutoBudget(
+                advertId, requireCabinet(context), context.user(), request));
+    }
+
+    @PostMapping("/auto-budget/unlock")
+    public ResponseEntity<?> unlockAutoBudget(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        return write(context, () -> manageService.unlockAutoBudget(
+                advertId, requireCabinet(context), context.user()));
+    }
+
+    @PostMapping("/slots")
+    public ResponseEntity<?> createSlots(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @RequestBody CampaignScheduleSlotRequestDto request,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        return write(context, () -> manageService.createSlots(
+                advertId, requireCabinet(context), context.user(), request));
+    }
+
+    @PutMapping("/slots/{slotId}")
+    public ResponseEntity<?> updateSlot(
+            @PathVariable Long advertId,
+            @PathVariable Long slotId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @RequestBody CampaignScheduleSlotUpdateDto request,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        return write(context, () -> manageService.updateSlot(
+                advertId, requireCabinet(context), slotId, context.user(), request));
+    }
+
+    @DeleteMapping("/slots/{slotId}")
+    public ResponseEntity<Void> deleteSlot(
+            @PathVariable Long advertId,
+            @PathVariable Long slotId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        Long cabId = context.cabinet() != null ? context.cabinet().getId() : null;
+        if (cabId == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            manageService.deleteSlot(advertId, cabId, slotId, context.user());
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @PostMapping("/start")
+    public ResponseEntity<?> manualStart(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        return control(advertId, sellerId, cabinetId, authentication, true);
+    }
+
+    @PostMapping("/pause")
+    public ResponseEntity<?> manualPause(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        return control(advertId, sellerId, cabinetId, authentication, false);
+    }
+
+    @GetMapping("/change-log")
+    public ResponseEntity<Page<CampaignChangeLogEntryDto>> changeLog(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        Long cabId = context.cabinet() != null ? context.cabinet().getId() : null;
+        if (cabId == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(manageService.changeLogPage(advertId, cabId, page, size));
+    }
+
+    private SellerContextService.SellerContext ctx(Long sellerId, Long cabinetId, Authentication authentication) {
+        return sellerContextService.createContext(authentication, sellerId, cabinetId);
+    }
+
+    private static Long requireCabinet(SellerContextService.SellerContext context) {
+        if (context.cabinet() == null) {
+            throw new IllegalArgumentException("Кабинет не выбран");
+        }
+        return context.cabinet().getId();
+    }
+
+    private <T> ResponseEntity<?> write(SellerContextService.SellerContext context, Supplier<T> action) {
+        try {
+            requireCabinet(context);
+            return ResponseEntity.ok(action.get());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (PromotionCampaignControlWriteService.CampaignControlWriteBlockedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    private ResponseEntity<?> control(
+            Long advertId, Long sellerId, Long cabinetId, Authentication authentication, boolean start
+    ) {
+        SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        try {
+            Long cabId = requireCabinet(context);
+            CampaignControlEnqueueResponse response = start
+                    ? manageService.manualStart(advertId, cabId, context.user())
+                    : manageService.manualPause(advertId, cabId, context.user());
+            return ResponseEntity.status(response.enqueued() ? HttpStatus.ACCEPTED : HttpStatus.OK).body(response);
+        } catch (PromotionCampaignControlService.CampaignControlRateLimitException e) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(Map.of("message", "Превышен лимит WB API", "nextAvailableInSeconds", e.getNextAvailableInSeconds()));
+        } catch (PromotionCampaignControlWriteService.CampaignControlWriteBlockedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+}

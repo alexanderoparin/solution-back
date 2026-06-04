@@ -62,6 +62,24 @@ public enum WbApiEventType {
             "/adv/v0/pause",
             720L,
             1L),
+    /** Баланс кабинета продвижения (GET /adv/v1/balance). */
+    PROMOTION_BALANCE(
+            WbApiBaseUrl.PROMOTION,
+            "/adv/v1/balance",
+            3_600L,
+            1L),
+    /** Бюджет кампании (GET /adv/v1/budget). */
+    PROMOTION_BUDGET_GET(
+            WbApiBaseUrl.PROMOTION,
+            "/adv/v1/budget",
+            3_600L,
+            1L),
+    /** Пополнение бюджета кампании (POST /adv/v1/budget/deposit). */
+    PROMOTION_BUDGET_DEPOSIT(
+            WbApiBaseUrl.PROMOTION,
+            "/adv/v1/budget/deposit",
+            720L,
+            1L),
     FEEDBACKS_SYNC_CABINET(
             WbApiBaseUrl.FEEDBACKS,
             "/api/v1/feedbacks",

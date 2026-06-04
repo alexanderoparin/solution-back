@@ -45,6 +45,9 @@ public class CabinetService {
     private static final String SUBSCRIPTION_REQUIRED = "Оформите подписку для создания кабинета";
     private static final String WB_SELLER_INFO_ERROR = "Не удалось получить данные о продавце WB. Проверьте API ключ.";
     private static final String NAME_REQUIRED_WITHOUT_KEY = "Укажите название кабинета, если не задаёте API ключ WB.";
+    private static final String API_KEY_ALREADY_USED =
+            "Этот API-ключ Wildberries уже привязан к другому кабинету в системе. "
+                    + "Откройте существующий кабинет или укажите другой ключ.";
     /** Подсказка при лимите WB: создание кабинета без ключа по названию. */
     private static final String CABINET_CREATE_WITHOUT_KEY_HINT =
             " Можно создать кабинет, указав только название (не заполняя ключ WB).";
@@ -215,6 +218,10 @@ public class CabinetService {
             cabinetName = resolveCabinetNameFromWb(trimmedApiKey);
         }
 
+        if (hasApiKey) {
+            assertApiKeyNotUsedByAnotherCabinet(null, trimmedApiKey);
+        }
+
         Cabinet cabinet = Cabinet.builder()
                 .user(user)
                 .name(cabinetName)
@@ -267,11 +274,27 @@ public class CabinetService {
      * Сбрасывает статус валидации и устанавливает новый API ключ кабинета.
      */
     public void resetValidationAndSetApiKey(Cabinet cabinet, String apiKey) {
+        String trimmed = apiKey != null ? apiKey.trim() : null;
+        if (trimmed != null && !trimmed.isBlank()) {
+            assertApiKeyNotUsedByAnotherCabinet(cabinet.getId(), trimmed);
+        }
         cabinet.setIsValid(null);
         cabinet.setValidationError(null);
         cabinet.setLastValidatedAt(null);
-        cabinet.setApiKey(apiKey != null ? apiKey.trim() : null);
+        cabinet.setApiKey(trimmed != null && !trimmed.isBlank() ? trimmed : null);
         clearPromotionWriteBlockIfPersisted(cabinet);
+    }
+
+    /**
+     * Один WB API-ключ может быть привязан только к одному кабинету.
+     */
+    private void assertApiKeyNotUsedByAnotherCabinet(Long cabinetId, String apiKey) {
+        boolean duplicate = cabinetId == null
+                ? cabinetRepository.existsByApiKey(apiKey)
+                : cabinetRepository.existsByApiKeyAndIdNot(apiKey, cabinetId);
+        if (duplicate) {
+            throw new UserException(API_KEY_ALREADY_USED, HttpStatus.CONFLICT);
+        }
     }
 
     /**
