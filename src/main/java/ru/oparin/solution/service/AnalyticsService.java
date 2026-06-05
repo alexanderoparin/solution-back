@@ -1044,34 +1044,19 @@ public class AnalyticsService {
                 ? resolveAnalyticsDateRange(campaignDateFrom, campaignDateTo)
                 : null;
         Map<Long, List<PromotionCampaignStatistics>> statsByCampaign = new HashMap<>();
-        Map<Long, FunnelNmTotals> funnelByNmId = Collections.emptyMap();
         if (withMetrics && metricsRange != null) {
             List<Long> campaignIds = campaigns.stream().map(PromotionCampaign::getAdvertId).collect(Collectors.toList());
             List<PromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
                     campaignIds, metricsRange.startDate(), metricsRange.endDate());
             statsByCampaign = allStats.stream().collect(Collectors.groupingBy(s -> s.getCampaign().getAdvertId()));
-            funnelByNmId = buildFunnelTotalsByNmId(cabinetId, Set.of(nmId), metricsRange.startDate(), metricsRange.endDate());
         }
 
         final Map<Long, List<PromotionCampaignStatistics>> statsByCampaignFinal = statsByCampaign;
-        final Map<Long, FunnelNmTotals> funnelByNmIdFinal = funnelByNmId;
         final Set<Long> scopeNmIds = Set.of(nmId);
         return campaigns.stream()
-                .map(c -> {
-                    CampaignDto.CampaignDtoBuilder b = CampaignDto.builder()
-                            .id(c.getAdvertId())
-                            .name(c.getName())
-                            .type(c.getType() != null ? c.getType().getDescription() : null)
-                            .status(c.getStatus() != null ? c.getStatus().getCode() : null)
-                            .statusName(c.getStatus() != null ? c.getStatus().getDescription() : null)
-                            .createdAt(c.getCreateTime())
-                            .updatedAt(resolveCampaignUpdatedAt(c));
-                    if (withMetrics) {
-                        List<PromotionCampaignStatistics> stats = statsByCampaignFinal.getOrDefault(c.getAdvertId(), Collections.emptyList());
-                        applyCampaignPeriodMetrics(b, scopeNmIds, stats, funnelByNmIdFinal);
-                    }
-                    return b.build();
-                })
+                .map(c -> buildCampaignDto(c, scopeNmIds,
+                        statsByCampaignFinal.getOrDefault(c.getAdvertId(), Collections.emptyList()),
+                        withMetrics, null))
                 .collect(Collectors.toList());
     }
 
@@ -1167,18 +1152,40 @@ public class AnalyticsService {
     private record AnalyticsDateRange(LocalDate startDate, LocalDate endDate) {
     }
 
-    /** Суммы воронки карточки (корзина / заказы) по артикулу за период. */
-    private record FunnelNmTotals(int cart, int orders) {
+    /**
+     * DTO кампании с метриками за период.
+     */
+    private CampaignDto buildCampaignDto(
+            PromotionCampaign c,
+            Set<Long> scopeNmIds,
+            List<PromotionCampaignStatistics> campaignStats,
+            boolean withMetrics,
+            Integer articlesCount
+    ) {
+        CampaignDto.CampaignDtoBuilder builder = CampaignDto.builder()
+                .id(c.getAdvertId())
+                .name(c.getName())
+                .type(c.getType() != null ? c.getType().getDescription() : null)
+                .status(c.getStatus() != null ? c.getStatus().getCode() : null)
+                .statusName(c.getStatus() != null ? c.getStatus().getDescription() : null)
+                .createdAt(c.getCreateTime())
+                .updatedAt(resolveCampaignUpdatedAt(c));
+        if (articlesCount != null) {
+            builder.articlesCount(articlesCount);
+        }
+        if (withMetrics) {
+            applyCampaignPeriodMetrics(builder, scopeNmIds, campaignStats);
+        }
+        return builder.build();
     }
 
     /**
-     * Метрики кампании за период — те же правила, что строка «Весь период» на карточке РК (все артикулы комбо).
+     * Метрики кампании за период из fullstats WB: просмотры, клики, затраты, корзина (atbs), заказы.
      */
     private void applyCampaignPeriodMetrics(
             CampaignDto.CampaignDtoBuilder builder,
             Set<Long> scopeNmIds,
-            List<PromotionCampaignStatistics> campaignStats,
-            Map<Long, FunnelNmTotals> funnelByNmId
+            List<PromotionCampaignStatistics> campaignStats
     ) {
         int views = 0;
         int clicks = 0;
@@ -1192,16 +1199,10 @@ public class AnalyticsService {
             }
             views += MathUtils.getValueOrZero(s.getViews());
             clicks += MathUtils.getValueOrZero(s.getClicks());
+            cart += MathUtils.getValueOrZero(s.getAtbs());
+            orders += MathUtils.getValueOrZero(s.getOrders());
             if (s.getSum() != null) {
                 sum = sum.add(s.getSum());
-            }
-        }
-
-        for (Long nmId : scopeNmIds) {
-            FunnelNmTotals funnel = funnelByNmId.get(nmId);
-            if (funnel != null) {
-                cart += funnel.cart();
-                orders += funnel.orders();
             }
         }
 
@@ -1217,25 +1218,6 @@ public class AnalyticsService {
                 .costs(sum.compareTo(BigDecimal.ZERO) > 0 ? sum : null)
                 .cart(cart > 0 ? cart : null)
                 .orders(orders > 0 ? orders : null);
-    }
-
-    private Map<Long, FunnelNmTotals> buildFunnelTotalsByNmId(Long cabinetId, Collection<Long> nmIds, LocalDate from, LocalDate to) {
-        if (cabinetId == null || nmIds == null || nmIds.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        List<ProductCardAnalytics> rows = analyticsRepository.findByCabinet_IdAndProductCardNmIdInAndDateBetween(
-                cabinetId, new ArrayList<>(nmIds), from, to);
-        Map<Long, FunnelNmTotals> result = new HashMap<>();
-        for (ProductCardAnalytics row : rows) {
-            if (row.getProductCard() == null) {
-                continue;
-            }
-            Long nmId = row.getProductCard().getNmId();
-            int cart = MathUtils.getValueOrZero(row.getAddToCart());
-            int orders = MathUtils.getValueOrZero(row.getOrders());
-            result.merge(nmId, new FunnelNmTotals(cart, orders), (a, b) -> new FunnelNmTotals(a.cart() + b.cart(), a.orders() + b.orders()));
-        }
-        return result;
     }
 
     private static LocalDateTime resolveCampaignUpdatedAt(PromotionCampaign c) {
@@ -1276,11 +1258,6 @@ public class AnalyticsService {
                         Collectors.mapping(CampaignArticle::getNmId, Collectors.toSet())
                 ));
 
-        Set<Long> allNmIds = nmIdsByCampaign.values().stream()
-                .flatMap(Set::stream)
-                .collect(Collectors.toSet());
-        Map<Long, FunnelNmTotals> funnelByNmId = buildFunnelTotalsByNmId(cabinetId, allNmIds, from, to);
-
         List<Object[]> articleCounts = campaignArticleRepository.countByCampaignIdIn(campaignIds);
         Map<Long, Integer> articlesCountByCampaign = articleCounts.stream()
                 .collect(Collectors.toMap(row -> (Long) row[0], row -> ((Number) row[1]).intValue()));
@@ -1291,17 +1268,7 @@ public class AnalyticsService {
                     Set<Long> scopeNmIds = nmIdsByCampaign.getOrDefault(advertId, Collections.emptySet());
                     List<PromotionCampaignStatistics> stats = statsByCampaign.getOrDefault(advertId, Collections.emptyList());
                     Integer articlesCount = articlesCountByCampaign.getOrDefault(advertId, 0);
-                    CampaignDto.CampaignDtoBuilder builder = CampaignDto.builder()
-                            .id(advertId)
-                            .name(c.getName())
-                            .type(c.getType() != null ? c.getType().getDescription() : null)
-                            .status(c.getStatus() != null ? c.getStatus().getCode() : null)
-                            .statusName(c.getStatus() != null ? c.getStatus().getDescription() : null)
-                            .createdAt(c.getCreateTime())
-                            .updatedAt(resolveCampaignUpdatedAt(c))
-                            .articlesCount(articlesCount);
-                    applyCampaignPeriodMetrics(builder, scopeNmIds, stats, funnelByNmId);
-                    return builder.build();
+                    return buildCampaignDto(c, scopeNmIds, stats, true, articlesCount);
                 })
                 .collect(Collectors.toList());
     }
