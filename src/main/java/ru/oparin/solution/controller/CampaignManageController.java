@@ -8,9 +8,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.analytics.CampaignControlEnqueueResponse;
 import ru.oparin.solution.dto.analytics.manage.*;
+import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.PromotionCampaignControlService;
 import ru.oparin.solution.service.PromotionCampaignControlWriteService;
 import ru.oparin.solution.service.SellerContextService;
+import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.campaign.CampaignManageService;
 
 import java.util.Map;
@@ -26,6 +28,7 @@ public class CampaignManageController {
 
     private final SellerContextService sellerContextService;
     private final CampaignManageService manageService;
+    private final UserService userService;
 
     @GetMapping
     public ResponseEntity<CampaignManageResponseDto> getManage(
@@ -67,8 +70,9 @@ public class CampaignManageController {
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        User actor = currentUser(authentication);
         return write(context, () -> manageService.saveAutoBudget(
-                advertId, requireCabinet(context), context.user(), request));
+                advertId, requireCabinet(context), actor, request));
     }
 
     @PostMapping("/auto-budget/unlock")
@@ -79,8 +83,9 @@ public class CampaignManageController {
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        User actor = currentUser(authentication);
         return write(context, () -> manageService.unlockAutoBudget(
-                advertId, requireCabinet(context), context.user()));
+                advertId, requireCabinet(context), actor));
     }
 
     @PostMapping("/slots")
@@ -92,8 +97,9 @@ public class CampaignManageController {
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        User actor = currentUser(authentication);
         return write(context, () -> manageService.createSlots(
-                advertId, requireCabinet(context), context.user(), request));
+                advertId, requireCabinet(context), actor, request));
     }
 
     @PutMapping("/slots/{slotId}")
@@ -106,8 +112,9 @@ public class CampaignManageController {
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        User actor = currentUser(authentication);
         return write(context, () -> manageService.updateSlot(
-                advertId, requireCabinet(context), slotId, context.user(), request));
+                advertId, requireCabinet(context), slotId, actor, request));
     }
 
     @DeleteMapping("/slots/{slotId}")
@@ -124,7 +131,7 @@ public class CampaignManageController {
             return ResponseEntity.badRequest().build();
         }
         try {
-            manageService.deleteSlot(advertId, cabId, slotId, context.user());
+            manageService.deleteSlot(advertId, cabId, slotId, currentUser(authentication));
             return ResponseEntity.noContent().build();
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
@@ -172,6 +179,10 @@ public class CampaignManageController {
         return sellerContextService.createContext(authentication, sellerId, cabinetId);
     }
 
+    private User currentUser(Authentication authentication) {
+        return userService.findByEmail(authentication.getName());
+    }
+
     private static Long requireCabinet(SellerContextService.SellerContext context) {
         if (context.cabinet() == null) {
             throw new IllegalArgumentException("Кабинет не выбран");
@@ -194,11 +205,12 @@ public class CampaignManageController {
             Long advertId, Long sellerId, Long cabinetId, Authentication authentication, boolean start
     ) {
         SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        User actor = currentUser(authentication);
         try {
             Long cabId = requireCabinet(context);
             CampaignControlEnqueueResponse response = start
-                    ? manageService.manualStart(advertId, cabId, context.user())
-                    : manageService.manualPause(advertId, cabId, context.user());
+                    ? manageService.manualStart(advertId, cabId, actor)
+                    : manageService.manualPause(advertId, cabId, actor);
             return ResponseEntity.status(response.enqueued() ? HttpStatus.ACCEPTED : HttpStatus.OK).body(response);
         } catch (PromotionCampaignControlService.CampaignControlRateLimitException e) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)

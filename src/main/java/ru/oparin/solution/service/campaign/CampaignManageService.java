@@ -169,8 +169,10 @@ public class CampaignManageService {
         }
         if (request.getStartTime() != null || request.getEndTime() != null) {
             String newTime = CampaignSlotTimeUtils.format(slot.getStartTime()) + "-" + CampaignSlotTimeUtils.format(slot.getEndTime());
-            changeLogService.log(advertId, cabinetId, user,
-                    "Изменено время «было " + oldTime + ", стало " + newTime + "»");
+            if (!oldTime.equals(newTime)) {
+                changeLogService.log(advertId, cabinetId, user,
+                        "Изменено время «было " + oldTime + ", стало " + newTime + "»");
+            }
         }
         applySlotEditPolicyAfterUpdate(advertId, cabinetId, state, slot, oldEnd, oldBudget, request);
         return mapSlot(slot);
