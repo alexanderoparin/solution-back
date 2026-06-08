@@ -61,6 +61,45 @@ public class CampaignManageController {
         return ResponseEntity.ok(manageService.balanceSources(ctx.cabinet().getId()));
     }
 
+    @PostMapping("/balance-sources/refresh")
+    public ResponseEntity<?> refreshBalanceSources(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        if (ctx.cabinet() == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        BalanceRefreshResponseDto result = manageService.refreshBalanceSources(ctx.cabinet().getId());
+        if (result.getNextAvailableInSeconds() != null && !result.isRefreshed()) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(result);
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/budget-chart")
+    public ResponseEntity<CampaignBudgetChartDto> budgetChart(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @RequestParam(required = false) Integer hours,
+            @RequestParam(required = false) Integer stepHours,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        Long cabId = ctx.cabinet() != null ? ctx.cabinet().getId() : null;
+        if (cabId == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            return ResponseEntity.ok(manageService.budgetChart(advertId, cabId, hours, stepHours));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
     @PutMapping("/auto-budget")
     public ResponseEntity<?> saveAutoBudget(
             @PathVariable Long advertId,

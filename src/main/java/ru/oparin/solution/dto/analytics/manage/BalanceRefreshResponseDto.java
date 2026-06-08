@@ -4,19 +4,19 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.*;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class BalanceSourcesResponseDto {
-    private List<BalanceSourceOptionDto> sources;
+public class BalanceRefreshResponseDto {
+    private BalanceSourcesResponseDto sources;
+    private boolean refreshed;
+    private boolean stale;
+    private Long nextAvailableInSeconds;
+    private String message;
 
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime fetchedAt;
-
-    /** true — данные из кэша, свежий запрос к WB сейчас недоступен или не выполнялся. */
-    private boolean stale;
 }

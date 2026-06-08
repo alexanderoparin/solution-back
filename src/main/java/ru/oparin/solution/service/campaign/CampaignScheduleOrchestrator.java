@@ -7,7 +7,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.wb.PromotionBudgetDepositRequest;
-import ru.oparin.solution.dto.wb.PromotionBudgetResponse;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CampaignAutoBudgetSettingsRepository;
 import ru.oparin.solution.repository.CampaignManagementStateRepository;
@@ -18,7 +17,6 @@ import ru.oparin.solution.service.PromotionCampaignControlService;
 import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -40,6 +38,8 @@ public class CampaignScheduleOrchestrator {
     private final PromotionCampaignRepository campaignRepository;
     private final CampaignManageService manageService;
     private final CampaignChangeLogService changeLogService;
+    private final CampaignBudgetTimelineService timelineService;
+    private final CampaignBudgetFetchService budgetFetchService;
     private final PromotionCampaignControlService controlService;
     private final CabinetService cabinetService;
     private final WbPromotionApiClient promotionApiClient;
@@ -99,14 +99,8 @@ public class CampaignScheduleOrchestrator {
 
     private void onSlotEnter(CampaignManagementState state, CampaignScheduleSlot slot, Cabinet cabinet) {
         state.setActiveSlotId(slot.getId());
-        try {
-            PromotionBudgetResponse budget = promotionApiClient.getCampaignBudget(cabinet.getApiKey(), state.getCampaignId());
-            if (budget != null && budget.getTotal() != null) {
-                state.setBudgetAtSlotStart(budget.getTotal());
-            }
-        } catch (Exception e) {
-            log.debug("Не удалось получить бюджет при входе в слот: {}", e.getMessage());
-        }
+        budgetFetchService.fetchBudgetTotal(cabinet, state.getCampaignId(), state)
+                .ifPresent(state::setBudgetAtSlotStart);
     }
 
     private void onSlotLeave(CampaignManagementState state) {
@@ -123,21 +117,14 @@ public class CampaignScheduleOrchestrator {
         if (state.getBudgetAtSlotStart() == null) {
             return;
         }
-        try {
-            PromotionBudgetResponse budget = promotionApiClient.getCampaignBudget(cabinet.getApiKey(), state.getCampaignId());
-            if (budget == null || budget.getTotal() == null) {
-                return;
-            }
-            state.setLastBudgetTotal(budget.getTotal());
-            state.setLastBudgetCheckedAt(LocalDateTime.now(ZONE));
-            int spent = state.getBudgetAtSlotStart() - budget.getTotal();
+        Optional<Integer> budgetTotal = budgetFetchService.fetchBudgetTotal(cabinet, state.getCampaignId(), state);
+        budgetTotal.ifPresent(total -> {
+            int spent = state.getBudgetAtSlotStart() - total;
             if (spent >= slot.getBudgetRub()) {
                 ensurePaused(cabinet, state.getCampaignId(), "РК остановлена: исчерпан бюджет слота");
                 onSlotLeave(state);
             }
-        } catch (Exception e) {
-            log.debug("Проверка бюджета слота: {}", e.getMessage());
-        }
+        });
     }
 
     private void tryAutoTopUp(CampaignManagementState state, Long advertId, Long cabinetId, Cabinet cabinet) {
@@ -155,8 +142,8 @@ public class CampaignScheduleOrchestrator {
                 state.setTopUpsTodayCount(0);
             }
             try {
-                PromotionBudgetResponse budget = promotionApiClient.getCampaignBudget(cabinet.getApiKey(), advertId);
-                if (budget == null || budget.getTotal() == null || budget.getTotal() >= settings.getThresholdRub()) {
+                Optional<Integer> budgetTotal = budgetFetchService.fetchBudgetTotal(cabinet, advertId, state);
+                if (budgetTotal.isEmpty() || budgetTotal.get() >= settings.getThresholdRub()) {
                     return;
                 }
                 PromotionBudgetDepositRequest req = PromotionBudgetDepositRequest.builder()
@@ -168,6 +155,8 @@ public class CampaignScheduleOrchestrator {
                 state.setTopUpsTodayCount(state.getTopUpsTodayCount() + 1);
                 changeLogService.log(advertId, cabinetId, null,
                         "Бюджет пополнен автоматически на " + settings.getTopUpAmount() + " ₽");
+                Integer afterTopUp = budgetFetchService.fetchBudgetTotal(cabinet, advertId, state).orElse(null);
+                timelineService.recordTopUp(advertId, cabinetId, settings.getTopUpAmount(), afterTopUp);
             } catch (Exception e) {
                 log.warn("Автопополнение advertId={}: {}", advertId, e.getMessage());
             }
@@ -182,6 +171,7 @@ public class CampaignScheduleOrchestrator {
             try {
                 controlService.enqueueStart(cabinet, advertId);
                 changeLogService.log(advertId, cabinet.getId(), null, "РК запущена по расписанию");
+                timelineService.recordStart(advertId, cabinet.getId());
             } catch (Exception e) {
                 log.debug("Запуск по расписанию: {}", e.getMessage());
             }
@@ -192,6 +182,7 @@ public class CampaignScheduleOrchestrator {
         try {
             controlService.enqueuePause(cabinet, advertId);
             changeLogService.log(advertId, cabinet.getId(), null, logMessage);
+            timelineService.recordStop(advertId, cabinet.getId());
         } catch (Exception e) {
             log.debug("Пауза по расписанию: {}", e.getMessage());
         }

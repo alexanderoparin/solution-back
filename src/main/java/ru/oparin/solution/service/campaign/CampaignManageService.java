@@ -6,8 +6,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.analytics.CampaignControlEnqueueResponse;
 import ru.oparin.solution.dto.analytics.manage.*;
-import ru.oparin.solution.dto.wb.PromotionBalanceResponse;
-import ru.oparin.solution.dto.wb.PromotionBudgetResponse;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CampaignAutoBudgetSettingsRepository;
 import ru.oparin.solution.repository.CampaignManagementStateRepository;
@@ -44,6 +42,10 @@ public class CampaignManageService {
     private final PromotionCampaignControlWriteService controlWriteService;
     private final CabinetService cabinetService;
     private final WbPromotionApiClient promotionApiClient;
+    private final CabinetPromotionBalanceCacheService balanceCacheService;
+    private final CampaignBudgetTimelineService timelineService;
+    private final CampaignBudgetFetchService budgetFetchService;
+    private final CampaignBudgetChartService budgetChartService;
 
     @Transactional(readOnly = true)
     public CampaignManageResponseDto getManage(Long advertId, Long cabinetId, Long sellerId) {
@@ -198,6 +200,7 @@ public class CampaignManageService {
         state.setManualStopped(false);
         stateRepository.save(state);
         changeLogService.log(advertId, cabinetId, user, "Нажата кнопка «Запустить»");
+        timelineService.recordStart(advertId, cabinetId);
         return controlService.enqueueStart(cabinet, advertId);
     }
 
@@ -211,22 +214,23 @@ public class CampaignManageService {
         state.setBudgetAtSlotStart(null);
         stateRepository.save(state);
         changeLogService.log(advertId, cabinetId, user, "Нажата кнопка «Остановить»");
+        timelineService.recordStop(advertId, cabinetId);
         return controlService.enqueuePause(cabinet, advertId);
     }
 
     @Transactional(readOnly = true)
     public BalanceSourcesResponseDto balanceSources(Long cabinetId) {
-        Cabinet cabinet = cabinetService.findById(cabinetId)
-                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
-        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
-            return BalanceSourcesResponseDto.builder().sources(List.of()).build();
-        }
-        PromotionBalanceResponse balance = promotionApiClient.getBalance(cabinet.getApiKey());
-        List<BalanceSourceOptionDto> sources = new ArrayList<>();
-        sources.add(BalanceSourceOptionDto.builder().type(0).label("Счёт").availableRub(balance.getBalance()).build());
-        sources.add(BalanceSourceOptionDto.builder().type(1).label("Баланс").availableRub(balance.getNet()).build());
-        sources.add(BalanceSourceOptionDto.builder().type(3).label("Бонусы").availableRub(balance.getBonus()).build());
-        return BalanceSourcesResponseDto.builder().sources(sources).build();
+        return balanceCacheService.getBalanceSources(cabinetId, true);
+    }
+
+    public BalanceRefreshResponseDto refreshBalanceSources(Long cabinetId) {
+        return balanceCacheService.refreshBalance(cabinetId);
+    }
+
+    @Transactional(readOnly = true)
+    public CampaignBudgetChartDto budgetChart(Long advertId, Long cabinetId, Integer hours, Integer stepHours) {
+        ensureCampaign(advertId, cabinetId);
+        return budgetChartService.buildChart(advertId, cabinetId, hours, stepHours);
     }
 
     @Transactional(readOnly = true)
@@ -308,18 +312,13 @@ public class CampaignManageService {
         if (cabinet == null || cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
             return;
         }
-        try {
-            PromotionBudgetResponse budget = promotionApiClient.getCampaignBudget(cabinet.getApiKey(), advertId);
-            if (budget == null || budget.getTotal() == null) {
-                return;
-            }
-            int spent = state.getBudgetAtSlotStart() - budget.getTotal();
+        Optional<Integer> budgetTotal = budgetFetchService.fetchBudgetTotal(cabinet, advertId, state);
+        budgetTotal.ifPresent(total -> {
+            int spent = state.getBudgetAtSlotStart() - total;
             if (spent >= newBudgetRub) {
                 pauseIfActive(advertId, cabinetId, "РК остановлена: исчерпан новый лимит бюджета слота");
             }
-        } catch (Exception ignored) {
-            // scheduler retry
-        }
+        });
     }
 
     private void pauseIfActive(Long advertId, Long cabinetId, String logMessage) {
@@ -330,6 +329,7 @@ public class CampaignManageService {
                 if (cabinet != null) {
                     controlService.enqueuePause(cabinet, advertId);
                     changeLogService.log(advertId, cabinetId, null, logMessage);
+                    timelineService.recordStop(advertId, cabinetId);
                 }
             } catch (Exception ignored) {
                 // rate limit — scheduler retry
