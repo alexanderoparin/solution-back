@@ -887,21 +887,16 @@ public class AnalyticsService {
                                 .costs(advertising.costs)
                                 .cpc(advertising.cpc)
                                 .ctr(advertising.ctr);
-                        boolean scopedToCampaign = campaignAdvertId != null;
-                        if (scopedToCampaign) {
-                            builder.cpo(advertising.cpo).drr(advertising.drr);
+                        // СРО и ДРР по «Заказали» из воронки — как в колонке таблицы и при агрегации «Все»
+                        if (funnel != null && funnel.getOrders() != null && funnel.getOrders() > 0 && advertising.costs != null) {
+                            builder.cpo(MathUtils.divideSafely(advertising.costs, BigDecimal.valueOf(funnel.getOrders())));
                         } else {
-                            // СРО и ДРР по «Заказали» из воронки карточки — консистентность с блоком «Общая»
-                            if (funnel != null && funnel.getOrders() != null && funnel.getOrders() > 0 && advertising.costs != null) {
-                                builder.cpo(MathUtils.divideSafely(advertising.costs, BigDecimal.valueOf(funnel.getOrders())));
-                            } else {
-                                builder.cpo(advertising.cpo);
-                            }
-                            if (funnel != null && funnel.getOrdersSum() != null && funnel.getOrdersSum().compareTo(BigDecimal.ZERO) > 0 && advertising.costs != null) {
-                                builder.drr(MathUtils.calculatePercentage(advertising.costs, funnel.getOrdersSum()));
-                            } else {
-                                builder.drr(advertising.drr);
-                            }
+                            builder.cpo(advertising.cpo);
+                        }
+                        if (funnel != null && funnel.getOrdersSum() != null && funnel.getOrdersSum().compareTo(BigDecimal.ZERO) > 0 && advertising.costs != null) {
+                            builder.drr(MathUtils.calculatePercentage(advertising.costs, funnel.getOrdersSum()));
+                        } else {
+                            builder.drr(advertising.drr);
                         }
                     }
                     
