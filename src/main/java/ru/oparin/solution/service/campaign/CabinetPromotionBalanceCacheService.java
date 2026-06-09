@@ -35,7 +35,10 @@ public class CabinetPromotionBalanceCacheService {
     private final WbPromotionApiClient promotionApiClient;
     private final WbEventRateLimitService rateLimitService;
 
-    @Transactional(readOnly = true)
+    /**
+     * Без readOnly: при пустом кэше идёт запрос в WB и результат сохраняется в БД.
+     */
+    @Transactional
     public BalanceSourcesResponseDto getBalanceSources(Long cabinetId, boolean tryRefreshIfMissing) {
         BalanceRefreshResponseDto result = resolveSources(cabinetId, tryRefreshIfMissing, false);
         return result.getSources();
@@ -128,6 +131,7 @@ public class CabinetPromotionBalanceCacheService {
         return cache.getFetchedAt().plusNanos(delayMs * 1_000_000L).isAfter(LocalDateTime.now());
     }
 
+    /** Сохраняет ответ WB в {@code cabinet_promotion_balance_cache}. */
     private CabinetPromotionBalanceCache saveCache(Long cabinetId, PromotionBalanceResponse balance, String error) {
         CabinetPromotionBalanceCache entity = cacheRepository.findById(cabinetId)
                 .orElseGet(() -> CabinetPromotionBalanceCache.builder().cabinetId(cabinetId).build());
