@@ -26,4 +26,7 @@ public class CampaignDetailDto {
 
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdAt;
+
+    /** Редактируемая цель на рекламную кампанию; null если не задана. */
+    private String campaignGoal;
 }

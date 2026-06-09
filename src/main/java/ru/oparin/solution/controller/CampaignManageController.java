@@ -1,5 +1,6 @@
 package ru.oparin.solution.controller;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -13,6 +14,7 @@ import ru.oparin.solution.service.PromotionCampaignControlService;
 import ru.oparin.solution.service.PromotionCampaignControlWriteService;
 import ru.oparin.solution.service.SellerContextService;
 import ru.oparin.solution.service.UserService;
+import ru.oparin.solution.service.campaign.CampaignGoalService;
 import ru.oparin.solution.service.campaign.CampaignManageService;
 
 import java.util.Map;
@@ -28,6 +30,7 @@ public class CampaignManageController {
 
     private final SellerContextService sellerContextService;
     private final CampaignManageService manageService;
+    private final CampaignGoalService campaignGoalService;
     private final UserService userService;
 
     @GetMapping
@@ -195,6 +198,30 @@ public class CampaignManageController {
             Authentication authentication
     ) {
         return control(advertId, sellerId, cabinetId, authentication, false);
+    }
+
+    /**
+     * Сохраняет текст «Цель на рекламную кампанию».
+     */
+    @PutMapping("/campaign-goal")
+    public ResponseEntity<Void> updateCampaignGoal(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @Valid @RequestBody UpdateCampaignGoalRequest request,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        Long cabId = context.cabinet() != null ? context.cabinet().getId() : null;
+        if (cabId == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            campaignGoalService.upsertGoal(cabId, advertId, request.getGoal());
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     @GetMapping("/change-log")

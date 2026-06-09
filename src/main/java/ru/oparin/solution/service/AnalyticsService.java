@@ -14,6 +14,7 @@ import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.*;
 import ru.oparin.solution.service.analytics.*;
+import ru.oparin.solution.service.campaign.CampaignGoalService;
 import ru.oparin.solution.util.PeriodGenerator;
 
 import java.math.BigDecimal;
@@ -55,6 +56,7 @@ public class AnalyticsService {
     private final PromotionParticipationRepository promotionParticipationRepository;
     private final CabinetService cabinetService;
     private final ArticleGoalService articleGoalService;
+    private final CampaignGoalService campaignGoalService;
 
 
     /**
@@ -1308,6 +1310,7 @@ public class AnalyticsService {
                 .articlesCount(articles.size())
                 .articles(articles)
                 .createdAt(campaign.getCreateTime())
+                .campaignGoal(campaignGoalService.findGoalText(finalCabinetId, campaign.getAdvertId()).orElse(null))
                 .build();
     }
 
