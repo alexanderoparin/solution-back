@@ -10,7 +10,7 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class UpdateAdCampaignGoalRequest {
+public class UpdateArticleGoalRequest {
 
     /** Текст цели; null или пустая строка допустимы */
     @Size(max = 10000, message = "Текст не длиннее 10000 символов")

@@ -72,8 +72,8 @@ public class ArticleResponseDto {
     private LocalDateTime lastStocksUpdateTriggeredAt;
 
     /**
-     * Редактируемая цель рекламной кампании по артикулу в кабинете; null если не задана или кабинет не выбран.
+     * Редактируемая цель на артикул в кабинете; null если не задана или кабинет не выбран.
      */
-    private String adCampaignGoal;
+    private String articleGoal;
 }
 

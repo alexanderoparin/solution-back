@@ -9,11 +9,11 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.LocalDateTime;
 
 /**
- * Редактируемая «цель рекламной кампании» для артикула в кабинете.
+ * Редактируемая «цель на артикул» в разрезе кабинета.
  */
 @Entity
 @Table(
-        name = "article_ad_campaign_goals",
+        name = "article_goals",
         schema = "solution",
         uniqueConstraints = @UniqueConstraint(columnNames = {"cabinet_id", "nm_id"})
 )
@@ -23,7 +23,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ArticleAdCampaignGoal {
+public class ArticleGoal {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

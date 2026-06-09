@@ -8,7 +8,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.analytics.*;
 import ru.oparin.solution.service.AnalyticsService;
-import ru.oparin.solution.service.ArticleAdCampaignGoalService;
+import ru.oparin.solution.service.ArticleGoalService;
 import ru.oparin.solution.service.SellerContextService;
 
 import java.net.URLDecoder;
@@ -25,7 +25,7 @@ public class AnalyticsController {
 
     private final AnalyticsService analyticsService;
     private final SellerContextService sellerContextService;
-    private final ArticleAdCampaignGoalService articleAdCampaignGoalService;
+    private final ArticleGoalService articleGoalService;
 
     /**
      * Получает список артикулов кабинета/продавца (только справочная информация для фильтра).
@@ -164,14 +164,14 @@ public class AnalyticsController {
     }
 
     /**
-     * Сохраняет текст «Цель рекламной кампании» для артикула в выбранном кабинете.
+     * Сохраняет текст «Цель на артикул» для артикула в выбранном кабинете.
      */
-    @PutMapping("/article/{nmId}/ad-campaign-goal")
-    public ResponseEntity<Void> updateAdCampaignGoal(
+    @PutMapping("/article/{nmId}/article-goal")
+    public ResponseEntity<Void> updateArticleGoal(
             @PathVariable Long nmId,
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
-            @Valid @RequestBody UpdateAdCampaignGoalRequest request,
+            @Valid @RequestBody UpdateArticleGoalRequest request,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(
@@ -179,7 +179,7 @@ public class AnalyticsController {
                 sellerId,
                 cabinetId
         );
-        articleAdCampaignGoalService.upsertGoal(context.user(), context.cabinetId(), nmId, request.getGoal());
+        articleGoalService.upsertGoal(context.user(), context.cabinetId(), nmId, request.getGoal());
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 

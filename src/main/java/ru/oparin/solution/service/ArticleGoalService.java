@@ -5,19 +5,19 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.ArticleAdCampaignGoal;
+import ru.oparin.solution.model.ArticleGoal;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.repository.ArticleAdCampaignGoalRepository;
+import ru.oparin.solution.repository.ArticleGoalRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
 
 import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-public class ArticleAdCampaignGoalService {
+public class ArticleGoalService {
 
-    private final ArticleAdCampaignGoalRepository goalRepository;
+    private final ArticleGoalRepository goalRepository;
     private final ProductCardRepository productCardRepository;
 
     @Transactional(readOnly = true)
@@ -25,11 +25,11 @@ public class ArticleAdCampaignGoalService {
         if (cabinetId == null || nmId == null) {
             return Optional.empty();
         }
-        return goalRepository.findByCabinetIdAndNmId(cabinetId, nmId).map(ArticleAdCampaignGoal::getGoalText);
+        return goalRepository.findByCabinetIdAndNmId(cabinetId, nmId).map(ArticleGoal::getGoalText);
     }
 
     /**
-     * Создаёт или обновляет цель РК. Доступно, если карточка артикула есть у селлера в этом кабинете.
+     * Создаёт или обновляет цель на артикул. Доступно, если карточка артикула есть у селлера в этом кабинете.
      */
     @Transactional
     public void upsertGoal(User seller, Long cabinetId, Long nmId, String goal) {
@@ -44,8 +44,8 @@ public class ArticleAdCampaignGoalService {
             throw new UserException("Артикул не принадлежит продавцу", HttpStatus.FORBIDDEN);
         }
         String text = goal != null ? goal : "";
-        ArticleAdCampaignGoal entity = goalRepository.findByCabinetIdAndNmId(cabinetId, nmId)
-                .orElseGet(() -> ArticleAdCampaignGoal.builder()
+        ArticleGoal entity = goalRepository.findByCabinetIdAndNmId(cabinetId, nmId)
+                .orElseGet(() -> ArticleGoal.builder()
                         .cabinetId(cabinetId)
                         .nmId(nmId)
                         .goalText("")

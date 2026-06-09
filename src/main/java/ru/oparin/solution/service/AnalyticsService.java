@@ -54,7 +54,7 @@ public class AnalyticsService {
     private final PromotionNormQueryStatisticsService normQueryStatisticsService;
     private final PromotionParticipationRepository promotionParticipationRepository;
     private final CabinetService cabinetService;
-    private final ArticleAdCampaignGoalService articleAdCampaignGoalService;
+    private final ArticleGoalService articleGoalService;
 
 
     /**
@@ -538,8 +538,8 @@ public class AnalyticsService {
         LocalDateTime lastStocksUpdateTriggeredAt = cardCabinetId != null
                 ? cabinetService.findById(cardCabinetId).map(Cabinet::getLastStocksUpdateRequestedAt).orElse(null)
                 : null;
-        String adCampaignGoal = cardCabinetId != null
-                ? articleAdCampaignGoalService.findGoalText(cardCabinetId, nmId).orElse(null)
+        String articleGoal = cardCabinetId != null
+                ? articleGoalService.findGoalText(cardCabinetId, nmId).orElse(null)
                 : null;
 
         return ArticleResponseDto.builder()
@@ -554,7 +554,7 @@ public class AnalyticsService {
                 .stocks(getStocks(nmId, cardCabinetId))
                 .bundleProducts(bundleProducts)
                 .lastStocksUpdateTriggeredAt(lastStocksUpdateTriggeredAt)
-                .adCampaignGoal(adCampaignGoal)
+                .articleGoal(articleGoal)
                 .build();
     }
 
