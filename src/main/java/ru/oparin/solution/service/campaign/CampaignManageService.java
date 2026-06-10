@@ -30,8 +30,6 @@ import java.util.*;
 public class CampaignManageService {
 
     private static final ZoneId SCHEDULE_ZONE = ZoneId.of("Europe/Moscow");
-    private static final int CHANGE_LOG_PREVIEW = 20;
-
     private final AnalyticsService analyticsService;
     private final PromotionCampaignRepository campaignRepository;
     private final CampaignAutoBudgetSettingsRepository autoBudgetRepository;
@@ -65,7 +63,6 @@ public class CampaignManageService {
                 .operationalStatus(resolveOperationalStatus(state, campaign, advertId, cabinetId))
                 .autoBudget(mapAutoBudget(autoBudgetOrDefaults(advertId, cabinetId)))
                 .slots(loadSlots(advertId, cabinetId))
-                .recentChangeLog(changeLogService.recent(advertId, cabinetId, CHANGE_LOG_PREVIEW))
                 .build();
     }
 

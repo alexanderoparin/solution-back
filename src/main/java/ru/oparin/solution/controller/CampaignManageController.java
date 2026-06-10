@@ -230,7 +230,7 @@ public class CampaignManageController {
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "10") int size,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);

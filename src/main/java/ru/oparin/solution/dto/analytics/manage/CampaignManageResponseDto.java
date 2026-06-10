@@ -24,5 +24,4 @@ public class CampaignManageResponseDto {
     private String operationalStatus;
     private CampaignAutoBudgetDto autoBudget;
     private List<CampaignScheduleSlotDto> slots;
-    private List<CampaignChangeLogEntryDto> recentChangeLog;
 }

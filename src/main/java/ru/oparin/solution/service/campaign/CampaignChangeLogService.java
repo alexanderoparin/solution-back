@@ -11,6 +11,7 @@ import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.CampaignChangeLogRepository;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Журнал изменений настроек рекламной кампании.
@@ -18,6 +19,8 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class CampaignChangeLogService {
+
+    private static final Set<Integer> ALLOWED_PAGE_SIZES = Set.of(10, 20, 50, 100);
 
     private final CampaignChangeLogRepository changeLogRepository;
 
@@ -40,8 +43,10 @@ public class CampaignChangeLogService {
 
     @Transactional(readOnly = true)
     public Page<CampaignChangeLogEntryDto> page(Long campaignId, Long cabinetId, int page, int size) {
+        int resolvedSize = ALLOWED_PAGE_SIZES.contains(size) ? size : 10;
+        int resolvedPage = Math.max(0, page);
         return changeLogRepository.findByCampaignIdAndCabinetIdOrderByCreatedAtDesc(
-                        campaignId, cabinetId, PageRequest.of(page, size))
+                        campaignId, cabinetId, PageRequest.of(resolvedPage, resolvedSize))
                 .map(this::toDto);
     }
 
