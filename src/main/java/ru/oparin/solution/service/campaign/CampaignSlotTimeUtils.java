@@ -35,6 +35,13 @@ public final class CampaignSlotTimeUtils {
         return snap(time).toString().substring(0, 5);
     }
 
+    /**
+     * Пересечение полуинтервалов [start, end) — конец слота не включается (как в планировщике).
+     */
+    public static boolean overlaps(LocalTime start1, LocalTime end1, LocalTime start2, LocalTime end2) {
+        return start1.isBefore(end2) && start2.isBefore(end1);
+    }
+
     public static LocalTime defaultHalfHourFrom(LocalTime start) {
         LocalTime s = snap(start);
         LocalTime end = s.plusMinutes(STEP_MINUTES);

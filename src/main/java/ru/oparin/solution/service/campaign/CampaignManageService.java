@@ -116,6 +116,9 @@ public class CampaignManageService {
                 ? parseRepeatMode(request.getRepeatMode())
                 : CampaignSlotRepeatMode.DAILY;
         List<Short> days = resolveDays(request.getDayOfWeek(), mode, request.isRepeat());
+        for (Short day : days) {
+            ensureNoSlotOverlap(advertId, cabinetId, day, start, end, null);
+        }
         List<CampaignScheduleSlot> created = new ArrayList<>();
         for (Short day : days) {
             CampaignScheduleSlot slot = CampaignScheduleSlot.builder()
@@ -163,6 +166,7 @@ public class CampaignManageService {
         if (request.getBudgetRub() != null) {
             slot.setBudgetRub(request.getBudgetRub());
         }
+        ensureNoSlotOverlap(advertId, cabinetId, slot.getDayOfWeek(), slot.getStartTime(), slot.getEndTime(), slot.getId());
         slotRepository.save(slot);
         CampaignManagementState state = stateRepository.findById(advertId).orElse(null);
         if (request.getBudgetRub() != null && !Objects.equals(oldBudget, request.getBudgetRub())) {
@@ -425,6 +429,30 @@ public class CampaignManageService {
             return CampaignSlotRepeatMode.DAILY;
         }
         return CampaignSlotRepeatMode.valueOf(mode.trim().toUpperCase());
+    }
+
+    private void ensureNoSlotOverlap(
+            Long advertId,
+            Long cabinetId,
+            short dayOfWeek,
+            LocalTime start,
+            LocalTime end,
+            Long excludeSlotId
+    ) {
+        List<CampaignScheduleSlot> onDay = slotRepository
+                .findByCampaignIdAndCabinetIdOrderByDayOfWeekAscStartTimeAsc(advertId, cabinetId).stream()
+                .filter(s -> s.getDayOfWeek() == dayOfWeek)
+                .filter(s -> excludeSlotId == null || !s.getId().equals(excludeSlotId))
+                .toList();
+        for (CampaignScheduleSlot existing : onDay) {
+            if (CampaignSlotTimeUtils.overlaps(start, end, existing.getStartTime(), existing.getEndTime())) {
+                throw new IllegalArgumentException(
+                        "Слот пересекается с другим ("
+                                + CampaignSlotTimeUtils.format(existing.getStartTime()) + "–"
+                                + CampaignSlotTimeUtils.format(existing.getEndTime()) + ", "
+                                + dayName(dayOfWeek) + ")");
+            }
+        }
     }
 
     private static List<Short> resolveDays(Short singleDay, CampaignSlotRepeatMode mode, boolean repeat) {
