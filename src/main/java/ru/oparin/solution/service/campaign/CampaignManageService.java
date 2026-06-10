@@ -271,7 +271,7 @@ public class CampaignManageService {
         }
         boolean inSlot = findActiveSlotNow(advertId, cabinetId, ZonedDateTime.now(SCHEDULE_ZONE)).isPresent();
         if (!inSlot) {
-            pauseIfActive(advertId, cabinetId, "РК остановлена из-за изменения расписания");
+            pauseIfActive(advertId, cabinetId, state, "РК остановлена из-за изменения расписания");
         }
     }
 
@@ -296,7 +296,7 @@ public class CampaignManageService {
         LocalTime nowTime = CampaignSlotTimeUtils.snap(now.toLocalTime());
         if (request.getEndTime() != null && !oldEnd.equals(slot.getEndTime())) {
             if (!slot.getEndTime().isAfter(nowTime)) {
-                pauseIfActive(advertId, cabinetId, "РК остановлена: время слота сокращено до текущего момента");
+                pauseIfActive(advertId, cabinetId, state, "РК остановлена: время слота сокращено до текущего момента");
             }
         }
         if (request.getBudgetRub() != null && oldBudget != null && request.getBudgetRub() < oldBudget) {
@@ -314,14 +314,14 @@ public class CampaignManageService {
         }
         Optional<Integer> budgetTotal = budgetFetchService.fetchBudgetTotal(cabinet, advertId, state);
         budgetTotal.ifPresent(total -> {
-            int spent = state.getBudgetAtSlotStart() - total;
+            int spent = SlotBudgetSpendUtils.computeSpentRub(state, total);
             if (spent >= newBudgetRub) {
-                pauseIfActive(advertId, cabinetId, "РК остановлена: исчерпан новый лимит бюджета слота");
+                pauseIfActive(advertId, cabinetId, state, "РК остановлена: исчерпан новый лимит бюджета слота");
             }
         });
     }
 
-    private void pauseIfActive(Long advertId, Long cabinetId, String logMessage) {
+    private void pauseIfActive(Long advertId, Long cabinetId, CampaignManagementState state, String logMessage) {
         PromotionCampaign campaign = campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).orElse(null);
         if (campaign != null && campaign.getStatus() == CampaignStatus.ACTIVE) {
             try {
@@ -330,6 +330,10 @@ public class CampaignManageService {
                     controlService.enqueuePause(cabinet, advertId);
                     changeLogService.log(advertId, cabinetId, null, logMessage);
                     timelineService.recordStop(advertId, cabinetId);
+                    if (state != null && state.getActiveSlotId() != null) {
+                        SlotBudgetSpendUtils.markSlotBudgetExhausted(state, state.getActiveSlotId());
+                        stateRepository.save(state);
+                    }
                 }
             } catch (Exception ignored) {
                 // rate limit — scheduler retry

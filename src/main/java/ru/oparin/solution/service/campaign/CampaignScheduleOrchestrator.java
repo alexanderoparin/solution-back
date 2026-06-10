@@ -80,14 +80,22 @@ public class CampaignScheduleOrchestrator {
 
         if (inSlot) {
             CampaignScheduleSlot slot = activeSlot.get();
-            if (state.getActiveSlotId() == null || !state.getActiveSlotId().equals(slot.getId())) {
-                onSlotEnter(state, slot, cabinet);
+            if (SlotBudgetSpendUtils.isSlotBudgetExhausted(state, slot.getId())) {
+                if (campaign.getStatus() == CampaignStatus.ACTIVE) {
+                    ensurePaused(cabinet, advertId, "РК остановлена: исчерпан бюджет слота");
+                }
+            } else {
+                if (state.getActiveSlotId() == null || !state.getActiveSlotId().equals(slot.getId())) {
+                    onSlotEnter(state, slot, cabinet);
+                }
+                checkSlotBudgetCap(state, slot, cabinet, campaign);
+                if (!SlotBudgetSpendUtils.isSlotBudgetExhausted(state, slot.getId())) {
+                    tryAutoTopUp(state, advertId, cabinetId, cabinet);
+                    ensureRunning(campaign, cabinet, advertId);
+                }
             }
-            checkSlotBudgetCap(state, slot, cabinet, campaign);
-            tryAutoTopUp(state, advertId, cabinetId, cabinet);
-            ensureRunning(campaign, cabinet, advertId);
         } else {
-            if (state.getActiveSlotId() != null) {
+            if (state.getActiveSlotId() != null || state.getSlotBudgetExhaustedSlotId() != null) {
                 onSlotLeave(state);
             }
             if (campaign.getStatus() == CampaignStatus.ACTIVE) {
@@ -98,14 +106,12 @@ public class CampaignScheduleOrchestrator {
     }
 
     private void onSlotEnter(CampaignManagementState state, CampaignScheduleSlot slot, Cabinet cabinet) {
-        state.setActiveSlotId(slot.getId());
         budgetFetchService.fetchBudgetTotal(cabinet, state.getCampaignId(), state)
-                .ifPresent(state::setBudgetAtSlotStart);
+                .ifPresent(total -> SlotBudgetSpendUtils.beginSlotSession(state, slot.getId(), total));
     }
 
     private void onSlotLeave(CampaignManagementState state) {
-        state.setActiveSlotId(null);
-        state.setBudgetAtSlotStart(null);
+        SlotBudgetSpendUtils.resetSlotSession(state);
     }
 
     private void checkSlotBudgetCap(
@@ -119,10 +125,10 @@ public class CampaignScheduleOrchestrator {
         }
         Optional<Integer> budgetTotal = budgetFetchService.fetchBudgetTotal(cabinet, state.getCampaignId(), state);
         budgetTotal.ifPresent(total -> {
-            int spent = state.getBudgetAtSlotStart() - total;
+            int spent = SlotBudgetSpendUtils.computeSpentRub(state, total);
             if (spent >= slot.getBudgetRub()) {
                 ensurePaused(cabinet, state.getCampaignId(), "РК остановлена: исчерпан бюджет слота");
-                onSlotLeave(state);
+                SlotBudgetSpendUtils.markSlotBudgetExhausted(state, slot.getId());
             }
         });
     }
@@ -153,6 +159,7 @@ public class CampaignScheduleOrchestrator {
                         .build();
                 promotionApiClient.depositCampaignBudget(cabinet.getApiKey(), advertId, req);
                 state.setTopUpsTodayCount(state.getTopUpsTodayCount() + 1);
+                SlotBudgetSpendUtils.addSlotTopUp(state, settings.getTopUpAmount());
                 changeLogService.log(advertId, cabinetId, null,
                         "Бюджет пополнен автоматически на " + settings.getTopUpAmount() + " ₽");
                 Integer afterTopUp = budgetFetchService.fetchBudgetTotal(cabinet, advertId, state).orElse(null);
