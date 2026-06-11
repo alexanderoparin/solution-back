@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS solution.campaign_schedule_slot (
 
 COMMENT ON TABLE solution.campaign_schedule_slot IS 'Слоты расписания запуска РК (день недели + время)';
 COMMENT ON COLUMN solution.campaign_schedule_slot.day_of_week IS '1=Пн … 7=Вс';
+COMMENT ON COLUMN solution.campaign_schedule_slot.end_time IS
+    'Время окончания слота (не включается). 23:59 — конец суток';
 COMMENT ON COLUMN solution.campaign_schedule_slot.budget_rub IS 'Лимит расхода за слот, руб';
 COMMENT ON COLUMN solution.campaign_schedule_slot.repeat_group_id IS 'Группа слотов, созданных одним действием «повторять»';
 COMMENT ON COLUMN solution.campaign_schedule_slot.repeat_mode IS 'DAILY, WEEKENDS, WEEKDAYS';

@@ -100,9 +100,9 @@ public class CampaignManageService {
             Long advertId, Long cabinetId, User user, CampaignScheduleSlotRequestDto request
     ) {
         ensureCampaign(advertId, cabinetId);
-        LocalTime start = CampaignSlotTimeUtils.parseHHmm(request.getStartTime());
-        LocalTime end = CampaignSlotTimeUtils.parseHHmm(request.getEndTime());
-        if (!end.isAfter(start)) {
+        LocalTime start = CampaignSlotTimeUtils.parseStartHHmm(request.getStartTime());
+        LocalTime end = CampaignSlotTimeUtils.parseEndHHmm(request.getEndTime());
+        if (!CampaignSlotTimeUtils.isEndAfterStart(start, end)) {
             throw new IllegalArgumentException("Время окончания должно быть позже начала");
         }
         if (request.getBudgetRub() == null || request.getBudgetRub() <= 0) {
@@ -132,8 +132,7 @@ public class CampaignManageService {
         }
         String repeatLabel = repeatLabel(mode);
         changeLogService.log(advertId, cabinetId, user,
-                "Добавлен слот «" + CampaignSlotTimeUtils.format(start) + "-" + CampaignSlotTimeUtils.format(end)
-                        + ", " + repeatLabel + "»");
+                "Добавлен слот «" + formatSlotRange(start, end) + ", " + repeatLabel + "»");
         applySlotEditPolicy(advertId, cabinetId, stateRepository.findById(advertId).orElse(null));
         return created.stream().map(this::mapSlot).toList();
     }
@@ -148,16 +147,16 @@ public class CampaignManageService {
         if (!slot.getCampaignId().equals(advertId) || !slot.getCabinetId().equals(cabinetId)) {
             throw new IllegalArgumentException("Слот не принадлежит этой кампании");
         }
-        String oldTime = CampaignSlotTimeUtils.format(slot.getStartTime()) + "-" + CampaignSlotTimeUtils.format(slot.getEndTime());
+        String oldTime = formatSlotRange(slot.getStartTime(), slot.getEndTime());
         Integer oldBudget = slot.getBudgetRub();
         LocalTime oldEnd = slot.getEndTime();
         if (request.getStartTime() != null) {
-            slot.setStartTime(CampaignSlotTimeUtils.parseHHmm(request.getStartTime()));
+            slot.setStartTime(CampaignSlotTimeUtils.parseStartHHmm(request.getStartTime()));
         }
         if (request.getEndTime() != null) {
-            slot.setEndTime(CampaignSlotTimeUtils.parseHHmm(request.getEndTime()));
+            slot.setEndTime(CampaignSlotTimeUtils.parseEndHHmm(request.getEndTime()));
         }
-        if (!slot.getEndTime().isAfter(slot.getStartTime())) {
+        if (!CampaignSlotTimeUtils.isEndAfterStart(slot.getStartTime(), slot.getEndTime())) {
             throw new IllegalArgumentException("Время окончания должно быть позже начала");
         }
         if (request.getBudgetRub() != null) {
@@ -171,7 +170,7 @@ public class CampaignManageService {
                     "Изменен бюджет «было " + oldBudget + ", стало " + request.getBudgetRub() + "»");
         }
         if (request.getStartTime() != null || request.getEndTime() != null) {
-            String newTime = CampaignSlotTimeUtils.format(slot.getStartTime()) + "-" + CampaignSlotTimeUtils.format(slot.getEndTime());
+            String newTime = formatSlotRange(slot.getStartTime(), slot.getEndTime());
             if (!oldTime.equals(newTime)) {
                 changeLogService.log(advertId, cabinetId, user,
                         "Изменено время «было " + oldTime + ", стало " + newTime + "»");
@@ -186,8 +185,8 @@ public class CampaignManageService {
         ensureCampaign(advertId, cabinetId);
         CampaignScheduleSlot slot = slotRepository.findById(slotId)
                 .orElseThrow(() -> new IllegalArgumentException("Слот не найден"));
-        String msg = "Удален слот «" + CampaignSlotTimeUtils.format(slot.getStartTime()) + "-"
-                + CampaignSlotTimeUtils.format(slot.getEndTime()) + ", " + dayName(slot.getDayOfWeek()) + "»";
+        String msg = "Удален слот «" + formatSlotRange(slot.getStartTime(), slot.getEndTime())
+                + ", " + dayName(slot.getDayOfWeek()) + "»";
         slotRepository.delete(slot);
         changeLogService.log(advertId, cabinetId, user, msg);
         applySlotEditPolicy(advertId, cabinetId, stateRepository.findById(advertId).orElse(null));
@@ -244,7 +243,7 @@ public class CampaignManageService {
         LocalTime time = CampaignSlotTimeUtils.snap(now.toLocalTime());
         return slotRepository.findByCampaignIdAndCabinetIdOrderByDayOfWeekAscStartTimeAsc(advertId, cabinetId).stream()
                 .filter(s -> s.getDayOfWeek() == dow)
-                .filter(s -> !time.isBefore(s.getStartTime()) && time.isBefore(s.getEndTime()))
+                .filter(s -> CampaignSlotTimeUtils.containsTime(time, s.getStartTime(), s.getEndTime()))
                 .findFirst();
     }
 
@@ -296,7 +295,8 @@ public class CampaignManageService {
         }
         LocalTime nowTime = CampaignSlotTimeUtils.snap(now.toLocalTime());
         if (request.getEndTime() != null && !oldEnd.equals(slot.getEndTime())) {
-            if (!slot.getEndTime().isAfter(nowTime)) {
+            if (CampaignSlotTimeUtils.toMinutes(nowTime) >= CampaignSlotTimeUtils.endMinutes(
+                    slot.getStartTime(), slot.getEndTime())) {
                 pauseIfActive(advertId, cabinetId, state, "РК остановлена: время слота сокращено до текущего момента");
             }
         }
@@ -414,7 +414,7 @@ public class CampaignManageService {
                 .id(s.getId())
                 .dayOfWeek(s.getDayOfWeek())
                 .startTime(CampaignSlotTimeUtils.format(s.getStartTime()))
-                .endTime(CampaignSlotTimeUtils.format(s.getEndTime()))
+                .endTime(CampaignSlotTimeUtils.formatEnd(s.getStartTime(), s.getEndTime()))
                 .budgetRub(s.getBudgetRub())
                 .repeatGroupId(s.getRepeatGroupId())
                 .repeatMode(s.getRepeatMode() != null ? s.getRepeatMode().name() : null)
@@ -445,11 +445,14 @@ public class CampaignManageService {
             if (CampaignSlotTimeUtils.overlaps(start, end, existing.getStartTime(), existing.getEndTime())) {
                 throw new IllegalArgumentException(
                         "Слот пересекается с другим ("
-                                + CampaignSlotTimeUtils.format(existing.getStartTime()) + "–"
-                                + CampaignSlotTimeUtils.format(existing.getEndTime()) + ", "
+                                + formatSlotRange(existing.getStartTime(), existing.getEndTime()) + ", "
                                 + dayName(dayOfWeek) + ")");
             }
         }
+    }
+
+    private static String formatSlotRange(LocalTime start, LocalTime end) {
+        return CampaignSlotTimeUtils.format(start) + "-" + CampaignSlotTimeUtils.formatEnd(start, end);
     }
 
     private static List<Short> resolveDays(Short singleDay, CampaignSlotRepeatMode mode, boolean repeat) {

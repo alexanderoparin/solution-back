@@ -2,11 +2,11 @@ package ru.oparin.solution.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import ru.oparin.solution.dto.PageResponse;
 import ru.oparin.solution.dto.analytics.CampaignControlEnqueueResponse;
 import ru.oparin.solution.dto.analytics.manage.*;
 import ru.oparin.solution.model.User;
@@ -225,7 +225,7 @@ public class CampaignManageController {
     }
 
     @GetMapping("/change-log")
-    public ResponseEntity<Page<CampaignChangeLogEntryDto>> changeLog(
+    public ResponseEntity<PageResponse<CampaignChangeLogEntryDto>> changeLog(
             @PathVariable Long advertId,
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
@@ -238,7 +238,15 @@ public class CampaignManageController {
         if (cabId == null) {
             return ResponseEntity.badRequest().build();
         }
-        return ResponseEntity.ok(manageService.changeLogPage(advertId, cabId, page, size));
+        var logPage = manageService.changeLogPage(advertId, cabId, page, size);
+        PageResponse<CampaignChangeLogEntryDto> response = PageResponse.<CampaignChangeLogEntryDto>builder()
+                .content(logPage.getContent())
+                .totalElements(logPage.getTotalElements())
+                .totalPages(logPage.getTotalPages())
+                .size(logPage.getSize())
+                .number(logPage.getNumber())
+                .build();
+        return ResponseEntity.ok(response);
     }
 
     private SellerContextService.SellerContext ctx(Long sellerId, Long cabinetId, Authentication authentication) {
