@@ -2,6 +2,7 @@ package ru.oparin.solution.dto;
 
 import jakarta.validation.constraints.DecimalMin;
 import lombok.*;
+import ru.oparin.solution.model.PlanPeriodType;
 
 import java.math.BigDecimal;
 
@@ -20,4 +21,7 @@ public class UpdatePlanRequest {
     private Integer maxCabinets;
     private Integer sortOrder;
     private Boolean isActive;
+    private String code;
+    private String productCode;
+    private PlanPeriodType periodType;
 }
