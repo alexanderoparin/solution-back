@@ -15,11 +15,13 @@ import ru.oparin.solution.model.Payment;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.PaymentRepository;
+import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.EmailConfirmationService;
 import ru.oparin.solution.service.SubscriptionAccessService;
 import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.WbApiKeyService;
+import ru.oparin.solution.service.campaign.CampaignManageAccessService;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -39,9 +41,11 @@ public class UserController {
     private final WbApiKeyService wbApiKeyService;
     private final AnalyticsScheduler analyticsScheduler;
     private final SubscriptionAccessService subscriptionAccessService;
+    private final CampaignManageAccessService campaignManageAccessService;
     private final SubscriptionProperties subscriptionProperties;
     private final EmailConfirmationService emailConfirmationService;
     private final PaymentRepository paymentRepository;
+    private final UserRepository userRepository;
 
     /**
      * Обновление WB API ключа пользователя.
@@ -159,12 +163,17 @@ public class UserController {
      * Статус доступа текущего пользователя.
      */
     @GetMapping("/access")
-    public ResponseEntity<AccessStatusResponse> getAccessStatus(Authentication authentication) {
+    public ResponseEntity<AccessStatusResponse> getAccessStatus(
+            @RequestParam(required = false) Long sellerId,
+            Authentication authentication
+    ) {
         User user = getCurrentUser(authentication);
         boolean hasAccess = subscriptionAccessService.hasAccess(user);
         boolean agencyClient = TRUE.equals(user.getIsAgencyClient());
 
         var activeSubscription = subscriptionAccessService.getActiveSubscription(user);
+        User subscriptionSeller = resolveSellerForAccess(user, sellerId);
+        CampaignManageAccessDto campaignManage = campaignManageAccessService.buildAccessState(user, subscriptionSeller);
 
         AccessStatusResponse response = AccessStatusResponse.builder()
                 .hasAccess(hasAccess)
@@ -173,9 +182,23 @@ public class UserController {
                 .billingEnabled(subscriptionProperties.isBillingEnabled())
                 .subscriptionStatus(activeSubscription != null ? activeSubscription.getStatus() : null)
                 .subscriptionExpiresAt(activeSubscription != null ? activeSubscription.getExpiresAt() : null)
+                .campaignManage(campaignManage)
                 .build();
 
         return ResponseEntity.ok(response);
+    }
+
+    private User resolveSellerForAccess(User actor, Long sellerId) {
+        if (actor.getRole() == Role.SELLER) {
+            return actor;
+        }
+        if (actor.getRole() == Role.WORKER && actor.getOwner() != null) {
+            return actor.getOwner();
+        }
+        if ((actor.getRole() == Role.ADMIN || actor.getRole() == Role.MANAGER) && sellerId != null) {
+            return userRepository.findById(sellerId).orElse(null);
+        }
+        return null;
     }
 
     /**

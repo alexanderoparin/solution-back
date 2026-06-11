@@ -15,6 +15,7 @@ import ru.oparin.solution.service.PromotionCampaignControlWriteService;
 import ru.oparin.solution.service.SellerContextService;
 import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.campaign.CampaignGoalService;
+import ru.oparin.solution.service.campaign.CampaignManageAccessService;
 import ru.oparin.solution.service.campaign.CampaignManageService;
 
 import java.util.Map;
@@ -31,6 +32,7 @@ public class CampaignManageController {
     private final SellerContextService sellerContextService;
     private final CampaignManageService manageService;
     private final CampaignGoalService campaignGoalService;
+    private final CampaignManageAccessService campaignManageAccessService;
     private final UserService userService;
 
     @GetMapping
@@ -75,6 +77,7 @@ public class CampaignManageController {
         if (ctx.cabinet() == null) {
             return ResponseEntity.badRequest().build();
         }
+        requireCampaignManageWrite(ctx, authentication);
         BalanceRefreshResponseDto result = manageService.refreshBalanceSources(ctx.cabinet().getId());
         if (result.getNextAvailableInSeconds() != null && !result.isRefreshed()) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(result);
@@ -113,7 +116,7 @@ public class CampaignManageController {
     ) {
         SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
         User actor = currentUser(authentication);
-        return write(context, () -> manageService.saveAutoBudget(
+        return write(context, authentication, () -> manageService.saveAutoBudget(
                 advertId, requireCabinet(context), actor, request));
     }
 
@@ -126,7 +129,7 @@ public class CampaignManageController {
     ) {
         SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
         User actor = currentUser(authentication);
-        return write(context, () -> manageService.unlockAutoBudget(
+        return write(context, authentication, () -> manageService.unlockAutoBudget(
                 advertId, requireCabinet(context), actor));
     }
 
@@ -140,7 +143,7 @@ public class CampaignManageController {
     ) {
         SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
         User actor = currentUser(authentication);
-        return write(context, () -> manageService.createSlots(
+        return write(context, authentication, () -> manageService.createSlots(
                 advertId, requireCabinet(context), actor, request));
     }
 
@@ -155,7 +158,7 @@ public class CampaignManageController {
     ) {
         SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
         User actor = currentUser(authentication);
-        return write(context, () -> manageService.updateSlot(
+        return write(context, authentication, () -> manageService.updateSlot(
                 advertId, requireCabinet(context), slotId, actor, request));
     }
 
@@ -172,6 +175,7 @@ public class CampaignManageController {
         if (cabId == null) {
             return ResponseEntity.badRequest().build();
         }
+        requireCampaignManageWrite(context, authentication);
         try {
             manageService.deleteSlot(advertId, cabId, slotId, currentUser(authentication));
             return ResponseEntity.noContent().build();
@@ -216,6 +220,7 @@ public class CampaignManageController {
         if (cabId == null) {
             return ResponseEntity.badRequest().build();
         }
+        requireCampaignManageWrite(context, authentication);
         try {
             campaignGoalService.upsertGoal(cabId, advertId, request.getGoal());
             return ResponseEntity.noContent().build();
@@ -264,15 +269,35 @@ public class CampaignManageController {
         return context.cabinet().getId();
     }
 
-    private <T> ResponseEntity<?> write(SellerContextService.SellerContext context, Supplier<T> action) {
+    private <T> ResponseEntity<?> write(
+            SellerContextService.SellerContext context,
+            Authentication authentication,
+            Supplier<T> action
+    ) {
         try {
             requireCabinet(context);
+            requireCampaignManageWrite(context, authentication);
             return ResponseEntity.ok(action.get());
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (PromotionCampaignControlWriteService.CampaignControlWriteBlockedException e) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", e.getMessage()));
+        } catch (ru.oparin.solution.exception.UserException e) {
+            if (e.getHttpStatus() == HttpStatus.FORBIDDEN) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                        "error", CampaignManageAccessService.SUBSCRIPTION_REQUIRED_CODE,
+                        "message", e.getMessage()
+                ));
+            }
+            throw e;
         }
+    }
+
+    private void requireCampaignManageWrite(
+            SellerContextService.SellerContext context,
+            Authentication authentication
+    ) {
+        campaignManageAccessService.requireAccess(currentUser(authentication), context.user());
     }
 
     private ResponseEntity<?> control(
@@ -281,6 +306,7 @@ public class CampaignManageController {
         SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
         User actor = currentUser(authentication);
         try {
+            requireCampaignManageWrite(context, authentication);
             Long cabId = requireCabinet(context);
             CampaignControlEnqueueResponse response = start
                     ? manageService.manualStart(advertId, cabId, actor)
@@ -293,6 +319,14 @@ public class CampaignManageController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", e.getMessage()));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (ru.oparin.solution.exception.UserException e) {
+            if (e.getHttpStatus() == HttpStatus.FORBIDDEN) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                        "error", CampaignManageAccessService.SUBSCRIPTION_REQUIRED_CODE,
+                        "message", e.getMessage()
+                ));
+            }
+            throw e;
         }
     }
 }

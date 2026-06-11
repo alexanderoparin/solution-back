@@ -21,4 +21,8 @@ public class PlanDto {
     private Integer sortOrder;
     /** Активен ли план (для админки). */
     private Boolean isActive;
+    private String code;
+    private String productCode;
+    /** DAYS или CALENDAR_MONTH. */
+    private String periodType;
 }

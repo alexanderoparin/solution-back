@@ -11,7 +11,10 @@ import lombok.*;
 @NoArgsConstructor
 @AllArgsConstructor
 public class SubscriptionStatusResponse {
-    /** Включена ли оплата (тарифы, Робокасса). */
+    /** Включена ли глобальная оплата сайта. */
     private boolean billingEnabled;
+
+    /** Включена ли подписка на «Управление РК». */
+    private boolean campaignManagementEnabled;
 }
 

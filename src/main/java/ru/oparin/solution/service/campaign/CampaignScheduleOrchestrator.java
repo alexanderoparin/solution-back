@@ -43,6 +43,7 @@ public class CampaignScheduleOrchestrator {
     private final PromotionCampaignControlService controlService;
     private final CabinetService cabinetService;
     private final WbPromotionApiClient promotionApiClient;
+    private final CampaignManageAccessService campaignManageAccessService;
 
     @Scheduled(cron = "0 * * * * *")
     @SchedulerLock(name = "campaignScheduleOrchestrator", lockAtLeastFor = "30s", lockAtMostFor = "55s")
@@ -68,6 +69,9 @@ public class CampaignScheduleOrchestrator {
         Long cabinetId = state.getCabinetId();
         Cabinet cabinet = cabinetService.findById(cabinetId).orElse(null);
         if (cabinet == null || cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+            return;
+        }
+        if (!campaignManageAccessService.hasAccess(null, cabinet.getUser())) {
             return;
         }
         PromotionCampaign campaign = campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).orElse(null);

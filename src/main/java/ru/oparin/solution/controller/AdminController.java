@@ -17,6 +17,7 @@ import ru.oparin.solution.repository.SubscriptionRepository;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.AdminSubscriptionService;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.PlanMapper;
 import ru.oparin.solution.service.events.WbApiEventService;
 
 import java.time.LocalDate;
@@ -229,16 +230,7 @@ public class AdminController {
     }
 
     private PlanDto toPlanDto(Plan p) {
-        return PlanDto.builder()
-                .id(p.getId())
-                .name(p.getName())
-                .description(p.getDescription())
-                .priceRub(p.getPriceRub())
-                .periodDays(p.getPeriodDays())
-                .maxCabinets(p.getMaxCabinets())
-                .sortOrder(p.getSortOrder())
-                .isActive(p.getIsActive())
-                .build();
+        return PlanMapper.toDto(p);
     }
 
     // ————— Подписки и платежи по пользователю —————

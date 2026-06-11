@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.config.SubscriptionProperties;
+import ru.oparin.solution.dto.ActivatePlanResponse;
 import ru.oparin.solution.dto.InitiatePaymentResponse;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
@@ -21,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Сервис оплаты подписки через Робокассу.
+ * Сервис оплаты подписки через Робокассу и активации бесплатных планов.
  */
 @Service
 @RequiredArgsConstructor
@@ -42,13 +43,10 @@ public class SubscriptionPaymentService {
      */
     @Transactional
     public InitiatePaymentResponse initiatePayment(User user, Long planId) {
-        if (!subscriptionProperties.isBillingEnabled()) {
-            throw new UserException("Оплата временно отключена", HttpStatus.BAD_REQUEST);
-        }
-        Plan plan = planRepository.findById(planId)
-                .orElseThrow(() -> new UserException("План не найден: " + planId, HttpStatus.NOT_FOUND));
-        if (!Boolean.TRUE.equals(plan.getIsActive())) {
-            throw new UserException("План недоступен для оплаты", HttpStatus.BAD_REQUEST);
+        assertPaymentAllowed(planId);
+        Plan plan = loadPayablePlan(planId);
+        if (plan.getPriceRub().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new UserException("Для бесплатного плана используйте активацию", HttpStatus.BAD_REQUEST);
         }
         BigDecimal priceRub = plan.getPriceRub();
 
@@ -66,10 +64,42 @@ public class SubscriptionPaymentService {
         String invId = payment.getId().toString();
         String paymentUrl = robokassaService.buildPaymentUrl(priceRub, invId, description);
 
-        log.info("Создан платёж №{} для пользователя с ID={} и email '{}', сумма платежа {}", payment.getId(), user.getId(), user.getEmail(), priceRub);
+        log.info("Создан платёж №{} для пользователя с ID={} и email '{}', сумма платежа {}",
+                payment.getId(), user.getId(), user.getEmail(), priceRub);
         return InitiatePaymentResponse.builder()
                 .paymentUrl(paymentUrl)
                 .paymentId(payment.getId())
+                .build();
+    }
+
+    /**
+     * Активирует бесплатный план без платёжной системы.
+     */
+    @Transactional
+    public ActivatePlanResponse activateFreePlan(User user, Long planId) {
+        if (!subscriptionProperties.isCampaignManagementEnabled()) {
+            throw new UserException("Подписка на Управление РК отключена", HttpStatus.BAD_REQUEST);
+        }
+        Plan plan = planRepository.findById(planId)
+                .orElseThrow(() -> new UserException("План не найден: " + planId, HttpStatus.NOT_FOUND));
+        if (!Boolean.TRUE.equals(plan.getIsActive())) {
+            throw new UserException("План недоступен", HttpStatus.BAD_REQUEST);
+        }
+        if (!PlanProductCode.CAMPAIGN_MANAGE.equals(plan.getProductCode())) {
+            throw new UserException("План не относится к Управлению РК", HttpStatus.BAD_REQUEST);
+        }
+        if (plan.getPriceRub().compareTo(BigDecimal.ZERO) > 0) {
+            throw new UserException("План требует оплаты", HttpStatus.BAD_REQUEST);
+        }
+        if (PlanProductCode.CAMPAIGN_FREE.equals(plan.getCode())
+                && subscriptionRepository.existsByUser_IdAndPlan_Code(user.getId(), PlanProductCode.CAMPAIGN_FREE)) {
+            throw new UserException("Бесплатный период уже был активирован", HttpStatus.BAD_REQUEST);
+        }
+
+        Subscription subscription = createOrExtendSubscription(user, plan);
+        return ActivatePlanResponse.builder()
+                .subscriptionId(subscription.getId())
+                .expiresAt(subscription.getExpiresAt())
                 .build();
     }
 
@@ -120,6 +150,28 @@ public class SubscriptionPaymentService {
         return true;
     }
 
+    private void assertPaymentAllowed(Long planId) {
+        Plan plan = planRepository.findById(planId).orElse(null);
+        if (plan != null && PlanProductCode.CAMPAIGN_MANAGE.equals(plan.getProductCode())) {
+            if (!subscriptionProperties.isCampaignManagementEnabled()) {
+                throw new UserException("Подписка на Управление РК отключена", HttpStatus.BAD_REQUEST);
+            }
+            return;
+        }
+        if (!subscriptionProperties.isBillingEnabled()) {
+            throw new UserException("Оплата временно отключена", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private Plan loadPayablePlan(Long planId) {
+        Plan plan = planRepository.findById(planId)
+                .orElseThrow(() -> new UserException("План не найден: " + planId, HttpStatus.NOT_FOUND));
+        if (!Boolean.TRUE.equals(plan.getIsActive())) {
+            throw new UserException("План недоступен для оплаты", HttpStatus.BAD_REQUEST);
+        }
+        return plan;
+    }
+
     private String metadataWithPlanId(Long planId) {
         try {
             return objectMapper.writeValueAsString(Map.of("planId", planId));
@@ -129,10 +181,14 @@ public class SubscriptionPaymentService {
     }
 
     private Long parsePlanIdFromMetadata(String metadata) {
-        if (metadata == null || metadata.isBlank()) return null;
+        if (metadata == null || metadata.isBlank()) {
+            return null;
+        }
         try {
             JsonNode node = objectMapper.readTree(metadata);
-            if (node.has("planId")) return node.get("planId").asLong();
+            if (node.has("planId")) {
+                return node.get("planId").asLong();
+            }
         } catch (Exception e) {
             log.warn("Ошибка парсинга metadata платежа: {}", e.getMessage());
         }
@@ -141,12 +197,17 @@ public class SubscriptionPaymentService {
 
     private Subscription createOrExtendSubscription(User user, Plan plan) {
         LocalDateTime now = LocalDateTime.now();
-        Subscription current = subscriptionRepository.findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
-                user.getId(), ACTIVE_STATUSES, now
-        ).orElse(null);
+        String productCode = plan.getProductCode() != null ? plan.getProductCode() : PlanProductCode.LEGACY;
 
+        Subscription current = subscriptionRepository
+                .findFirstByUser_IdAndPlan_ProductCodeAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
+                        user.getId(), productCode, ACTIVE_STATUSES, now)
+                .orElse(null);
+
+        LocalDateTime base = now;
         if (current != null && current.getExpiresAt().isAfter(now)) {
-            current.setExpiresAt(current.getExpiresAt().plusDays(plan.getPeriodDays()));
+            base = current.getExpiresAt();
+            current.setExpiresAt(SubscriptionPeriodUtils.addPlanPeriod(base, plan));
             current.setStatus("active");
             current.setPlan(plan);
             return subscriptionRepository.save(current);
@@ -155,9 +216,9 @@ public class SubscriptionPaymentService {
         Subscription subscription = Subscription.builder()
                 .user(user)
                 .plan(plan)
-                .status("active")
+                .status(plan.getPriceRub().compareTo(BigDecimal.ZERO) == 0 ? "trial" : "active")
                 .startedAt(now)
-                .expiresAt(now.plusDays(plan.getPeriodDays()))
+                .expiresAt(SubscriptionPeriodUtils.addPlanPeriod(now, plan))
                 .build();
         return subscriptionRepository.save(subscription);
     }

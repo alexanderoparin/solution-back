@@ -27,5 +27,7 @@ public class AccessStatusResponse {
     private String subscriptionStatus;
 
     private LocalDateTime subscriptionExpiresAt;
+
+    private CampaignManageAccessDto campaignManage;
 }
 

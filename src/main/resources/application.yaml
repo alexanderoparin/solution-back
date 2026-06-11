@@ -100,7 +100,8 @@ app:
     max-file-size: 31457280  # 30 MB по умолчанию
 
 subscription:
-  billing-enabled: false  # true — тарифы и Робокасса; false — бесплатный доступ для селлеров
+  billing-enabled: false  # true — глобальная оплата сайта; false — сайт бесплатен
+  campaign-management-enabled: true  # подписка на раздел «Управление РК»
   trial-days: 14
 
 robokassa:

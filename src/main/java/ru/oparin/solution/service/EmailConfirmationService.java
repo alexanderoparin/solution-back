@@ -7,7 +7,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.EmailConfirmationToken;
-import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.EmailConfirmationTokenRepository;
 import ru.oparin.solution.repository.UserRepository;
@@ -102,9 +101,6 @@ public class EmailConfirmationService {
         User user = confirmationToken.getUser();
         user.setEmailConfirmed(true);
         userRepository.save(user);
-        if (user.getRole() == Role.SELLER && !Boolean.TRUE.equals(user.getIsAgencyClient())) {
-            userService.createTrialSubscriptionForUser(user);
-        }
         tokenRepository.delete(confirmationToken);
         log.info("Email подтверждён для пользователя {}", user.getEmail());
     }

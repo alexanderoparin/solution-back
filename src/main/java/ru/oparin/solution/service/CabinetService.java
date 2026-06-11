@@ -42,7 +42,6 @@ public class CabinetService {
     private static final String CABINET_ACCESS_DENIED = "Нет доступа к данному кабинету";
     private static final String CABINET_NOT_SELLER_OWNED = "Кабинет не принадлежит селлеру";
     private static final String SELLER_ONLY_CREATE = "Только продавец может создавать кабинеты";
-    private static final String SUBSCRIPTION_REQUIRED = "Оформите подписку для создания кабинета";
     private static final String WB_SELLER_INFO_ERROR = "Не удалось получить данные о продавце WB. Проверьте API ключ.";
     private static final String NAME_REQUIRED_WITHOUT_KEY = "Укажите название кабинета, если не задаёте API ключ WB.";
     private static final String API_KEY_ALREADY_USED =
@@ -56,7 +55,6 @@ public class CabinetService {
     private final CabinetRepository cabinetRepository;
     private final UserRepository userRepository;
     private final CabinetDeletionService cabinetDeletionService;
-    private final SubscriptionAccessService subscriptionAccessService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final WbCommonApiClient wbCommonApiClient;
 
@@ -192,10 +190,6 @@ public class CabinetService {
         if (user.getRole() != Role.SELLER) {
             throw new UserException(SELLER_ONLY_CREATE, HttpStatus.FORBIDDEN);
         }
-        if (Boolean.FALSE.equals(user.getIsAgencyClient()) && !subscriptionAccessService.hasAccess(user)) {
-            throw new UserException(SUBSCRIPTION_REQUIRED, HttpStatus.FORBIDDEN);
-        }
-
         String trimmedApiKey = request.getApiKey() != null ? request.getApiKey().trim() : null;
         boolean hasApiKey = trimmedApiKey != null && !trimmedApiKey.isBlank();
         String trimmedName = request.getName() != null ? request.getName().trim() : null;

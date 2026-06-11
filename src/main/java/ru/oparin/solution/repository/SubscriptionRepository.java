@@ -18,5 +18,20 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     );
 
     List<Subscription> findByUser_IdOrderByExpiresAtDesc(Long userId);
+
+    Optional<Subscription> findFirstByUser_IdAndPlan_ProductCodeAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
+            Long userId,
+            String productCode,
+            java.util.Collection<String> statuses,
+            LocalDateTime now
+    );
+
+    Optional<Subscription> findFirstByUser_IdAndPlan_ProductCodeAndExpiresAtBeforeOrderByExpiresAtDesc(
+            Long userId,
+            String productCode,
+            LocalDateTime now
+    );
+
+    boolean existsByUser_IdAndPlan_Code(Long userId, String planCode);
 }
 

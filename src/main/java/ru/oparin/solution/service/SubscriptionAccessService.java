@@ -53,11 +53,7 @@ public class SubscriptionAccessService {
             return false;
         }
 
-        if (user.getRole() == Role.MANAGER) {
-            return true;
-        }
-
-        if (user.getRole() == Role.WORKER && user.getOwner() != null) {
+        if (user.getRole() == Role.MANAGER || user.getRole() == Role.WORKER) {
             return true;
         }
 

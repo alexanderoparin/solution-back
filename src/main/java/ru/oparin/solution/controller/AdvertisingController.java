@@ -6,11 +6,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.analytics.*;
+import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.service.AnalyticsService;
-import ru.oparin.solution.service.PromotionCampaignControlService;
-import ru.oparin.solution.service.PromotionCampaignControlWriteService;
-import ru.oparin.solution.service.SellerContextService;
+import ru.oparin.solution.model.User;
+import ru.oparin.solution.service.*;
+import ru.oparin.solution.service.campaign.CampaignManageAccessService;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.MainStepPayload;
 
@@ -33,6 +33,8 @@ public class AdvertisingController {
     private final WbApiEventService wbApiEventService;
     private final PromotionCampaignControlService promotionCampaignControlService;
     private final PromotionCampaignControlWriteService promotionCampaignControlWriteService;
+    private final CampaignManageAccessService campaignManageAccessService;
+    private final UserService userService;
 
     /**
      * Список рекламных кампаний текущего кабинета (с агрегацией статистики за период).
@@ -169,6 +171,8 @@ public class AdvertisingController {
             return ResponseEntity.badRequest().body(Map.of("error", "Кабинет не выбран"));
         }
         try {
+            User actor = userService.findByEmail(authentication.getName());
+            campaignManageAccessService.requireAccess(actor, context.user());
             CampaignControlEnqueueResponse response = start
                     ? promotionCampaignControlService.enqueueStart(cabinet, advertId)
                     : promotionCampaignControlService.enqueuePause(cabinet, advertId);
@@ -191,6 +195,14 @@ public class AdvertisingController {
                     ));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (UserException e) {
+            if (e.getHttpStatus() == HttpStatus.FORBIDDEN) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                        "error", CampaignManageAccessService.SUBSCRIPTION_REQUIRED_CODE,
+                        "message", e.getMessage()
+                ));
+            }
+            throw e;
         }
     }
 

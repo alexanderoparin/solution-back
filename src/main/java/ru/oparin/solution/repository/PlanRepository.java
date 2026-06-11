@@ -11,6 +11,8 @@ public interface PlanRepository extends JpaRepository<Plan, Long> {
 
     List<Plan> findByIsActiveTrueOrderBySortOrderAsc();
 
+    List<Plan> findByIsActiveTrueAndProductCodeOrderBySortOrderAsc(String productCode);
+
     List<Plan> findAllByOrderBySortOrderAsc();
 }
 

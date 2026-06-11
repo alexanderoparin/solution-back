@@ -12,12 +12,17 @@ import org.springframework.stereotype.Component;
 public class SubscriptionProperties {
 
     /**
-     * Включена ли оплата (тарифы, Робокасса). При false селлеры получают бесплатный доступ без триала.
+     * Включена ли глобальная оплата сайта (тарифы, Робокасса). При false весь сайт бесплатен.
      */
     private boolean billingEnabled = true;
 
     /**
-     * Длительность триала в днях для самостоятельных селлеров.
+     * Включена ли платная подписка на раздел «Управление РК».
+     */
+    private boolean campaignManagementEnabled = false;
+
+    /**
+     * Длительность триала в днях для самостоятельных селлеров (legacy, при глобальной оплате).
      */
     private int trialDays = 14;
 }
