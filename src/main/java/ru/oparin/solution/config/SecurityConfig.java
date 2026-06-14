@@ -59,7 +59,6 @@ public class SecurityConfig {
     private static final String USERS_MANAGEMENT_ENDPOINTS = "/users/**";
     private static final String USERS_TRIGGER_STOCKS_UPDATE_ENDPOINT = "/users/cabinets/*/trigger-stocks-update";
     private static final String CABINETS_ENDPOINTS = "/cabinets/**";
-    private static final String SUBSCRIPTION_PAYMENT_RESULT = "/subscription/payment/result";
     private static final String SUBSCRIPTION_PLANS = "/subscription/plans";
     private static final String SUBSCRIPTION_STATUS = "/subscription/status";
     public static final String ADMIN = Role.ADMIN.name();
@@ -147,7 +146,7 @@ public class SecurityConfig {
     ) {
         auth
                 .requestMatchers(AUTH_ENDPOINTS, HEALTH_ENDPOINT).permitAll()
-                .requestMatchers(SUBSCRIPTION_PAYMENT_RESULT, SUBSCRIPTION_PLANS, SUBSCRIPTION_STATUS).permitAll()
+                .requestMatchers(SUBSCRIPTION_PLANS, SUBSCRIPTION_STATUS).permitAll()
                 .requestMatchers(ADMIN_ENDPOINTS).hasRole(ADMIN)
                 .requestMatchers(SELLER_ENDPOINTS).hasAnyRole(ADMIN, SELLER)
                 .requestMatchers(WORKER_ENDPOINTS).hasAnyRole(ADMIN, SELLER, WORKER)

@@ -104,16 +104,6 @@ subscription:
   campaign-management-enabled: true  # подписка на раздел «Управление РК»
   trial-days: 14
 
-robokassa:
-  merchant-login: "wb-solution.ru"
-  password1: ${ROBOKASSA_PASSWORD1:}
-  password2: ${ROBOKASSA_PASSWORD2:}
-  test: ${ROBOKASSA_TEST:true}
-  # Два разных адреса на фронте — без query-параметров, Робокасса принимает
-  success-url: "https://click-i.ru/subscription/success"
-  fail-url: "https://click-i.ru/subscription/fail"
-  result-url: "https://click-i.ru/api/subscription/payment/result"
-
 logging:
   # --- Levels ---
   level:
