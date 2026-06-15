@@ -147,7 +147,6 @@ public class CabinetScopeStatusService {
             WbApiCategory.PRICES_AND_DISCOUNTS,
             WbApiCategory.STATISTICS,
             WbApiCategory.PROMOTION,
-            WbApiCategory.FEEDBACKS_AND_QUESTIONS,
             WbApiCategory.MARKETPLACE
     );
 

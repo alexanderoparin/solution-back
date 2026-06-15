@@ -452,14 +452,14 @@ public class UsersManagementController {
     }
 
     /**
-     * Принудительный запуск синхронизации рейтинга и отзывов по товарам для всех кабинетов.
+     * Принудительный запуск синхронизации рейтинга по товарам (item-rating) для всех кабинетов.
      * GET, тело не требуется. Доступно только для ADMIN.
      *
      * @param authentication данные аутентификации
      * @return сообщение о запуске
      */
-    @GetMapping("/trigger-feedbacks-update")
-    public ResponseEntity<MessageResponse> triggerFeedbacksUpdate(Authentication authentication) {
+    @GetMapping("/trigger-item-rating-update")
+    public ResponseEntity<MessageResponse> triggerItemRatingUpdate(Authentication authentication) {
         User currentUser = getCurrentUser(authentication);
         if (!isAdmin(currentUser)) {
             return forbiddenMessageResponse(MESSAGE_ADMIN_ONLY);
@@ -472,9 +472,9 @@ public class UsersManagementController {
                 .build();
         List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
         for (Cabinet c : cabinets) {
-            wbApiEventService.enqueueFeedbacksSyncCabinetEvent(c.getId(), payload, "ADMIN_BULK_FEEDBACKS");
+            wbApiEventService.enqueueItemRatingSyncCabinetEvent(c.getId(), payload, "ADMIN_BULK_ITEM_RATING");
         }
-        return okMessageResponse("Синхронизация отзывов поставлена в очередь для " + cabinets.size() + " кабинетов.");
+        return okMessageResponse("Синхронизация рейтинга item-rating поставлена в очередь для " + cabinets.size() + " кабинетов.");
     }
 
     /**

@@ -7,9 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
-import ru.oparin.solution.dto.wb.SaleFunnelHistoryRequest;
-import ru.oparin.solution.dto.wb.SaleFunnelHistoryResponse;
-import ru.oparin.solution.dto.wb.SaleFunnelResponse;
+import ru.oparin.solution.dto.wb.*;
 import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.WbApiEventType;
 
@@ -35,6 +33,7 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
     }
 
     private static final int MAX_ANALYTICS_PERIOD_DAYS = 7;
+    private static final int ITEM_RATING_PAGE_LIMIT = 1000;
 
     @Value("${wb.retries.max-429-basic}")
     private int maxRetries429Basic;
@@ -42,6 +41,70 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
     private int maxRetries429Personal;
 
     private final WbApiTokenTypeResolver tokenTypeResolver;
+
+    /**
+     * Отчёт «Оценка товара» — одна страница (POST /api/analytics/v1/item-rating).
+     * Период: вчера — вчера (снимок текущего рейтинга по правилам API).
+     *
+     * @param apiKey API-ключ (категория «Аналитика»)
+     * @param offset смещение пагинации
+     * @return ответ с data.cards
+     */
+    public ItemRatingResponse postItemRating(String apiKey, int offset) {
+        String fullUrl = WbApiEventType.ANALYTICS_ITEM_RATING_CABINET.getDefaultUrl();
+        logWbApiCall(fullUrl, "оценка товара item-rating", null);
+
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+        String date = yesterday.format(DateTimeFormatter.ISO_LOCAL_DATE);
+        ItemRatingRequest request = ItemRatingRequest.builder()
+                .currentPeriod(ItemRatingRequest.Period.builder().start(date).end(date).build())
+                .orderBy(ItemRatingRequest.OrderBy.builder().field("feedbackRating").mode("desc").build())
+                .limit(ITEM_RATING_PAGE_LIMIT)
+                .offset(offset)
+                .build();
+
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
+        int maxRetries429 = tokenType == CabinetTokenType.PERSONAL ? maxRetries429Personal : maxRetries429Basic;
+        long retryDelayMs429 = WbApiEventType.ANALYTICS_ITEM_RATING_CABINET.getRequestDelayMs(tokenType);
+
+        try {
+            ResponseEntity<String> response = executeWithConnectionRetry(
+                    "оценка товара WB item-rating offset=" + offset,
+                    () -> executeWithRetry(
+                            fullUrl,
+                            apiKey,
+                            request,
+                            maxRetries429,
+                            retryDelayMs429,
+                            "оценка товара item-rating"
+                    )
+            );
+            return objectMapper.readValue(response.getBody(), ItemRatingResponse.class);
+        } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
+            logWbApiError("оценка товара WB item-rating offset=" + offset, e);
+            throw new RestClientException("Ошибка при получении отчёта item-rating: " + e.getMessage(), e);
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Ошибка при парсинге ответа item-rating offset={}: {}", offset, e.getMessage());
+            throw new RestClientException("Ошибка при парсинге ответа item-rating: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Пауза между страницами item-rating в legacy-синхронизации (один поток).
+     */
+    public void delayBetweenItemRatingRequests(String apiKey) {
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
+        long ms = Math.max(1L, WbApiEventType.ANALYTICS_ITEM_RATING_CABINET.getRequestDelayMs(tokenType));
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Прервана пауза между запросами item-rating WB", e);
+        }
+    }
 
     /**
      * Получение аналитики воронки продаж по карточке товара.

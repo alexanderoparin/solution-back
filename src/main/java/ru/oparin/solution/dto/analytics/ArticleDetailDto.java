@@ -61,11 +61,6 @@ public class ArticleDetailDto {
     private BigDecimal rating;
     
     /**
-     * Количество отзывов.
-     */
-    private Integer reviewsCount;
-    
-    /**
      * URL карточки товара на Wildberries.
      */
     private String productUrl;

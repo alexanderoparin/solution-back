@@ -113,7 +113,7 @@ public class ContentCardsListPageEventExecutor implements WbApiEventExecutor {
                 .build();
         eventService.enqueuePricesRequestLevelEvents(cabinetId, mainStepPayload, triggerSource);
         eventService.enqueuePromotionRequestLevelEvents(cabinetId, mainStepPayload, triggerSource);
-        eventService.enqueueFeedbacksSyncCabinetEvent(cabinetId, mainStepPayload, triggerSource);
+        eventService.enqueueItemRatingSyncCabinetEvent(cabinetId, mainStepPayload, triggerSource);
         eventService.enqueuePromotionCalendarSyncCabinetEvent(cabinetId, mainStepPayload, triggerSource);
 
         List<Long> nmIds = productCardService.findByCabinetId(cabinetId).stream()

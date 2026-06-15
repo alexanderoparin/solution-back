@@ -4,16 +4,16 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Builder;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /**
- * Параметры одного шага (одной страницы) пошаговой синхронизации отзывов.
+ * Параметры одного шага (одной страницы) синхронизации рейтинга через item-rating.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Builder
-public record FeedbacksSyncStepPayload(
-        Long runId,
-        boolean isAnswered,
-        int skip,
+public record ItemRatingSyncStepPayload(
+        int offset,
+        LocalDateTime syncStartedAt,
         LocalDate dateFrom,
         LocalDate dateTo,
         boolean includeStocks

@@ -53,7 +53,6 @@ public class WbApiKeyService {
         PING_URLS.put(WbApiCategory.PRICES_AND_DISCOUNTS, WbApiBaseUrl.DISCOUNTS_PRICES.getPingUrl());
         PING_URLS.put(WbApiCategory.STATISTICS, WbApiBaseUrl.STATISTICS.getPingUrl());
         PING_URLS.put(WbApiCategory.PROMOTION, WbApiBaseUrl.PROMOTION.getPingUrl());
-        PING_URLS.put(WbApiCategory.FEEDBACKS_AND_QUESTIONS, WbApiBaseUrl.FEEDBACKS.getPingUrl());
         PING_URLS.put(WbApiCategory.MARKETPLACE, WbApiBaseUrl.MARKETPLACE.getPingUrl());
     }
 

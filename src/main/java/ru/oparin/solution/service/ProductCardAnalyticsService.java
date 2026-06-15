@@ -47,7 +47,7 @@ public class ProductCardAnalyticsService {
     private final PromotionCampaignSyncService campaignSyncService;
     private final ProductCardAnalyticsLoadService analyticsLoadService;
     private final PromotionCalendarService promotionCalendarService;
-    private final FeedbacksSyncService feedbacksSyncService;
+    private final ItemRatingSyncService itemRatingSyncService;
     private final CabinetService cabinetService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final WbApiEventService wbApiEventService;
@@ -190,8 +190,8 @@ public class ProductCardAnalyticsService {
                     taskExecutor
             );
 
-            CompletableFuture<Void> feedbacksFuture = CompletableFuture.runAsync(
-                    runAsyncCabinetStep("syncFeedbacks", cabinetId, () -> syncFeedbacksWithGuard(managed, cabinetId)),
+            CompletableFuture<Void> itemRatingFuture = CompletableFuture.runAsync(
+                    runAsyncCabinetStep("syncItemRating", cabinetId, () -> syncItemRatingWithGuard(managed, cabinetId)),
                     taskExecutor
             );
 
@@ -217,7 +217,7 @@ public class ProductCardAnalyticsService {
                 );
             }
 
-            CompletableFuture.allOf(pricesFuture, campaignFuture, analyticsFuture, feedbacksFuture, promotionCalendarFuture).join();
+            CompletableFuture.allOf(pricesFuture, campaignFuture, analyticsFuture, itemRatingFuture, promotionCalendarFuture).join();
             markUpdateCompleted(managed);
             logStepDuration("cabinetMainPipeline", cabinetId, updateStartedAt);
             log.info("MAIN COMPLETED: cabinetId={}, sellerEmail={}", cabinetId, seller.getEmail());
@@ -295,14 +295,14 @@ public class ProductCardAnalyticsService {
         }
     }
 
-    private void syncFeedbacksWithGuard(Cabinet managed, long cabinetId) {
+    private void syncItemRatingWithGuard(Cabinet managed, long cabinetId) {
         try {
-            feedbacksSyncService.syncFeedbacksForCabinetInNewTransaction(managed, managed.getApiKey());
+            itemRatingSyncService.syncForCabinetInNewTransaction(managed, managed.getApiKey());
         } catch (WbApiUnauthorizedScopeException e) {
             cabinetScopeStatusService.recordFailure(cabinetId, e.getCategory(), e.getMessage());
             logScopeAccessDenied(cabinetId, e);
         } catch (Exception e) {
-            log.warn("Синхронизация отзывов для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
+            log.warn("Синхронизация рейтинга item-rating для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
         }
     }
 

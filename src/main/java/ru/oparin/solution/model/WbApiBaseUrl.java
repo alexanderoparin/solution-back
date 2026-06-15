@@ -27,8 +27,6 @@ public enum WbApiBaseUrl {
     MARKETPLACE("https://marketplace-api.wildberries.ru"),
     /** Поставки, склады (supplies-api) */
     SUPPLIES("https://supplies-api.wildberries.ru"),
-    /** Отзывы и вопросы (feedbacks-api) */
-    FEEDBACKS("https://feedbacks-api.wildberries.ru"),
     /** Тарифы, новости, seller-info (common-api) */
     COMMON("https://common-api.wildberries.ru");
 

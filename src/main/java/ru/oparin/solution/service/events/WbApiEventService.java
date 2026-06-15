@@ -14,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.*;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
-import ru.oparin.solution.repository.FeedbacksSyncRunRepository;
 import ru.oparin.solution.repository.WbApiEventRepository;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.ProductCardService;
@@ -39,7 +38,7 @@ public class WbApiEventService {
     public static final String PROMOTION_NORMQUERY_STATS_BATCH_EXECUTOR_BEAN = "promotionNormQueryStatsBatchEventExecutor";
     public static final String PROMOTION_CAMPAIGN_START_EXECUTOR_BEAN = "promotionCampaignStartEventExecutor";
     public static final String PROMOTION_CAMPAIGN_PAUSE_EXECUTOR_BEAN = "promotionCampaignPauseEventExecutor";
-    public static final String FEEDBACKS_SYNC_EXECUTOR_BEAN = "feedbacksSyncCabinetEventExecutor";
+    public static final String ITEM_RATING_SYNC_EXECUTOR_BEAN = "itemRatingSyncCabinetEventExecutor";
     public static final String PROMOTION_CALENDAR_SYNC_EXECUTOR_BEAN = "promotionCalendarSyncCabinetEventExecutor";
     public static final String WAREHOUSES_SYNC_EXECUTOR_BEAN = "warehousesSyncCabinetEventExecutor";
     public static final String STOCKS_EXECUTOR_BEAN = "stocksByNmIdEventExecutor";
@@ -78,13 +77,12 @@ public class WbApiEventService {
             WbApiEventType.PROMOTION_ADVERTS_BATCH,
             WbApiEventType.PROMOTION_STATS_BATCH,
             WbApiEventType.PROMOTION_NORMQUERY_STATS_BATCH,
-            WbApiEventType.FEEDBACKS_SYNC_CABINET,
+            WbApiEventType.ANALYTICS_ITEM_RATING_CABINET,
             WbApiEventType.PROMOTION_CALENDAR_SYNC_CABINET
     );
 
     private final WbApiEventRepository eventRepository;
     private final CabinetRepository cabinetRepository;
-    private final FeedbacksSyncRunRepository feedbacksSyncRunRepository;
     private final CabinetService cabinetService;
     private final ProductCardService productCardService;
     private final PromotionCampaignSyncService promotionCampaignSyncService;
@@ -154,88 +152,59 @@ public class WbApiEventService {
     }
 
     @Transactional
-    public void enqueueFeedbacksSyncCabinetEvent(Long cabinetId, MainStepPayload payload, String triggerSource) {
-        String dedupKey = "FEEDBACKS_SYNC_CABINET:" + cabinetId + ":" + payload.dateFrom() + ":" + payload.dateTo();
+    public void enqueueItemRatingSyncCabinetEvent(Long cabinetId, MainStepPayload payload, String triggerSource) {
+        String dedupKey = "ITEM_RATING_SYNC_CABINET:" + cabinetId + ":" + payload.dateFrom() + ":" + payload.dateTo();
         if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
-            log.debug("WB API feedbacks sync уже существует (dedupKey={}), создание пропущено", dedupKey);
+            log.debug("WB API item-rating sync уже существует (dedupKey={}), создание пропущено", dedupKey);
             return;
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        CabinetTokenType tokenType = cabinet.getTokenType() != null ? cabinet.getTokenType() : CabinetTokenType.BASIC;
-        FeedbacksSyncRun run = FeedbacksSyncRun.builder()
-                .cabinet(cabinet)
-                .status(FeedbacksSyncRunStatus.RUNNING)
-                .triggerSource(triggerSource)
-                .tokenTypeSnapshot(tokenType)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-        run = feedbacksSyncRunRepository.save(run);
-        log.info("Создан run синхронизации отзывов: runId={}, cabinetId={}, tokenType={}, triggerSource={}",
-                run.getId(), cabinetId, tokenType, triggerSource);
-        FeedbacksSyncStepPayload stepPayload = FeedbacksSyncStepPayload.builder()
-                .runId(run.getId())
-                .isAnswered(true)
-                .skip(0)
+        ItemRatingSyncStepPayload stepPayload = ItemRatingSyncStepPayload.builder()
+                .offset(0)
+                .syncStartedAt(LocalDateTime.now())
                 .dateFrom(payload.dateFrom())
                 .dateTo(payload.dateTo())
                 .includeStocks(payload.includeStocks())
                 .build();
-        enqueueFeedbacksStepEvent(cabinet, stepPayload, triggerSource, LocalDateTime.now(), SIDECAR_EVENT_PRIORITY);
+        enqueueItemRatingStepEvent(cabinet, stepPayload, triggerSource, LocalDateTime.now(), SIDECAR_EVENT_PRIORITY);
     }
 
     @Transactional
-    public void enqueueNextFeedbacksSyncStepEvent(
+    public void enqueueNextItemRatingStepEvent(
             Long cabinetId,
-            FeedbacksSyncStepPayload payload,
-            String triggerSource,
-            CabinetTokenType tokenType
+            ItemRatingSyncStepPayload payload,
+            String triggerSource
     ) {
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        long delayMs = WbApiEventType.FEEDBACKS_SYNC_CABINET.getRequestDelayMs(tokenType != null ? tokenType : CabinetTokenType.BASIC);
+        CabinetTokenType tokenType = cabinet.getTokenType() != null ? cabinet.getTokenType() : CabinetTokenType.BASIC;
+        long delayMs = WbApiEventType.ANALYTICS_ITEM_RATING_CABINET.getRequestDelayMs(tokenType);
         LocalDateTime nextAttemptAt = LocalDateTime.now().plusNanos(delayMs * 1_000_000L);
-        log.info("Запланирован следующий шаг run отзывов: runId={}, cabinetId={}, isAnswered={}, skip={}, delayMs={}, nextAttemptAt={}",
-                payload.runId(), cabinetId, payload.isAnswered(), payload.skip(), delayMs, nextAttemptAt);
-        enqueueFeedbacksStepEvent(cabinet, payload, triggerSource, nextAttemptAt, SIDECAR_EVENT_PRIORITY);
+        log.info("Запланирован следующий шаг item-rating: cabinetId={}, offset={}, delayMs={}, nextAttemptAt={}",
+                cabinetId, payload.offset(), delayMs, nextAttemptAt);
+        enqueueItemRatingStepEvent(cabinet, payload, triggerSource, nextAttemptAt, SIDECAR_EVENT_PRIORITY);
     }
 
-    @Transactional
-    public void markFeedbacksRunFailed(Long runId, String error) {
-        if (runId == null) {
-            return;
-        }
-        feedbacksSyncRunRepository.findById(runId).ifPresent(run -> {
-            run.setStatus(FeedbacksSyncRunStatus.FAILED);
-            run.setLastError(error);
-            run.setUpdatedAt(LocalDateTime.now());
-            run.setFinishedAt(LocalDateTime.now());
-            feedbacksSyncRunRepository.save(run);
-            log.warn("Run синхронизации отзывов завершён с ошибкой: runId={}, cabinetId={}, error={}",
-                    runId, run.getCabinet() != null ? run.getCabinet().getId() : null, error);
-        });
-    }
-
-    private void enqueueFeedbacksStepEvent(
+    private void enqueueItemRatingStepEvent(
             Cabinet cabinet,
-            FeedbacksSyncStepPayload payload,
+            ItemRatingSyncStepPayload payload,
             String triggerSource,
             LocalDateTime nextAttemptAt,
             int priority
     ) {
-        String dedupKey = "FEEDBACKS_SYNC_STEP:"
-                + payload.runId() + ":"
-                + payload.isAnswered() + ":"
-                + payload.skip();
+        String dedupKey = "ITEM_RATING_SYNC_STEP:"
+                + cabinet.getId() + ":"
+                + payload.syncStartedAt() + ":"
+                + payload.offset();
         if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
-            log.debug("WB API feedbacks step уже существует (dedupKey={}), создание пропущено", dedupKey);
+            log.debug("WB API item-rating step уже существует (dedupKey={}), создание пропущено", dedupKey);
             return;
         }
         WbApiEvent event = WbApiEvent.builder()
-                .eventType(WbApiEventType.FEEDBACKS_SYNC_CABINET)
+                .eventType(WbApiEventType.ANALYTICS_ITEM_RATING_CABINET)
                 .status(WbApiEventStatus.CREATED)
-                .executorBeanName(FEEDBACKS_SYNC_EXECUTOR_BEAN)
+                .executorBeanName(ITEM_RATING_SYNC_EXECUTOR_BEAN)
                 .cabinet(cabinet)
                 .payloadJson(writePayload(payload))
                 .dedupKey(dedupKey)
@@ -248,8 +217,8 @@ public class WbApiEventService {
                 .updatedAt(LocalDateTime.now())
                 .build();
         eventRepository.save(event);
-        log.info("Создано событие шага синхронизации отзывов: eventId={}, runId={}, cabinetId={}, isAnswered={}, skip={}, nextAttemptAt={}",
-                event.getId(), payload.runId(), cabinet.getId(), payload.isAnswered(), payload.skip(), nextAttemptAt);
+        log.info("Создано событие шага item-rating: eventId={}, cabinetId={}, offset={}, nextAttemptAt={}",
+                event.getId(), cabinet.getId(), payload.offset(), nextAttemptAt);
     }
 
     @Transactional

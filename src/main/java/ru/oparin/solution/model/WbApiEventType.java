@@ -80,11 +80,12 @@ public enum WbApiEventType {
             "/adv/v1/budget/deposit",
             720L,
             1L),
-    FEEDBACKS_SYNC_CABINET(
-            WbApiBaseUrl.FEEDBACKS,
-            "/api/v1/feedbacks",
-            720L,
-            1L),
+    /** Отчёт «Оценка товара» по кабинету (POST /api/analytics/v1/item-rating). */
+    ANALYTICS_ITEM_RATING_CABINET(
+            WbApiBaseUrl.ANALYTICS,
+            "/api/analytics/v1/item-rating",
+            20L,
+            20L),
     PROMOTION_CALENDAR_SYNC_CABINET(
             WbApiBaseUrl.DP_CALENDAR,
             "/api/v1/calendar/promotions",

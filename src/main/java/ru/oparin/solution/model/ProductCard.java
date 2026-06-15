@@ -101,16 +101,16 @@ public class ProductCard {
     private LocalDateTime updatedAt;
 
     /**
-     * Средний рейтинг по обработанным отзывам WB (1–5).
-     * Заполняется синхронизацией с API отзывов (категория «Вопросы и отзывы»).
+     * Рейтинг по отзывам WB (feedbackRating), 1–5.
+     * Заполняется синхронизацией через Analytics API item-rating.
      */
     @Column(name = "rating", precision = 3, scale = 2)
     private BigDecimal rating;
 
     /**
-     * Количество обработанных отзывов по товару.
+     * Время последнего успешного обновления рейтинга из item-rating (для финализации многошагового sync).
      */
-    @Column(name = "reviews_count")
-    private Integer reviewsCount;
+    @Column(name = "rating_synced_at")
+    private LocalDateTime ratingSyncedAt;
 }
 

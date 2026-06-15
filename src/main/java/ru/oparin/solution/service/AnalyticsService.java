@@ -1534,7 +1534,6 @@ public class AnalyticsService {
                 .photoC246x328(card.getPhotoC246x328())
                 .vendorCode(card.getVendorCode())
                 .rating(card.getRating())
-                .reviewsCount(card.getReviewsCount())
                 .isPriority(Boolean.TRUE.equals(card.getIsPriority()))
                 .build();
     }
@@ -1550,7 +1549,6 @@ public class AnalyticsService {
                 .photoTm(card.getPhotoTm())
                 .photoC246x328(card.getPhotoC246x328())
                 .rating(card.getRating())
-                .reviewsCount(card.getReviewsCount())
                 .productUrl("https://www.wildberries.ru/catalog/" + card.getNmId() + "/detail.aspx")
                 .createdAt(card.getCreatedAt())
                 .updatedAt(card.getUpdatedAt())
