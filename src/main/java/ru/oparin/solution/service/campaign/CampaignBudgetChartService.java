@@ -22,7 +22,7 @@ public class CampaignBudgetChartService {
 
     private static final ZoneId ZONE = ZoneId.of("Europe/Moscow");
     private static final int DEFAULT_HOURS = 48;
-    private static final int DEFAULT_STEP_HOURS = 2;
+    private static final int DEFAULT_STEP_HOURS = 1;
 
     private final CampaignBudgetTimelineService timelineService;
 

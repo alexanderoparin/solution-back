@@ -1,10 +1,6 @@
 package ru.oparin.solution.dto.wb;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.util.List;
 
@@ -104,7 +100,14 @@ public class CardsListRequest {
         private Long imtID;
         
         /**
-         * Фильтр по наличию фото: -1 (все), 0 (без фото), 1 (с фото).
+         * Фильтр по наличию фото (POST /content/v2/get/cards/list, поле settings.filter.withPhoto):
+         * <ul>
+         *   <li>{@code -1} — любые карточки товаров</li>
+         *   <li>{@code 0} или отсутствие параметра — любые карточки (с фото и без)</li>
+         *   <li>{@code 1} — только карточки с фото</li>
+         *   <li>{@code 2} — только карточки без фото</li>
+         * </ul>
+         * В запросах сервиса по умолчанию передаётся {@code -1}.
          */
         private Integer withPhoto;
     }

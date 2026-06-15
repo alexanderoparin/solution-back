@@ -25,6 +25,7 @@ public class WbContentApiClient extends AbstractWbApiClient {
     }
 
     private static final int DEFAULT_LIMIT = 100;
+    /** Любые карточки товаров ({@code withPhoto: -1} в WB API). */
     private static final int WITH_PHOTO_ALL = -1;
 
     /**
