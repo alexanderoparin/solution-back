@@ -13,6 +13,7 @@ import ru.oparin.solution.dto.wb.CardsListResponse;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.events.WbApiEventService;
@@ -296,6 +297,10 @@ public class ProductCardAnalyticsService {
     }
 
     private void syncItemRatingWithGuard(Cabinet managed, long cabinetId) {
+        if (!CabinetTokenType.effective(managed.getTokenType()).supportsItemRating()) {
+            log.info("Синхронизация item-rating пропущена для кабинета {}: базовый токен WB", cabinetId);
+            return;
+        }
         try {
             itemRatingSyncService.syncForCabinetInNewTransaction(managed, managed.getApiKey());
         } catch (WbApiUnauthorizedScopeException e) {

@@ -1,6 +1,7 @@
 package ru.oparin.solution.dto.cabinet;
 
 import lombok.*;
+import ru.oparin.solution.model.CabinetTokenType;
 
 import java.time.LocalDateTime;
 
@@ -20,4 +21,6 @@ public class WorkContextCabinetDto {
     private String sellerEmail;
     private LocalDateTime lastDataUpdateAt;
     private LocalDateTime lastDataUpdateRequestedAt;
+    /** Тип токена WB API кабинета (для UI: рейтинг item-rating только при PERSONAL). */
+    private CabinetTokenType tokenType;
 }

@@ -13,4 +13,18 @@ public enum CabinetTokenType {
     BASIC("Базовый");
 
     private final String displayName;
+
+    /**
+     * Отчёт item-rating доступен только для персонального/сервисного токена WB, не для базового.
+     */
+    public boolean supportsItemRating() {
+        return this != BASIC;
+    }
+
+    /**
+     * Эффективный тип токена кабинета (null трактуется как BASIC).
+     */
+    public static CabinetTokenType effective(CabinetTokenType tokenType) {
+        return tokenType != null ? tokenType : BASIC;
+    }
 }

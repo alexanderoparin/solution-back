@@ -16,6 +16,7 @@ import ru.oparin.solution.dto.cabinet.ManagedCabinetRowDto;
 import ru.oparin.solution.dto.cabinet.UpdateCabinetRequest;
 import ru.oparin.solution.dto.cabinet.WorkContextCabinetDto;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
@@ -470,7 +471,9 @@ public class UsersManagementController {
                 .dateTo(d)
                 .includeStocks(false)
                 .build();
-        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER).stream()
+                .filter(c -> CabinetTokenType.effective(c.getTokenType()).supportsItemRating())
+                .toList();
         for (Cabinet c : cabinets) {
             wbApiEventService.enqueueItemRatingSyncCabinetEvent(c.getId(), payload, "ADMIN_BULK_ITEM_RATING");
         }

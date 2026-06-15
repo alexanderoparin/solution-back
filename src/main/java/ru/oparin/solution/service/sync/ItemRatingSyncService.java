@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.wb.ItemRatingCard;
 import ru.oparin.solution.dto.wb.ItemRatingResponse;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.service.CabinetScopeStatusService;
@@ -93,6 +94,10 @@ public class ItemRatingSyncService {
 
     @Transactional
     public void syncForCabinet(Cabinet cabinet, String apiKey) {
+        if (!CabinetTokenType.effective(cabinet.getTokenType()).supportsItemRating()) {
+            log.info("Legacy-синхронизация item-rating пропущена для кабинета {}: базовый токен WB", cabinet.getId());
+            return;
+        }
         long cabinetId = cabinet.getId();
         LocalDateTime syncStartedAt = LocalDateTime.now();
         int offset = 0;

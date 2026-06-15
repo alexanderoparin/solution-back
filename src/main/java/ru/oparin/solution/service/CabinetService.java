@@ -140,6 +140,7 @@ public class CabinetService {
                         .sellerEmail(c.getUser().getEmail())
                         .lastDataUpdateAt(c.getLastDataUpdateAt())
                         .lastDataUpdateRequestedAt(c.getLastDataUpdateRequestedAt())
+                        .tokenType(CabinetTokenType.effective(c.getTokenType()))
                         .build())
                 .toList();
     }

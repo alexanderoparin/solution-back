@@ -160,6 +160,10 @@ public class WbApiEventService {
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        if (!CabinetTokenType.effective(cabinet.getTokenType()).supportsItemRating()) {
+            log.debug("Пропуск item-rating sync: cabinetId={}, tokenType=BASIC", cabinetId);
+            return;
+        }
         ItemRatingSyncStepPayload stepPayload = ItemRatingSyncStepPayload.builder()
                 .offset(0)
                 .syncStartedAt(LocalDateTime.now())
@@ -178,6 +182,10 @@ public class WbApiEventService {
     ) {
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        if (!CabinetTokenType.effective(cabinet.getTokenType()).supportsItemRating()) {
+            log.debug("Пропуск следующего шага item-rating: cabinetId={}, tokenType=BASIC", cabinetId);
+            return;
+        }
         CabinetTokenType tokenType = cabinet.getTokenType() != null ? cabinet.getTokenType() : CabinetTokenType.BASIC;
         long delayMs = WbApiEventType.ANALYTICS_ITEM_RATING_CABINET.getRequestDelayMs(tokenType);
         LocalDateTime nextAttemptAt = LocalDateTime.now().plusNanos(delayMs * 1_000_000L);

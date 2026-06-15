@@ -110,9 +110,10 @@ public class AnalyticsService {
             int from = Math.min(page * size, total);
             int to = Math.min(from + size, total);
             List<ProductCard> pageCards = from < to ? filtered.subList(from, to) : List.of();
+            boolean itemRatingSupported = isItemRatingSupported(seller.getId(), cabinetId);
             return SummaryResponseDto.builder()
                     .periods(sortedPeriods)
-                    .articles(mapToArticleSummaries(pageCards))
+                    .articles(mapToArticleSummaries(pageCards, itemRatingSupported))
                     .aggregatedMetrics(null)
                     .totalArticles((long) total)
                     .build();
@@ -120,9 +121,10 @@ public class AnalyticsService {
 
         Map<Integer, AggregatedMetricsDto> aggregatedMetrics = calculateAggregatedMetrics(
                 visibleCards, sortedPeriods, seller.getId(), cabinetId);
+        boolean itemRatingSupported = isItemRatingSupported(seller.getId(), cabinetId);
         return SummaryResponseDto.builder()
                 .periods(sortedPeriods)
-                .articles(mapToArticleSummaries(visibleCards))
+                .articles(mapToArticleSummaries(visibleCards, itemRatingSupported))
                 .aggregatedMetrics(aggregatedMetrics)
                 .totalArticles(null)
                 .build();
@@ -145,7 +147,7 @@ public class AnalyticsService {
                     .filter(c -> Boolean.TRUE.equals(c.getIsPriority()))
                     .collect(Collectors.toList());
         }
-        return mapToArticleSummaries(allCards);
+        return mapToArticleSummaries(allCards, isItemRatingSupported(seller.getId(), cabinetId));
     }
 
     private List<ProductCard> filterCardsBySearch(List<ProductCard> cards, String searchLower) {
@@ -536,7 +538,8 @@ public class AnalyticsService {
                 .map(t -> t != null ? t : "")
                 .collect(Collectors.toList());
         Boolean inWbPromotion = !wbPromotionNames.isEmpty();
-        List<ArticleSummaryDto> bundleProducts = getBundleProducts(card, cardCabinetId);
+        boolean itemRatingSupported = isItemRatingSupported(seller.getId(), cabinetId != null ? cabinetId : cardCabinetId);
+        List<ArticleSummaryDto> bundleProducts = getBundleProducts(card, cardCabinetId, itemRatingSupported);
         LocalDateTime lastStocksUpdateTriggeredAt = cardCabinetId != null
                 ? cabinetService.findById(cardCabinetId).map(Cabinet::getLastStocksUpdateRequestedAt).orElse(null)
                 : null;
@@ -545,7 +548,7 @@ public class AnalyticsService {
                 : null;
 
         return ArticleResponseDto.builder()
-                .article(mapToArticleDetail(card))
+                .article(mapToArticleDetail(card, itemRatingSupported))
                 .periods(periods)
                 .metrics(calculateAllMetrics(card, periods, seller.getId(), cardCabinetId))
                 .dailyData(dailyData)
@@ -563,7 +566,7 @@ public class AnalyticsService {
     /**
      * Товары «в связке» — другие артикулы с тем же IMT ID в том же кабинете, без текущего nmId.
      */
-    private List<ArticleSummaryDto> getBundleProducts(ProductCard card, Long cardCabinetId) {
+    private List<ArticleSummaryDto> getBundleProducts(ProductCard card, Long cardCabinetId, boolean itemRatingSupported) {
         if (card.getImtId() == null) {
             return java.util.Collections.emptyList();
         }
@@ -575,7 +578,7 @@ public class AnalyticsService {
         List<ProductCard> sameImt = productCardRepository.findByImtIdAndCabinet_Id(card.getImtId(), cabinetId);
         return sameImt.stream()
                 .filter(c -> !c.getNmId().equals(card.getNmId()))
-                .map(this::mapToArticleSummary)
+                .map(c -> mapToArticleSummary(c, itemRatingSupported))
                 .collect(Collectors.toList());
     }
 
@@ -1293,9 +1296,10 @@ public class AnalyticsService {
                 .map(CampaignArticle::getNmId)
                 .distinct()
                 .collect(Collectors.toList());
+        boolean itemRatingSupported = isItemRatingSupported(null, finalCabinetId);
         List<ArticleSummaryDto> articles = nmIds.stream()
                 .map(nmId -> productCardRepository.findByNmIdAndCabinet_Id(nmId, finalCabinetId)
-                        .map(this::mapToArticleSummary)
+                        .map(card -> mapToArticleSummary(card, itemRatingSupported))
                         .orElseGet(() -> ArticleSummaryDto.builder()
                                 .nmId(nmId)
                                 .title("Артикул " + nmId)
@@ -1513,9 +1517,9 @@ public class AnalyticsService {
         productCardRepository.save(card);
     }
 
-    private List<ArticleSummaryDto> mapToArticleSummaries(List<ProductCard> cards) {
+    private List<ArticleSummaryDto> mapToArticleSummaries(List<ProductCard> cards, boolean itemRatingSupported) {
         return cards.stream()
-                .map(this::mapToArticleSummary)
+                .map(card -> mapToArticleSummary(card, itemRatingSupported))
                 .collect(Collectors.toList());
     }
 
@@ -1524,7 +1528,7 @@ public class AnalyticsService {
                 || (card.getPhotoC246x328() != null && !card.getPhotoC246x328().isBlank());
     }
 
-    private ArticleSummaryDto mapToArticleSummary(ProductCard card) {
+    private ArticleSummaryDto mapToArticleSummary(ProductCard card, boolean itemRatingSupported) {
         return ArticleSummaryDto.builder()
                 .nmId(card.getNmId())
                 .title(card.getTitle())
@@ -1533,12 +1537,12 @@ public class AnalyticsService {
                 .photoTm(card.getPhotoTm())
                 .photoC246x328(card.getPhotoC246x328())
                 .vendorCode(card.getVendorCode())
-                .rating(card.getRating())
+                .rating(itemRatingSupported ? card.getRating() : null)
                 .isPriority(Boolean.TRUE.equals(card.getIsPriority()))
                 .build();
     }
 
-    private ArticleDetailDto mapToArticleDetail(ProductCard card) {
+    private ArticleDetailDto mapToArticleDetail(ProductCard card, boolean itemRatingSupported) {
         return ArticleDetailDto.builder()
                 .nmId(card.getNmId())
                 .imtId(card.getImtId())
@@ -1548,11 +1552,28 @@ public class AnalyticsService {
                 .vendorCode(card.getVendorCode())
                 .photoTm(card.getPhotoTm())
                 .photoC246x328(card.getPhotoC246x328())
-                .rating(card.getRating())
+                .rating(itemRatingSupported ? card.getRating() : null)
                 .productUrl("https://www.wildberries.ru/catalog/" + card.getNmId() + "/detail.aspx")
                 .createdAt(card.getCreatedAt())
                 .updatedAt(card.getUpdatedAt())
                 .build();
+    }
+
+    /**
+     * Item-rating WB недоступен для кабинетов с базовым токеном.
+     */
+    private boolean isItemRatingSupported(Long sellerId, Long cabinetId) {
+        if (cabinetId != null) {
+            return cabinetService.findById(cabinetId)
+                    .map(c -> CabinetTokenType.effective(c.getTokenType()).supportsItemRating())
+                    .orElse(false);
+        }
+        if (sellerId == null) {
+            return false;
+        }
+        return cabinetService.findDefaultByUserId(sellerId)
+                .map(c -> CabinetTokenType.effective(c.getTokenType()).supportsItemRating())
+                .orElse(false);
     }
 
     private String getMetricCategory(String metricName) {

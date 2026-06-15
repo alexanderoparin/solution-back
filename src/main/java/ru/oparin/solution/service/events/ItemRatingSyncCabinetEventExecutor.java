@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
+import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.service.CabinetScopeStatusService;
 import ru.oparin.solution.service.CabinetService;
@@ -39,6 +40,14 @@ public class ItemRatingSyncCabinetEventExecutor implements WbApiEventExecutor {
         var cabinet = cabinetService.findByIdWithUserOrThrow(event.getCabinet().getId());
         if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
             return WbApiEventExecutionResult.finalError("У кабинета отсутствует API ключ");
+        }
+
+        if (!CabinetTokenType.effective(cabinet.getTokenType()).supportsItemRating()) {
+            log.debug("Item-rating sync пропущен: cabinetId={}, tokenType=BASIC", cabinet.getId());
+            if (!isAdminBulkStandalone(event.getTriggerSource())) {
+                eventService.tryFinalizeMain(cabinet.getId(), event.getId());
+            }
+            return WbApiEventExecutionResult.completedSuccessfully();
         }
 
         if (legacyPayload != null) {
