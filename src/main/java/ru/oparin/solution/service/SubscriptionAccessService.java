@@ -27,7 +27,8 @@ public class SubscriptionAccessService {
 
     /**
      * Проверяет, есть ли у пользователя доступ к продукту.
-     * ADMIN всегда имеет доступ. Клиенты агентства ({@code isAgencyClient}) — без проверки почты.
+     * ADMIN всегда имеет доступ. MANAGER и WORKER после подтверждения почты — без своей подписки.
+     * SELLER всегда платит сам (подписка на свой user_id).
      * Остальные при неподтверждённой почте не имеют доступа.
      * MANAGER после подтверждения почты имеет доступ без подписки.
      * WORKER под селлером после подтверждения почты — доступ без своей подписки (кабинет селлера).
@@ -42,10 +43,6 @@ public class SubscriptionAccessService {
         }
 
         if (user.getRole() == Role.ADMIN) {
-            return true;
-        }
-
-        if (Boolean.TRUE.equals(user.getIsAgencyClient())) {
             return true;
         }
 

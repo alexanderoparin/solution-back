@@ -46,12 +46,7 @@ public class UserListItemDto {
     private LocalDateTime createdAt;
 
     /**
-     * Клиент агентства ({@code is_agency_client}).
-     */
-    private Boolean isAgencyClient;
-
-    /**
-     * Email владельца (если есть).
+     * Email селлера-работодателя (только для WORKER).
      */
     private String ownerEmail;
 

@@ -11,6 +11,7 @@ import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.Subscription;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.SubscriptionRepository;
+import ru.oparin.solution.service.SellerWorkerService;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -29,6 +30,7 @@ public class CampaignManageAccessService {
 
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionProperties subscriptionProperties;
+    private final SellerWorkerService sellerWorkerService;
 
     /**
      * Пользователь, на чью подписку смотрим (селлер).
@@ -43,8 +45,8 @@ public class CampaignManageAccessService {
         if (actor.getRole() == Role.SELLER) {
             return actor;
         }
-        if (actor.getRole() == Role.WORKER && actor.getOwner() != null) {
-            return actor.getOwner();
+        if (actor.getRole() == Role.WORKER) {
+            return sellerWorkerService.findSellerByWorkerId(actor.getId()).orElse(null);
         }
         return null;
     }
@@ -63,9 +65,6 @@ public class CampaignManageAccessService {
         User holder = resolveSubscriptionHolder(actor, seller);
         if (holder == null) {
             return false;
-        }
-        if (Boolean.TRUE.equals(holder.getIsAgencyClient())) {
-            return true;
         }
         return findActiveSubscription(holder).isPresent();
     }
@@ -103,15 +102,6 @@ public class CampaignManageAccessService {
                     .enabled(true)
                     .hasAccess(false)
                     .status("NONE")
-                    .canActivateFree(false)
-                    .build();
-        }
-
-        if (Boolean.TRUE.equals(holder.getIsAgencyClient())) {
-            return CampaignManageAccessDto.builder()
-                    .enabled(true)
-                    .hasAccess(true)
-                    .status("ACTIVE")
                     .canActivateFree(false)
                     .build();
         }

@@ -49,14 +49,6 @@ public class User {
     private Role role;
 
     /**
-     * Ссылка на владельца/родителя пользователя.
-     * Для WORKER - SELLER, для SELLER - MANAGER, для MANAGER - ADMIN, для ADMIN - null.
-     */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "owner_id")
-    private User owner;
-
-    /**
      * Флаг активности пользователя.
      */
     @Column(name = "is_active", nullable = false)
@@ -76,13 +68,6 @@ public class User {
     @Column(name = "email_confirmed", nullable = false)
     @Builder.Default
     private Boolean emailConfirmed = false;
-
-    /**
-     * Клиент агентства: у SELLER — создан под MANAGER/ADMIN ({@code owner}); у WORKER — совпадает с флагом селлера-создателя.
-     */
-    @Column(name = "is_agency_client", nullable = false)
-    @Builder.Default
-    private Boolean isAgencyClient = false;
 
     /**
      * Когда последний раз отправляли письмо для подтверждения почты (повтор не чаще 1 раза в 24 ч).

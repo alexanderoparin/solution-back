@@ -24,11 +24,13 @@ public class SellerContextService {
     private final WbApiKeyService wbApiKeyService;
     private final UserRepository userRepository;
     private final CabinetService cabinetService;
+    private final SellerWorkerService sellerWorkerService;
+    private final SellerManagerAccessService sellerManagerAccessService;
 
     /**
      * Создает контекст продавца из данных аутентификации.
      * Для SELLER использует текущего пользователя.
-     * Для WORKER — продавца-владельца ({@code owner}); параметр {@code sellerId} из запроса игнорируется.
+     * Для WORKER — продавца из {@code seller_worker}; параметр {@code sellerId} из запроса игнорируется.
      * Для ADMIN/MANAGER использует выбранного sellerId (если указан) или последнего активного селлера.
      * Кабинет: по умолчанию (последний созданный) или из cabinetId, если передан и принадлежит селлеру.
      *
@@ -45,26 +47,17 @@ public class SellerContextService {
         if (currentUser.getRole() == Role.SELLER) {
             seller = currentUser;
         } else if (currentUser.getRole() == Role.WORKER) {
-            User owner = currentUser.getOwner();
-            if (owner == null) {
-                throw new UserException(
-                        "У сотрудника не указан продавец-владелец",
-                        HttpStatus.FORBIDDEN
-                );
-            }
-            if (owner.getRole() != Role.SELLER) {
-                throw new UserException(
-                        "Некорректные данные: владелец сотрудника не является продавцом",
-                        HttpStatus.FORBIDDEN
-                );
-            }
-            if (!Boolean.TRUE.equals(owner.getIsActive())) {
+            seller = sellerWorkerService.findSellerByWorkerId(currentUser.getId())
+                    .orElseThrow(() -> new UserException(
+                            "У сотрудника не указан продавец-работодатель",
+                            HttpStatus.FORBIDDEN
+                    ));
+            if (!Boolean.TRUE.equals(seller.getIsActive())) {
                 throw new UserException(
                         "Нельзя просматривать аналитику: аккаунт продавца неактивен",
                         HttpStatus.FORBIDDEN
                 );
             }
-            seller = owner;
         } else if (currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER) {
             if (sellerId != null) {
                 seller = userRepository.findById(sellerId)
@@ -126,10 +119,7 @@ public class SellerContextService {
         if (currentUser.getRole() == Role.ADMIN) {
             sellers = userRepository.findByRoleAndIsActive(Role.SELLER, true);
         } else if (currentUser.getRole() == Role.MANAGER) {
-            sellers = userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId());
-            sellers = sellers.stream()
-                    .filter(user -> Boolean.TRUE.equals(user.getIsActive()))
-                    .toList();
+            sellers = sellerManagerAccessService.listActiveSellersForManager(currentUser.getId());
         } else {
             return null;
         }
@@ -173,10 +163,9 @@ public class SellerContextService {
             // ADMIN может просматривать аналитику любого активного селлера
             return;
         } else if (currentUser.getRole() == Role.MANAGER) {
-            // MANAGER может просматривать аналитику только своих селлеров
-            if (seller.getOwner() == null || !currentUser.getId().equals(seller.getOwner().getId())) {
+            if (!sellerManagerAccessService.canManagerAccessSeller(currentUser, seller)) {
                 throw new UserException(
-                        "MANAGER может просматривать аналитику только своих селлеров",
+                        "MANAGER может просматривать аналитику только селлеров, выдавших ему доступ",
                         HttpStatus.FORBIDDEN
                 );
             }

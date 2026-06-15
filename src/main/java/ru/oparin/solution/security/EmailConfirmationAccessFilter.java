@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Блокирует доступ к API до подтверждения почты для всех ролей, кроме клиентов агентства ({@code isAgencyClient}).
+ * Блокирует доступ к API до подтверждения почты.
  * Разрешены только запросы к профилю, смене пароля, подтверждению почты по ссылке и отправке письма подтверждения
  * (и связанные пути users/cabinets).
  */
@@ -31,6 +31,7 @@ public class EmailConfirmationAccessFilter extends OncePerRequestFilter {
             "/api/user/access",
             "/api/user/profile",
             "/api/user/password",
+            "/api/user/manager-access",
             "/api/user/send-email-confirmation",
             "/api/auth/confirm-email",
             "/api/cabinets",
@@ -74,7 +75,7 @@ public class EmailConfirmationAccessFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (Boolean.TRUE.equals(user.getIsAgencyClient()) || Boolean.TRUE.equals(user.getEmailConfirmed())) {
+        if (Boolean.TRUE.equals(user.getEmailConfirmed())) {
             filterChain.doFilter(request, response);
             return;
         }

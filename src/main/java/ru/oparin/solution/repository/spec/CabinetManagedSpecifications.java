@@ -1,14 +1,9 @@
 package ru.oparin.solution.repository.spec;
 
-import jakarta.persistence.criteria.CriteriaQuery;
-import jakarta.persistence.criteria.Join;
-import jakarta.persistence.criteria.JoinType;
-import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.util.StringUtils;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.Role;
-import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,7 +26,7 @@ public final class CabinetManagedSpecifications {
             Join<Cabinet, User> userJoin = root.join("user", JoinType.INNER);
 
             if (!isCountQuery(query)) {
-                root.fetch("user", JoinType.INNER).fetch("owner", JoinType.LEFT);
+                root.fetch("user", JoinType.INNER);
             }
 
             Predicate isSeller = cb.equal(userJoin.get("role"), Role.SELLER);
@@ -39,8 +34,7 @@ public final class CabinetManagedSpecifications {
             if (currentUser.getRole() == Role.ADMIN) {
                 scope = isSeller;
             } else if (currentUser.getRole() == Role.MANAGER) {
-                Join<User, User> owner = userJoin.join("owner", JoinType.INNER);
-                scope = cb.and(isSeller, cb.equal(owner.get("id"), currentUser.getId()));
+                scope = cb.and(isSeller, managerCanAccessSeller(cb, query, userJoin, currentUser.getId()));
             } else {
                 return cb.disjunction();
             }
@@ -85,8 +79,7 @@ public final class CabinetManagedSpecifications {
             if (currentUser.getRole() == Role.ADMIN) {
                 scope = isSeller;
             } else if (currentUser.getRole() == Role.MANAGER) {
-                Join<User, User> owner = userJoin.join("owner", JoinType.INNER);
-                scope = cb.and(isSeller, cb.equal(owner.get("id"), currentUser.getId()));
+                scope = cb.and(isSeller, managerCanAccessSeller(cb, query, userJoin, currentUser.getId()));
             } else {
                 return cb.disjunction();
             }
@@ -97,5 +90,25 @@ public final class CabinetManagedSpecifications {
             );
             return cb.and(scope, hasKey);
         };
+    }
+
+    /**
+     * Менеджер видит селлера при активном grant.
+     */
+    private static Predicate managerCanAccessSeller(
+            CriteriaBuilder cb,
+            CriteriaQuery<?> query,
+            Join<Cabinet, User> userJoin,
+            Long managerId
+    ) {
+        Subquery<Long> grantSub = query.subquery(Long.class);
+        Root<SellerManagerAccess> accessRoot = grantSub.from(SellerManagerAccess.class);
+        grantSub.select(accessRoot.get("seller").get("id"));
+        grantSub.where(
+                cb.equal(accessRoot.get("manager").get("id"), managerId),
+                cb.equal(accessRoot.get("status"), SellerManagerAccessStatus.ACTIVE)
+        );
+
+        return userJoin.get("id").in(grantSub);
     }
 }

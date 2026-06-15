@@ -17,10 +17,7 @@ import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.PaymentRepository;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
-import ru.oparin.solution.service.EmailConfirmationService;
-import ru.oparin.solution.service.SubscriptionAccessService;
-import ru.oparin.solution.service.UserService;
-import ru.oparin.solution.service.WbApiKeyService;
+import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.campaign.CampaignManageAccessService;
 
 import java.util.List;
@@ -46,6 +43,8 @@ public class UserController {
     private final EmailConfirmationService emailConfirmationService;
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
+    private final SellerManagerAccessService sellerManagerAccessService;
+    private final SellerWorkerService sellerWorkerService;
 
     /**
      * Обновление WB API ключа пользователя.
@@ -118,6 +117,44 @@ public class UserController {
     }
 
     /**
+     * Список менеджеров с доступом к аккаунту селлера.
+     */
+    @GetMapping("/manager-access")
+    public ResponseEntity<List<SellerManagerAccessDto>> listManagerAccess(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        validateSellerRole(user);
+        return ResponseEntity.ok(sellerManagerAccessService.listManagersForSeller(user.getId()));
+    }
+
+    /**
+     * Выдать менеджеру доступ к аккаунту селлера по email.
+     */
+    @PostMapping("/manager-access")
+    public ResponseEntity<SellerManagerAccessDto> grantManagerAccess(
+            @Valid @RequestBody GrantManagerAccessRequest request,
+            Authentication authentication
+    ) {
+        User user = getCurrentUser(authentication);
+        validateSellerRole(user);
+        SellerManagerAccessDto dto = sellerManagerAccessService.grantAccess(user, request.getManagerEmail());
+        return ResponseEntity.status(HttpStatus.CREATED).body(dto);
+    }
+
+    /**
+     * Отозвать доступ менеджера к аккаунту селлера.
+     */
+    @DeleteMapping("/manager-access/{managerId}")
+    public ResponseEntity<MessageResponse> revokeManagerAccess(
+            @PathVariable Long managerId,
+            Authentication authentication
+    ) {
+        User user = getCurrentUser(authentication);
+        validateSellerRole(user);
+        sellerManagerAccessService.revokeAccess(user, managerId);
+        return ResponseEntity.ok(createSuccessMessage("Доступ менеджера отозван"));
+    }
+
+    /**
      * Смена пароля пользователя.
      *
      * @param request данные для смены пароля
@@ -169,15 +206,12 @@ public class UserController {
     ) {
         User user = getCurrentUser(authentication);
         boolean hasAccess = subscriptionAccessService.hasAccess(user);
-        boolean agencyClient = TRUE.equals(user.getIsAgencyClient());
-
         var activeSubscription = subscriptionAccessService.getActiveSubscription(user);
         User subscriptionSeller = resolveSellerForAccess(user, sellerId);
         CampaignManageAccessDto campaignManage = campaignManageAccessService.buildAccessState(user, subscriptionSeller);
 
         AccessStatusResponse response = AccessStatusResponse.builder()
                 .hasAccess(hasAccess)
-                .agencyClient(agencyClient)
                 .emailConfirmed(Boolean.TRUE.equals(user.getEmailConfirmed()))
                 .billingEnabled(subscriptionProperties.isBillingEnabled())
                 .subscriptionStatus(activeSubscription != null ? activeSubscription.getStatus() : null)
@@ -192,8 +226,8 @@ public class UserController {
         if (actor.getRole() == Role.SELLER) {
             return actor;
         }
-        if (actor.getRole() == Role.WORKER && actor.getOwner() != null) {
-            return actor.getOwner();
+        if (actor.getRole() == Role.WORKER) {
+            return sellerWorkerService.findSellerByWorkerId(actor.getId()).orElse(null);
         }
         if ((actor.getRole() == Role.ADMIN || actor.getRole() == Role.MANAGER) && sellerId != null) {
             return userRepository.findById(sellerId).orElse(null);
@@ -261,7 +295,6 @@ public class UserController {
                 .role(user.getRole())
                 .isActive(user.getIsActive())
                 .emailConfirmed(user.getEmailConfirmed())
-                .isAgencyClient(user.getIsAgencyClient())
                 .lastEmailConfirmationSentAt(user.getLastEmailConfirmationSentAt());
 
         if (user.getRole() == Role.SELLER) {

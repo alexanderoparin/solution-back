@@ -33,7 +33,7 @@ public class FullUpdateOrchestrator {
     }
 
     public void runFullUpdateForManager(Long managerId, boolean includeStocks) {
-        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUserAndOwnerId(Role.SELLER, managerId);
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyForManager(managerId);
         runFullUpdateForCabinets(cabinets, "кабинетам менеджера " + managerId, includeStocks);
     }
 

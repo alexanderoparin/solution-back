@@ -54,6 +54,8 @@ public class CabinetService {
 
     private final CabinetRepository cabinetRepository;
     private final UserRepository userRepository;
+    private final SellerManagerAccessService sellerManagerAccessService;
+    private final SellerWorkerService sellerWorkerService;
     private final CabinetDeletionService cabinetDeletionService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final WbCommonApiClient wbCommonApiClient;
@@ -79,11 +81,6 @@ public class CabinetService {
             case CABINET_ID -> Sort.by(new Order(direction, "id"));
             case CABINET_NAME -> Sort.by(new Order(direction, "name").ignoreCase());
             case SELLER_EMAIL -> Sort.by(new Order(direction, "user.email").ignoreCase());
-            case SELLER_AGENCY_CLIENT -> Sort.by(new Order(direction, "user.isAgencyClient"));
-            case SELLER_OWNER_EMAIL -> Sort.by(
-                    direction == Sort.Direction.ASC
-                            ? Order.asc("user.owner.email").ignoreCase().nullsLast()
-                            : Order.desc("user.owner.email").ignoreCase().nullsLast());
             case LAST_DATA_UPDATE_AT -> Sort.by(
                     direction == Sort.Direction.ASC
                             ? Order.asc("lastDataUpdateAt").nullsLast()
@@ -113,8 +110,6 @@ public class CabinetService {
                 .map(c -> ManagedCabinetRowDto.builder()
                         .sellerId(c.getUser().getId())
                         .sellerEmail(c.getUser().getEmail())
-                        .sellerAgencyClient(c.getUser().getIsAgencyClient())
-                        .sellerOwnerEmail(c.getUser().getOwner() != null ? c.getUser().getOwner().getEmail() : null)
                         .cabinet(toDto(c))
                         .build());
     }
@@ -377,11 +372,21 @@ public class CabinetService {
     }
 
     /**
-     * Все кабинеты с API-ключом и активным SELLER, принадлежащим указанному владельцу (MANAGER).
+     * Все кабинеты с API-ключом у селлеров, доступных менеджеру (grant или legacy owner_id).
      */
     @Transactional(readOnly = true)
+    public List<Cabinet> findCabinetsWithApiKeyForManager(Long managerId) {
+        return cabinetRepository.findCabinetsWithApiKeyForManager(Role.SELLER, managerId);
+    }
+
+    /**
+     * Все кабинеты с API-ключом и активным SELLER, принадлежащим указанному владельцу (MANAGER).
+     * @deprecated используйте {@link #findCabinetsWithApiKeyForManager(Long)}
+     */
+    @Deprecated
+    @Transactional(readOnly = true)
     public List<Cabinet> findCabinetsWithApiKeyAndUserAndOwnerId(Role role, Long ownerId) {
-        return cabinetRepository.findCabinetsWithApiKeyAndUserAndOwnerId(role, ownerId);
+        return cabinetRepository.findCabinetsWithApiKeyForManager(role, ownerId);
     }
 
     /**
@@ -436,7 +441,8 @@ public class CabinetService {
             return;
         }
 
-        if (currentUser.getRole() == Role.MANAGER && isSellerOwnedByManager(seller, currentUser.getId())) {
+        if (currentUser.getRole() == Role.MANAGER
+                && sellerManagerAccessService.canManagerAccessSeller(currentUser.getId(), seller.getId())) {
             return;
         }
 
@@ -444,21 +450,12 @@ public class CabinetService {
             return;
         }
 
-        if (allowSellerSelf && currentUser.getRole() == Role.WORKER && isWorkerOwnedBySeller(currentUser, seller.getId())) {
+        if (allowSellerSelf && currentUser.getRole() == Role.WORKER
+                && sellerWorkerService.isWorkerOfSeller(currentUser, seller)) {
             return;
         }
 
         throw new UserException(CABINET_ACCESS_DENIED, HttpStatus.FORBIDDEN);
-    }
-
-    private boolean isSellerOwnedByManager(User seller, Long managerId) {
-        return seller.getOwner() != null && seller.getOwner().getId().equals(managerId);
-    }
-
-    private boolean isWorkerOwnedBySeller(User worker, Long sellerId) {
-        return worker.getOwner() != null
-                && worker.getOwner().getRole() == Role.SELLER
-                && worker.getOwner().getId().equals(sellerId);
     }
 
     private void assertSellerInfoOrThrow(String apiKey) {

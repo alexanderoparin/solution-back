@@ -1,7 +1,5 @@
 package ru.oparin.solution.repository;
 
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.Role;
@@ -39,30 +37,6 @@ public interface UserRepository extends JpaRepository<User, Long>, UserManagemen
      * @return список активных пользователей с указанной ролью
      */
     List<User> findByRoleAndIsActive(Role role, Boolean isActive);
-
-    /**
-     * Поиск пользователей по владельцу (owner_id).
-     *
-     * @param ownerId ID владельца
-     * @return список пользователей, принадлежащих указанному владельцу
-     */
-    List<User> findByOwnerId(Long ownerId);
-
-    /**
-     * Поиск пользователей по роли и владельцу.
-     *
-     * @param role роль пользователя
-     * @param ownerId ID владельца
-     * @return список пользователей с указанной ролью, принадлежащих указанному владельцу
-     */
-    List<User> findByRoleAndOwnerId(Role role, Long ownerId);
-
-    /**
-     * Поиск пользователей по роли и владельцу с постраничным выводом.
-     */
-    Page<User> findByRoleAndOwnerId(Role role, Long ownerId, Pageable pageable);
-
-    Page<User> findByRoleNot(Role role, Pageable pageable);
 
     /**
      * Поиск пользователей по роли.

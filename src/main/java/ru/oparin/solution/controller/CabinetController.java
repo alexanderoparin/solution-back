@@ -15,6 +15,7 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.SellerWorkerService;
 import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.WbApiKeyService;
 
@@ -31,6 +32,7 @@ public class CabinetController {
     private final CabinetService cabinetService;
     private final WbApiKeyService wbApiKeyService;
     private final UserService userService;
+    private final SellerWorkerService sellerWorkerService;
 
     /**
      * Список кабинетов: для SELLER — свои, для WORKER — кабинеты владельца (продавца).
@@ -144,8 +146,12 @@ public class CabinetController {
     }
 
     private Long getCabinetOwnerUserId(User user) {
-        if (user.getRole() == Role.SELLER) return user.getId();
-        if (user.getRole() == Role.WORKER && user.getOwner() != null) return user.getOwner().getId();
+        if (user.getRole() == Role.SELLER) {
+            return user.getId();
+        }
+        if (user.getRole() == Role.WORKER) {
+            return sellerWorkerService.findSellerIdByWorkerId(user.getId()).orElse(null);
+        }
         return null;
     }
 }

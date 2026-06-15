@@ -61,22 +61,25 @@ public interface CabinetRepository extends JpaRepository<Cabinet, Long>, JpaSpec
     List<Cabinet> findCabinetsWithApiKeyAndUser(@Param("role") Role role);
 
     /**
-     * Кабинеты с API-ключом у активных SELLER, принадлежащих указанному владельцу (MANAGER).
-     * Загружает User и owner, чтобы избежать lazy-загрузки в асинхронных потоках.
+     * Кабинеты с API-ключом у активных SELLER, доступных менеджеру через grant.
      */
     @Query("""
             SELECT c
             FROM Cabinet c
             JOIN FETCH c.user u
-            JOIN FETCH u.owner o
             WHERE c.apiKey IS NOT NULL
               AND u.isActive = true
               AND u.role = :role
-              AND o.id = :ownerId
+              AND EXISTS (
+                  SELECT 1 FROM SellerManagerAccess a
+                  WHERE a.seller.id = u.id
+                    AND a.manager.id = :managerId
+                    AND a.status = ru.oparin.solution.model.SellerManagerAccessStatus.ACTIVE
+              )
             ORDER BY c.id
             """)
-    List<Cabinet> findCabinetsWithApiKeyAndUserAndOwnerId(
+    List<Cabinet> findCabinetsWithApiKeyForManager(
             @Param("role") Role role,
-            @Param("ownerId") Long ownerId
+            @Param("managerId") Long managerId
     );
 }

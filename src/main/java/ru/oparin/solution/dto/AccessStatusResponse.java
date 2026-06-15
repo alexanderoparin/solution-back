@@ -16,9 +16,7 @@ public class AccessStatusResponse {
 
     private boolean hasAccess;
 
-    private boolean agencyClient;
-
-    /** Подтверждена ли почта (для обычных селлеров без доступа до подтверждения). */
+    /** Подтверждена ли почта (без подтверждения доступ к продукту закрыт). */
     private boolean emailConfirmed;
 
     /** Включена ли оплата (тарифы, Робокасса). Фронт скрывает блок оплаты при false. */

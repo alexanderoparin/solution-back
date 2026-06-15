@@ -20,10 +20,7 @@ import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
-import ru.oparin.solution.service.CabinetService;
-import ru.oparin.solution.service.ProductCardAnalyticsService;
-import ru.oparin.solution.service.UserService;
-import ru.oparin.solution.service.WbApiKeyService;
+import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.MainStepPayload;
 
@@ -33,7 +30,7 @@ import java.util.Map;
 
 /**
  * Контроллер для управления пользователями.
- * ADMIN управляет MANAGER'ами, MANAGER управляет SELLER'ами, SELLER управляет WORKER'ами.
+ * MANAGER видит селлеров с активным grant; ADMIN управляет MANAGER'ами, SELLER управляет WORKER'ами и выдаёт доступ менеджерам.
  */
 @RestController
 @RequestMapping("/users")
@@ -50,6 +47,8 @@ public class UsersManagementController {
     private final AnalyticsScheduler analyticsScheduler;
     private final ProductCardAnalyticsService productCardAnalyticsService;
     private final WbApiEventService wbApiEventService;
+    private final SellerManagerAccessService sellerManagerAccessService;
+    private final SellerWorkerService sellerWorkerService;
 
     /**
      * Постраничное получение списка пользователей, которыми может управлять текущий пользователь.
@@ -277,7 +276,8 @@ public class UsersManagementController {
         if (seller.getRole() != Role.SELLER) {
             return ResponseEntity.badRequest().build();
         }
-        if (currentUser.getRole() == Role.MANAGER && !isSellerOwnedByManager(seller, currentUser)) {
+        if (currentUser.getRole() == Role.MANAGER
+                && !sellerManagerAccessService.canManagerAccessSeller(currentUser, seller)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         List<CabinetDto> cabinets = cabinetService.listByUserId(seller.getId());
@@ -312,7 +312,8 @@ public class UsersManagementController {
                             .build());
         }
 
-        if (currentUser.getRole() == Role.MANAGER && !isSellerOwnedByManager(seller, currentUser)) {
+        if (currentUser.getRole() == Role.MANAGER
+                && !sellerManagerAccessService.canManagerAccessSeller(currentUser, seller)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(MessageResponse.builder()
                             .message("У вас нет доступа к данному селлеру")
@@ -495,10 +496,6 @@ public class UsersManagementController {
         return currentUser.getRole() == Role.ADMIN;
     }
 
-    private boolean isSellerOwnedByManager(User seller, User manager) {
-        return seller.getOwner() != null && seller.getOwner().getId().equals(manager.getId());
-    }
-
     private ResponseEntity<MessageResponse> forbiddenMessageResponse(String message) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(MessageResponse.builder().message(message).build());
@@ -523,8 +520,7 @@ public class UsersManagementController {
                 .isActive(user.getIsActive())
                 .isTemporaryPassword(user.getIsTemporaryPassword())
                 .createdAt(user.getCreatedAt())
-                .ownerEmail(user.getOwner() != null ? user.getOwner().getEmail() : null)
-                .isAgencyClient(user.getIsAgencyClient())
+                .ownerEmail(sellerWorkerService.findSellerEmailForWorker(user))
                 .build();
     }
 }

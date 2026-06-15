@@ -27,8 +27,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 
-import static java.lang.Boolean.TRUE;
-
 /**
  * Сервис для работы с пользователями.
  */
@@ -46,6 +44,8 @@ public class UserService {
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionProperties subscriptionProperties;
     private final UserManagementQueryService userManagementQueryService;
+    private final SellerManagerAccessService sellerManagerAccessService;
+    private final SellerWorkerService sellerWorkerService;
 
     @Lazy
     @Autowired
@@ -149,7 +149,6 @@ public class UserService {
                 .role(Role.SELLER)
                 .isActive(true)
                 .emailConfirmed(false)
-                .isAgencyClient(false)
                 .marketingConsent(marketingConsent)
                 .build();
     }
@@ -160,10 +159,6 @@ public class UserService {
      * При включённой оплате — триал на trialDays дней.
      */
     void createTrialSubscriptionForUser(User user) {
-        if (TRUE.equals(user.getIsAgencyClient())) {
-            return;
-        }
-
         LocalDateTime now = LocalDateTime.now();
         List<String> activeStatuses = List.of("active", "trial");
         boolean hasActive = subscriptionRepository
@@ -280,14 +275,6 @@ public class UserService {
         validateEmailNotExists(request.getEmail());
 
         String encodedPassword = encodePassword(request.getPassword());
-        User owner = getOwnerForNewUser(currentUser, request.getRole());
-        boolean isAgencyClient = switch (request.getRole()) {
-            case SELLER -> owner != null && Boolean.TRUE.equals(owner.getIsAgencyClient());
-            case WORKER -> Boolean.TRUE.equals(currentUser.getIsAgencyClient());
-            case MANAGER -> currentUser.getRole() == Role.ADMIN
-                    && (request.getIsAgencyManager() == null || Boolean.TRUE.equals(request.getIsAgencyManager()));
-            default -> false;
-        };
         User newUser = User.builder()
                 .email(request.getEmail())
                 .password(encodedPassword)
@@ -295,11 +282,13 @@ public class UserService {
                 .isActive(true)
                 .isTemporaryPassword(true)
                 .emailConfirmed(false)
-                .owner(owner)
-                .isAgencyClient(isAgencyClient)
                 .build();
 
-        return userRepository.save(newUser);
+        newUser = userRepository.save(newUser);
+        if (request.getRole() == Role.WORKER) {
+            sellerWorkerService.linkWorkerToSeller(currentUser, newUser);
+        }
+        return newUser;
     }
 
     /**
@@ -382,7 +371,9 @@ public class UserService {
         }
         log.info("[Удаление пользователя] Начало фонового удаления: {} (userId={})", userToDelete.getEmail(), userId);
 
-        List<User> subordinates = userRepository.findByOwnerId(userId);
+        List<User> subordinates = userToDelete.getRole() == Role.SELLER
+                ? sellerWorkerService.findWorkersBySellerId(userId)
+                : List.of();
         if (!subordinates.isEmpty()) {
             log.info("[Удаление пользователя]   → Подчинённых: {} шт.", subordinates.size());
         }
@@ -469,8 +460,12 @@ public class UserService {
             }
             case MANAGER -> {
                 if (newUserRole != Role.SELLER) {
-                    throw new UserException("MANAGER может создавать только SELLER", HttpStatus.FORBIDDEN);
+                    throw new UserException("MANAGER не может создавать пользователей", HttpStatus.FORBIDDEN);
                 }
+                throw new UserException(
+                        "Менеджер не может создавать селлеров. Селлер выдаёт доступ самостоятельно в личном кабинете",
+                        HttpStatus.FORBIDDEN
+                );
             }
             case SELLER -> {
                 if (newUserRole != Role.WORKER) {
@@ -494,16 +489,6 @@ public class UserService {
     }
 
     /**
-     * Получает владельца для нового пользователя в зависимости от роли.
-     */
-    private User getOwnerForNewUser(User currentUser, Role newUserRole) {
-        return switch (newUserRole) {
-            case MANAGER, SELLER, WORKER -> currentUser;
-            default -> null;
-        };
-    }
-
-    /**
      * Преобразует User в UserListItemDto.
      */
     private UserListItemDto mapToUserListItemDto(User user) {
@@ -522,8 +507,7 @@ public class UserService {
                 .isActive(user.getIsActive())
                 .isTemporaryPassword(user.getIsTemporaryPassword())
                 .createdAt(user.getCreatedAt())
-                .ownerEmail(user.getOwner() != null ? user.getOwner().getEmail() : null)
-                .isAgencyClient(user.getIsAgencyClient())
+                .ownerEmail(sellerWorkerService.findSellerEmailForWorker(user))
                 .lastDataUpdateAt(lastDataUpdateAt)
                 .lastDataUpdateRequestedAt(lastDataUpdateRequestedAt)
                 .build();
@@ -534,9 +518,7 @@ public class UserService {
             return userRepository.findByRoleAndIsActive(Role.SELLER, true);
         }
         if (currentUser.getRole() == Role.MANAGER) {
-            return userRepository.findByRoleAndOwnerId(Role.SELLER, currentUser.getId()).stream()
-                    .filter(user -> TRUE.equals(user.getIsActive()))
-                    .toList();
+            return sellerManagerAccessService.listActiveSellersForManager(currentUser.getId());
         }
         return List.of();
     }
@@ -551,7 +533,7 @@ public class UserService {
         if (userToManage.getRole() != Role.SELLER) {
             throw new UserException(MANAGER_CAN_MANAGE_ONLY_OWN_SELLERS, HttpStatus.FORBIDDEN);
         }
-        if (!isOwnedBy(userToManage, currentUser.getId())) {
+        if (!sellerManagerAccessService.canManagerAccessSeller(currentUser, userToManage)) {
             throw new UserException(MANAGER_CAN_MANAGE_ONLY_OWN_SELLERS, HttpStatus.FORBIDDEN);
         }
     }
@@ -560,13 +542,9 @@ public class UserService {
         if (userToManage.getRole() != Role.WORKER) {
             throw new UserException(SELLER_CAN_MANAGE_ONLY_OWN_WORKERS, HttpStatus.FORBIDDEN);
         }
-        if (!isOwnedBy(userToManage, currentUser.getId())) {
+        if (!sellerWorkerService.isWorkerOfSeller(currentUser, userToManage)) {
             throw new UserException(SELLER_CAN_MANAGE_ONLY_OWN_WORKERS, HttpStatus.FORBIDDEN);
         }
-    }
-
-    private boolean isOwnedBy(User user, Long ownerId) {
-        return user.getOwner() != null && ownerId.equals(user.getOwner().getId());
     }
 
     private SellerUpdateDates getSellerUpdateDates(Long sellerId) {

@@ -10,9 +10,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.dto.UserSortField;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.Role;
-import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.*;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -23,7 +21,6 @@ import java.util.List;
 public class UserManagementCriteriaRepositoryImpl implements UserManagementCriteriaRepository {
 
     private static final String USER_ROLE_FIELD = "role";
-    private static final String USER_OWNER_FIELD = "owner";
     private static final String USER_ID_FIELD = "id";
     private static final String USER_EMAIL_FIELD = "email";
     private static final String CABINET_USER_FIELD = "user";
@@ -43,9 +40,8 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
         CriteriaQuery<User> cq = cb.createQuery(User.class);
         Root<User> root = cq.from(User.class);
 
-        List<Predicate> predicates = buildPredicates(cb, root, currentUser, email, onlySellers);
+        List<Predicate> predicates = buildPredicates(cb, cq, root, currentUser, email, onlySellers);
         cq.where(predicates.toArray(new Predicate[0]));
-        root.fetch(USER_OWNER_FIELD, JoinType.LEFT);
 
         applySorting(cb, cq, root, sortBy, sortDir);
 
@@ -61,13 +57,14 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
     private long count(CriteriaBuilder cb, User currentUser, String email, boolean onlySellers) {
         CriteriaQuery<Long> countQuery = cb.createQuery(Long.class);
         Root<User> countRoot = countQuery.from(User.class);
-        List<Predicate> countPredicates = buildPredicates(cb, countRoot, currentUser, email, onlySellers);
+        List<Predicate> countPredicates = buildPredicates(cb, countQuery, countRoot, currentUser, email, onlySellers);
         countQuery.select(cb.countDistinct(countRoot));
         countQuery.where(countPredicates.toArray(new Predicate[0]));
         return entityManager.createQuery(countQuery).getSingleResult();
     }
 
     private List<Predicate> buildPredicates(CriteriaBuilder cb,
+                                            CriteriaQuery<?> query,
                                             Root<User> root,
                                             User currentUser,
                                             String email,
@@ -82,12 +79,11 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
                 predicates.add(cb.notEqual(root.get(USER_ROLE_FIELD), Role.ADMIN));
             }
         } else if (role == Role.MANAGER) {
-            // Менеджер всегда работает только со своими селлерами.
             predicates.add(cb.equal(root.get(USER_ROLE_FIELD), Role.SELLER));
-            predicates.add(cb.equal(root.get(USER_OWNER_FIELD).get(USER_ID_FIELD), currentUser.getId()));
+            predicates.add(managerCanAccessSeller(cb, query, root, currentUser.getId()));
         } else if (role == Role.SELLER) {
             predicates.add(cb.equal(root.get(USER_ROLE_FIELD), Role.WORKER));
-            predicates.add(cb.equal(root.get(USER_OWNER_FIELD).get(USER_ID_FIELD), currentUser.getId()));
+            predicates.add(workerOfSeller(cb, query, root, currentUser.getId()));
         } else {
             predicates.add(cb.disjunction());
         }
@@ -131,17 +127,20 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
         }
 
         if (sortBy == UserSortField.OWNER_EMAIL) {
-            Join<User, User> ownerJoin = root.join(USER_OWNER_FIELD, JoinType.LEFT);
-            Expression<String> ownerEmail = ownerJoin.get(USER_EMAIL_FIELD);
+            Subquery<String> sellerEmailSub = cq.subquery(String.class);
+            Root<SellerWorker> swRoot = sellerEmailSub.from(SellerWorker.class);
+            Join<SellerWorker, User> sellerJoin = swRoot.join("seller");
+            sellerEmailSub.select(sellerJoin.get(USER_EMAIL_FIELD));
+            sellerEmailSub.where(cb.equal(swRoot.get("worker").get(USER_ID_FIELD), root.get(USER_ID_FIELD)));
 
             Expression<Integer> nullRank = cb.<Integer>selectCase()
-                    .when(cb.isNull(ownerEmail), asc ? 0 : 1)
+                    .when(cb.isNull(sellerEmailSub), asc ? 0 : 1)
                     .otherwise(asc ? 1 : 0);
 
-            Expression<String> ownerEmailLower = cb.lower(ownerEmail);
+            Expression<String> sellerEmailLower = cb.lower(sellerEmailSub);
             cq.orderBy(
                     cb.asc(nullRank),
-                    asc ? cb.asc(ownerEmailLower) : cb.desc(ownerEmailLower),
+                    asc ? cb.asc(sellerEmailLower) : cb.desc(sellerEmailLower),
                     cb.asc(root.get(USER_ID_FIELD))
             );
             return;
@@ -151,7 +150,6 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
             case EMAIL -> root.get(USER_EMAIL_FIELD);
             case ROLE -> root.get(USER_ROLE_FIELD);
             case IS_ACTIVE -> root.get("isActive");
-            case IS_AGENCY_CLIENT -> root.get("isAgencyClient");
             default -> root.get("createdAt");
         };
 
@@ -159,5 +157,35 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
                 asc ? cb.asc(sortExpression) : cb.desc(sortExpression),
                 cb.asc(root.get(USER_ID_FIELD))
         );
+    }
+
+    private Predicate managerCanAccessSeller(
+            CriteriaBuilder cb,
+            CriteriaQuery<?> query,
+            Root<User> root,
+            Long managerId
+    ) {
+        Subquery<Long> grantSub = query.subquery(Long.class);
+        Root<SellerManagerAccess> accessRoot = grantSub.from(SellerManagerAccess.class);
+        grantSub.select(accessRoot.get("seller").get("id"));
+        grantSub.where(
+                cb.equal(accessRoot.get("manager").get("id"), managerId),
+                cb.equal(accessRoot.get("status"), SellerManagerAccessStatus.ACTIVE)
+        );
+
+        return root.get(USER_ID_FIELD).in(grantSub);
+    }
+
+    private Predicate workerOfSeller(
+            CriteriaBuilder cb,
+            CriteriaQuery<?> query,
+            Root<User> root,
+            Long sellerId
+    ) {
+        Subquery<Long> workerSub = query.subquery(Long.class);
+        Root<SellerWorker> swRoot = workerSub.from(SellerWorker.class);
+        workerSub.select(swRoot.get("worker").get("id"));
+        workerSub.where(cb.equal(swRoot.get("seller").get("id"), sellerId));
+        return root.get(USER_ID_FIELD).in(workerSub);
     }
 }
