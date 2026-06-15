@@ -23,7 +23,7 @@ public class CreateUserRequest {
     private String email;
 
     /**
-     * Временный пароль пользователя.
+     * Пароль пользователя.
      */
     @NotBlank(message = "Пароль обязателен")
     @Size(min = 6, message = "Пароль должен содержать минимум 6 символов")

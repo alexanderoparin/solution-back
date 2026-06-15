@@ -1,10 +1,6 @@
 package ru.oparin.solution.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 /**
  * DTO ответа при успешной авторизации.
@@ -34,10 +30,5 @@ public class AuthResponse {
      * ID пользователя.
      */
     private Long userId;
-
-    /**
-     * Флаг временного пароля (требует смены при первом входе).
-     */
-    private Boolean isTemporaryPassword;
 }
 

@@ -36,11 +36,6 @@ public class UserListItemDto {
     private Boolean isActive;
 
     /**
-     * Флаг временного пароля.
-     */
-    private Boolean isTemporaryPassword;
-
-    /**
      * Дата создания.
      */
     private LocalDateTime createdAt;

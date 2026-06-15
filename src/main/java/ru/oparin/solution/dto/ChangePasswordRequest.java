@@ -2,11 +2,7 @@ package ru.oparin.solution.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 /**
  * DTO запроса на смену пароля.
@@ -19,7 +15,7 @@ import lombok.Setter;
 public class ChangePasswordRequest {
 
     /**
-     * Текущий пароль (временный).
+     * Текущий пароль.
      */
     @NotBlank(message = "Текущий пароль обязателен")
     private String currentPassword;

@@ -104,7 +104,6 @@ public class AuthService {
                 .email(user.getEmail())
                 .role(user.getRole().name())
                 .userId(user.getId())
-                .isTemporaryPassword(user.getIsTemporaryPassword())
                 .build();
     }
 }

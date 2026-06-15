@@ -241,11 +241,10 @@ public class UserService {
     }
 
     /**
-     * Обновляет пароль пользователя и снимает флаг временного пароля.
+     * Обновляет пароль пользователя.
      */
     private void updateUserPassword(User user, String newPassword) {
         user.setPassword(encodePassword(newPassword));
-        user.setIsTemporaryPassword(false);
     }
 
     /**
@@ -280,7 +279,6 @@ public class UserService {
                 .password(encodedPassword)
                 .role(request.getRole())
                 .isActive(true)
-                .isTemporaryPassword(true)
                 .emailConfirmed(false)
                 .build();
 
@@ -505,7 +503,6 @@ public class UserService {
                 .email(user.getEmail())
                 .role(user.getRole())
                 .isActive(user.getIsActive())
-                .isTemporaryPassword(user.getIsTemporaryPassword())
                 .createdAt(user.getCreatedAt())
                 .ownerEmail(sellerWorkerService.findSellerEmailForWorker(user))
                 .lastDataUpdateAt(lastDataUpdateAt)

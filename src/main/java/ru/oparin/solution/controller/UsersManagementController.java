@@ -518,7 +518,6 @@ public class UsersManagementController {
                 .email(user.getEmail())
                 .role(user.getRole())
                 .isActive(user.getIsActive())
-                .isTemporaryPassword(user.getIsTemporaryPassword())
                 .createdAt(user.getCreatedAt())
                 .ownerEmail(sellerWorkerService.findSellerEmailForWorker(user))
                 .build();
