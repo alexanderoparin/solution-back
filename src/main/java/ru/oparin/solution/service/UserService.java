@@ -25,6 +25,7 @@ import ru.oparin.solution.repository.UserRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -420,7 +421,13 @@ public class UserService {
                 sortBy,
                 sortDir
         );
-        return page.map(this::mapToUserListItemDto);
+        List<Long> sellerIds = page.getContent().stream()
+                .filter(user -> user.getRole() == Role.SELLER)
+                .map(User::getId)
+                .toList();
+        Map<Long, List<String>> managerEmailsBySeller =
+                sellerManagerAccessService.findActiveManagerEmailsBySellerIds(sellerIds);
+        return page.map(user -> mapToUserListItemDto(user, managerEmailsBySeller));
     }
 
     /**
@@ -441,8 +448,12 @@ public class UserService {
                 .filter(seller -> cabinetService.findDefaultByUserId(seller.getId()).isPresent())
                 .toList();
 
+        List<Long> sellerIds = sellersWithCabinets.stream().map(User::getId).toList();
+        Map<Long, List<String>> managerEmailsBySeller =
+                sellerManagerAccessService.findActiveManagerEmailsBySellerIds(sellerIds);
+
         return sellersWithCabinets.stream()
-                .map(this::mapToUserListItemDto)
+                .map(user -> mapToUserListItemDto(user, managerEmailsBySeller))
                 .toList();
     }
 
@@ -487,9 +498,19 @@ public class UserService {
     }
 
     /**
+     * Преобразует User в UserListItemDto (одиночная запись).
+     */
+    public UserListItemDto toUserListItemDto(User user) {
+        Map<Long, List<String>> managerEmailsBySeller = user.getRole() == Role.SELLER
+                ? sellerManagerAccessService.findActiveManagerEmailsBySellerIds(List.of(user.getId()))
+                : Map.of();
+        return mapToUserListItemDto(user, managerEmailsBySeller);
+    }
+
+    /**
      * Преобразует User в UserListItemDto.
      */
-    private UserListItemDto mapToUserListItemDto(User user) {
+    private UserListItemDto mapToUserListItemDto(User user, Map<Long, List<String>> managerEmailsBySeller) {
         LocalDateTime lastDataUpdateAt = null;
         LocalDateTime lastDataUpdateRequestedAt = null;
         if (user.getRole() == Role.SELLER) {
@@ -498,6 +519,10 @@ public class UserService {
             lastDataUpdateRequestedAt = dates.lastDataUpdateRequestedAt();
         }
 
+        List<String> managerEmails = user.getRole() == Role.SELLER
+                ? managerEmailsBySeller.getOrDefault(user.getId(), List.of())
+                : null;
+
         return UserListItemDto.builder()
                 .id(user.getId())
                 .email(user.getEmail())
@@ -505,6 +530,7 @@ public class UserService {
                 .isActive(user.getIsActive())
                 .createdAt(user.getCreatedAt())
                 .ownerEmail(sellerWorkerService.findSellerEmailForWorker(user))
+                .managerEmails(managerEmails)
                 .lastDataUpdateAt(lastDataUpdateAt)
                 .lastDataUpdateRequestedAt(lastDataUpdateRequestedAt)
                 .build();

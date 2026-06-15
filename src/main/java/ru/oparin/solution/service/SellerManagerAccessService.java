@@ -14,7 +14,7 @@ import ru.oparin.solution.repository.SellerManagerAccessRepository;
 import ru.oparin.solution.repository.UserRepository;
 
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.*;
 
 /**
  * Делегирование селлером доступа менеджерам ко всем кабинетам селлера.
@@ -116,6 +116,24 @@ public class SellerManagerAccessService {
                 .stream()
                 .map(this::toDto)
                 .toList();
+    }
+
+    /**
+     * Email активных менеджеров по списку селлеров (для таблицы пользователей).
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, List<String>> findActiveManagerEmailsBySellerIds(Collection<Long> sellerIds) {
+        if (sellerIds == null || sellerIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Object[]> rows = accessRepository.findManagerEmailsBySellerIds(sellerIds, SellerManagerAccessStatus.ACTIVE);
+        Map<Long, List<String>> result = new HashMap<>();
+        for (Object[] row : rows) {
+            Long sellerId = (Long) row[0];
+            String email = (String) row[1];
+            result.computeIfAbsent(sellerId, ignored -> new ArrayList<>()).add(email);
+        }
+        return result;
     }
 
     /**

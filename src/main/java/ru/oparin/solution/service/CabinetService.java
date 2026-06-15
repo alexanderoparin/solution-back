@@ -25,10 +25,7 @@ import ru.oparin.solution.repository.spec.CabinetManagedSpecifications;
 import ru.oparin.solution.service.wb.Wb429RateLimitHeadersLogger;
 import ru.oparin.solution.service.wb.WbCommonApiClient;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 /**
  * Сервис CRUD для кабинетов продавца.
@@ -106,12 +103,22 @@ public class CabinetService {
             throw new UserException(CABINET_ACCESS_DENIED, HttpStatus.FORBIDDEN);
         }
         var spec = CabinetManagedSpecifications.managedList(currentUser, search, onlyActiveUsers);
-        return cabinetRepository.findAll(spec, pageable)
-                .map(c -> ManagedCabinetRowDto.builder()
-                        .sellerId(c.getUser().getId())
-                        .sellerEmail(c.getUser().getEmail())
-                        .cabinet(toDto(c))
-                        .build());
+        Page<Cabinet> cabinetPage = cabinetRepository.findAll(spec, pageable);
+        List<Long> sellerIds = cabinetPage.getContent().stream()
+                .map(c -> c.getUser().getId())
+                .distinct()
+                .toList();
+        Map<Long, List<String>> managerEmailsBySeller =
+                sellerManagerAccessService.findActiveManagerEmailsBySellerIds(sellerIds);
+        return cabinetPage.map(c -> {
+            Long sellerId = c.getUser().getId();
+            return ManagedCabinetRowDto.builder()
+                    .sellerId(sellerId)
+                    .sellerEmail(c.getUser().getEmail())
+                    .managerEmails(managerEmailsBySeller.getOrDefault(sellerId, List.of()))
+                    .cabinet(toDto(c))
+                    .build();
+        });
     }
 
     /**

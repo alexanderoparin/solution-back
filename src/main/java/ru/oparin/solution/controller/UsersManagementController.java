@@ -48,7 +48,6 @@ public class UsersManagementController {
     private final ProductCardAnalyticsService productCardAnalyticsService;
     private final WbApiEventService wbApiEventService;
     private final SellerManagerAccessService sellerManagerAccessService;
-    private final SellerWorkerService sellerWorkerService;
 
     /**
      * Постраничное получение списка пользователей, которыми может управлять текущий пользователь.
@@ -155,7 +154,7 @@ public class UsersManagementController {
     ) {
         User currentUser = getCurrentUser(authentication);
         User createdUser = userService.createUser(request, currentUser);
-        UserListItemDto dto = mapToDto(createdUser);
+        UserListItemDto dto = userService.toUserListItemDto(createdUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(dto);
     }
 
@@ -175,7 +174,7 @@ public class UsersManagementController {
     ) {
         User currentUser = getCurrentUser(authentication);
         User updatedUser = userService.updateUser(userId, request, currentUser);
-        UserListItemDto dto = mapToDto(updatedUser);
+        UserListItemDto dto = userService.toUserListItemDto(updatedUser);
         return ResponseEntity.ok(dto);
     }
 
@@ -507,20 +506,6 @@ public class UsersManagementController {
 
     private ResponseEntity<MessageResponse> acceptedMessageResponse(String message) {
         return ResponseEntity.accepted().body(MessageResponse.builder().message(message).build());
-    }
-
-    /**
-     * Преобразует User в UserListItemDto.
-     */
-    private UserListItemDto mapToDto(User user) {
-        return UserListItemDto.builder()
-                .id(user.getId())
-                .email(user.getEmail())
-                .role(user.getRole())
-                .isActive(user.getIsActive())
-                .createdAt(user.getCreatedAt())
-                .ownerEmail(sellerWorkerService.findSellerEmailForWorker(user))
-                .build();
     }
 }
 

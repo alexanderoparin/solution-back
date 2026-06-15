@@ -7,6 +7,7 @@ import ru.oparin.solution.model.SellerManagerAccess;
 import ru.oparin.solution.model.SellerManagerAccessStatus;
 import ru.oparin.solution.model.User;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,6 +19,18 @@ public interface SellerManagerAccessRepository extends JpaRepository<SellerManag
     Optional<SellerManagerAccess> findBySeller_IdAndManager_Id(Long sellerId, Long managerId);
 
     List<SellerManagerAccess> findBySeller_IdAndStatus(Long sellerId, SellerManagerAccessStatus status);
+
+    @Query("""
+            SELECT a.seller.id, a.manager.email
+            FROM SellerManagerAccess a
+            WHERE a.seller.id IN :sellerIds
+              AND a.status = :status
+            ORDER BY a.manager.email ASC
+            """)
+    List<Object[]> findManagerEmailsBySellerIds(
+            @Param("sellerIds") Collection<Long> sellerIds,
+            @Param("status") SellerManagerAccessStatus status
+    );
 
     @Query("""
             SELECT a.seller

@@ -4,6 +4,7 @@ import lombok.*;
 import ru.oparin.solution.model.Role;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * DTO для отображения пользователя в списке.
@@ -44,6 +45,11 @@ public class UserListItemDto {
      * Email селлера-работодателя (только для WORKER).
      */
     private String ownerEmail;
+
+    /**
+     * Email менеджеров с активным доступом (только для SELLER).
+     */
+    private List<String> managerEmails;
 
     /**
      * Дата последнего обновления данных (для селлеров).
