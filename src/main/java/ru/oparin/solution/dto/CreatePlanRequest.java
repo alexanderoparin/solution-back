@@ -5,7 +5,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import ru.oparin.solution.model.PlanPeriodType;
-import ru.oparin.solution.model.PlanProductCode;
 
 import java.math.BigDecimal;
 
@@ -37,9 +36,6 @@ public class CreatePlanRequest {
     private Boolean isActive = true;
 
     private String code;
-
-    @Builder.Default
-    private String productCode = PlanProductCode.CAMPAIGN_MANAGE;
 
     @Builder.Default
     private PlanPeriodType periodType = PlanPeriodType.DAYS;

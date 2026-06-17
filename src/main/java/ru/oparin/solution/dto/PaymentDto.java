@@ -19,6 +19,8 @@ public class PaymentDto {
     private BigDecimal amount;
     private String currency;
     private String description;
+    /** Название тарифа на момент оплаты (snapshot). */
+    private String planName;
     private String status;
     private LocalDateTime paidAt;
     private LocalDateTime createdAt;

@@ -104,6 +104,15 @@ subscription:
   campaign-management-enabled: true  # подписка на раздел «Управление РК»
   trial-days: 14
 
+tochka:
+  enabled: ${TOCHKA_ENABLED:false}
+  sandbox: ${TOCHKA_SANDBOX:false}
+  jwt-token: ${TOCHKA_JWT_TOKEN:}
+  client-id: ${TOCHKA_CLIENT_ID:}
+  redirect-success-url: ${app.frontend-url}/subscription/success
+  redirect-fail-url: ${app.frontend-url}/subscription/fail
+  webhook-path: /webhooks/tochka
+
 logging:
   # --- Levels ---
   level:

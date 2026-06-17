@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 public class SubscriptionProperties {
 
     /**
-     * Включена ли глобальная оплата сайта (тарифы, Робокасса). При false весь сайт бесплатен.
+     * Включена ли глобальная оплата сайта. При false весь сайт бесплатен.
      */
     private boolean billingEnabled = true;
 

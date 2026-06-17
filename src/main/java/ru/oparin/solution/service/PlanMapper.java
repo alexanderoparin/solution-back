@@ -22,7 +22,6 @@ public final class PlanMapper {
                 .sortOrder(plan.getSortOrder())
                 .isActive(plan.getIsActive())
                 .code(plan.getCode())
-                .productCode(plan.getProductCode())
                 .periodType(plan.getPeriodType() != null ? plan.getPeriodType().name() : null)
                 .build();
     }

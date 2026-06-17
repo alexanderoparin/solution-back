@@ -19,7 +19,7 @@ public class AccessStatusResponse {
     /** Подтверждена ли почта (без подтверждения доступ к продукту закрыт). */
     private boolean emailConfirmed;
 
-    /** Включена ли оплата (тарифы, Робокасса). Фронт скрывает блок оплаты при false. */
+    /** Включена ли глобальная оплата (тарифы). Фронт скрывает блок оплаты при false. */
     private boolean billingEnabled;
 
     private String subscriptionStatus;

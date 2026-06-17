@@ -210,7 +210,6 @@ public class AdminController {
                 .sortOrder(request.getSortOrder() != null ? request.getSortOrder() : 0)
                 .isActive(request.getIsActive() != null ? request.getIsActive() : true)
                 .code(request.getCode())
-                .productCode(request.getProductCode())
                 .periodType(request.getPeriodType())
                 .build();
         plan = planRepository.save(plan);
@@ -229,7 +228,6 @@ public class AdminController {
         if (request.getSortOrder() != null) plan.setSortOrder(request.getSortOrder());
         if (request.getIsActive() != null) plan.setIsActive(request.getIsActive());
         if (request.getCode() != null) plan.setCode(request.getCode());
-        if (request.getProductCode() != null) plan.setProductCode(request.getProductCode());
         if (request.getPeriodType() != null) plan.setPeriodType(request.getPeriodType());
         plan = planRepository.save(plan);
         return ResponseEntity.ok(toPlanDto(plan));

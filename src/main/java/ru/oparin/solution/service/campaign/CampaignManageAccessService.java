@@ -6,7 +6,7 @@ import org.springframework.stereotype.Service;
 import ru.oparin.solution.config.SubscriptionProperties;
 import ru.oparin.solution.dto.CampaignManageAccessDto;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.PlanProductCode;
+import ru.oparin.solution.model.PlanCodes;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.Subscription;
 import ru.oparin.solution.model.User;
@@ -108,7 +108,7 @@ public class CampaignManageAccessService {
 
         LocalDateTime now = LocalDateTime.now();
         boolean canActivateFree = !subscriptionRepository.existsByUser_IdAndPlan_Code(
-                holder.getId(), PlanProductCode.CAMPAIGN_FREE);
+                holder.getId(), PlanCodes.CAMPAIGN_FREE);
 
         return findActiveSubscription(holder)
                 .map(sub -> CampaignManageAccessDto.builder()
@@ -121,8 +121,8 @@ public class CampaignManageAccessService {
                         .build())
                 .orElseGet(() -> {
                     Subscription expired = subscriptionRepository
-                            .findFirstByUser_IdAndPlan_ProductCodeAndExpiresAtBeforeOrderByExpiresAtDesc(
-                                    holder.getId(), PlanProductCode.CAMPAIGN_MANAGE, now)
+                            .findFirstByUser_IdAndExpiresAtBeforeOrderByExpiresAtDesc(
+                                    holder.getId(), now)
                             .orElse(null);
                     if (expired != null) {
                         int daysAgo = daysBetweenCeil(expired.getExpiresAt(), now);
@@ -150,9 +150,8 @@ public class CampaignManageAccessService {
         }
         // cabinet owner is seller - loaded by id elsewhere
         return subscriptionRepository
-                .findFirstByUser_IdAndPlan_ProductCodeAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
+                .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
                         cabinetUserId,
-                        PlanProductCode.CAMPAIGN_MANAGE,
                         ACTIVE_STATUSES,
                         LocalDateTime.now()
                 )
@@ -160,9 +159,8 @@ public class CampaignManageAccessService {
     }
 
     private java.util.Optional<Subscription> findActiveSubscription(User holder) {
-        return subscriptionRepository.findFirstByUser_IdAndPlan_ProductCodeAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
+        return subscriptionRepository.findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
                 holder.getId(),
-                PlanProductCode.CAMPAIGN_MANAGE,
                 ACTIVE_STATUSES,
                 LocalDateTime.now()
         );

@@ -111,6 +111,7 @@ public class AdminSubscriptionService {
                 .amount(p.getAmount())
                 .currency(p.getCurrency())
                 .description(p.getDescription())
+                .planName(p.getPlanName())
                 .status(p.getStatus())
                 .paidAt(p.getPaidAt())
                 .createdAt(p.getCreatedAt())

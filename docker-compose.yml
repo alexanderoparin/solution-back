@@ -20,10 +20,11 @@ services:
       # JWT
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRATION=${JWT_EXPIRATION:-86400000}
-      # Робокасса
-      - ROBOKASSA_PASSWORD1=${ROBOKASSA_PASSWORD1}
-      - ROBOKASSA_PASSWORD2=${ROBOKASSA_PASSWORD2}
-      - ROBOKASSA_TEST=${ROBOKASSA_TEST:-true}
+      # Точка Банк (интернет-эквайринг). Пока выключено на проде — включить после настройки эквайринга и webhook.
+      - TOCHKA_ENABLED=false
+      - TOCHKA_SANDBOX=${TOCHKA_SANDBOX:-false}
+      - TOCHKA_JWT_TOKEN=${TOCHKA_JWT_TOKEN}
+      - TOCHKA_CLIENT_ID=${TOCHKA_CLIENT_ID}
       # Почта (SMTP)
       - MAIL_PASSWORD=${MAIL_PASSWORD}
       # Логирование

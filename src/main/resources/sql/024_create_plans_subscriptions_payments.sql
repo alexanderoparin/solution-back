@@ -69,12 +69,12 @@ CREATE TABLE IF NOT EXISTS solution.payments (
 CREATE INDEX IF NOT EXISTS idx_payments_user_id ON solution.payments(user_id);
 CREATE INDEX IF NOT EXISTS idx_payments_external_id ON solution.payments(external_id) WHERE external_id IS NOT NULL;
 
-COMMENT ON TABLE solution.payments IS 'Платежи (Робокасса и др.)';
+COMMENT ON TABLE solution.payments IS 'Платежи за подписку';
 COMMENT ON COLUMN solution.payments.user_id IS 'Пользователь';
 COMMENT ON COLUMN solution.payments.subscription_id IS 'Подписка, которую оплатили (после успеха)';
 COMMENT ON COLUMN solution.payments.amount IS 'Сумма';
 COMMENT ON COLUMN solution.payments.currency IS 'Валюта (RUB)';
-COMMENT ON COLUMN solution.payments.external_id IS 'Идентификатор в платёжной системе (Робокасса)';
+COMMENT ON COLUMN solution.payments.external_id IS 'Идентификатор в платёжной системе (operationId Точка и т.д.)';
 COMMENT ON COLUMN solution.payments.status IS 'pending, success, failed, refunded';
 COMMENT ON COLUMN solution.payments.paid_at IS 'Фактическая дата/время оплаты';
 COMMENT ON COLUMN solution.payments.metadata IS 'Параметры/ответ от платёжной системы';

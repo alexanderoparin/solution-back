@@ -40,10 +40,6 @@ public class Plan {
     @Column(name = "code", length = 50)
     private String code;
 
-    @Column(name = "product_code", nullable = false, length = 50)
-    @Builder.Default
-    private String productCode = PlanProductCode.LEGACY;
-
     @Enumerated(EnumType.STRING)
     @Column(name = "period_type", nullable = false, length = 20)
     @Builder.Default

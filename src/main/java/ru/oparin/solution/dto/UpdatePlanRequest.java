@@ -22,6 +22,5 @@ public class UpdatePlanRequest {
     private Integer sortOrder;
     private Boolean isActive;
     private String code;
-    private String productCode;
     private PlanPeriodType periodType;
 }

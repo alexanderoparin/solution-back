@@ -61,6 +61,7 @@ public class SecurityConfig {
     private static final String CABINETS_ENDPOINTS = "/cabinets/**";
     private static final String SUBSCRIPTION_PLANS = "/subscription/plans";
     private static final String SUBSCRIPTION_STATUS = "/subscription/status";
+    private static final String WEBHOOKS = "/webhooks/**";
     public static final String ADMIN = Role.ADMIN.name();
     public static final String MANAGER = Role.MANAGER.name();
     public static final String SELLER = Role.SELLER.name();
@@ -147,6 +148,7 @@ public class SecurityConfig {
         auth
                 .requestMatchers(AUTH_ENDPOINTS, HEALTH_ENDPOINT).permitAll()
                 .requestMatchers(SUBSCRIPTION_PLANS, SUBSCRIPTION_STATUS).permitAll()
+                .requestMatchers(WEBHOOKS).permitAll()
                 .requestMatchers(ADMIN_ENDPOINTS).hasRole(ADMIN)
                 .requestMatchers(SELLER_ENDPOINTS).hasAnyRole(ADMIN, SELLER)
                 .requestMatchers(WORKER_ENDPOINTS).hasAnyRole(ADMIN, SELLER, WORKER)

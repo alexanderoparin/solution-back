@@ -36,6 +36,23 @@ public class Payment {
     @JoinColumn(name = "subscription_id")
     private Subscription subscription;
 
+    /** Код тарифа на момент оплаты (snapshot). */
+    @Column(name = "plan_code", length = 50)
+    private String planCode;
+
+    /** Название тарифа на момент оплаты (snapshot). */
+    @Column(name = "plan_name", length = 255)
+    private String planName;
+
+    /** Длительность периода на момент оплаты (snapshot). */
+    @Column(name = "period_days")
+    private Integer periodDays;
+
+    /** Тип периода на момент оплаты (snapshot). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "period_type", length = 20)
+    private PlanPeriodType periodType;
+
     @Column(name = "amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal amount;
 

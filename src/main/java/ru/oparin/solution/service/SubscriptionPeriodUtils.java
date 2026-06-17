@@ -14,9 +14,16 @@ public final class SubscriptionPeriodUtils {
     }
 
     public static LocalDateTime addPlanPeriod(LocalDateTime base, Plan plan) {
-        if (plan.getPeriodType() == PlanPeriodType.CALENDAR_MONTH) {
+        return addPlanPeriod(base, plan.getPeriodDays(), plan.getPeriodType());
+    }
+
+    /**
+     * Продлевает период по снимку тарифа (без привязки к актуальной записи plans).
+     */
+    public static LocalDateTime addPlanPeriod(LocalDateTime base, int periodDays, PlanPeriodType periodType) {
+        if (periodType == PlanPeriodType.CALENDAR_MONTH) {
             return base.plusMonths(1);
         }
-        return base.plusDays(plan.getPeriodDays());
+        return base.plusDays(periodDays);
     }
 }
