@@ -1,5 +1,7 @@
 package ru.oparin.solution.repository;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -42,5 +44,16 @@ public interface ArticleNoteFileRepository extends JpaRepository<ArticleNoteFile
      */
     @Query("SELECT COUNT(f) > 0 FROM ArticleNoteFile f WHERE f.id = :id AND f.note.id = :noteId")
     boolean existsByIdAndNoteId(@Param("id") Long id, @Param("noteId") Long noteId);
+
+    /**
+     * Возвращает пути ко всем файлам заметок по артикулам.
+     */
+    @Query("SELECT f.filePath FROM ArticleNoteFile f")
+    List<String> findAllFilePaths();
+
+    /**
+     * Находит файлы заметок по артикулам для указанного кабинета.
+     */
+    Page<ArticleNoteFile> findByNote_CabinetId(Long cabinetId, Pageable pageable);
 }
 

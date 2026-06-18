@@ -98,6 +98,8 @@ app:
   uploads:
     directory: /app/uploads
     max-file-size: 31457280  # 30 MB по умолчанию
+    cleanup-enabled: true
+    orphan-min-age-hours: 1  # не трогать свежезагруженные файлы (окно между copy и save в БД)
 
 subscription:
   billing-enabled: false  # true — глобальная оплата сайта; false — сайт бесплатен

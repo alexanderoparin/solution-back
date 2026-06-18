@@ -20,4 +20,10 @@ public interface CampaignNoteFileRepository extends JpaRepository<CampaignNoteFi
 
     @Query("SELECT f FROM CampaignNoteFile f WHERE f.id = :id AND f.note.id = :noteId")
     Optional<CampaignNoteFile> findByIdAndNoteId(@Param("id") Long id, @Param("noteId") Long noteId);
+
+    /**
+     * Возвращает пути ко всем файлам заметок РК.
+     */
+    @Query("SELECT f.filePath FROM CampaignNoteFile f")
+    List<String> findAllFilePaths();
 }

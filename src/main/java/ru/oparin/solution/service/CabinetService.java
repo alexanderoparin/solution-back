@@ -302,6 +302,7 @@ public class CabinetService {
         cabinetDeletionService.deleteStepBarcodes(cabinetId);
         cabinetDeletionService.deleteStepCardAnalytics(cabinetId);
         cabinetDeletionService.deleteStepProductCards(cabinetId);
+        cabinetDeletionService.deleteStepArticleNoteFiles(cabinetId);
         cabinetDeletionService.deleteStepArticleNotes(cabinetId);
         cabinetDeletionService.deleteStepCampaignNoteFiles(cabinetId);
         cabinetDeletionService.deleteStepCampaignNotes(cabinetId);
