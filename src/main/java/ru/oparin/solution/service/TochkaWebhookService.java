@@ -2,12 +2,16 @@ package ru.oparin.solution.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import ru.oparin.solution.service.tochka.TochkaWebhookPublicKeyProvider;
 
 /**
  * Разбор webhook-событий Точка.API.
+ * Тело webhook — JWT-строка (RS256), подписанная Точка Банк.
  */
 @Service
 @RequiredArgsConstructor
@@ -15,30 +19,68 @@ import org.springframework.stereotype.Service;
 public class TochkaWebhookService {
 
     private final ObjectMapper objectMapper;
+    private final TochkaWebhookPublicKeyProvider publicKeyProvider;
 
     /**
      * Извлекает operationId и статус из тела webhook acquiringInternetPayment.
+     * Возвращает {@code null}, если тело невалидно или подпись не прошла проверку.
      */
     public TochkaWebhookEvent parseAcquiringPaymentEvent(String rawBody) {
+        if (rawBody == null || rawBody.isBlank()) {
+            return null;
+        }
+        String body = rawBody.trim();
+        if (body.startsWith("{")) {
+            return parseJsonEvent(body);
+        }
+        return parseJwtEvent(body);
+    }
+
+    private TochkaWebhookEvent parseJwtEvent(String jwt) {
         try {
-            JsonNode root = objectMapper.readTree(rawBody);
+            Claims claims = Jwts.parser()
+                    .verifyWith(publicKeyProvider.getPublicKey())
+                    .build()
+                    .parseSignedClaims(jwt)
+                    .getPayload();
+            return new TochkaWebhookEvent(
+                    claimAsString(claims, "webhookType"),
+                    claimAsString(claims, "operationId"),
+                    claimAsString(claims, "status"),
+                    claimAsString(claims, "paymentLinkId")
+            );
+        } catch (Exception e) {
+            log.warn("Failed to verify or parse Tochka webhook JWT: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private TochkaWebhookEvent parseJsonEvent(String json) {
+        try {
+            JsonNode root = objectMapper.readTree(json);
             JsonNode data = root.path("Data");
             if (data.isMissingNode() || data.isNull()) {
                 data = root;
             }
-            String operationId = firstText(root, data, "operationId");
-            String status = firstText(root, data, "status");
-            String paymentLinkId = firstText(root, data, "paymentLinkId");
-            String webhookType = firstText(root, root, "webhookType");
-            if (operationId == null) {
-                log.warn("Tochka webhook without operationId: {}", rawBody);
-                return null;
-            }
-            return new TochkaWebhookEvent(webhookType, operationId, status, paymentLinkId);
+            return new TochkaWebhookEvent(
+                    firstText(root, root, "webhookType"),
+                    firstText(root, data, "operationId"),
+                    firstText(root, data, "status"),
+                    firstText(root, data, "paymentLinkId")
+            );
         } catch (Exception e) {
-            log.warn("Failed to parse Tochka webhook: {}", e.getMessage());
+            log.warn("Failed to parse Tochka webhook JSON: {}", e.getMessage());
             return null;
         }
+    }
+
+    private static String claimAsString(Claims claims, String name) {
+        Object value = claims.get(name);
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value);
+        return text.isBlank() ? null : text;
     }
 
     private static String firstText(JsonNode root, JsonNode data, String field) {

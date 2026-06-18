@@ -28,7 +28,6 @@ public class TochkaWebhookController {
      */
     @PostMapping("/tochka")
     public ResponseEntity<Void> handleTochkaWebhook(@RequestBody String rawBody) {
-        log.debug("Tochka webhook received");
         TochkaWebhookEvent event = tochkaWebhookService.parseAcquiringPaymentEvent(rawBody);
         if (event == null) {
             return ResponseEntity.badRequest().build();
@@ -39,7 +38,13 @@ public class TochkaWebhookController {
             log.debug("Ignoring Tochka webhook type={}", event.webhookType());
             return ResponseEntity.ok().build();
         }
-        subscriptionPaymentService.completePaymentByOperationId(event.operationId(), event.status());
+        if (event.operationId() != null && !event.operationId().isBlank()) {
+            log.info("Tochka webhook acquiringInternetPayment: operationId={}, status={}",
+                    event.operationId(), event.status());
+            subscriptionPaymentService.completePaymentByOperationId(event.operationId(), event.status());
+        } else {
+            log.debug("Tochka webhook acknowledged without operationId (test ping)");
+        }
         return ResponseEntity.ok().build();
     }
 }
