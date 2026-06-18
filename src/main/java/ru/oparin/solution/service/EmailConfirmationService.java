@@ -28,7 +28,6 @@ public class EmailConfirmationService {
     private final UserRepository userRepository;
     private final EmailConfirmationTokenRepository tokenRepository;
     private final EmailService emailService;
-    private final UserService userService;
 
     /**
      * Отправляет письмо для подтверждения email текущему пользователю.
