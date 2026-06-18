@@ -39,14 +39,10 @@ public class CabinetService {
     private static final String CABINET_ACCESS_DENIED = "Нет доступа к данному кабинету";
     private static final String CABINET_NOT_SELLER_OWNED = "Кабинет не принадлежит селлеру";
     private static final String SELLER_ONLY_CREATE = "Только продавец может создавать кабинеты";
-    private static final String WB_SELLER_INFO_ERROR = "Не удалось получить данные о продавце WB. Проверьте API ключ.";
-    private static final String NAME_REQUIRED_WITHOUT_KEY = "Укажите название кабинета, если не задаёте API ключ WB.";
+    private static final String WB_SELLER_INFO_ERROR = "Не удалось получить данные о продавце WB. Проверьте API-токен.";
     private static final String API_KEY_ALREADY_USED =
             "Этот API-ключ Wildberries уже привязан к другому кабинету в системе. "
-                    + "Откройте существующий кабинет или укажите другой ключ.";
-    /** Подсказка при лимите WB: создание кабинета без ключа по названию. */
-    private static final String CABINET_CREATE_WITHOUT_KEY_HINT =
-            " Можно создать кабинет, указав только название (не заполняя ключ WB).";
+                    + "Откройте существующий кабинет или укажите другой токен.";
     private static final int MAX_CABINET_NAME_LENGTH = 255;
 
     private final CabinetRepository cabinetRepository;
@@ -193,37 +189,25 @@ public class CabinetService {
         if (user.getRole() != Role.SELLER) {
             throw new UserException(SELLER_ONLY_CREATE, HttpStatus.FORBIDDEN);
         }
-        String trimmedApiKey = request.getApiKey() != null ? request.getApiKey().trim() : null;
-        boolean hasApiKey = trimmedApiKey != null && !trimmedApiKey.isBlank();
+        String trimmedApiKey = request.getApiKey().trim();
         String trimmedName = request.getName() != null ? request.getName().trim() : null;
         boolean hasName = trimmedName != null && !trimmedName.isBlank();
 
-        if (!hasApiKey && !hasName) {
-            throw new UserException(NAME_REQUIRED_WITHOUT_KEY, HttpStatus.BAD_REQUEST);
-        }
-
         final String cabinetName;
-        if (!hasApiKey) {
-            cabinetName = normalizeName(trimmedName);
-            if (cabinetName == null) {
-                throw new UserException(NAME_REQUIRED_WITHOUT_KEY, HttpStatus.BAD_REQUEST);
-            }
-        } else if (hasName) {
+        if (hasName) {
             assertSellerInfoOrThrow(trimmedApiKey);
             cabinetName = normalizeName(trimmedName);
         } else {
             cabinetName = resolveCabinetNameFromWb(trimmedApiKey);
         }
 
-        if (hasApiKey) {
-            assertApiKeyNotUsedByAnotherCabinet(null, trimmedApiKey);
-        }
+        assertApiKeyNotUsedByAnotherCabinet(null, trimmedApiKey);
 
         Cabinet cabinet = Cabinet.builder()
                 .user(user)
                 .name(cabinetName)
-                .apiKey(hasApiKey ? trimmedApiKey : null)
-                .tokenType(request.getTokenType() != null ? request.getTokenType() : CabinetTokenType.BASIC)
+                .apiKey(trimmedApiKey)
+                .tokenType(request.getTokenType())
                 .build();
         cabinet = cabinetRepository.save(cabinet);
         return toDto(cabinet);
@@ -503,18 +487,17 @@ public class CabinetService {
             if (retry != null && retry > 0) {
                 return new UserException(
                         "Превышен лимит запросов к WB API. Повторите попытку примерно через: "
-                                + formatSecondsAsHoursMinutesSeconds(retry) + "."
-                                + CABINET_CREATE_WITHOUT_KEY_HINT,
+                                + formatSecondsAsHoursMinutesSeconds(retry) + ".",
                         HttpStatus.TOO_MANY_REQUESTS,
                         retry);
             }
             return new UserException(
-                    "Превышен лимит запросов к WB API. Повторите попытку позже." + CABINET_CREATE_WITHOUT_KEY_HINT,
+                    "Превышен лимит запросов к WB API. Повторите попытку позже.",
                     HttpStatus.TOO_MANY_REQUESTS);
         }
         if (status == HttpStatus.UNAUTHORIZED.value()) {
             return new UserException(
-                    "API ключ WB невалиден или истёк. Проверьте ключ.",
+                    "API-токен WB невалиден или истёк. Проверьте токен.",
                     HttpStatus.BAD_REQUEST);
         }
         return new UserException(WB_SELLER_INFO_ERROR + " (HTTP " + status + ")", HttpStatus.BAD_REQUEST);

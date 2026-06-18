@@ -63,7 +63,7 @@ public class User {
     private Boolean emailConfirmed = false;
 
     /**
-     * Когда последний раз отправляли письмо для подтверждения почты (повтор не чаще 1 раза в 24 ч).
+     * Когда последний раз отправляли письмо для подтверждения почты (повтор не чаще 1 раза в 12 ч).
      */
     @Column(name = "last_email_confirmation_sent_at")
     private Instant lastEmailConfirmationSentAt;

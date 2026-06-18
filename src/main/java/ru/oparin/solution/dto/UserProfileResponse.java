@@ -42,7 +42,7 @@ public class UserProfileResponse {
     private Boolean emailConfirmed;
 
     /**
-     * Дата и время последней отправки письма для подтверждения почты (повтор не чаще 1 раза в 24 ч).
+     * Дата и время последней отправки письма для подтверждения почты (повтор не чаще 1 раза в 12 ч).
      */
     private Instant lastEmailConfirmationSentAt;
 

@@ -1,5 +1,7 @@
 package ru.oparin.solution.dto.cabinet;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
@@ -15,11 +17,13 @@ public class CreateCabinetRequest {
     @Size(min = 1, max = 255)
     private String name;
 
+    @NotBlank(message = "Укажите API-токен WB")
     @Size(min = 1, max = 500)
     private String apiKey;
 
     /**
-     * Тип WB API токена. По умолчанию BASIC.
+     * Тип WB API токена (обязателен при создании).
      */
+    @NotNull(message = "Укажите тип токена")
     private CabinetTokenType tokenType;
 }

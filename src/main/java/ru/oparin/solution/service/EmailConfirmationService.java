@@ -15,15 +15,15 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Сервис подтверждения email: отправка письма (не чаще 1 раза в 24 ч) и подтверждение по токену.
+ * Сервис подтверждения email: отправка письма (не чаще 1 раза в 12 ч) и подтверждение по токену (ссылка действует 12 ч).
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class EmailConfirmationService {
 
-    private static final int TOKEN_VALID_HOURS = 24;
-    private static final int RESEND_COOLDOWN_HOURS = 24;
+    private static final int TOKEN_VALID_HOURS = 12;
+    private static final int RESEND_COOLDOWN_HOURS = 12;
 
     private final UserRepository userRepository;
     private final EmailConfirmationTokenRepository tokenRepository;
@@ -34,7 +34,7 @@ public class EmailConfirmationService {
      * Повторная отправка не чаще 1 раза в 12 часов.
      *
      * @param user текущий пользователь
-     * @throws UserException если почта уже подтверждена или письмо уже отправлялось менее 24 ч назад
+     * @throws UserException если почта уже подтверждена или письмо уже отправлялось менее 12 ч назад
      */
     @Transactional
     public void sendConfirmationEmail(User user) {

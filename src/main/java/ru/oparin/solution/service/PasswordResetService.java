@@ -23,7 +23,7 @@ import java.util.UUID;
 @Slf4j
 public class PasswordResetService {
 
-    private static final int TOKEN_VALID_HOURS = 24;
+    private static final int TOKEN_VALID_HOURS = 12;
 
     private final UserRepository userRepository;
     private final PasswordResetTokenRepository tokenRepository;
