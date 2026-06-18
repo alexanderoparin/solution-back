@@ -15,7 +15,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Сервис подтверждения email: отправка письма (не чаще 1 раза в 24 ч) и подтверждение по токену.
+ * Сервис подтверждения email: отправка письма (не чаще 1 раза в 12 ч) и подтверждение по токену.
  */
 @Service
 @RequiredArgsConstructor
@@ -23,7 +23,7 @@ import java.util.UUID;
 public class EmailConfirmationService {
 
     private static final int TOKEN_VALID_HOURS = 24;
-    private static final int RESEND_COOLDOWN_HOURS = 24;
+    private static final int RESEND_COOLDOWN_HOURS = 12;
 
     private final UserRepository userRepository;
     private final EmailConfirmationTokenRepository tokenRepository;
@@ -32,7 +32,7 @@ public class EmailConfirmationService {
 
     /**
      * Отправляет письмо для подтверждения email текущему пользователю.
-     * Повторная отправка не чаще 1 раза в 24 часа.
+     * Повторная отправка не чаще 1 раза в 12 часов.
      *
      * @param user текущий пользователь
      * @throws UserException если почта уже подтверждена или письмо уже отправлялось менее 24 ч назад
