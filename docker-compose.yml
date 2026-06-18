@@ -20,8 +20,8 @@ services:
       # JWT
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRATION=${JWT_EXPIRATION:-86400000}
-      # Точка Банк (интернет-эквайринг). Пока выключено на проде — включить после настройки эквайринга и webhook.
-      - TOCHKA_ENABLED=false
+      # Точка Банк (интернет-эквайринг)
+      - TOCHKA_ENABLED=${TOCHKA_ENABLED:-true}
       - TOCHKA_SANDBOX=${TOCHKA_SANDBOX:-false}
       - TOCHKA_JWT_TOKEN=${TOCHKA_JWT_TOKEN}
       - TOCHKA_CLIENT_ID=${TOCHKA_CLIENT_ID}
