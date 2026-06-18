@@ -39,8 +39,8 @@ public class TochkaProperties {
     /** Все способы оплаты Точка.API; на странице оплаты покупатель выберет доступные. */
     public static final List<String> ALL_PAYMENT_MODES = List.of("card", "tinkoff", "sbp", "dolyame");
 
-    /** Система налогообложения в чеке (УСН доходы минус расходы). */
-    public static final String TAX_SYSTEM_CODE = "usn_income_outcome";
+    /** Система налогообложения в чеке (УСН доходы). */
+    public static final String TAX_SYSTEM_CODE = "usn_income";
 
     /** Ставка НДС в позиции чека. */
     public static final String VAT_TYPE = "none";
