@@ -62,6 +62,7 @@ public class CampaignManageService {
                 .articlesCount(detail.getArticlesCount())
                 .articles(detail.getArticles())
                 .operationalStatus(resolveOperationalStatus(state, campaign, advertId, cabinetId))
+                .scheduleEnabled(!state.isManualStopped())
                 .autoBudget(mapAutoBudget(autoBudgetOrDefaults(advertId, cabinetId)))
                 .slots(loadSlots(advertId, cabinetId))
                 .build();
@@ -204,13 +205,12 @@ public class CampaignManageService {
         ZonedDateTime now = ZonedDateTime.now(SCHEDULE_ZONE);
         boolean inActiveSlot = findActiveSlotNow(advertId, cabinetId, now).isPresent();
         if (inActiveSlot) {
-            changeLogService.log(advertId, cabinetId, user, "Нажата кнопка «Запустить»");
+            changeLogService.log(advertId, cabinetId, user, "Расписание включено");
             timelineService.recordStart(advertId, cabinetId);
             return controlService.enqueueStart(cabinet, advertId);
         }
 
-        changeLogService.log(advertId, cabinetId, user,
-                "Расписание включено. РК запустится автоматически в ближайший слот");
+        changeLogService.log(advertId, cabinetId, user, "Расписание включено");
         return new CampaignControlEnqueueResponse(false, null, "Расписание включено");
     }
 
@@ -223,9 +223,14 @@ public class CampaignManageService {
         state.setActiveSlotId(null);
         state.setBudgetAtSlotStart(null);
         stateRepository.save(state);
-        changeLogService.log(advertId, cabinetId, user, "Нажата кнопка «Остановить»");
-        timelineService.recordStop(advertId, cabinetId);
-        return controlService.enqueuePause(cabinet, advertId);
+        changeLogService.log(advertId, cabinetId, user, "Расписание выключено");
+
+        PromotionCampaign campaign = campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).orElse(null);
+        if (campaign != null && campaign.getStatus() == CampaignStatus.ACTIVE) {
+            timelineService.recordStop(advertId, cabinetId);
+            return controlService.enqueuePause(cabinet, advertId);
+        }
+        return new CampaignControlEnqueueResponse(false, null, "Расписание выключено");
     }
 
     /**
@@ -311,12 +316,6 @@ public class CampaignManageService {
         boolean wbActive = campaign != null && campaign.getStatus() == CampaignStatus.ACTIVE;
         if (inSlot && wbActive) {
             return "RUNNING";
-        }
-        boolean hasSlots = !slotRepository
-                .findByCampaignIdAndCabinetIdOrderByDayOfWeekAscStartTimeAsc(advertId, cabinetId)
-                .isEmpty();
-        if (hasSlots) {
-            return "SCHEDULED";
         }
         return "STOPPED";
     }

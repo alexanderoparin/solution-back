@@ -20,8 +20,10 @@ public class CampaignManageResponseDto {
     private String statusName;
     private Integer articlesCount;
     private List<ArticleSummaryDto> articles;
-    /** RUNNING — в слоте и активна; SCHEDULED — автозапуск включён, ожидание слота; STOPPED — автозапуск выключен. */
+    /** RUNNING — в слоте и активна в WB; STOPPED — иначе. */
     private String operationalStatus;
+    /** Автозапуск по расписанию включён (не нажата «Остановить»). */
+    private boolean scheduleEnabled;
     private CampaignAutoBudgetDto autoBudget;
     private List<CampaignScheduleSlotDto> slots;
 }
