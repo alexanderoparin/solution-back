@@ -200,9 +200,18 @@ public class CampaignManageService {
         CampaignManagementState state = getOrCreateState(advertId, cabinetId);
         state.setManualStopped(false);
         stateRepository.save(state);
-        changeLogService.log(advertId, cabinetId, user, "Нажата кнопка «Запустить»");
-        timelineService.recordStart(advertId, cabinetId);
-        return controlService.enqueueStart(cabinet, advertId);
+
+        ZonedDateTime now = ZonedDateTime.now(SCHEDULE_ZONE);
+        boolean inActiveSlot = findActiveSlotNow(advertId, cabinetId, now).isPresent();
+        if (inActiveSlot) {
+            changeLogService.log(advertId, cabinetId, user, "Нажата кнопка «Запустить»");
+            timelineService.recordStart(advertId, cabinetId);
+            return controlService.enqueueStart(cabinet, advertId);
+        }
+
+        changeLogService.log(advertId, cabinetId, user,
+                "Расписание включено. РК запустится автоматически в ближайший слот");
+        return new CampaignControlEnqueueResponse(false, null, "Расписание включено");
     }
 
     @Transactional
