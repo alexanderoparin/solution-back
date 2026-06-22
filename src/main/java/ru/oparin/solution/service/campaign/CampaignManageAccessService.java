@@ -16,15 +16,26 @@ import ru.oparin.solution.service.SellerWorkerService;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 
 /**
- * Проверка доступа к разделу «Управление РК» по подписке селлера.
+ * Проверка entitlement на «Управление РК»: подписка campaign_* или клиент агентства ({@code agency_managed}).
+ * <p>
+ * Используется и для ручных операций (UI/API), и для планировщика расписания.
  */
 @Service
 @RequiredArgsConstructor
 public class CampaignManageAccessService {
 
     public static final String SUBSCRIPTION_REQUIRED_CODE = "CAMPAIGN_MANAGE_SUBSCRIPTION_REQUIRED";
+    public static final String STATUS_AGENCY = "AGENCY";
+
+    public static final String SCHEDULE_STOPPED_SUBSCRIPTION_EXPIRED =
+            "Расписание отключено: истекла подписка на «Управление РК». "
+                    + "Продлите подписку и нажмите «Запустить», чтобы снова включить автоматический запуск.";
+    public static final String SCHEDULE_STOPPED_NO_SUBSCRIPTION =
+            "Расписание отключено: нет активной подписки на «Управление РК». "
+                    + "Оформите подписку и нажмите «Запустить» для автоматического запуска.";
 
     private static final List<String> ACTIVE_STATUSES = List.of("active", "trial");
 
@@ -55,20 +66,51 @@ public class CampaignManageAccessService {
         return subscriptionProperties.isCampaignManagementEnabled();
     }
 
+    /**
+     * Право на автоматику и управление РК для владельца кабинета (селлера).
+     */
+    public boolean hasCampaignEntitlement(User seller) {
+        if (!isCampaignManagementEnabled()) {
+            return true;
+        }
+        if (seller == null) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(seller.getAgencyManaged())) {
+            return true;
+        }
+        return findActiveSubscription(seller).isPresent();
+    }
+
+    /**
+     * Текст события в журнале РК при отключении расписания из-за отсутствия entitlement.
+     */
+    public String scheduleStopMessageForSeller(User seller) {
+        if (seller == null) {
+            return SCHEDULE_STOPPED_NO_SUBSCRIPTION;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        boolean hadCampaignSubscription = subscriptionRepository
+                .findFirstByUser_IdAndPlan_CodeStartingWithAndExpiresAtBeforeOrderByExpiresAtDesc(
+                        seller.getId(), "campaign_", now)
+                .isPresent();
+        return hadCampaignSubscription ? SCHEDULE_STOPPED_SUBSCRIPTION_EXPIRED : SCHEDULE_STOPPED_NO_SUBSCRIPTION;
+    }
+
+    /**
+     * Есть ли право на ручные операции управления РК для текущего контекста.
+     */
     public boolean hasAccess(User actor, User seller) {
         if (!isCampaignManagementEnabled()) {
             return true;
         }
-        if (actor != null && actor.getRole() == Role.ADMIN) {
-            return true;
-        }
         User holder = resolveSubscriptionHolder(actor, seller);
-        if (holder == null) {
-            return false;
-        }
-        return findActiveSubscription(holder).isPresent();
+        return hasCampaignEntitlement(holder);
     }
 
+    /**
+     * Требует entitlement для ручных операций; при отсутствии — {@link UserException} 403.
+     */
     public void requireAccess(User actor, User seller) {
         if (!hasAccess(actor, seller)) {
             throw new UserException(
@@ -87,14 +129,6 @@ public class CampaignManageAccessService {
                     .canActivateFree(false)
                     .build();
         }
-        if (actor != null && actor.getRole() == Role.ADMIN) {
-            return CampaignManageAccessDto.builder()
-                    .enabled(true)
-                    .hasAccess(true)
-                    .status("ACTIVE")
-                    .canActivateFree(false)
-                    .build();
-        }
 
         User holder = resolveSubscriptionHolder(actor, seller);
         if (holder == null) {
@@ -102,6 +136,15 @@ public class CampaignManageAccessService {
                     .enabled(true)
                     .hasAccess(false)
                     .status("NONE")
+                    .canActivateFree(false)
+                    .build();
+        }
+
+        if (Boolean.TRUE.equals(holder.getAgencyManaged())) {
+            return CampaignManageAccessDto.builder()
+                    .enabled(true)
+                    .hasAccess(true)
+                    .status(STATUS_AGENCY)
                     .canActivateFree(false)
                     .build();
         }
@@ -144,21 +187,7 @@ public class CampaignManageAccessService {
                 });
     }
 
-    public boolean hasAccessForCabinetOwner(Long cabinetUserId) {
-        if (!isCampaignManagementEnabled()) {
-            return true;
-        }
-        // cabinet owner is seller - loaded by id elsewhere
-        return subscriptionRepository
-                .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
-                        cabinetUserId,
-                        ACTIVE_STATUSES,
-                        LocalDateTime.now()
-                )
-                .isPresent();
-    }
-
-    private java.util.Optional<Subscription> findActiveSubscription(User holder) {
+    private Optional<Subscription> findActiveSubscription(User holder) {
         return subscriptionRepository.findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
                 holder.getId(),
                 ACTIVE_STATUSES,

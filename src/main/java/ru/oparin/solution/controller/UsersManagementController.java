@@ -228,7 +228,7 @@ public class UsersManagementController {
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "true") boolean onlyActive,
             @RequestParam(defaultValue = ManagedCabinetSortField.DEFAULT_REQUEST_VALUE) ManagedCabinetSortField sortBy,
-            @RequestParam(defaultValue = "ASC") Sort.Direction sortDir,
+            @RequestParam(defaultValue = "DESC") Sort.Direction sortDir,
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);

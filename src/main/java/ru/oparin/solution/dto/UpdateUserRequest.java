@@ -23,5 +23,10 @@ public class UpdateUserRequest {
      * Флаг активности пользователя.
      */
     private Boolean isActive;
+
+    /**
+     * Клиент агентства (только для SELLER, меняет ADMIN).
+     */
+    private Boolean agencyManaged;
 }
 

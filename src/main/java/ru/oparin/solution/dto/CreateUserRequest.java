@@ -34,5 +34,10 @@ public class CreateUserRequest {
      */
     @NotNull(message = "Роль обязательна")
     private Role role;
+
+    /**
+     * Клиент агентства (только для SELLER, задаёт ADMIN при создании).
+     */
+    private Boolean agencyManaged;
 }
 

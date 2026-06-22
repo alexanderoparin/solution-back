@@ -151,6 +151,7 @@ public class UserService {
                 .isActive(true)
                 .emailConfirmed(false)
                 .marketingConsent(marketingConsent)
+                .agencyManaged(false)
                 .build();
     }
 
@@ -281,6 +282,7 @@ public class UserService {
                 .role(request.getRole())
                 .isActive(true)
                 .emailConfirmed(false)
+                .agencyManaged(resolveAgencyManagedOnCreate(request, currentUser))
                 .build();
 
         newUser = userRepository.save(newUser);
@@ -314,7 +316,28 @@ public class UserService {
             userToUpdate.setIsActive(request.getIsActive());
         }
 
+        applyAgencyManagedOnUpdate(userToUpdate, request, currentUser);
+
         return userRepository.save(userToUpdate);
+    }
+
+    private boolean resolveAgencyManagedOnCreate(CreateUserRequest request, User currentUser) {
+        if (request.getRole() != Role.SELLER) {
+            return false;
+        }
+        if (currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER) {
+            return request.getAgencyManaged() == null || Boolean.TRUE.equals(request.getAgencyManaged());
+        }
+        return false;
+    }
+
+    private void applyAgencyManagedOnUpdate(User userToUpdate, UpdateUserRequest request, User currentUser) {
+        if (currentUser.getRole() != Role.ADMIN || userToUpdate.getRole() != Role.SELLER) {
+            return;
+        }
+        if (request.getAgencyManaged() != null) {
+            userToUpdate.setAgencyManaged(request.getAgencyManaged());
+        }
     }
 
     /**
@@ -528,6 +551,7 @@ public class UserService {
                 .email(user.getEmail())
                 .role(user.getRole())
                 .isActive(user.getIsActive())
+                .agencyManaged(user.getRole() == Role.SELLER ? user.getAgencyManaged() : null)
                 .createdAt(user.getCreatedAt())
                 .ownerEmail(sellerWorkerService.findSellerEmailForWorker(user))
                 .managerEmails(managerEmails)

@@ -25,5 +25,11 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     );
 
     boolean existsByUser_IdAndPlan_Code(Long userId, String planCode);
+
+    Optional<Subscription> findFirstByUser_IdAndPlan_CodeStartingWithAndExpiresAtBeforeOrderByExpiresAtDesc(
+            Long userId,
+            String planCodePrefix,
+            LocalDateTime now
+    );
 }
 

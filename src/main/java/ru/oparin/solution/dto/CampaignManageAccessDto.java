@@ -20,7 +20,7 @@ public class CampaignManageAccessDto {
     /** Есть ли доступ к действиям в разделе. */
     private boolean hasAccess;
 
-    /** NONE — не подключали; ACTIVE — активна; EXPIRED — истекла. */
+    /** NONE — не подключали; ACTIVE — активна; EXPIRED — истекла; AGENCY — клиент агентства. */
     private String status;
 
     private LocalDateTime expiresAt;

@@ -52,6 +52,11 @@ public class UserListItemDto {
     private List<String> managerEmails;
 
     /**
+     * Клиент агентства: Управление РК без подписки (только для SELLER).
+     */
+    private Boolean agencyManaged;
+
+    /**
      * Дата последнего обновления данных (для селлеров).
      */
     private LocalDateTime lastDataUpdateAt;

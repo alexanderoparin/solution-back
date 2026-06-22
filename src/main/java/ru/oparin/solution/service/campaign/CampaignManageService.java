@@ -44,6 +44,7 @@ public class CampaignManageService {
     private final CampaignBudgetTimelineService timelineService;
     private final CampaignBudgetFetchService budgetFetchService;
     private final CampaignBudgetChartService budgetChartService;
+    private final CampaignManageAccessService campaignManageAccessService;
 
     @Transactional(readOnly = true)
     public CampaignManageResponseDto getManage(Long advertId, Long cabinetId, Long sellerId) {
@@ -216,6 +217,46 @@ public class CampaignManageService {
         changeLogService.log(advertId, cabinetId, user, "Нажата кнопка «Остановить»");
         timelineService.recordStop(advertId, cabinetId);
         return controlService.enqueuePause(cabinet, advertId);
+    }
+
+    /**
+     * Останавливает активное расписание при потере entitlement (истечение подписки).
+     * Идемпотентно: при уже остановленном расписании ничего не делает.
+     */
+    @Transactional
+    public void stopScheduleDueToLostEntitlement(
+            CampaignManagementState state,
+            Cabinet cabinet,
+            User seller
+    ) {
+        if (state == null || state.isManualStopped() || !state.isScheduleEnabled()) {
+            return;
+        }
+        Long advertId = state.getCampaignId();
+        Long cabinetId = cabinet.getId();
+        PromotionCampaign campaign = campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).orElse(null);
+        boolean campaignWasActive = campaign != null && campaign.getStatus() == CampaignStatus.ACTIVE;
+
+        if (campaignWasActive) {
+            if (!controlWriteService.getCapabilities(cabinet).canControl()) {
+                return;
+            }
+            try {
+                controlService.enqueuePause(cabinet, advertId);
+                timelineService.recordStop(advertId, cabinetId);
+            } catch (Exception ignored) {
+                return;
+            }
+        }
+
+        String message = campaignManageAccessService.scheduleStopMessageForSeller(seller);
+        if (campaignWasActive) {
+            message = message + " Активная РК остановлена.";
+        }
+        state.setManualStopped(true);
+        SlotBudgetSpendUtils.resetSlotSession(state);
+        changeLogService.log(advertId, cabinetId, null, message);
+        stateRepository.save(state);
     }
 
     @Transactional(readOnly = true)

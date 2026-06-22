@@ -16,6 +16,8 @@ public class ManagedCabinetRowDto {
 
     private Long sellerId;
     private String sellerEmail;
+    /** Клиент агентства (флаг на селлере; одинаков для всех его кабинетов). */
+    private Boolean agencyManaged;
     /** Email менеджеров с активным доступом к селлеру. */
     private List<String> managerEmails;
     private CabinetDto cabinet;

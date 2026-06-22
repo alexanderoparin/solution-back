@@ -111,6 +111,7 @@ public class CabinetService {
             return ManagedCabinetRowDto.builder()
                     .sellerId(sellerId)
                     .sellerEmail(c.getUser().getEmail())
+                    .agencyManaged(Boolean.TRUE.equals(c.getUser().getAgencyManaged()))
                     .managerEmails(managerEmailsBySeller.getOrDefault(sellerId, List.of()))
                     .cabinet(toDto(c))
                     .build();

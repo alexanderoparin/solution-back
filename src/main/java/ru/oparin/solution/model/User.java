@@ -76,6 +76,14 @@ public class User {
     private Boolean marketingConsent = false;
 
     /**
+     * Клиент агентства: Управление РК и расписание без подписки campaign_*.
+     * Имеет смысл только для {@link Role#SELLER}.
+     */
+    @Column(name = "agency_managed", nullable = false)
+    @Builder.Default
+    private Boolean agencyManaged = false;
+
+    /**
      * Дата создания записи.
      */
     @CreatedDate

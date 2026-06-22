@@ -15,8 +15,8 @@ public enum ManagedCabinetSortField {
     LAST_DATA_UPDATE_AT("LAST_DATA_UPDATE_AT"),
     LAST_STOCKS_UPDATE_AT("LAST_STOCKS_UPDATE_AT");
 
-    /** По умолчанию: сначала самые старые даты основного обновления. */
-    public static final String DEFAULT_REQUEST_VALUE = "LAST_DATA_UPDATE_AT";
+    /** По умолчанию: сначала кабинеты с большим ID. */
+    public static final String DEFAULT_REQUEST_VALUE = "CABINET_ID";
 
     private final String paramValue;
 }
