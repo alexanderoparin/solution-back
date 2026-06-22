@@ -312,6 +312,12 @@ public class CampaignManageService {
         if (inSlot && wbActive) {
             return "RUNNING";
         }
+        boolean hasSlots = !slotRepository
+                .findByCampaignIdAndCabinetIdOrderByDayOfWeekAscStartTimeAsc(advertId, cabinetId)
+                .isEmpty();
+        if (hasSlots) {
+            return "SCHEDULED";
+        }
         return "STOPPED";
     }
 
