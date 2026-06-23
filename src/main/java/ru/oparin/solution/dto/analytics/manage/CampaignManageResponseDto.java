@@ -20,8 +20,8 @@ public class CampaignManageResponseDto {
     private String statusName;
     private Integer articlesCount;
     private List<ArticleSummaryDto> articles;
-    /** RUNNING — в слоте и активна в WB; STOPPED — иначе. */
-    private String operationalStatus;
+    /** OFF, WAITING, RUNNING, SLOT_LIMIT, NO_ACCESS, NO_SLOTS — статус автоматики биддера. */
+    private String bidderStatus;
     /** Автозапуск по расписанию включён (не нажата «Остановить»). */
     private boolean scheduleEnabled;
     private CampaignAutoBudgetDto autoBudget;

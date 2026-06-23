@@ -61,7 +61,8 @@ public class AdvertisingController {
                 cabinetId
         );
         Long resolvedCabinetId = context.cabinet() != null ? context.cabinet().getId() : null;
-        List<CampaignDto> campaigns = analyticsService.listCampaignsByCabinet(resolvedCabinetId, dateFrom, dateTo);
+        List<CampaignDto> campaigns = analyticsService.listCampaignsByCabinet(
+                resolvedCabinetId, dateFrom, dateTo, context.user());
         return ResponseEntity.ok(campaigns);
     }
 

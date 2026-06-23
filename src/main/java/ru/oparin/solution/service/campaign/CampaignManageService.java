@@ -45,15 +45,19 @@ public class CampaignManageService {
     private final CampaignBudgetFetchService budgetFetchService;
     private final CampaignBudgetChartService budgetChartService;
     private final CampaignManageAccessService campaignManageAccessService;
+    private final BidderStatusResolver bidderStatusResolver;
 
     @Transactional(readOnly = true)
-    public CampaignManageResponseDto getManage(Long advertId, Long cabinetId, Long sellerId) {
-        var detail = analyticsService.getCampaignDetail(advertId, cabinetId, sellerId);
+    public CampaignManageResponseDto getManage(Long advertId, Long cabinetId, User seller) {
+        var detail = analyticsService.getCampaignDetail(advertId, cabinetId, seller != null ? seller.getId() : null);
         if (detail == null) {
             return null;
         }
         CampaignManagementState state = stateOrDefaults(advertId, cabinetId);
         PromotionCampaign campaign = campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).orElse(null);
+        List<CampaignScheduleSlot> slots = slotRepository
+                .findByCampaignIdAndCabinetIdOrderByDayOfWeekAscStartTimeAsc(advertId, cabinetId);
+        BidderStatus bidderStatus = bidderStatusResolver.resolve(state, campaign, advertId, cabinetId, slots, seller);
         return CampaignManageResponseDto.builder()
                 .id(detail.getId())
                 .name(detail.getName())
@@ -61,7 +65,7 @@ public class CampaignManageService {
                 .statusName(detail.getStatus() != null && detail.getStatus() == 9 ? "активна" : "приостановлена")
                 .articlesCount(detail.getArticlesCount())
                 .articles(detail.getArticles())
-                .operationalStatus(resolveOperationalStatus(state, campaign, advertId, cabinetId))
+                .bidderStatus(bidderStatus.name())
                 .scheduleEnabled(!state.isManualStopped())
                 .autoBudget(mapAutoBudget(autoBudgetOrDefaults(advertId, cabinetId)))
                 .slots(loadSlots(advertId, cabinetId))
@@ -294,30 +298,9 @@ public class CampaignManageService {
     }
 
     public Optional<CampaignScheduleSlot> findActiveSlotNow(Long advertId, Long cabinetId, ZonedDateTime now) {
-        short dow = (short) now.getDayOfWeek().getValue();
-        LocalTime time = CampaignSlotTimeUtils.snap(now.toLocalTime());
-        return slotRepository.findByCampaignIdAndCabinetIdOrderByDayOfWeekAscStartTimeAsc(advertId, cabinetId).stream()
-                .filter(s -> s.getDayOfWeek() == dow)
-                .filter(s -> CampaignSlotTimeUtils.containsTime(time, s.getStartTime(), s.getEndTime()))
-                .findFirst();
-    }
-
-    public String resolveOperationalStatus(
-            CampaignManagementState state,
-            PromotionCampaign campaign,
-            Long advertId,
-            Long cabinetId
-    ) {
-        if (state.isManualStopped()) {
-            return "STOPPED";
-        }
-        ZonedDateTime now = ZonedDateTime.now(SCHEDULE_ZONE);
-        boolean inSlot = findActiveSlotNow(advertId, cabinetId, now).isPresent();
-        boolean wbActive = campaign != null && campaign.getStatus() == CampaignStatus.ACTIVE;
-        if (inSlot && wbActive) {
-            return "RUNNING";
-        }
-        return "STOPPED";
+        List<CampaignScheduleSlot> slots = slotRepository
+                .findByCampaignIdAndCabinetIdOrderByDayOfWeekAscStartTimeAsc(advertId, cabinetId);
+        return bidderStatusResolver.findActiveSlotNow(slots, now);
     }
 
     private void applySlotEditPolicy(Long advertId, Long cabinetId, CampaignManagementState state) {

@@ -44,8 +44,7 @@ public class CampaignManageController {
     ) {
         SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId);
         Long resolvedCabinetId = ctx.cabinet() != null ? ctx.cabinet().getId() : null;
-        Long resolvedSellerId = ctx.user() != null ? ctx.user().getId() : null;
-        CampaignManageResponseDto dto = manageService.getManage(advertId, resolvedCabinetId, resolvedSellerId);
+        CampaignManageResponseDto dto = manageService.getManage(advertId, resolvedCabinetId, ctx.user());
         if (dto == null) {
             return ResponseEntity.notFound().build();
         }

@@ -14,6 +14,7 @@ import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.*;
 import ru.oparin.solution.service.analytics.*;
+import ru.oparin.solution.service.campaign.BidderStatusResolver;
 import ru.oparin.solution.service.campaign.CampaignGoalService;
 import ru.oparin.solution.util.PeriodGenerator;
 
@@ -57,6 +58,9 @@ public class AnalyticsService {
     private final CabinetService cabinetService;
     private final ArticleGoalService articleGoalService;
     private final CampaignGoalService campaignGoalService;
+    private final CampaignManagementStateRepository campaignManagementStateRepository;
+    private final CampaignScheduleSlotRepository campaignScheduleSlotRepository;
+    private final BidderStatusResolver bidderStatusResolver;
 
 
     /**
@@ -1056,7 +1060,7 @@ public class AnalyticsService {
         return campaigns.stream()
                 .map(c -> buildCampaignDto(c, scopeNmIds,
                         statsByCampaignFinal.getOrDefault(c.getAdvertId(), Collections.emptyList()),
-                        withMetrics, null))
+                        withMetrics, null, null))
                 .collect(Collectors.toList());
     }
 
@@ -1160,7 +1164,8 @@ public class AnalyticsService {
             Set<Long> scopeNmIds,
             List<PromotionCampaignStatistics> campaignStats,
             boolean withMetrics,
-            Integer articlesCount
+            Integer articlesCount,
+            BidderStatus bidderStatus
     ) {
         CampaignDto.CampaignDtoBuilder builder = CampaignDto.builder()
                 .id(c.getAdvertId())
@@ -1172,6 +1177,9 @@ public class AnalyticsService {
                 .updatedAt(resolveCampaignUpdatedAt(c));
         if (articlesCount != null) {
             builder.articlesCount(articlesCount);
+        }
+        if (bidderStatus != null) {
+            builder.bidderStatus(bidderStatus.name());
         }
         if (withMetrics) {
             applyCampaignPeriodMetrics(builder, scopeNmIds, campaignStats);
@@ -1232,7 +1240,7 @@ public class AnalyticsService {
      * Если dateFrom/dateTo не заданы — используются последние 14 дней.
      */
     @Transactional(readOnly = true)
-    public List<CampaignDto> listCampaignsByCabinet(Long cabinetId, LocalDate dateFrom, LocalDate dateTo) {
+    public List<CampaignDto> listCampaignsByCabinet(Long cabinetId, LocalDate dateFrom, LocalDate dateTo, User seller) {
         if (cabinetId == null) {
             return Collections.emptyList();
         }
@@ -1262,13 +1270,23 @@ public class AnalyticsService {
         Map<Long, Integer> articlesCountByCampaign = articleCounts.stream()
                 .collect(Collectors.toMap(row -> (Long) row[0], row -> ((Number) row[1]).intValue()));
 
+        Map<Long, CampaignManagementState> statesByCampaignId = campaignManagementStateRepository.findByCabinetId(cabinetId)
+                .stream()
+                .collect(Collectors.toMap(CampaignManagementState::getCampaignId, s -> s, (a, b) -> a));
+        Map<Long, List<CampaignScheduleSlot>> slotsByCampaignId = campaignScheduleSlotRepository.findByCabinetId(cabinetId)
+                .stream()
+                .collect(Collectors.groupingBy(CampaignScheduleSlot::getCampaignId));
+        Map<Long, BidderStatus> bidderStatuses = bidderStatusResolver.resolveForCabinet(
+                cabinetId, seller, campaigns, statesByCampaignId, slotsByCampaignId);
+
         return campaigns.stream()
                 .map(c -> {
                     Long advertId = c.getAdvertId();
                     Set<Long> scopeNmIds = nmIdsByCampaign.getOrDefault(advertId, Collections.emptySet());
                     List<PromotionCampaignStatistics> stats = statsByCampaign.getOrDefault(advertId, Collections.emptyList());
                     Integer articlesCount = articlesCountByCampaign.getOrDefault(advertId, 0);
-                    return buildCampaignDto(c, scopeNmIds, stats, true, articlesCount);
+                    BidderStatus bidderStatus = bidderStatuses.get(advertId);
+                    return buildCampaignDto(c, scopeNmIds, stats, true, articlesCount, bidderStatus);
                 })
                 .collect(Collectors.toList());
     }
