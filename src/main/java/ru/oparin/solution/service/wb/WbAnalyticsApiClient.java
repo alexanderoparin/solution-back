@@ -158,7 +158,6 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
         LocalDate yesterday = LocalDate.now().minusDays(1);
         LocalDate earliestAllowed = yesterday.minusDays(MAX_ANALYTICS_PERIOD_DAYS - 1); // 6 дней назад = 7 дней с вчера
         if (from.isBefore(earliestAllowed)) {
-            log.warn("Дата начала {} раньше допустимой для API (макс. последние 7 дней). Ограничиваем до {} nmID={}", from, earliestAllowed, nmId);
             return earliestAllowed;
         }
         return from;
