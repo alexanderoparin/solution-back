@@ -12,6 +12,7 @@ import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.Optional;
 
 /**
@@ -27,6 +28,7 @@ public class CampaignBudgetFetchService {
     private final WbPromotionApiClient promotionApiClient;
     private final CampaignBudgetTimelineService timelineService;
     private final CabinetBudgetPollCoordinator budgetPollCoordinator;
+    private final CampaignBudgetPollEligibility pollEligibility;
 
     /**
      * Возвращает бюджет кампании: из кэша состояния, если лимит не позволяет запрос, иначе — свежий ответ WB.
@@ -37,6 +39,10 @@ public class CampaignBudgetFetchService {
             return Optional.empty();
         }
         CabinetTokenType tokenType = cabinet.getTokenType() != null ? cabinet.getTokenType() : CabinetTokenType.BASIC;
+        if (state != null && pollEligibility.isSlotBudgetCapPaused(
+                state, advertId, cabinet.getId(), ZonedDateTime.now(ZONE))) {
+            return cachedBudget(state);
+        }
         if (state != null && state.getLastBudgetTotal() != null && state.getLastBudgetCheckedAt() != null
                 && isFresh(state.getLastBudgetCheckedAt(), tokenType)) {
             return Optional.of(state.getLastBudgetTotal());
