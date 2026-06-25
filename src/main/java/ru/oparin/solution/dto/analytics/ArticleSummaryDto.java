@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * DTO для краткой информации об артикуле в сводной таблице.
@@ -59,5 +60,10 @@ public class ArticleSummaryDto {
      * Приоритетная карточка для ускоренной обработки событий по nmID.
      */
     private Boolean isPriority;
+
+    /**
+     * Дата и время появления карточки на Wildberries.
+     */
+    private LocalDateTime wbCreatedAt;
 }
 

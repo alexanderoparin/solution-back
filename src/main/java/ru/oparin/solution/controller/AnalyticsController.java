@@ -87,7 +87,9 @@ public class AnalyticsController {
                 request.getIncludedNmIds(),
                 request.getFilterToNone(),
                 request.getOnlyWithPhoto(),
-                request.getOnlyPriority()
+                request.getOnlyPriority(),
+                request.getSortBy(),
+                request.getSortDir()
         );
         
         return ResponseEntity.ok(response);

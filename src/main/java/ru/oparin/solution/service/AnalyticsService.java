@@ -80,7 +80,9 @@ public class AnalyticsService {
             List<Long> includedNmIds,
             Boolean filterToNone,
             Boolean onlyWithPhoto,
-            Boolean onlyPriority
+            Boolean onlyPriority,
+            String sortBy,
+            String sortDir
     ) {
         validatePeriods(periods);
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
@@ -97,6 +99,9 @@ public class AnalyticsService {
                     .collect(Collectors.toList());
         }
 
+        ArticleSummarySortField resolvedSortBy = ArticleSummarySortField.fromParam(sortBy);
+        Sort.Direction resolvedSortDir = Sort.Direction.fromOptionalString(sortDir).orElse(Sort.Direction.DESC);
+
         boolean paginated = page != null && size != null && size > 0;
         if (paginated) {
             List<ProductCard> filtered = visibleCards;
@@ -111,6 +116,7 @@ public class AnalyticsService {
             if (search != null && !search.isBlank()) {
                 filtered = filterCardsBySearch(filtered, search.trim());
             }
+            sortProductCards(filtered, resolvedSortBy, resolvedSortDir);
             int total = filtered.size();
             int from = Math.min(page * size, total);
             int to = Math.min(from + size, total);
@@ -127,9 +133,11 @@ public class AnalyticsService {
         Map<Integer, AggregatedMetricsDto> aggregatedMetrics = calculateAggregatedMetrics(
                 visibleCards, sortedPeriods, seller.getId(), cabinetId);
         boolean itemRatingSupported = isItemRatingSupported(seller.getId(), cabinetId);
+        List<ProductCard> sortedCards = new ArrayList<>(visibleCards);
+        sortProductCards(sortedCards, resolvedSortBy, resolvedSortDir);
         return SummaryResponseDto.builder()
                 .periods(sortedPeriods)
-                .articles(mapToArticleSummaries(visibleCards, itemRatingSupported))
+                .articles(mapToArticleSummaries(sortedCards, itemRatingSupported))
                 .aggregatedMetrics(aggregatedMetrics)
                 .totalArticles(null)
                 .build();
@@ -152,6 +160,7 @@ public class AnalyticsService {
                     .filter(c -> Boolean.TRUE.equals(c.getIsPriority()))
                     .collect(Collectors.toList());
         }
+        sortProductCards(allCards, ArticleSummarySortField.WB_CREATED_AT, Sort.Direction.DESC);
         return mapToArticleSummaries(allCards, isItemRatingSupported(seller.getId(), cabinetId));
     }
 
@@ -613,8 +622,26 @@ public class AnalyticsService {
                 ? productCardRepository.findByCabinet_Id(cabinetId)
                 : productCardRepository.findByCabinet_User_Id(sellerId);
         return ProductCardFilter.filterVisibleCards(allCards, excludedNmIds).stream()
-                .sorted(Comparator.comparing(ProductCard::getNmId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .collect(Collectors.toList());
+    }
+
+    private void sortProductCards(
+            List<ProductCard> cards,
+            ArticleSummarySortField sortBy,
+            Sort.Direction sortDir
+    ) {
+        ArticleSummarySortField effectiveSortBy = sortBy != null ? sortBy : ArticleSummarySortField.WB_CREATED_AT;
+        Sort.Direction effectiveSortDir = sortDir != null ? sortDir : Sort.Direction.DESC;
+        Comparator<ProductCard> comparator = switch (effectiveSortBy) {
+            case WB_CREATED_AT -> Comparator.comparing(
+                    ProductCard::getWbCreatedAt,
+                    Comparator.nullsLast(Comparator.naturalOrder())
+            );
+        };
+        if (effectiveSortDir == Sort.Direction.DESC) {
+            comparator = comparator.reversed();
+        }
+        cards.sort(comparator);
     }
 
     private Map<Integer, AggregatedMetricsDto> calculateAggregatedMetrics(
@@ -1558,6 +1585,7 @@ public class AnalyticsService {
                 .vendorCode(card.getVendorCode())
                 .rating(itemRatingSupported ? ArticleRatingUtils.toDisplayRating(card.getRating()) : null)
                 .isPriority(Boolean.TRUE.equals(card.getIsPriority()))
+                .wbCreatedAt(card.getWbCreatedAt())
                 .build();
     }
 

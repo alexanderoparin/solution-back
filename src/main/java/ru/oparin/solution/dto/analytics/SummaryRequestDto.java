@@ -83,6 +83,16 @@ public class SummaryRequestDto {
     private Boolean onlyPriority;
 
     /**
+     * Поле сортировки списка артикулов (по умолчанию — дата появления на WB).
+     */
+    private String sortBy;
+
+    /**
+     * Направление сортировки: asc или desc (по умолчанию desc).
+     */
+    private String sortDir;
+
+    /**
      * Начало периода для метрик РК в блоке «Список РК» (опционально).
      * Если заданы оба — campaigns в ответе заполняются views, clicks, ctr, cpc, costs, cart, orders за этот период.
      */
