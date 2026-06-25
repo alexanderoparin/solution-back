@@ -32,6 +32,7 @@ public class CampaignScheduleProcessor {
     private final CampaignBudgetFetchService budgetFetchService;
     private final CampaignAutoTopUpService autoTopUpService;
     private final CampaignBudgetTrailService budgetTrailService;
+    private final CabinetBudgetPollCoordinator budgetPollCoordinator;
     private final PromotionCampaignControlService controlService;
     private final PromotionCampaignControlWriteService promotionControlWriteService;
     private final CabinetService cabinetService;
@@ -108,6 +109,7 @@ public class CampaignScheduleProcessor {
 
     private void onSlotEnter(CampaignManagementState state, CampaignScheduleSlot slot, Cabinet cabinet) {
         budgetTrailService.clearTrail(state);
+        budgetPollCoordinator.grantMandatoryPoll(cabinet.getId(), state.getCampaignId());
         budgetFetchService.fetchBudgetTotal(cabinet, state.getCampaignId(), state)
                 .ifPresent(total -> SlotBudgetSpendUtils.beginSlotSession(state, slot.getId(), total));
     }

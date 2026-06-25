@@ -26,9 +26,11 @@ public class CampaignBudgetFetchService {
 
     private final WbPromotionApiClient promotionApiClient;
     private final CampaignBudgetTimelineService timelineService;
+    private final CabinetBudgetPollCoordinator budgetPollCoordinator;
 
     /**
      * Возвращает бюджет кампании: из кэша состояния, если лимит не позволяет запрос, иначе — свежий ответ WB.
+     * В тике планировщика HTTP к WB разрешён только лидеру очереди кабинета ({@link CabinetBudgetPollCoordinator}).
      */
     public Optional<Integer> fetchBudgetTotal(Cabinet cabinet, Long advertId, CampaignManagementState state) {
         if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
@@ -38,6 +40,9 @@ public class CampaignBudgetFetchService {
         if (state != null && state.getLastBudgetTotal() != null && state.getLastBudgetCheckedAt() != null
                 && isFresh(state.getLastBudgetCheckedAt(), tokenType)) {
             return Optional.of(state.getLastBudgetTotal());
+        }
+        if (!budgetPollCoordinator.mayCallWbApi(cabinet.getId(), advertId)) {
+            return cachedBudget(state);
         }
         try {
             PromotionBudgetResponse budget = promotionApiClient.getCampaignBudget(cabinet.getApiKey(), advertId);
@@ -54,11 +59,15 @@ public class CampaignBudgetFetchService {
             return Optional.of(budget.getTotal());
         } catch (Exception e) {
             log.debug("Не удалось получить бюджет РК advertId={}: {}", advertId, e.getMessage());
-            if (state != null && state.getLastBudgetTotal() != null) {
-                return Optional.of(state.getLastBudgetTotal());
-            }
-            return Optional.empty();
+            return cachedBudget(state);
         }
+    }
+
+    private Optional<Integer> cachedBudget(CampaignManagementState state) {
+        if (state != null && state.getLastBudgetTotal() != null) {
+            return Optional.of(state.getLastBudgetTotal());
+        }
+        return Optional.empty();
     }
 
     /**

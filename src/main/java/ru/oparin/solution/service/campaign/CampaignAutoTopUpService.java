@@ -38,6 +38,7 @@ public class CampaignAutoTopUpService {
     private final CampaignBudgetFetchService budgetFetchService;
     private final CampaignChangeLogService changeLogService;
     private final CampaignBudgetTimelineService timelineService;
+    private final CabinetBudgetPollCoordinator budgetPollCoordinator;
 
     /**
      * Пополняет бюджет при необходимости и сохраняет учёт (журнал, timeline, состояние слота).
@@ -77,6 +78,7 @@ public class CampaignAutoTopUpService {
             return Optional.empty();
         }
 
+        budgetPollCoordinator.grantMandatoryPoll(cabinetId, advertId);
         Optional<Integer> budgetTotal = budgetFetchService.fetchBudgetTotal(cabinet, advertId, state);
         if (budgetTotal.isEmpty() || budgetTotal.get() >= settings.getThresholdRub()) {
             stateRepository.save(state);

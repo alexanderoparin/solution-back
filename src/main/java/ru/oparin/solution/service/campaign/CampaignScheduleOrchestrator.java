@@ -11,6 +11,7 @@ import ru.oparin.solution.repository.CampaignManagementStateRepository;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Планировщик: расписание слотов, лимит бюджета слота, автопополнение.
@@ -25,22 +26,30 @@ public class CampaignScheduleOrchestrator {
 
     private final CampaignManagementStateRepository stateRepository;
     private final CampaignScheduleProcessor scheduleProcessor;
+    private final CampaignSchedulePollPlanner pollPlanner;
+    private final CabinetBudgetPollCoordinator budgetPollCoordinator;
 
     @Scheduled(cron = "0 * * * * *")
     @SchedulerLock(name = "campaignScheduleOrchestrator", lockAtLeastFor = "30s", lockAtMostFor = "55s")
     public void tick() {
         List<CampaignManagementState> states = stateRepository.findAll();
         ZonedDateTime now = ZonedDateTime.now(ZONE);
-        for (CampaignManagementState state : states) {
-            if (!state.isScheduleEnabled()) {
-                continue;
+        Map<Long, List<Long>> pollCandidates = pollPlanner.collectBudgetPollCandidates(states, now);
+        budgetPollCoordinator.beginSchedulerTick(pollCandidates);
+        try {
+            for (CampaignManagementState state : states) {
+                if (!state.isScheduleEnabled()) {
+                    continue;
+                }
+                try {
+                    scheduleProcessor.processCampaign(state.getCampaignId(), state.getCabinetId(), now);
+                } catch (Exception e) {
+                    log.warn("Ошибка планировщика РК campaignId={} cabinetId={}: {}",
+                            state.getCampaignId(), state.getCabinetId(), e.getMessage());
+                }
             }
-            try {
-                scheduleProcessor.processCampaign(state.getCampaignId(), state.getCabinetId(), now);
-            } catch (Exception e) {
-                log.warn("Ошибка планировщика РК campaignId={} cabinetId={}: {}",
-                        state.getCampaignId(), state.getCabinetId(), e.getMessage());
-            }
+        } finally {
+            budgetPollCoordinator.endSchedulerTick();
         }
     }
 }
