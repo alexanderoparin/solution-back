@@ -16,6 +16,7 @@ import ru.oparin.solution.repository.*;
 import ru.oparin.solution.service.analytics.*;
 import ru.oparin.solution.service.campaign.BidderStatusResolver;
 import ru.oparin.solution.service.campaign.CampaignGoalService;
+import ru.oparin.solution.util.ArticleRatingUtils;
 import ru.oparin.solution.util.PeriodGenerator;
 
 import java.math.BigDecimal;
@@ -1555,7 +1556,7 @@ public class AnalyticsService {
                 .photoTm(card.getPhotoTm())
                 .photoC246x328(card.getPhotoC246x328())
                 .vendorCode(card.getVendorCode())
-                .rating(itemRatingSupported ? card.getRating() : null)
+                .rating(itemRatingSupported ? ArticleRatingUtils.toDisplayRating(card.getRating()) : null)
                 .isPriority(Boolean.TRUE.equals(card.getIsPriority()))
                 .build();
     }
@@ -1570,7 +1571,7 @@ public class AnalyticsService {
                 .vendorCode(card.getVendorCode())
                 .photoTm(card.getPhotoTm())
                 .photoC246x328(card.getPhotoC246x328())
-                .rating(itemRatingSupported ? card.getRating() : null)
+                .rating(itemRatingSupported ? ArticleRatingUtils.toDisplayRating(card.getRating()) : null)
                 .productUrl("https://www.wildberries.ru/catalog/" + card.getNmId() + "/detail.aspx")
                 .createdAt(card.getCreatedAt())
                 .updatedAt(card.getUpdatedAt())

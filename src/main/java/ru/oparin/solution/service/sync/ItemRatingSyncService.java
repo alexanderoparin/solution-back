@@ -16,13 +16,12 @@ import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.ItemRatingSyncStepPayload;
 import ru.oparin.solution.service.wb.WbAnalyticsApiClient;
 import ru.oparin.solution.service.wb.WbApiCategory;
+import ru.oparin.solution.util.ArticleRatingUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Синхронизация рейтинга карточек из отчёта WB Analytics item-rating.
@@ -127,23 +126,28 @@ public class ItemRatingSyncService {
             return;
         }
 
-        Map<Long, BigDecimal> ratingByNmId = new HashMap<>();
+        Set<Long> seenNmIds = new HashSet<>();
+        Map<Long, BigDecimal> ratingFromWbByNmId = new HashMap<>();
         for (ItemRatingCard card : page) {
-            if (card.getNmId() == null || card.getFeedbackRating() == null || card.getFeedbackRating().getCurrent() == null) {
+            if (card.getNmId() == null) {
                 continue;
             }
-            ratingByNmId.put(card.getNmId(), toRating(card.getFeedbackRating().getCurrent()));
+            seenNmIds.add(card.getNmId());
+            if (card.getFeedbackRating() != null && card.getFeedbackRating().getCurrent() != null) {
+                ratingFromWbByNmId.put(card.getNmId(), toRating(card.getFeedbackRating().getCurrent()));
+            }
         }
-        if (ratingByNmId.isEmpty()) {
+        if (seenNmIds.isEmpty()) {
             return;
         }
 
         List<ProductCard> existing = productCardRepository.findByCabinet_Id(cabinetId).stream()
-                .filter(c -> ratingByNmId.containsKey(c.getNmId()))
+                .filter(c -> seenNmIds.contains(c.getNmId()))
                 .toList();
         for (ProductCard productCard : existing) {
-            productCard.setRating(ratingByNmId.get(productCard.getNmId()));
             productCard.setRatingSyncedAt(syncStartedAt);
+            BigDecimal fromWb = ratingFromWbByNmId.get(productCard.getNmId());
+            productCard.setRating(ArticleRatingUtils.resolveRatingAfterSync(productCard.getRating(), fromWb));
         }
         if (!existing.isEmpty()) {
             productCardRepository.saveAll(existing);
