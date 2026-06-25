@@ -87,18 +87,31 @@ public class ProductCard {
     private Boolean isPriority = false;
 
     /**
-     * Дата создания записи.
+     * Дата создания записи в БД.
      */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     /**
-     * Дата последнего обновления записи.
+     * Дата последнего обновления записи в БД.
      */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    /**
+     * Дата и время появления карточки на Wildberries (createdAt из WB Content API).
+     */
+    @Column(name = "wb_created_at", nullable = false)
+    private LocalDateTime wbCreatedAt;
+
+    @PrePersist
+    private void initWbCreatedAtIfAbsent() {
+        if (wbCreatedAt == null) {
+            wbCreatedAt = LocalDateTime.now();
+        }
+    }
 
     /**
      * Рейтинг по отзывам WB (feedbackRating), 1–5.

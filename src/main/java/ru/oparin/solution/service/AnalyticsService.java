@@ -1573,7 +1573,7 @@ public class AnalyticsService {
                 .photoC246x328(card.getPhotoC246x328())
                 .rating(itemRatingSupported ? ArticleRatingUtils.toDisplayRating(card.getRating()) : null)
                 .productUrl("https://www.wildberries.ru/catalog/" + card.getNmId() + "/detail.aspx")
-                .createdAt(card.getCreatedAt())
+                .createdAt(card.getWbCreatedAt())
                 .updatedAt(card.getUpdatedAt())
                 .build();
     }

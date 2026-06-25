@@ -66,7 +66,7 @@ public class ArticleDetailDto {
     private String productUrl;
     
     /**
-     * Дата создания карточки товара.
+     * Дата создания карточки на Wildberries (createdAt из WB Content API).
      */
     private LocalDateTime createdAt;
     

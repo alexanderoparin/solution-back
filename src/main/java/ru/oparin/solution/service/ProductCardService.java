@@ -12,7 +12,9 @@ import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.ProductBarcodeRepository;
 import ru.oparin.solution.repository.ProductCardRepository;
+import ru.oparin.solution.util.WbDateTimeParser;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -130,7 +132,7 @@ public class ProductCardService {
             ProductCard updatedCard,
             CardDto cardDto
     ) {
-        updateCardFields(existingCard, updatedCard);
+        updateCardFields(existingCard, updatedCard, cardDto);
         productCardRepository.save(existingCard);
 
         saveBarcodes(cardDto, existingCard.getCabinet());
@@ -207,7 +209,22 @@ public class ProductCardService {
                 .vendorCode(cardDto.getVendorCode())
                 .photoTm(photoTm)
                 .photoC246x328(photoC246x328)
+                .wbCreatedAt(resolveWbCreatedAt(cardDto))
                 .build();
+    }
+
+    /**
+     * Дата появления на WB из API; если WB не прислал — значение остаётся как есть (для новых — см. handleNewCard).
+     */
+    private LocalDateTime resolveWbCreatedAt(CardDto cardDto) {
+        return WbDateTimeParser.parse(cardDto.getCreatedAt());
+    }
+
+    private void applyWbCreatedAt(ProductCard target, CardDto cardDto) {
+        LocalDateTime parsed = WbDateTimeParser.parse(cardDto.getCreatedAt());
+        if (parsed != null) {
+            target.setWbCreatedAt(parsed);
+        }
     }
 
     private String extractPhotoTm(CardDto cardDto) {
@@ -231,7 +248,7 @@ public class ProductCardService {
         return url.isEmpty() ? null : url;
     }
 
-    private void updateCardFields(ProductCard existing, ProductCard updated) {
+    private void updateCardFields(ProductCard existing, ProductCard updated, CardDto cardDto) {
         existing.setImtId(updated.getImtId());
         existing.setTitle(updated.getTitle());
         existing.setSubjectName(updated.getSubjectName());
@@ -239,6 +256,7 @@ public class ProductCardService {
         existing.setVendorCode(updated.getVendorCode());
         existing.setPhotoTm(updated.getPhotoTm());
         existing.setPhotoC246x328(updated.getPhotoC246x328());
+        applyWbCreatedAt(existing, cardDto);
     }
 
     private record ProcessingResult(int savedCount, int updatedCount) {
