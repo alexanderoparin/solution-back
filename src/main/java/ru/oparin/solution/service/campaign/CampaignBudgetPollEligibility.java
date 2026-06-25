@@ -4,10 +4,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.model.CampaignManagementState;
 import ru.oparin.solution.model.CampaignScheduleSlot;
+import ru.oparin.solution.repository.CampaignScheduleSlotRepository;
 
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -17,9 +18,8 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class CampaignBudgetPollEligibility {
 
-    private static final ZoneId ZONE = ZoneId.of("Europe/Moscow");
-
-    private final CampaignManageService manageService;
+    private final CampaignScheduleSlotRepository slotRepository;
+    private final BidderStatusResolver bidderStatusResolver;
 
     /**
      * {@code true}, если в тике планировщика для РК допустим опрос бюджета (round-robin / trail).
@@ -32,7 +32,7 @@ public class CampaignBudgetPollEligibility {
             return false;
         }
         LocalDateTime nowLocal = now.toLocalDateTime();
-        if (manageService.findActiveSlotNow(advertId, cabinetId, now).isPresent()) {
+        if (findActiveSlotNow(advertId, cabinetId, now).isPresent()) {
             return true;
         }
         LocalDateTime trailUntil = state.getBudgetTrailUntil();
@@ -48,9 +48,14 @@ public class CampaignBudgetPollEligibility {
             Long cabinetId,
             ZonedDateTime now
     ) {
-        Optional<CampaignScheduleSlot> activeSlot = manageService.findActiveSlotNow(advertId, cabinetId, now);
+        Optional<CampaignScheduleSlot> activeSlot = findActiveSlotNow(advertId, cabinetId, now);
         return activeSlot.isPresent()
                 && SlotBudgetSpendUtils.isSlotBudgetExhausted(state, activeSlot.get().getId());
     }
 
+    private Optional<CampaignScheduleSlot> findActiveSlotNow(Long advertId, Long cabinetId, ZonedDateTime now) {
+        List<CampaignScheduleSlot> slots = slotRepository
+                .findByCampaignIdAndCabinetIdOrderByDayOfWeekAscStartTimeAsc(advertId, cabinetId);
+        return bidderStatusResolver.findActiveSlotNow(slots, now);
+    }
 }
