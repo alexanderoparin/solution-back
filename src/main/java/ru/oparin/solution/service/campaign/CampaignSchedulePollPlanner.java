@@ -25,7 +25,7 @@ public class CampaignSchedulePollPlanner {
     private final CabinetService cabinetService;
 
     /**
-     * Кандидаты на опрос бюджета: активный слот расписания или хвост trail после паузы.
+     * Кандидаты на опрос бюджета: активный слот без исчерпанного лимита или хвост trail после паузы.
      */
     public Map<Long, List<Long>> collectBudgetPollCandidates(
             List<CampaignManagementState> states,
@@ -65,7 +65,7 @@ public class CampaignSchedulePollPlanner {
         Optional<CampaignScheduleSlot> activeSlot = manageService.findActiveSlotNow(advertId, cabinetId, now);
         boolean inSlot = activeSlot.isPresent() && !state.isManualStopped();
         if (inSlot) {
-            return true;
+            return !SlotBudgetSpendUtils.isSlotBudgetExhausted(state, activeSlot.get().getId());
         }
         LocalDateTime trailUntil = state.getBudgetTrailUntil();
         return trailUntil != null && !nowLocal.isAfter(trailUntil);
