@@ -2,10 +2,7 @@ package ru.oparin.solution.service.campaign;
 
 import org.springframework.stereotype.Component;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -18,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class CabinetBudgetPollCoordinator {
 
     private static final ThreadLocal<Set<String>> API_GRANTED = new ThreadLocal<>();
+    private static final ThreadLocal<Map<Long, Long>> TICK_LEADER_BY_CABINET = new ThreadLocal<>();
 
     private final ConcurrentHashMap<Long, Integer> roundRobinIndexByCabinet = new ConcurrentHashMap<>();
 
@@ -28,6 +26,7 @@ public class CabinetBudgetPollCoordinator {
      */
     public void beginSchedulerTick(Map<Long, List<Long>> candidatesByCabinet) {
         Set<String> granted = new HashSet<>();
+        Map<Long, Long> leaders = new HashMap<>();
         for (Map.Entry<Long, List<Long>> entry : candidatesByCabinet.entrySet()) {
             Long cabinetId = entry.getKey();
             List<Long> sorted = entry.getValue().stream().sorted().toList();
@@ -37,9 +36,29 @@ public class CabinetBudgetPollCoordinator {
             int index = roundRobinIndexByCabinet.getOrDefault(cabinetId, 0);
             Long leader = sorted.get(index % sorted.size());
             roundRobinIndexByCabinet.put(cabinetId, (index + 1) % sorted.size());
+            leaders.put(cabinetId, leader);
             granted.add(slotKey(cabinetId, leader));
         }
         API_GRANTED.set(granted);
+        TICK_LEADER_BY_CABINET.set(leaders);
+    }
+
+    /**
+     * Лидер round-robin для кабинета в текущем тике планировщика.
+     */
+    public Optional<Long> getTickLeader(Long cabinetId) {
+        Map<Long, Long> leaders = TICK_LEADER_BY_CABINET.get();
+        if (leaders == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(leaders.get(cabinetId));
+    }
+
+    /**
+     * {@code true}, если РК выбрана лидером очереди бюджета в текущем тике.
+     */
+    public boolean isTickLeader(Long cabinetId, Long advertId) {
+        return getTickLeader(cabinetId).filter(advertId::equals).isPresent();
     }
 
     /**
@@ -66,6 +85,7 @@ public class CabinetBudgetPollCoordinator {
 
     public void endSchedulerTick() {
         API_GRANTED.remove();
+        TICK_LEADER_BY_CABINET.remove();
     }
 
     private static String slotKey(Long cabinetId, Long advertId) {

@@ -28,6 +28,7 @@ public class CampaignScheduleOrchestrator {
     private final CampaignScheduleProcessor scheduleProcessor;
     private final CampaignSchedulePollPlanner pollPlanner;
     private final CabinetBudgetPollCoordinator budgetPollCoordinator;
+    private final CabinetBudgetLeaderPollExecutor leaderPollExecutor;
 
     @Scheduled(cron = "0 * * * * *")
     @SchedulerLock(name = "campaignScheduleOrchestrator", lockAtLeastFor = "30s", lockAtMostFor = "55s")
@@ -37,6 +38,10 @@ public class CampaignScheduleOrchestrator {
         Map<Long, List<Long>> pollCandidates = pollPlanner.collectBudgetPollCandidates(states, now);
         budgetPollCoordinator.beginSchedulerTick(pollCandidates);
         try {
+            for (Long cabinetId : pollCandidates.keySet()) {
+                budgetPollCoordinator.getTickLeader(cabinetId).ifPresent(advertId ->
+                        leaderPollExecutor.pollLeaderInNewTransaction(cabinetId, advertId));
+            }
             for (CampaignManagementState state : states) {
                 if (!state.isScheduleEnabled()) {
                     continue;
