@@ -13,6 +13,7 @@ import ru.oparin.solution.service.wb.WbPromotionApiClient;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -35,6 +36,22 @@ public class CampaignBudgetFetchService {
      * В тике планировщика HTTP к WB разрешён только лидеру очереди кабинета ({@link CabinetBudgetPollCoordinator}).
      */
     public Optional<Integer> fetchBudgetTotal(Cabinet cabinet, Long advertId, CampaignManagementState state) {
+        return fetchBudgetTotalInternal(cabinet, advertId, state, false);
+    }
+
+    /**
+     * Бюджет для решений (автопополнение): только свежий ответ WB или актуальный кэш, без устаревшего fallback.
+     */
+    public Optional<Integer> fetchBudgetForDecision(Cabinet cabinet, Long advertId, CampaignManagementState state) {
+        return fetchBudgetTotalInternal(cabinet, advertId, state, true);
+    }
+
+    private Optional<Integer> fetchBudgetTotalInternal(
+            Cabinet cabinet,
+            Long advertId,
+            CampaignManagementState state,
+            boolean rejectStaleCacheOnly
+    ) {
         if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
             return Optional.empty();
         }
@@ -48,11 +65,16 @@ public class CampaignBudgetFetchService {
             return Optional.of(state.getLastBudgetTotal());
         }
         if (!budgetPollCoordinator.mayCallWbApi(cabinet.getId(), advertId)) {
-            return cachedBudget(state);
+            return rejectStaleCacheOnly
+                    ? Optional.empty()
+                    : cachedBudget(state);
         }
         try {
             PromotionBudgetResponse budget = promotionApiClient.getCampaignBudget(cabinet.getApiKey(), advertId);
             if (budget == null || budget.getTotal() == null) {
+                if (rejectStaleCacheOnly) {
+                    return Optional.empty();
+                }
                 return state != null && state.getLastBudgetTotal() != null
                         ? Optional.of(state.getLastBudgetTotal())
                         : Optional.empty();
@@ -65,6 +87,18 @@ public class CampaignBudgetFetchService {
             return Optional.of(budget.getTotal());
         } catch (Exception e) {
             log.debug("Не удалось получить бюджет РК advertId={}: {}", advertId, e.getMessage());
+            if (rejectStaleCacheOnly) {
+                LocalDateTime checkedBefore = state != null ? state.getLastBudgetCheckedAt() : null;
+                Optional<Integer> cached = cachedBudget(state);
+                if (cached.isEmpty() || state == null) {
+                    return Optional.empty();
+                }
+                if (Objects.equals(checkedBefore, state.getLastBudgetCheckedAt())
+                        && isFresh(state.getLastBudgetCheckedAt(), tokenType)) {
+                    return cached;
+                }
+                return Optional.empty();
+            }
             return cachedBudget(state);
         }
     }

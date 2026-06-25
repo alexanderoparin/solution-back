@@ -113,7 +113,10 @@ public class CampaignScheduleProcessor {
             budgetPollCoordinator.grantMandatoryPoll(cabinet.getId(), state.getCampaignId());
         }
         budgetFetchService.fetchBudgetTotal(cabinet, state.getCampaignId(), state)
-                .ifPresent(total -> SlotBudgetSpendUtils.beginSlotSession(state, slot.getId(), total));
+                .ifPresent(fetched -> {
+                    int baseline = SlotBudgetSpendUtils.resolveSlotBudgetBaseline(state, fetched);
+                    SlotBudgetSpendUtils.beginSlotSession(state, slot.getId(), baseline);
+                });
     }
 
     private void onSlotLeave(CampaignManagementState state) {

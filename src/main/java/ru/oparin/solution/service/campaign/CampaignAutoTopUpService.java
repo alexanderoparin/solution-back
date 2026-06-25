@@ -77,8 +77,12 @@ public class CampaignAutoTopUpService {
             return Optional.empty();
         }
 
-        Optional<Integer> budgetTotal = budgetFetchService.fetchBudgetTotal(cabinet, advertId, state);
-        if (budgetTotal.isEmpty() || budgetTotal.get() >= settings.getThresholdRub()) {
+        Optional<Integer> budgetTotal = budgetFetchService.fetchBudgetForDecision(cabinet, advertId, state);
+        if (budgetTotal.isEmpty()) {
+            log.debug("Автопополнение advertId={} пропущено: нет свежего бюджета WB", advertId);
+            return Optional.empty();
+        }
+        if (budgetTotal.get() >= settings.getThresholdRub()) {
             stateRepository.save(state);
             return Optional.empty();
         }

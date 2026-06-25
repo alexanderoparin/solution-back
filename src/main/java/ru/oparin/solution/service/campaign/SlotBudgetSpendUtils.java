@@ -17,8 +17,33 @@ public final class SlotBudgetSpendUtils {
         if (state.getBudgetAtSlotStart() == null) {
             return 0;
         }
+        reconcileBaselineIfBalanceGrew(state, currentBudgetTotal);
         int topUps = state.getSlotTopUpsRub();
-        return state.getBudgetAtSlotStart() - currentBudgetTotal + topUps;
+        return Math.max(0, state.getBudgetAtSlotStart() - currentBudgetTotal + topUps);
+    }
+
+    /**
+     * База слота: не ниже последнего известного остатка (защита от устаревшего кэша при входе в слот).
+     */
+    public static int resolveSlotBudgetBaseline(CampaignManagementState state, int fetchedBudget) {
+        if (state.getLastBudgetTotal() != null && state.getLastBudgetTotal() > fetchedBudget) {
+            return state.getLastBudgetTotal();
+        }
+        return fetchedBudget;
+    }
+
+    /**
+     * Баланс WB вырос без учтённого пополнения — поднимаем базу слота, чтобы лимит расхода не «обнулялся».
+     */
+    public static void reconcileBaselineIfBalanceGrew(CampaignManagementState state, int currentBudgetTotal) {
+        if (state.getBudgetAtSlotStart() == null) {
+            return;
+        }
+        int topUps = state.getSlotTopUpsRub();
+        int expectedCeiling = state.getBudgetAtSlotStart() + topUps;
+        if (currentBudgetTotal > expectedCeiling) {
+            state.setBudgetAtSlotStart(currentBudgetTotal - topUps);
+        }
     }
 
     public static boolean isSlotBudgetExhausted(CampaignManagementState state, Long slotId) {
