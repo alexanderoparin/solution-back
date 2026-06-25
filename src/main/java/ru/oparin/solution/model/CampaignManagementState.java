@@ -62,6 +62,12 @@ public class CampaignManagementState {
     @Builder.Default
     private int slotTopUpsRub = 0;
 
+    /**
+     * До этого времени (МСК) продолжаем опрашивать бюджет WB после паузы, вне активного слота.
+     */
+    @Column(name = "budget_trail_until")
+    private LocalDateTime budgetTrailUntil;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

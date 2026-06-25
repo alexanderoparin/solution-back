@@ -46,6 +46,7 @@ public class CampaignManageService {
     private final CampaignBudgetChartService budgetChartService;
     private final CampaignManageAccessService campaignManageAccessService;
     private final BidderStatusResolver bidderStatusResolver;
+    private final CampaignBudgetTrailService budgetTrailService;
 
     @Transactional(readOnly = true)
     public CampaignManageResponseDto getManage(Long advertId, Long cabinetId, User seller) {
@@ -209,6 +210,7 @@ public class CampaignManageService {
         ZonedDateTime now = ZonedDateTime.now(SCHEDULE_ZONE);
         boolean inActiveSlot = findActiveSlotNow(advertId, cabinetId, now).isPresent();
         if (inActiveSlot) {
+            budgetTrailService.clearTrail(state);
             changeLogService.log(advertId, cabinetId, user, "Расписание включено");
             timelineService.recordStart(advertId, cabinetId);
             return controlService.enqueueStart(cabinet, advertId);
@@ -232,6 +234,7 @@ public class CampaignManageService {
         PromotionCampaign campaign = campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).orElse(null);
         if (campaign != null && campaign.getStatus() == CampaignStatus.ACTIVE) {
             timelineService.recordStop(advertId, cabinetId);
+            budgetTrailService.beginTrail(state);
             return controlService.enqueuePause(cabinet, advertId);
         }
         return new CampaignControlEnqueueResponse(false, null, "Расписание выключено");
@@ -262,6 +265,7 @@ public class CampaignManageService {
             try {
                 controlService.enqueuePause(cabinet, advertId);
                 timelineService.recordStop(advertId, cabinetId);
+                budgetTrailService.beginTrail(state);
             } catch (Exception ignored) {
                 return;
             }
@@ -369,6 +373,9 @@ public class CampaignManageService {
                     controlService.enqueuePause(cabinet, advertId);
                     changeLogService.log(advertId, cabinetId, null, logMessage);
                     timelineService.recordStop(advertId, cabinetId);
+                    if (state != null) {
+                        budgetTrailService.beginTrail(state);
+                    }
                     if (state != null && state.getActiveSlotId() != null) {
                         SlotBudgetSpendUtils.markSlotBudgetExhausted(state, state.getActiveSlotId());
                         stateRepository.save(state);

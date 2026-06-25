@@ -31,6 +31,7 @@ public class CampaignScheduleProcessor {
     private final CampaignBudgetTimelineService timelineService;
     private final CampaignBudgetFetchService budgetFetchService;
     private final CampaignAutoTopUpService autoTopUpService;
+    private final CampaignBudgetTrailService budgetTrailService;
     private final PromotionCampaignControlService controlService;
     private final PromotionCampaignControlWriteService promotionControlWriteService;
     private final CabinetService cabinetService;
@@ -67,7 +68,7 @@ public class CampaignScheduleProcessor {
             CampaignScheduleSlot slot = activeSlot.get();
             if (SlotBudgetSpendUtils.isSlotBudgetExhausted(state, slot.getId())) {
                 if (campaign.getStatus() == CampaignStatus.ACTIVE) {
-                    ensurePaused(cabinet, advertId, "РК остановлена: исчерпан бюджет слота");
+                    ensurePaused(cabinet, advertId, state, "РК остановлена: исчерпан бюджет слота");
                 }
             } else {
                 if (state.getActiveSlotId() == null || !state.getActiveSlotId().equals(slot.getId())) {
@@ -85,7 +86,9 @@ public class CampaignScheduleProcessor {
                 onSlotLeave(state);
             }
             if (campaign.getStatus() == CampaignStatus.ACTIVE) {
-                ensurePaused(cabinet, advertId, "РК остановлена по расписанию");
+                ensurePaused(cabinet, advertId, state, "РК остановлена по расписанию");
+            } else {
+                budgetTrailService.pollDuringTrailIfNeeded(cabinet, state);
             }
         }
         stateRepository.save(state);
@@ -104,6 +107,7 @@ public class CampaignScheduleProcessor {
     }
 
     private void onSlotEnter(CampaignManagementState state, CampaignScheduleSlot slot, Cabinet cabinet) {
+        budgetTrailService.clearTrail(state);
         budgetFetchService.fetchBudgetTotal(cabinet, state.getCampaignId(), state)
                 .ifPresent(total -> SlotBudgetSpendUtils.beginSlotSession(state, slot.getId(), total));
     }
@@ -124,7 +128,7 @@ public class CampaignScheduleProcessor {
                 .ifPresent(total -> {
                     int spent = SlotBudgetSpendUtils.computeSpentRub(state, total);
                     if (spent >= slot.getBudgetRub()) {
-                        ensurePaused(cabinet, state.getCampaignId(), "РК остановлена: исчерпан бюджет слота");
+                        ensurePaused(cabinet, state.getCampaignId(), state, "РК остановлена: исчерпан бюджет слота");
                         SlotBudgetSpendUtils.markSlotBudgetExhausted(state, slot.getId());
                     }
                 });
@@ -148,7 +152,7 @@ public class CampaignScheduleProcessor {
         }
     }
 
-    private void ensurePaused(Cabinet cabinet, Long advertId, String logMessage) {
+    private void ensurePaused(Cabinet cabinet, Long advertId, CampaignManagementState state, String logMessage) {
         if (!canControlPromotion(cabinet)) {
             log.debug("Пауза advertId={} пропущена: {}", advertId, controlBlockMessage(cabinet));
             return;
@@ -157,6 +161,7 @@ public class CampaignScheduleProcessor {
             controlService.enqueuePause(cabinet, advertId);
             changeLogService.log(advertId, cabinet.getId(), null, logMessage);
             timelineService.recordStop(advertId, cabinet.getId());
+            budgetTrailService.beginTrail(state);
         } catch (Exception e) {
             log.debug("Пауза по расписанию advertId={}: {}", advertId, e.getMessage());
         }

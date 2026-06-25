@@ -85,10 +85,11 @@ public class CampaignBudgetFetchService {
             int topUpAmount,
             PromotionBudgetResponse depositResponse
     ) {
+        int estimated = budgetBeforeTopUp + topUpAmount;
         if (depositResponse != null && depositResponse.getTotal() != null) {
-            return depositResponse.getTotal();
+            return Math.max(depositResponse.getTotal(), estimated);
         }
-        return budgetBeforeTopUp + topUpAmount;
+        return estimated;
     }
 
     private boolean isFresh(LocalDateTime checkedAt, CabinetTokenType tokenType) {
