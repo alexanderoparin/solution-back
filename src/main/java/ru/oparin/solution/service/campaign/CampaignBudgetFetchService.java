@@ -61,6 +61,36 @@ public class CampaignBudgetFetchService {
         }
     }
 
+    /**
+     * Сохраняет известный остаток бюджета без запроса к WB (например, после deposit с returnBudget).
+     */
+    public void storeBudgetTotal(
+            CampaignManagementState state,
+            Long advertId,
+            Long cabinetId,
+            int budgetTotal
+    ) {
+        if (state != null) {
+            state.setLastBudgetTotal(budgetTotal);
+            state.setLastBudgetCheckedAt(LocalDateTime.now(ZONE));
+        }
+        timelineService.recordSnapshot(advertId, cabinetId, budgetTotal);
+    }
+
+    /**
+     * Остаток после пополнения: из ответа WB или оценка «было + сумма».
+     */
+    public int resolveBudgetAfterTopUp(
+            int budgetBeforeTopUp,
+            int topUpAmount,
+            PromotionBudgetResponse depositResponse
+    ) {
+        if (depositResponse != null && depositResponse.getTotal() != null) {
+            return depositResponse.getTotal();
+        }
+        return budgetBeforeTopUp + topUpAmount;
+    }
+
     private boolean isFresh(LocalDateTime checkedAt, CabinetTokenType tokenType) {
         long delayMs = WbApiEventType.PROMOTION_BUDGET_GET.getRequestDelayMs(tokenType);
         return checkedAt.plusNanos(delayMs * 1_000_000L).isAfter(LocalDateTime.now(ZONE));

@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.analytics.PromotionControlCapabilitiesDto;
 import ru.oparin.solution.dto.wb.PromotionBudgetDepositRequest;
+import ru.oparin.solution.dto.wb.PromotionBudgetResponse;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CampaignAutoBudgetSettings;
 import ru.oparin.solution.model.CampaignManagementState;
@@ -82,6 +83,7 @@ public class CampaignAutoTopUpService {
             return Optional.empty();
         }
 
+        int budgetBeforeTopUp = budgetTotal.get();
         int topUpAmount = settings.getTopUpAmount();
         try {
             PromotionBudgetDepositRequest req = PromotionBudgetDepositRequest.builder()
@@ -89,7 +91,11 @@ public class CampaignAutoTopUpService {
                     .type(settings.getSourceType() != null ? settings.getSourceType() : 1)
                     .returnBudget(true)
                     .build();
-            promotionApiClient.depositCampaignBudget(cabinet.getApiKey(), advertId, req);
+            PromotionBudgetResponse depositResponse = promotionApiClient.depositCampaignBudget(
+                    cabinet.getApiKey(), advertId, req);
+            int budgetAfterTopUp = budgetFetchService.resolveBudgetAfterTopUp(
+                    budgetBeforeTopUp, topUpAmount, depositResponse);
+            budgetFetchService.storeBudgetTotal(state, advertId, cabinetId, budgetAfterTopUp);
 
             state.setTopUpsTodayCount(state.getTopUpsTodayCount() + 1);
             SlotBudgetSpendUtils.addSlotTopUp(state, topUpAmount);
@@ -97,12 +103,11 @@ public class CampaignAutoTopUpService {
 
             changeLogService.log(advertId, cabinetId, null,
                     "Бюджет пополнен автоматически на " + topUpAmount + " ₽");
-            Integer afterTopUp = budgetFetchService.fetchBudgetTotal(cabinet, advertId, state).orElse(null);
-            timelineService.recordTopUp(advertId, cabinetId, topUpAmount, afterTopUp);
+            timelineService.recordTopUp(advertId, cabinetId, topUpAmount, budgetAfterTopUp);
             stateRepository.save(state);
 
             log.info("Автопополнение advertId={}: зачислено {} ₽, остаток бюджета РК {}",
-                    advertId, topUpAmount, afterTopUp);
+                    advertId, topUpAmount, budgetAfterTopUp);
             return Optional.of(topUpAmount);
         } catch (Exception e) {
             log.warn("Автопополнение advertId={}: {}", advertId, e.getMessage());

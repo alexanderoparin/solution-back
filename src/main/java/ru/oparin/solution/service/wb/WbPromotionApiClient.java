@@ -506,10 +506,11 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
     /**
      * Пополнение бюджета кампании (POST /adv/v1/budget/deposit).
+     * При {@code returnBudget=true} в теле запроса в ответе WB приходит актуальный бюджет.
      */
-    public void depositCampaignBudget(String apiKey, long advertId, PromotionBudgetDepositRequest request) {
+    public PromotionBudgetResponse depositCampaignBudget(String apiKey, long advertId, PromotionBudgetDepositRequest request) {
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
-        executeWith429Retry(
+        return executeWith429Retry(
                 BUDGET_DEPOSIT_OPERATION,
                 WbApiEventType.PROMOTION_BUDGET_DEPOSIT.getUri(),
                 BUDGET_DEPOSIT_OPERATION,
@@ -558,7 +559,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         }
     }
 
-    private Void depositCampaignBudgetOnce(String apiKey, long advertId, PromotionBudgetDepositRequest request) {
+    private PromotionBudgetResponse depositCampaignBudgetOnce(String apiKey, long advertId, PromotionBudgetDepositRequest request) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<PromotionBudgetDepositRequest> entity = new HttpEntity<>(request, headers);
@@ -569,7 +570,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         try {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
             validateResponse(response, true);
-            return null;
+            if (response.getBody() == null || response.getBody().isBlank()) {
+                return null;
+            }
+            return objectMapper.readValue(response.getBody(), PromotionBudgetResponse.class);
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
             logWbApiError(BUDGET_DEPOSIT_OPERATION, e);
