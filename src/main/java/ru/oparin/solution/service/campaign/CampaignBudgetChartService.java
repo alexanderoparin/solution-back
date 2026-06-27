@@ -33,6 +33,9 @@ public class CampaignBudgetChartService {
         LocalDateTime periodFrom = periodTo.minusHours(periodHours);
 
         List<CampaignBudgetTimeline> events = timelineService.findInPeriod(campaignId, cabinetId, periodFrom, periodTo);
+        List<CampaignBudgetTimeline> budgetAnchor = timelineService.findBudgetAnchorBefore(campaignId, cabinetId, periodFrom);
+        boolean activeAtPeriodStart = timelineService.wasActiveImmediatelyBefore(campaignId, cabinetId, periodFrom);
+        Integer budgetAtPeriodStart = resolveBudgetAtPeriodStart(budgetAnchor, events, periodFrom);
 
         List<CampaignBudgetChartDto.BudgetChartMarkerDto> markers = events.stream()
                 .filter(e -> e.getEventType() != CampaignBudgetTimelineEventType.SNAPSHOT)
@@ -43,8 +46,10 @@ public class CampaignBudgetChartService {
                         .build())
                 .toList();
 
-        List<CampaignBudgetChartDto.BudgetChartIntervalDto> intervals = buildIntervals(events, periodFrom, periodTo);
-        List<CampaignBudgetChartDto.BudgetChartPointDto> budgetPoints = buildBudgetPointsFromEvents(events, periodFrom, periodTo);
+        List<CampaignBudgetChartDto.BudgetChartIntervalDto> intervals =
+                buildIntervals(events, periodFrom, periodTo, activeAtPeriodStart);
+        List<CampaignBudgetChartDto.BudgetChartPointDto> budgetPoints =
+                buildBudgetPointsFromEvents(events, periodFrom, periodTo, budgetAtPeriodStart);
 
         return CampaignBudgetChartDto.builder()
                 .periodFrom(periodFrom)
@@ -56,10 +61,22 @@ public class CampaignBudgetChartService {
                 .build();
     }
 
+    private Integer resolveBudgetAtPeriodStart(
+            List<CampaignBudgetTimeline> budgetAnchor,
+            List<CampaignBudgetTimeline> eventsInPeriod,
+            LocalDateTime periodFrom
+    ) {
+        if (!budgetAnchor.isEmpty()) {
+            return resolveBudgetAt(budgetAnchor, periodFrom);
+        }
+        return resolveBudgetAt(eventsInPeriod, periodFrom);
+    }
+
     private List<CampaignBudgetChartDto.BudgetChartIntervalDto> buildIntervals(
             List<CampaignBudgetTimeline> events,
             LocalDateTime periodFrom,
-            LocalDateTime periodTo
+            LocalDateTime periodTo,
+            boolean activeAtPeriodStart
     ) {
         List<CampaignBudgetTimeline> statusEvents = events.stream()
                 .filter(e -> e.getEventType() == CampaignBudgetTimelineEventType.START
@@ -72,12 +89,12 @@ public class CampaignBudgetChartService {
             intervals.add(CampaignBudgetChartDto.BudgetChartIntervalDto.builder()
                     .from(periodFrom)
                     .to(periodTo)
-                    .active(false)
+                    .active(activeAtPeriodStart)
                     .build());
             return intervals;
         }
 
-        boolean active = false;
+        boolean active = activeAtPeriodStart;
         LocalDateTime cursor = periodFrom;
 
         for (CampaignBudgetTimeline event : statusEvents) {
@@ -112,7 +129,8 @@ public class CampaignBudgetChartService {
     private List<CampaignBudgetChartDto.BudgetChartPointDto> buildBudgetPointsFromEvents(
             List<CampaignBudgetTimeline> events,
             LocalDateTime periodFrom,
-            LocalDateTime periodTo
+            LocalDateTime periodTo,
+            Integer budgetAtPeriodStart
     ) {
         List<CampaignBudgetTimeline> budgetEvents = events.stream()
                 .filter(e -> e.getEventType() == CampaignBudgetTimelineEventType.SNAPSHOT
@@ -121,13 +139,21 @@ public class CampaignBudgetChartService {
                 .sorted(Comparator.comparing(CampaignBudgetTimeline::getRecordedAt))
                 .toList();
 
+        List<CampaignBudgetChartDto.BudgetChartPointDto> points = new ArrayList<>();
         if (budgetEvents.isEmpty()) {
-            return List.of();
+            if (budgetAtPeriodStart != null) {
+                points.add(CampaignBudgetChartDto.BudgetChartPointDto.builder()
+                        .at(periodFrom)
+                        .budgetRub(budgetAtPeriodStart)
+                        .build());
+                points.add(CampaignBudgetChartDto.BudgetChartPointDto.builder()
+                        .at(periodTo)
+                        .budgetRub(budgetAtPeriodStart)
+                        .build());
+            }
+            return simplifyBudgetPoints(points);
         }
 
-        Integer budgetAtPeriodStart = resolveBudgetAt(events, periodFrom);
-
-        List<CampaignBudgetChartDto.BudgetChartPointDto> points = new ArrayList<>();
         if (budgetAtPeriodStart != null) {
             points.add(CampaignBudgetChartDto.BudgetChartPointDto.builder()
                     .at(periodFrom)
