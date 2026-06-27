@@ -7,6 +7,7 @@ import ru.oparin.solution.dto.analytics.manage.CampaignBudgetChartDto;
 import ru.oparin.solution.model.CampaignBudgetTimeline;
 import ru.oparin.solution.model.CampaignBudgetTimelineEventType;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -23,14 +24,23 @@ public class CampaignBudgetChartService {
 
     private static final ZoneId ZONE = ZoneId.of("Europe/Moscow");
     private static final int DEFAULT_HOURS = 48;
+    /** Максимальная длина произвольного периода на графике. */
+    private static final int MAX_PERIOD_DAYS = 90;
 
     private final CampaignBudgetTimelineService timelineService;
 
     @Transactional(readOnly = true)
-    public CampaignBudgetChartDto buildChart(Long campaignId, Long cabinetId, Integer hours, Integer ignoredStepHours) {
-        int periodHours = hours != null && hours > 0 ? hours : DEFAULT_HOURS;
-        LocalDateTime periodTo = LocalDateTime.now(ZONE);
-        LocalDateTime periodFrom = periodTo.minusHours(periodHours);
+    public CampaignBudgetChartDto buildChart(
+            Long campaignId,
+            Long cabinetId,
+            Integer hours,
+            Integer ignoredStepHours,
+            LocalDateTime periodFromParam,
+            LocalDateTime periodToParam
+    ) {
+        CampaignBudgetChartPeriod period = resolvePeriod(hours, periodFromParam, periodToParam);
+        LocalDateTime periodFrom = period.from();
+        LocalDateTime periodTo = period.to();
 
         List<CampaignBudgetTimeline> events = timelineService.findInPeriod(campaignId, cabinetId, periodFrom, periodTo);
         List<CampaignBudgetTimeline> budgetAnchor = timelineService.findBudgetAnchorBefore(campaignId, cabinetId, periodFrom);
@@ -59,6 +69,32 @@ public class CampaignBudgetChartService {
                 .intervals(intervals)
                 .markers(markers)
                 .build();
+    }
+
+    /**
+     * Период графика: явные {@code from}/{@code to} или последние {@code hours} (по умолчанию 48 ч).
+     */
+    CampaignBudgetChartPeriod resolvePeriod(Integer hours, LocalDateTime from, LocalDateTime to) {
+        LocalDateTime now = LocalDateTime.now(ZONE);
+        if (from != null || to != null) {
+            if (from == null || to == null) {
+                throw new IllegalArgumentException("Укажите обе границы периода: from и to");
+            }
+            if (!from.isBefore(to)) {
+                throw new IllegalArgumentException("Начало периода должно быть раньше конца");
+            }
+            LocalDateTime periodTo = to.isAfter(now) ? now : to;
+            if (!from.isBefore(periodTo)) {
+                throw new IllegalArgumentException("Начало периода должно быть раньше текущего момента");
+            }
+            long days = Duration.between(from, periodTo).toDays();
+            if (days > MAX_PERIOD_DAYS) {
+                throw new IllegalArgumentException("Период графика не может превышать " + MAX_PERIOD_DAYS + " дней");
+            }
+            return new CampaignBudgetChartPeriod(from, periodTo);
+        }
+        int periodHours = hours != null && hours > 0 ? hours : DEFAULT_HOURS;
+        return new CampaignBudgetChartPeriod(now.minusHours(periodHours), now);
     }
 
     private Integer resolveBudgetAtPeriodStart(

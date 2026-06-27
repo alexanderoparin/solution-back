@@ -2,6 +2,7 @@ package ru.oparin.solution.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -18,6 +19,7 @@ import ru.oparin.solution.service.campaign.CampaignGoalService;
 import ru.oparin.solution.service.campaign.CampaignManageAccessService;
 import ru.oparin.solution.service.campaign.CampaignManageService;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -85,12 +87,14 @@ public class CampaignManageController {
     }
 
     @GetMapping("/budget-chart")
-    public ResponseEntity<CampaignBudgetChartDto> budgetChart(
+    public ResponseEntity<?> budgetChart(
             @PathVariable Long advertId,
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
             @RequestParam(required = false) Integer hours,
             @RequestParam(required = false) Integer stepHours,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
             Authentication authentication
     ) {
         SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId);
@@ -99,9 +103,9 @@ public class CampaignManageController {
             return ResponseEntity.badRequest().build();
         }
         try {
-            return ResponseEntity.ok(manageService.budgetChart(advertId, cabId, hours, stepHours));
+            return ResponseEntity.ok(manageService.budgetChart(advertId, cabId, hours, stepHours, from, to));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.notFound().build();
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
     }
 

@@ -17,6 +17,7 @@ import ru.oparin.solution.service.PromotionCampaignControlService;
 import ru.oparin.solution.service.PromotionCampaignControlWriteService;
 import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -291,9 +292,16 @@ public class CampaignManageService {
     }
 
     @Transactional(readOnly = true)
-    public CampaignBudgetChartDto budgetChart(Long advertId, Long cabinetId, Integer hours, Integer stepHours) {
+    public CampaignBudgetChartDto budgetChart(
+            Long advertId,
+            Long cabinetId,
+            Integer hours,
+            Integer stepHours,
+            LocalDateTime from,
+            LocalDateTime to
+    ) {
         ensureCampaign(advertId, cabinetId);
-        return budgetChartService.buildChart(advertId, cabinetId, hours, stepHours);
+        return budgetChartService.buildChart(advertId, cabinetId, hours, stepHours, from, to);
     }
 
     @Transactional(readOnly = true)
