@@ -172,7 +172,7 @@ public class CampaignBudgetChartService {
                 .filter(e -> e.getEventType() == CampaignBudgetTimelineEventType.SNAPSHOT
                         || (e.getEventType() == CampaignBudgetTimelineEventType.TOP_UP
                         && (e.getBudgetTotal() != null || e.getTopUpAmount() != null)))
-                .sorted(Comparator.comparing(CampaignBudgetTimeline::getRecordedAt))
+                .sorted(budgetEventTimeComparator())
                 .toList();
 
         List<CampaignBudgetChartDto.BudgetChartPointDto> points = new ArrayList<>();
@@ -312,7 +312,7 @@ public class CampaignBudgetChartService {
                 .filter(e -> e.getBudgetTotal() != null
                         || (e.getEventType() == CampaignBudgetTimelineEventType.TOP_UP && e.getTopUpAmount() != null))
                 .filter(e -> !e.getRecordedAt().isAfter(at))
-                .sorted(Comparator.comparing(CampaignBudgetTimeline::getRecordedAt))
+                .sorted(budgetEventTimeComparator())
                 .toList();
         Integer lastBudget = null;
         for (CampaignBudgetTimeline event : budgetEvents) {
@@ -325,18 +325,43 @@ public class CampaignBudgetChartService {
     }
 
     /**
-     * Для TOP_UP учитывает устаревший budget_total от WB (max с оценкой до+сумма).
+     * SNAPSHOT с пост-пополнения балансом иногда попадает в timeline на миллисекунды раньше TOP_UP.
+     * Для TOP_UP: если budget_total уже отражает пополнение — не прибавляем topUpAmount повторно;
+     * если budget_total устарел (ниже ожидаемого) — берём оценку «до + сумма».
      */
     private int resolveEventBudgetRub(CampaignBudgetTimeline event, Integer budgetBefore) {
         if (event.getEventType() != CampaignBudgetTimelineEventType.TOP_UP
                 || event.getTopUpAmount() == null) {
             return event.getBudgetTotal() != null ? event.getBudgetTotal() : 0;
         }
-        int estimated = (budgetBefore != null ? budgetBefore : 0) + event.getTopUpAmount();
-        if (event.getBudgetTotal() == null) {
+        int topUp = event.getTopUpAmount();
+        Integer budgetTotal = event.getBudgetTotal();
+
+        int effectiveBefore = budgetBefore != null ? budgetBefore : 0;
+        if (budgetTotal != null && budgetBefore != null && budgetBefore >= budgetTotal) {
+            int impliedBefore = budgetTotal - topUp;
+            if (impliedBefore >= 0) {
+                effectiveBefore = impliedBefore;
+            }
+        }
+
+        int estimated = effectiveBefore + topUp;
+        if (budgetTotal == null) {
             return estimated;
         }
-        return Math.max(event.getBudgetTotal(), estimated);
+        if (budgetTotal < estimated) {
+            return estimated;
+        }
+        return budgetTotal;
+    }
+
+    /**
+     * TOP_UP раньше SNAPSHOT при одинаковом recorded_at — иначе снимок с новым балансом
+     * искажает «до пополнения» и даёт двойной скачок на графике.
+     */
+    private Comparator<CampaignBudgetTimeline> budgetEventTimeComparator() {
+        return Comparator.comparing(CampaignBudgetTimeline::getRecordedAt)
+                .thenComparingInt(e -> e.getEventType() == CampaignBudgetTimelineEventType.TOP_UP ? 0 : 1);
     }
 
     /**
