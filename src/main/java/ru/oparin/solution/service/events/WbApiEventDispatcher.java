@@ -1,5 +1,7 @@
 package ru.oparin.solution.service.events;
 
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
@@ -34,13 +36,32 @@ public class WbApiEventDispatcher {
     private final ProductCardRepository productCardRepository;
     @Qualifier("cabinetUpdateExecutor")
     private final ThreadPoolTaskExecutor cabinetUpdateExecutor;
-    @Qualifier("wbEventExecutionTimeoutScheduler")
-    private final ScheduledExecutorService executionTimeoutScheduler;
+
+    /**
+     * Не Spring-bean: иначе {@code @Scheduled} начнёт выполняться в этом однопоточном планировщике.
+     */
+    private ScheduledExecutorService executionTimeoutScheduler;
 
     /** Поток, выполняющий {@link #executeRunningEvent}; нужен для interrupt по таймауту. */
     private final ConcurrentMap<Long, Thread> runningThreadsByEventId = new ConcurrentHashMap<>();
     /** Событие уже переведено в retry по таймауту выполнения. */
     private final ConcurrentMap<Long, AtomicBoolean> executionTimedOutByEventId = new ConcurrentHashMap<>();
+
+    @PostConstruct
+    void initExecutionTimeoutScheduler() {
+        executionTimeoutScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "wb-event-exec-timeout");
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
+
+    @PreDestroy
+    void shutdownExecutionTimeoutScheduler() {
+        if (executionTimeoutScheduler != null) {
+            executionTimeoutScheduler.shutdownNow();
+        }
+    }
 
     @Scheduled(fixedDelayString = "${app.wb-events.poll-delay-ms}")
     @SchedulerLock(name = "wbApiEventDispatcherPoll", lockAtLeastFor = "PT1S", lockAtMostFor = "PT1M")

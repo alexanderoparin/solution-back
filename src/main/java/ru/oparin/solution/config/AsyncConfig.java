@@ -5,10 +5,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
@@ -86,15 +85,17 @@ public class AsyncConfig {
     }
 
     /**
-     * Планировщик таймаутов выполнения WB-событий (отдельно от {@code cabinetUpdateExecutor}).
+     * Планировщик для {@code @Scheduled}. Не путать с внутренним планировщиком таймаутов WB-событий.
      */
-    @Bean(name = "wbEventExecutionTimeoutScheduler", destroyMethod = "shutdown")
-    public ScheduledExecutorService wbEventExecutionTimeoutScheduler() {
-        return Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "wb-event-exec-timeout");
-            thread.setDaemon(true);
-            return thread;
-        });
+    @Bean
+    public ThreadPoolTaskScheduler taskScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(Math.max(2, corePoolSize));
+        scheduler.setThreadNamePrefix("scheduling-");
+        scheduler.setWaitForTasksToCompleteOnShutdown(true);
+        scheduler.setAwaitTerminationSeconds(60);
+        scheduler.initialize();
+        return scheduler;
     }
 }
 
