@@ -435,6 +435,7 @@ public class WbApiEventService {
                 .updatedAt(LocalDateTime.now())
                 .build();
         event = eventRepository.save(event);
+        log.debug("Событие с id={} сохранено/обновлено", event.getId());
         return event.getId();
     }
 
