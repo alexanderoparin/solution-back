@@ -6,7 +6,6 @@ import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.PromotionCampaignControlWriteService;
-import ru.oparin.solution.service.campaign.CampaignScheduleControlNotifier;
 import ru.oparin.solution.service.events.payload.PromotionCampaignControlPayload;
 import ru.oparin.solution.service.sync.PromotionCampaignSyncService;
 import ru.oparin.solution.service.wb.WbPromotionApiClient;
@@ -25,7 +24,6 @@ public class PromotionCampaignStartEventExecutor implements WbApiEventExecutor {
     private final WbPromotionApiClient promotionApiClient;
     private final PromotionCampaignSyncService promotionCampaignSyncService;
     private final PromotionCampaignControlWriteService promotionControlWriteService;
-    private final CampaignScheduleControlNotifier scheduleControlNotifier;
 
     @Override
     public WbApiEventExecutionResult execute(WbApiEvent event) {
@@ -42,7 +40,6 @@ public class PromotionCampaignStartEventExecutor implements WbApiEventExecutor {
             promotionCampaignSyncService.loadAndSaveAdvertsBatch(
                     cabinet, cabinet.getApiKey(), List.of(payload.advertId()));
             promotionControlWriteService.clearBlock(cabinet.getId());
-            scheduleControlNotifier.onStartSucceededOnWb(payload.advertId(), cabinet.getId());
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (WbApiUnauthorizedScopeException e) {
             if (PromotionCampaignControlWriteService.isReadOnlyTokenError(e)) {
