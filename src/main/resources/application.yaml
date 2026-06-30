@@ -68,8 +68,8 @@ jwt:
 
 wb:
   http:
-    connect-timeout-ms: 15000
-    read-timeout-ms: 45000
+    connect-timeout-ms: 10000
+    read-timeout-ms: 30000
   retries:
     max-429-basic: 5
     max-429-personal: 5
