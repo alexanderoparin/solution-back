@@ -187,6 +187,7 @@ public class PromotionNormQueryStatisticsService {
                 .orders(row.getOrders())
                 .spend(row.getSpend())
                 .cpc(row.getCpc())
+                .cpo(row.getCpo())
                 .build();
     }
 
@@ -204,6 +205,7 @@ public class PromotionNormQueryStatisticsService {
                 .orders(row.getOrders() != null ? row.getOrders() : 0)
                 .spend(row.getSpend())
                 .cpc(row.getCpc())
+                .cpo(row.getCpo())
                 .build();
     }
 

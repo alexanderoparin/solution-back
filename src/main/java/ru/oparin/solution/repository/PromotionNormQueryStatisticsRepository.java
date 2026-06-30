@@ -59,6 +59,8 @@ public interface PromotionNormQueryStatisticsRepository
         java.math.BigDecimal getSpend();
 
         java.math.BigDecimal getCpc();
+
+        java.math.BigDecimal getCpo();
     }
 
     interface NormQueryClusterTotalsRow {
@@ -73,5 +75,7 @@ public interface PromotionNormQueryStatisticsRepository
         java.math.BigDecimal getSpend();
 
         java.math.BigDecimal getCpc();
+
+        java.math.BigDecimal getCpo();
     }
 }

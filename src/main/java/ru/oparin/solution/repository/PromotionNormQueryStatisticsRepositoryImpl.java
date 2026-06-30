@@ -30,7 +30,10 @@ public class PromotionNormQueryStatisticsRepositoryImpl implements PromotionNorm
                 COALESCE(SUM(s.spend), 0) AS spend,
                 CASE WHEN COALESCE(SUM(s.clicks), 0) > 0
                     THEN SUM(s.spend) / SUM(s.clicks)
-                    ELSE NULL END AS cpc
+                    ELSE NULL END AS cpc,
+                CASE WHEN COALESCE(SUM(s.orders), 0) > 0
+                    THEN SUM(s.spend) / SUM(s.orders)
+                    ELSE 0 END AS cpo
             """;
 
     private static final String TOTALS_SELECT = """
@@ -44,7 +47,10 @@ public class PromotionNormQueryStatisticsRepositoryImpl implements PromotionNorm
                 COALESCE(SUM(s.spend), 0) AS spend,
                 CASE WHEN COALESCE(SUM(s.clicks), 0) > 0
                     THEN SUM(s.spend) / SUM(s.clicks)
-                    ELSE NULL END AS cpc
+                    ELSE NULL END AS cpc,
+                CASE WHEN COALESCE(SUM(s.orders), 0) > 0
+                    THEN SUM(s.spend) / SUM(s.orders)
+                    ELSE 0 END AS cpo
             """;
 
     private static final String FROM_TABLE = " FROM solution.promotion_norm_query_statistics s ";
@@ -161,6 +167,7 @@ public class PromotionNormQueryStatisticsRepositoryImpl implements PromotionNorm
         private final Integer orders;
         private final BigDecimal spend;
         private final BigDecimal cpc;
+        private final BigDecimal cpo;
 
         AggregateRowProjection(Object[] row) {
             normQuery = row[0] != null ? row[0].toString() : null;
@@ -170,6 +177,7 @@ public class PromotionNormQueryStatisticsRepositoryImpl implements PromotionNorm
             orders = toInt(row[4]);
             spend = toBigDecimal(row[5]);
             cpc = toBigDecimal(row[6]);
+            cpo = toBigDecimal(row[7]);
         }
 
         @Override
@@ -206,6 +214,11 @@ public class PromotionNormQueryStatisticsRepositoryImpl implements PromotionNorm
         public BigDecimal getCpc() {
             return cpc;
         }
+
+        @Override
+        public BigDecimal getCpo() {
+            return cpo;
+        }
     }
 
     private static final class TotalsRowProjection
@@ -217,6 +230,7 @@ public class PromotionNormQueryStatisticsRepositoryImpl implements PromotionNorm
         private final Integer orders;
         private final BigDecimal spend;
         private final BigDecimal cpc;
+        private final BigDecimal cpo;
 
         TotalsRowProjection(Object[] row) {
             avgPos = toBigDecimal(row[0]);
@@ -225,6 +239,7 @@ public class PromotionNormQueryStatisticsRepositoryImpl implements PromotionNorm
             orders = toInt(row[3]);
             spend = toBigDecimal(row[4]);
             cpc = toBigDecimal(row[5]);
+            cpo = toBigDecimal(row[6]);
         }
 
         @Override
@@ -255,6 +270,11 @@ public class PromotionNormQueryStatisticsRepositoryImpl implements PromotionNorm
         @Override
         public BigDecimal getCpc() {
             return cpc;
+        }
+
+        @Override
+        public BigDecimal getCpo() {
+            return cpo;
         }
     }
 

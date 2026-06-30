@@ -14,6 +14,7 @@ public enum NormQueryClusterSortField {
     ATBS("atbs"),
     ORDERS("orders"),
     SPEND("spend"),
+    CPO("cpo"),
     CPC("cpc");
 
     private final String sqlAlias;

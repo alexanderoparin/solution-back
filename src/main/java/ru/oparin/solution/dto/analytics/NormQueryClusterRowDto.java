@@ -50,4 +50,9 @@ public class NormQueryClusterRowDto {
      * Средняя стоимость клика за период ({@code spend / clicks}), руб.
      */
     private BigDecimal cpc;
+
+    /**
+     * Стоимость заказа за период ({@code spend / orders}), руб.; при отсутствии заказов — {@code 0}.
+     */
+    private BigDecimal cpo;
 }
