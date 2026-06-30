@@ -67,6 +67,9 @@ jwt:
   expiration: ${JWT_EXPIRATION:1209600000}
 
 wb:
+  http:
+    connect-timeout-ms: 15000
+    read-timeout-ms: 45000
   retries:
     max-429-basic: 5
     max-429-personal: 5
@@ -94,7 +97,7 @@ app:
     poll-delay-ms: ${wb_events_poll_delay_ms:5500}
     stuck-check-delay-ms: 16000
     running-timeout-minutes: 15
-    event-await-timeout-seconds: 121
+    event-await-timeout-seconds: 60
   uploads:
     directory: /app/uploads
     max-file-size: 31457280  # 30 MB по умолчанию

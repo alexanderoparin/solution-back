@@ -10,6 +10,7 @@ import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.*;
+import ru.oparin.solution.config.WbHttpProperties;
 import ru.oparin.solution.dto.wb.WbApiProblemResponse;
 import ru.oparin.solution.dto.wb.WbApiSimpleErrorResponse;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
@@ -44,6 +45,7 @@ public abstract class AbstractWbApiClient {
     protected final ObjectMapper objectMapper;
 
     private WbEndpointRateLimitCoordinator wbEndpointRateLimitCoordinator;
+    private WbHttpProperties wbHttpProperties;
 
     protected AbstractWbApiClient() {
         this.objectMapper = createObjectMapper();
@@ -54,6 +56,11 @@ public abstract class AbstractWbApiClient {
         this.wbEndpointRateLimitCoordinator = wbEndpointRateLimitCoordinator;
     }
 
+    @Autowired
+    void setWbHttpProperties(WbHttpProperties wbHttpProperties) {
+        this.wbHttpProperties = wbHttpProperties;
+    }
+
     @PostConstruct
     void initRestTemplate() {
         this.restTemplate = createRestTemplateWithRateLimitInterceptor();
@@ -61,6 +68,8 @@ public abstract class AbstractWbApiClient {
 
     private RestTemplate createRestTemplateWithRateLimitInterceptor() {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(wbHttpProperties.getConnectTimeoutMs());
+        requestFactory.setReadTimeout(wbHttpProperties.getReadTimeoutMs());
         RestTemplate rt = new RestTemplate(requestFactory);
         WbEndpointRateLimitCoordinator coord = this.wbEndpointRateLimitCoordinator;
         rt.getInterceptors().add((HttpRequest request, byte[] body, ClientHttpRequestExecution execution) -> {

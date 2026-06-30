@@ -30,6 +30,7 @@ public class WbEventsProperties {
     /**
      * Таймаут выполнения одного события с момента {@code tryMarkRunning} (секунды).
      * Не относится к ожиданию в очереди poll или пула потоков.
+     * Должен быть чуть больше {@code wb.http.read-timeout-ms} (запас на rate-limit defer без HTTP).
      */
     private int eventAwaitTimeoutSeconds;
 }
