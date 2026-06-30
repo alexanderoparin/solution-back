@@ -75,11 +75,18 @@ public class CampaignScheduleProcessor {
                 if (state.getActiveSlotId() == null || !state.getActiveSlotId().equals(slot.getId())) {
                     onSlotEnter(state, slot, cabinet);
                 }
-                checkSlotBudgetCap(state, slot, cabinet);
-                if (!SlotBudgetSpendUtils.isSlotBudgetExhausted(state, slot.getId())) {
-                    autoTopUpService.tryTopUpInNewTransaction(advertId, cabinetId, cabinet)
-                            .ifPresent(amount -> reloadStateAfterTopUp(state, advertId, amount));
-                    ensureRunning(campaign, cabinet, advertId);
+                if (state.getBudgetAtSlotStart() == null) {
+                    log.debug(
+                            "Слот advertId={}: ожидание свежего бюджета WB для базы расхода за слот",
+                            advertId
+                    );
+                } else {
+                    checkSlotBudgetCap(state, slot, cabinet);
+                    if (!SlotBudgetSpendUtils.isSlotBudgetExhausted(state, slot.getId())) {
+                        autoTopUpService.tryTopUpInNewTransaction(advertId, cabinetId, cabinet)
+                                .ifPresent(amount -> reloadStateAfterTopUp(state, advertId, amount));
+                        ensureRunning(campaign, cabinet, advertId);
+                    }
                 }
             }
         } else {
@@ -112,11 +119,8 @@ public class CampaignScheduleProcessor {
         if (!budgetPollCoordinator.isTickLeader(cabinet.getId(), state.getCampaignId())) {
             budgetPollCoordinator.grantMandatoryPoll(cabinet.getId(), state.getCampaignId());
         }
-        budgetFetchService.fetchBudgetTotal(cabinet, state.getCampaignId(), state)
-                .ifPresent(fetched -> {
-                    int baseline = SlotBudgetSpendUtils.resolveSlotBudgetBaseline(state, fetched);
-                    SlotBudgetSpendUtils.beginSlotSession(state, slot.getId(), baseline);
-                });
+        budgetFetchService.fetchBudgetForSlotEnter(cabinet, state.getCampaignId(), state)
+                .ifPresent(fetched -> SlotBudgetSpendUtils.beginSlotSession(state, slot.getId(), fetched));
     }
 
     private void onSlotLeave(CampaignManagementState state) {
