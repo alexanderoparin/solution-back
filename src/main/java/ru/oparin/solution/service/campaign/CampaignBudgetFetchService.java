@@ -10,6 +10,7 @@ import ru.oparin.solution.model.CampaignManagementState;
 import ru.oparin.solution.model.WbApiEventType;
 import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -46,6 +47,14 @@ public class CampaignBudgetFetchService {
         return fetchBudgetTotalInternal(cabinet, advertId, state, true);
     }
 
+    /**
+     * Бюджет при входе в слот: в первый раз за календарный день (МСК) — только ответ WB, без вчерашнего кэша.
+     */
+    public Optional<Integer> fetchBudgetForSlotEnter(Cabinet cabinet, Long advertId, CampaignManagementState state) {
+        boolean requireFreshFromWb = isBudgetCacheFromPreviousDay(state);
+        return fetchBudgetTotalInternal(cabinet, advertId, state, requireFreshFromWb);
+    }
+
     private Optional<Integer> fetchBudgetTotalInternal(
             Cabinet cabinet,
             Long advertId,
@@ -60,7 +69,11 @@ public class CampaignBudgetFetchService {
                 state, advertId, cabinet.getId(), ZonedDateTime.now(ZONE))) {
             return cachedBudget(state);
         }
-        if (state != null && state.getLastBudgetTotal() != null && state.getLastBudgetCheckedAt() != null
+        if (!rejectStaleCacheOnly
+                && state != null
+                && state.getLastBudgetTotal() != null
+                && state.getLastBudgetCheckedAt() != null
+                && !isBudgetCacheFromPreviousDay(state)
                 && isFresh(state.getLastBudgetCheckedAt(), tokenType)) {
             return Optional.of(state.getLastBudgetTotal());
         }
@@ -144,5 +157,16 @@ public class CampaignBudgetFetchService {
     private boolean isFresh(LocalDateTime checkedAt, CabinetTokenType tokenType) {
         long delayMs = WbApiEventType.PROMOTION_BUDGET_GET.getRequestDelayMs(tokenType);
         return checkedAt.plusNanos(delayMs * 1_000_000L).isAfter(LocalDateTime.now(ZONE));
+    }
+
+    /**
+     * {@code true}, если последний известный остаток относится к предыдущему календарному дню (МСК) или отсутствует.
+     */
+    private boolean isBudgetCacheFromPreviousDay(CampaignManagementState state) {
+        if (state == null || state.getLastBudgetCheckedAt() == null) {
+            return true;
+        }
+        LocalDate cacheDay = state.getLastBudgetCheckedAt().atZone(ZONE).toLocalDate();
+        return !cacheDay.equals(LocalDate.now(ZONE));
     }
 }
