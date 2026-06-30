@@ -738,6 +738,24 @@ public class WbApiEventService {
     }
 
     @Transactional(readOnly = true)
+    public boolean hasActivePromotionCampaignStart(Long cabinetId, Long advertId) {
+        return hasActivePromotionControl(cabinetId, advertId, "PROMOTION_START");
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasActivePromotionCampaignPause(Long cabinetId, Long advertId) {
+        return hasActivePromotionControl(cabinetId, advertId, "PROMOTION_PAUSE");
+    }
+
+    private boolean hasActivePromotionControl(Long cabinetId, Long advertId, String dedupPrefix) {
+        if (cabinetId == null || advertId == null) {
+            return false;
+        }
+        String dedupKey = dedupPrefix + ":" + cabinetId + ":" + advertId;
+        return eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES);
+    }
+
+    @Transactional(readOnly = true)
     public List<WbApiEvent> findDueEvents() {
         return eventRepository.findReadyEvents(
                 List.of(

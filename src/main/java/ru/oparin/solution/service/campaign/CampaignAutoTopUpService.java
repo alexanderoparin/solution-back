@@ -106,7 +106,8 @@ public class CampaignAutoTopUpService {
             stateRepository.save(state);
 
             changeLogService.log(advertId, cabinetId, null,
-                    "Бюджет пополнен автоматически на " + topUpAmount + " ₽");
+                    "Бюджет пополнен автоматически на " + topUpAmount + " ₽ ("
+                            + budgetBeforeTopUp + " ₽ -> " + budgetAfterTopUp + " ₽)");
             timelineService.recordTopUp(advertId, cabinetId, topUpAmount, budgetAfterTopUp);
             stateRepository.save(state);
 

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import ru.oparin.solution.dto.analytics.CampaignControlEnqueueResponse;
 import ru.oparin.solution.dto.analytics.PromotionControlCapabilitiesDto;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CampaignManagementStateRepository;
@@ -12,6 +13,7 @@ import ru.oparin.solution.repository.PromotionCampaignRepository;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.PromotionCampaignControlService;
 import ru.oparin.solution.service.PromotionCampaignControlWriteService;
+import ru.oparin.solution.service.events.WbApiEventService;
 
 import java.time.ZonedDateTime;
 import java.util.Optional;
@@ -27,7 +29,6 @@ public class CampaignScheduleProcessor {
     private final CampaignManagementStateRepository stateRepository;
     private final PromotionCampaignRepository campaignRepository;
     private final CampaignManageService manageService;
-    private final CampaignChangeLogService changeLogService;
     private final CampaignBudgetTimelineService timelineService;
     private final CampaignBudgetFetchService budgetFetchService;
     private final CampaignAutoTopUpService autoTopUpService;
@@ -35,8 +36,10 @@ public class CampaignScheduleProcessor {
     private final CabinetBudgetPollCoordinator budgetPollCoordinator;
     private final PromotionCampaignControlService controlService;
     private final PromotionCampaignControlWriteService promotionControlWriteService;
+    private final WbApiEventService wbApiEventService;
     private final CabinetService cabinetService;
     private final CampaignManageAccessService campaignManageAccessService;
+    private final CampaignScheduleControlNotifier scheduleControlNotifier;
 
     /**
      * Тик планировщика для одной кампании; коммит независим от других кампаний.
@@ -148,12 +151,17 @@ public class CampaignScheduleProcessor {
         if (!canControlPromotion(cabinet)) {
             return;
         }
+        if (wbApiEventService.hasActivePromotionCampaignStart(cabinet.getId(), advertId)) {
+            return;
+        }
         if (campaign.getStatus() == CampaignStatus.READY_TO_START || campaign.getStatus() == CampaignStatus.PAUSED) {
             try {
-                controlService.enqueueStart(cabinet, advertId);
-                changeLogService.log(advertId, cabinet.getId(), null, "РК запущена по расписанию");
-                timelineService.recordStart(advertId, cabinet.getId());
+                CampaignControlEnqueueResponse response = controlService.enqueueStartFromSchedule(cabinet, advertId);
+                if (response.enqueued()) {
+                    scheduleControlNotifier.onStartEnqueued(advertId, cabinet.getId());
+                }
             } catch (Exception e) {
+                scheduleControlNotifier.onStartFailed(advertId, cabinet.getId(), e.getMessage());
                 log.debug("Запуск по расписанию advertId={}: {}", advertId, e.getMessage());
             }
         }
@@ -164,12 +172,18 @@ public class CampaignScheduleProcessor {
             log.debug("Пауза advertId={} пропущена: {}", advertId, controlBlockMessage(cabinet));
             return;
         }
+        if (wbApiEventService.hasActivePromotionCampaignPause(cabinet.getId(), advertId)) {
+            return;
+        }
         try {
-            controlService.enqueuePause(cabinet, advertId);
-            changeLogService.log(advertId, cabinet.getId(), null, logMessage);
-            timelineService.recordStop(advertId, cabinet.getId());
-            budgetTrailService.beginTrail(state);
+            CampaignControlEnqueueResponse response = controlService.enqueuePauseFromSchedule(cabinet, advertId);
+            if (response.enqueued()) {
+                scheduleControlNotifier.onPauseEnqueued(advertId, cabinet.getId(), logMessage);
+                timelineService.recordStop(advertId, cabinet.getId());
+                budgetTrailService.beginTrail(state);
+            }
         } catch (Exception e) {
+            scheduleControlNotifier.onPauseFailed(advertId, cabinet.getId(), e.getMessage());
             log.debug("Пауза по расписанию advertId={}: {}", advertId, e.getMessage());
         }
     }
