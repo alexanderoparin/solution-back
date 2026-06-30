@@ -23,6 +23,16 @@ public final class SlotBudgetSpendUtils {
     }
 
     /**
+     * База слота: не ниже последнего известного остатка (защита от устаревшего кэша при входе в слот).
+     */
+    public static int resolveSlotBudgetBaseline(CampaignManagementState state, int fetchedBudget) {
+        if (state.getLastBudgetTotal() != null && state.getLastBudgetTotal() > fetchedBudget) {
+            return state.getLastBudgetTotal();
+        }
+        return fetchedBudget;
+    }
+
+    /**
      * Баланс WB вырос без учтённого пополнения — поднимаем базу слота, чтобы лимит расхода не «обнулялся».
      */
     public static void reconcileBaselineIfBalanceGrew(CampaignManagementState state, int currentBudgetTotal) {
