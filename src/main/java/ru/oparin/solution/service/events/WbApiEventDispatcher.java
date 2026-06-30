@@ -50,10 +50,11 @@ public class WbApiEventDispatcher {
         int executedCount = 0;
         int skippedCount = 0;
         int timeoutCount = 0;
-        for (int i = 0; i < futures.size(); i++) {
+        int queueTotal = futures.size();
+        for (int i = 0; i < queueTotal; i++) {
             CompletableFuture<EventExecutionOutcome> future = futures.get(i);
             WbApiEvent event = events.get(i);
-            EventExecutionOutcome outcome = awaitOutcome(future, event.getId(), timeoutSeconds);
+            EventExecutionOutcome outcome = awaitOutcome(future, event, i, queueTotal, timeoutSeconds);
             if (outcome == EventExecutionOutcome.TIMEOUT) {
                 timeoutCount++;
                 continue;
@@ -108,31 +109,64 @@ public class WbApiEventDispatcher {
         return (cabinetId != null ? cabinetId : -1L) + "|" + eventType;
     }
 
-    private EventExecutionOutcome awaitOutcome(CompletableFuture<EventExecutionOutcome> future, Long eventId, int timeoutSeconds) {
+    private EventExecutionOutcome awaitOutcome(
+            CompletableFuture<EventExecutionOutcome> future,
+            WbApiEvent event,
+            int queueIndex,
+            int queueTotal,
+            int timeoutSeconds
+    ) {
+        String eventLabel = formatEventForLog(event, queueIndex, queueTotal);
         try {
             return future.get(timeoutSeconds, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
             future.cancel(true);
-            log.error("WB events poll: таймаут ожидания async-события (>{}с), future отменен", timeoutSeconds);
-            revertRunningAfterPollAwaitTimeout(eventId, timeoutSeconds);
+            log.error(
+                    "WB events poll: таймаут ожидания async-события (>{}с), future отменен: {}",
+                    timeoutSeconds,
+                    eventLabel
+            );
+            revertRunningAfterPollAwaitTimeout(event.getId(), timeoutSeconds);
             return EventExecutionOutcome.TIMEOUT;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("WB events poll: поток прерван при ожидании async-события");
+            log.error("WB events poll: поток прерван при ожидании async-события: {}", eventLabel);
             future.cancel(true);
-            revertRunningAfterPollAwaitTimeout(eventId, timeoutSeconds);
+            revertRunningAfterPollAwaitTimeout(event.getId(), timeoutSeconds);
             return EventExecutionOutcome.TIMEOUT;
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
-            log.error("WB events poll: ошибка ожидания async-события: {}", cause.getMessage(), cause);
+            log.error("WB events poll: ошибка ожидания async-события ({}): {}", eventLabel, cause.getMessage(), cause);
             future.cancel(true);
-            revertRunningAfterPollAwaitTimeout(eventId, timeoutSeconds);
+            revertRunningAfterPollAwaitTimeout(event.getId(), timeoutSeconds);
             return EventExecutionOutcome.TIMEOUT;
         } catch (CancellationException e) {
-            log.error("WB events poll: async-событие отменено (CancellationException)");
-            revertRunningAfterPollAwaitTimeout(eventId, timeoutSeconds);
+            log.error("WB events poll: async-событие отменено (CancellationException): {}", eventLabel);
+            revertRunningAfterPollAwaitTimeout(event.getId(), timeoutSeconds);
             return EventExecutionOutcome.TIMEOUT;
         }
+    }
+
+    private String formatEventForLog(WbApiEvent event, int queueIndex, int queueTotal) {
+        Long cabinetId = event.getCabinet() != null ? event.getCabinet().getId() : null;
+        Long nmId = extractNmId(event);
+        StringBuilder label = new StringBuilder();
+        label.append("id=").append(event.getId());
+        label.append(", type=").append(event.getEventType());
+        if (cabinetId != null) {
+            label.append(", cabinetId=").append(cabinetId);
+        }
+        if (nmId != null) {
+            label.append(", nmId=").append(nmId);
+        }
+        if (event.getDedupKey() != null) {
+            label.append(", dedupKey=").append(event.getDedupKey());
+        }
+        label.append(", позиция=").append(queueIndex + 1).append("/").append(queueTotal);
+        if (event.getStatus() != null) {
+            label.append(", status=").append(event.getStatus());
+        }
+        return label.toString();
     }
 
     /**
