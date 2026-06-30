@@ -28,7 +28,8 @@ public class WbEventsProperties {
     private int runningTimeoutMinutes;
 
     /**
-     * Таймаут ожидания завершения одного async-события в poll (секунды).
+     * Таймаут выполнения одного события с момента {@code tryMarkRunning} (секунды).
+     * Не относится к ожиданию в очереди poll или пула потоков.
      */
     private int eventAwaitTimeoutSeconds;
 }

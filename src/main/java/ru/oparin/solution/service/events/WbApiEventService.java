@@ -782,20 +782,26 @@ public class WbApiEventService {
     }
 
     /**
-     * После {@link WbApiEventDispatcher} poll-таймаута async-задача могла остаться RUNNING — переводим в retry.
+     * После таймаута выполнения с момента {@code tryMarkRunning} событие могло остаться RUNNING — переводим в retry.
      */
     @Transactional
-    public void revertRunningAfterAsyncPollTimeout(long eventId, int pollAwaitTimeoutSeconds) {
-        markFailedIfRunning(
-                eventId,
+    public boolean revertRunningAfterExecutionTimeout(long eventId, int executionTimeoutSeconds) {
+        WbApiEvent event = eventRepository.findById(eventId).orElse(null);
+        if (event == null || event.getStatus() != WbApiEventStatus.RUNNING) {
+            return false;
+        }
+        event.setStartedAt(null);
+        markFailed(
+                event,
                 WbApiEventExecutionResult.retryableError(
-                        "Таймаут ожидания на poll (" + pollAwaitTimeoutSeconds + " с): async-выполнение отменено."
+                        "Таймаут выполнения (" + executionTimeoutSeconds + " с) с момента старта."
                 )
         );
+        return true;
     }
 
     /**
-     * Успех только если событие ещё в RUNNING (иначе poll уже отменил задачу и перевёл в retry).
+     * Успех только если событие ещё в RUNNING (иначе таймаут выполнения уже перевёл в retry).
      */
     @Transactional
     public void markSuccessIfRunning(Long eventId) {

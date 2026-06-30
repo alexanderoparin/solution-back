@@ -7,6 +7,7 @@ import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationContext;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.config.WbEventsProperties;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
@@ -19,6 +20,7 @@ import ru.oparin.solution.service.events.payload.StocksByNmIdPayload;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
 @RequiredArgsConstructor
@@ -31,7 +33,14 @@ public class WbApiEventDispatcher {
     private final WbEventsProperties wbEventsProperties;
     private final ProductCardRepository productCardRepository;
     @Qualifier("cabinetUpdateExecutor")
-    private final Executor cabinetUpdateExecutor;
+    private final ThreadPoolTaskExecutor cabinetUpdateExecutor;
+    @Qualifier("wbEventExecutionTimeoutScheduler")
+    private final ScheduledExecutorService executionTimeoutScheduler;
+
+    /** Поток, выполняющий {@link #executeRunningEvent}; нужен для interrupt по таймауту. */
+    private final ConcurrentMap<Long, Thread> runningThreadsByEventId = new ConcurrentHashMap<>();
+    /** Событие уже переведено в retry по таймауту выполнения. */
+    private final ConcurrentMap<Long, AtomicBoolean> executionTimedOutByEventId = new ConcurrentHashMap<>();
 
     @Scheduled(fixedDelayString = "${app.wb-events.poll-delay-ms}")
     @SchedulerLock(name = "wbApiEventDispatcherPoll", lockAtLeastFor = "PT1S", lockAtMostFor = "PT1M")
@@ -43,18 +52,19 @@ public class WbApiEventDispatcher {
         events = prioritizeEventsForPriorityCards(events);
         log.info("WB events poll: получено событий к обработке {}", events.size());
 
-        List<CompletableFuture<EventExecutionOutcome>> futures = buildGroupedExecutionPlan(events);
+        GroupedExecutionPlan executionPlan = buildGroupedExecutionPlan(events);
+        logExecutionPlanAndPool("старт poll", executionPlan);
 
-        int timeoutSeconds = Math.max(1, wbEventsProperties.getEventAwaitTimeoutSeconds());
         int deferredCount = 0;
         int executedCount = 0;
         int skippedCount = 0;
         int timeoutCount = 0;
-        int queueTotal = futures.size();
+        int queueTotal = executionPlan.futures().size();
+        List<CompletableFuture<EventExecutionOutcome>> futures = executionPlan.futures();
         for (int i = 0; i < queueTotal; i++) {
             CompletableFuture<EventExecutionOutcome> future = futures.get(i);
             WbApiEvent event = events.get(i);
-            EventExecutionOutcome outcome = awaitOutcome(future, event, i, queueTotal, timeoutSeconds);
+            EventExecutionOutcome outcome = awaitOutcome(future, event, i, queueTotal);
             if (outcome == EventExecutionOutcome.TIMEOUT) {
                 timeoutCount++;
                 continue;
@@ -71,6 +81,55 @@ public class WbApiEventDispatcher {
                 "WB events poll: выполнено {}, отложено по rate-limit {}, пропущено {}, таймаут {} (всего выбрано {})",
                 executedCount, deferredCount, skippedCount, timeoutCount, events.size()
         );
+        logExecutorPoolState("конец poll");
+    }
+
+    private void logExecutionPlanAndPool(String phase, GroupedExecutionPlan plan) {
+        log.info(
+                "WB events poll: {} — план: событий {}, цепочек (cabinet+type) {}, сразу отправлено в пул {}, "
+                        + "ожидают цепочку (ещё не в пуле) {}, {}",
+                phase,
+                plan.futures().size(),
+                plan.executionGroupCount(),
+                plan.immediatePoolSubmits(),
+                plan.chainedPendingSubmits(),
+                formatExecutorPoolState()
+        );
+    }
+
+    private void logExecutorPoolState(String phase) {
+        log.info("WB events poll: {} — пул cabinet-update: {}", phase, formatExecutorPoolState());
+    }
+
+    private String formatExecutorPoolState() {
+        ThreadPoolExecutor threadPool = cabinetUpdateExecutor.getThreadPoolExecutor();
+        if (threadPool == null) {
+            return "недоступен";
+        }
+        return String.format(
+                "active=%d, pool=%d, core=%d, max=%d, queue=%d, completed=%d",
+                threadPool.getActiveCount(),
+                threadPool.getPoolSize(),
+                threadPool.getCorePoolSize(),
+                threadPool.getMaximumPoolSize(),
+                threadPool.getQueue().size(),
+                threadPool.getCompletedTaskCount()
+        );
+    }
+
+    /**
+     * План async-выполнения: futures по порядку poll и счётчики постановки в {@code cabinetUpdateExecutor}.
+     *
+     * @param executionGroupCount     число уникальных пар (cabinetId, eventType)
+     * @param immediatePoolSubmits    задач сразу отправлено в пул (голова цепочки)
+     * @param chainedPendingSubmits   событий в цепочке, ещё не отправленных в пул
+     */
+    private record GroupedExecutionPlan(
+            List<CompletableFuture<EventExecutionOutcome>> futures,
+            int executionGroupCount,
+            int immediatePoolSubmits,
+            int chainedPendingSubmits
+    ) {
     }
 
     /**
@@ -81,15 +140,17 @@ public class WbApiEventDispatcher {
      * </ul>
      * Это сохраняет throughput, но устраняет «перемешивание» порядка внутри одной группы.
      */
-    private List<CompletableFuture<EventExecutionOutcome>> buildGroupedExecutionPlan(List<WbApiEvent> events) {
+    private GroupedExecutionPlan buildGroupedExecutionPlan(List<WbApiEvent> events) {
         Map<String, CompletableFuture<EventExecutionOutcome>> tailsByGroup = new HashMap<>();
         List<CompletableFuture<EventExecutionOutcome>> plan = new ArrayList<>(events.size());
+        int immediatePoolSubmits = 0;
 
         for (WbApiEvent event : events) {
             String groupKey = executionGroupKey(event);
             CompletableFuture<EventExecutionOutcome> prevTail = tailsByGroup.get(groupKey);
             CompletableFuture<EventExecutionOutcome> nextFuture;
             if (prevTail == null) {
+                immediatePoolSubmits++;
                 nextFuture = CompletableFuture.supplyAsync(() -> executeSingle(event), cabinetUpdateExecutor);
             } else {
                 // Продолжаем цепочку даже если предыдущий future завершился с исключением/отменой.
@@ -100,7 +161,9 @@ public class WbApiEventDispatcher {
             tailsByGroup.put(groupKey, nextFuture);
             plan.add(nextFuture);
         }
-        return plan;
+        int executionGroupCount = tailsByGroup.size();
+        int chainedPendingSubmits = events.size() - immediatePoolSubmits;
+        return new GroupedExecutionPlan(plan, executionGroupCount, immediatePoolSubmits, chainedPendingSubmits);
     }
 
     private String executionGroupKey(WbApiEvent event) {
@@ -109,41 +172,31 @@ public class WbApiEventDispatcher {
         return (cabinetId != null ? cabinetId : -1L) + "|" + eventType;
     }
 
+    /**
+     * Ожидает завершения async-задачи без лимита по времени.
+     * Таймаут выполнения считается с {@code tryMarkRunning} внутри {@link #executeSingle}.
+     */
     private EventExecutionOutcome awaitOutcome(
             CompletableFuture<EventExecutionOutcome> future,
             WbApiEvent event,
             int queueIndex,
-            int queueTotal,
-            int timeoutSeconds
+            int queueTotal
     ) {
         String eventLabel = formatEventForLog(event, queueIndex, queueTotal);
         try {
-            return future.get(timeoutSeconds, TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
-            future.cancel(true);
-            log.error(
-                    "WB events poll: таймаут ожидания async-события (>{}с), future отменен: {}",
-                    timeoutSeconds,
-                    eventLabel
-            );
-            revertRunningAfterPollAwaitTimeout(event.getId(), timeoutSeconds);
-            return EventExecutionOutcome.TIMEOUT;
+            return future.get();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("WB events poll: поток прерван при ожидании async-события: {}", eventLabel);
             future.cancel(true);
-            revertRunningAfterPollAwaitTimeout(event.getId(), timeoutSeconds);
-            return EventExecutionOutcome.TIMEOUT;
+            return EventExecutionOutcome.INTERRUPTED;
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             log.error("WB events poll: ошибка ожидания async-события ({}): {}", eventLabel, cause.getMessage(), cause);
-            future.cancel(true);
-            revertRunningAfterPollAwaitTimeout(event.getId(), timeoutSeconds);
-            return EventExecutionOutcome.TIMEOUT;
+            return EventExecutionOutcome.INTERRUPTED;
         } catch (CancellationException e) {
-            log.error("WB events poll: async-событие отменено (CancellationException): {}", eventLabel);
-            revertRunningAfterPollAwaitTimeout(event.getId(), timeoutSeconds);
-            return EventExecutionOutcome.TIMEOUT;
+            log.warn("WB events poll: async-событие отменено (CancellationException): {}", eventLabel);
+            return EventExecutionOutcome.INTERRUPTED;
         }
     }
 
@@ -162,21 +215,13 @@ public class WbApiEventDispatcher {
         if (event.getDedupKey() != null) {
             label.append(", dedupKey=").append(event.getDedupKey());
         }
-        label.append(", позиция=").append(queueIndex + 1).append("/").append(queueTotal);
+        if (queueIndex >= 0 && queueTotal > 0) {
+            label.append(", позиция=").append(queueIndex + 1).append("/").append(queueTotal);
+        }
         if (event.getStatus() != null) {
             label.append(", status=").append(event.getStatus());
         }
         return label.toString();
-    }
-
-    /**
-     * Если async-задача не вернулась за poll-таймаут, событие остаётся RUNNING в БД — переводим в retry.
-     */
-    private void revertRunningAfterPollAwaitTimeout(Long eventId, int timeoutSeconds) {
-        if (eventId == null) {
-            return;
-        }
-        eventService.revertRunningAfterAsyncPollTimeout(eventId, timeoutSeconds);
     }
 
     private List<WbApiEvent> prioritizeEventsForPriorityCards(List<WbApiEvent> events) {
@@ -254,10 +299,24 @@ public class WbApiEventDispatcher {
         if (cabinetId != null) {
             MDC.put("cabinetTag", "[cabinet:" + cabinetId + "]");
         }
+        ScheduledFuture<?> timeoutTask = null;
         try {
             if (!eventService.tryMarkRunning(event)) {
                 return EventExecutionOutcome.SKIPPED;
             }
+            timeoutTask = scheduleExecutionTimeout(event);
+            return executeRunningEvent(event);
+        } finally {
+            clearExecutionTimeoutState(event.getId(), timeoutTask);
+            MDC.remove("cabinetTag");
+        }
+    }
+
+    private EventExecutionOutcome executeRunningEvent(WbApiEvent event) {
+        if (isExecutionTimedOut(event.getId())) {
+            return EventExecutionOutcome.TIMEOUT;
+        }
+        try {
             LocalDateTime deferUntil = rateLimitService.acquireOrDefer(event);
             if (deferUntil != null) {
                 eventService.markFailed(
@@ -267,27 +326,27 @@ public class WbApiEventDispatcher {
                                 deferUntil
                         )
                 );
-                return EventExecutionOutcome.DEFERRED_RATE_LIMIT;
+                return resolveOutcomeAfterRunning(event.getId(), EventExecutionOutcome.DEFERRED_RATE_LIMIT);
             }
             WbApiEventExecutor executor = applicationContext.getBean(event.getExecutorBeanName(), WbApiEventExecutor.class);
             WbApiEventExecutionResult result = executor.execute(event);
             long eventId = event.getId();
             if (result.success()) {
                 eventService.markSuccessIfRunning(eventId);
-                return EventExecutionOutcome.EXECUTED;
+                return resolveOutcomeAfterRunning(eventId, EventExecutionOutcome.EXECUTED);
             }
             if (result.deferUntil() != null) {
                 eventService.markFailed(event, result);
-                return EventExecutionOutcome.DEFERRED_RATE_LIMIT;
+                return resolveOutcomeAfterRunning(eventId, EventExecutionOutcome.DEFERRED_RATE_LIMIT);
             }
             eventService.markFailedIfRunning(eventId, result);
-            return EventExecutionOutcome.EXECUTED;
+            return resolveOutcomeAfterRunning(eventId, EventExecutionOutcome.EXECUTED);
         } catch (WbRateLimitDeferException e) {
             eventService.markFailed(
                     event,
                     WbApiEventExecutionResult.deferredRateLimit(e.getMessage(), e.getDeferUntil())
             );
-            return EventExecutionOutcome.DEFERRED_RATE_LIMIT;
+            return resolveOutcomeAfterRunning(event.getId(), EventExecutionOutcome.DEFERRED_RATE_LIMIT);
         } catch (Exception e) {
             WbRateLimitDeferException defer = WbRateLimitDeferException.findInChain(e);
             if (defer != null) {
@@ -295,21 +354,71 @@ public class WbApiEventDispatcher {
                         event,
                         WbApiEventExecutionResult.deferredRateLimit(defer.getMessage(), defer.getDeferUntil())
                 );
-                return EventExecutionOutcome.DEFERRED_RATE_LIMIT;
+                return resolveOutcomeAfterRunning(event.getId(), EventExecutionOutcome.DEFERRED_RATE_LIMIT);
             }
             log.error("Ошибка выполнения WB API события id={}, type={}: {}", event.getId(), event.getEventType(), e.getMessage(), e);
             eventService.markFailedIfRunning(event.getId(), WbApiEventExecutionResult.retryableError(e.getMessage()));
-            return EventExecutionOutcome.EXECUTED;
-        } finally {
-            MDC.remove("cabinetTag");
+            return resolveOutcomeAfterRunning(event.getId(), EventExecutionOutcome.EXECUTED);
         }
+    }
+
+    private EventExecutionOutcome resolveOutcomeAfterRunning(long eventId, EventExecutionOutcome outcome) {
+        if (isExecutionTimedOut(eventId)) {
+            return EventExecutionOutcome.TIMEOUT;
+        }
+        return outcome;
+    }
+
+    private ScheduledFuture<?> scheduleExecutionTimeout(WbApiEvent event) {
+        int timeoutSeconds = Math.max(1, wbEventsProperties.getEventAwaitTimeoutSeconds());
+        long eventId = event.getId();
+        runningThreadsByEventId.put(eventId, Thread.currentThread());
+        return executionTimeoutScheduler.schedule(
+                () -> handleExecutionTimeout(event, timeoutSeconds),
+                timeoutSeconds,
+                TimeUnit.SECONDS
+        );
+    }
+
+    private void handleExecutionTimeout(WbApiEvent event, int timeoutSeconds) {
+        long eventId = event.getId();
+        AtomicBoolean timedOut = executionTimedOutByEventId.computeIfAbsent(eventId, ignored -> new AtomicBoolean());
+        if (!timedOut.compareAndSet(false, true)) {
+            return;
+        }
+        Thread runningThread = runningThreadsByEventId.get(eventId);
+        if (runningThread != null) {
+            runningThread.interrupt();
+        }
+        boolean reverted = eventService.revertRunningAfterExecutionTimeout(eventId, timeoutSeconds);
+        if (reverted) {
+            log.error(
+                    "WB event: таймаут выполнения (>{}с) с момента старта: {}",
+                    timeoutSeconds,
+                    formatEventForLog(event, -1, -1)
+            );
+        }
+    }
+
+    private void clearExecutionTimeoutState(long eventId, ScheduledFuture<?> timeoutTask) {
+        runningThreadsByEventId.remove(eventId);
+        executionTimedOutByEventId.remove(eventId);
+        if (timeoutTask != null) {
+            timeoutTask.cancel(false);
+        }
+    }
+
+    private boolean isExecutionTimedOut(long eventId) {
+        AtomicBoolean timedOut = executionTimedOutByEventId.get(eventId);
+        return timedOut != null && timedOut.get();
     }
 
     private enum EventExecutionOutcome {
         EXECUTED,
         DEFERRED_RATE_LIMIT,
         SKIPPED,
-        TIMEOUT
+        TIMEOUT,
+        INTERRUPTED
     }
 
 }

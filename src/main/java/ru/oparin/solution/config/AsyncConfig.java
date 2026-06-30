@@ -7,6 +7,8 @@ import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
@@ -81,6 +83,18 @@ public class AsyncConfig {
         executor.setAwaitTerminationSeconds(600);
         executor.initialize();
         return executor;
+    }
+
+    /**
+     * Планировщик таймаутов выполнения WB-событий (отдельно от {@code cabinetUpdateExecutor}).
+     */
+    @Bean(name = "wbEventExecutionTimeoutScheduler", destroyMethod = "shutdown")
+    public ScheduledExecutorService wbEventExecutionTimeoutScheduler() {
+        return Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "wb-event-exec-timeout");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 }
 
