@@ -1037,9 +1037,29 @@ public class WbApiEventService {
         Long cabinetId = event.getCabinet() != null ? event.getCabinet().getId() : null;
 
         if (result.deferUntil() != null) {
+            event.setStartedAt(null);
+            if (result.countsAsAttempt()) {
+                int nextAttempt = event.getAttemptCount() + 1;
+                event.setAttemptCount(nextAttempt);
+                if (nextAttempt >= event.getMaxAttempts()) {
+                    event.setStatus(WbApiEventStatus.FAILED_FINAL);
+                    event.setFinishedAt(LocalDateTime.now());
+                    eventRepository.save(event);
+                    log.warn(
+                            "WB event завершен с ошибкой: id={}, type={}, cabinetId={}, status={}, attempts={}/{}, error={}",
+                            event.getId(),
+                            event.getEventType(),
+                            cabinetId,
+                            event.getStatus(),
+                            event.getAttemptCount(),
+                            event.getMaxAttempts(),
+                            event.getLastError()
+                    );
+                    return;
+                }
+            }
             event.setStatus(WbApiEventStatus.DEFERRED_RATE_LIMIT);
             event.setNextAttemptAt(result.deferUntil());
-            event.setStartedAt(null);
             eventRepository.save(event);
             return;
         }

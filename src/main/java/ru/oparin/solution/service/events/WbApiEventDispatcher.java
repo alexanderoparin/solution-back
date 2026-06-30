@@ -342,7 +342,7 @@ public class WbApiEventDispatcher {
             if (deferUntil != null) {
                 eventService.markFailed(
                         event,
-                        WbApiEventExecutionResult.deferredRateLimit(
+                        WbApiEventExecutionResult.deferredScheduling(
                                 "Rate limit по кабинету и endpoint: отложено до " + deferUntil,
                                 deferUntil
                         )
@@ -363,18 +363,12 @@ public class WbApiEventDispatcher {
             eventService.markFailedIfRunning(eventId, result);
             return resolveOutcomeAfterRunning(eventId, EventExecutionOutcome.EXECUTED);
         } catch (WbRateLimitDeferException e) {
-            eventService.markFailed(
-                    event,
-                    WbApiEventExecutionResult.deferredRateLimit(e.getMessage(), e.getDeferUntil())
-            );
+            eventService.markFailed(event, WbEventExecutionErrors.fromDeferException(e));
             return resolveOutcomeAfterRunning(event.getId(), EventExecutionOutcome.DEFERRED_RATE_LIMIT);
         } catch (Exception e) {
             WbRateLimitDeferException defer = WbRateLimitDeferException.findInChain(e);
             if (defer != null) {
-                eventService.markFailed(
-                        event,
-                        WbApiEventExecutionResult.deferredRateLimit(defer.getMessage(), defer.getDeferUntil())
-                );
+                eventService.markFailed(event, WbEventExecutionErrors.fromDeferException(defer));
                 return resolveOutcomeAfterRunning(event.getId(), EventExecutionOutcome.DEFERRED_RATE_LIMIT);
             }
             log.error("Ошибка выполнения WB API события id={}, type={}: {}", event.getId(), event.getEventType(), e.getMessage(), e);
