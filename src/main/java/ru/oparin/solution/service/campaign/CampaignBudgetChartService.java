@@ -245,6 +245,8 @@ public class CampaignBudgetChartService {
 
     /**
      * Горизонталь после trail (5 мин после STOP) до следующего START.
+     * Если до START уже есть SNAPSHOT/TOP_UP (например, первый опрос WB при перезапуске),
+     * plateau обрезается до этого снимка — иначе линия «прыгает» к старому остатку на маркере START.
      */
     private void applyPausePlateaus(
             List<CampaignBudgetTimeline> events,
@@ -288,6 +290,16 @@ public class CampaignBudgetChartService {
             } else {
                 plateauTo = periodTo;
             }
+
+            LocalDateTime firstBudgetAfterTrail = findFirstBudgetRecordedAtAfter(events, trailEnd, plateauTo);
+            if (firstBudgetAfterTrail != null) {
+                LocalDateTime truncatedTo = firstBudgetAfterTrail.minusNanos(1_000_000L);
+                if (truncatedTo.isBefore(plateauFrom)) {
+                    continue;
+                }
+                plateauTo = truncatedTo;
+            }
+
             if (!plateauFrom.isBefore(plateauTo)) {
                 continue;
             }
@@ -305,6 +317,31 @@ public class CampaignBudgetChartService {
                     .budgetRub(plateauBudget)
                     .build());
         }
+    }
+
+    /**
+     * Первый SNAPSHOT/TOP_UP строго после конца trail и не позже {@code untilInclusive}.
+     */
+    private LocalDateTime findFirstBudgetRecordedAtAfter(
+            List<CampaignBudgetTimeline> events,
+            LocalDateTime afterExclusive,
+            LocalDateTime untilInclusive
+    ) {
+        return events.stream()
+                .filter(this::isBudgetTimelineEvent)
+                .map(CampaignBudgetTimeline::getRecordedAt)
+                .filter(at -> at.isAfter(afterExclusive))
+                .filter(at -> !at.isAfter(untilInclusive))
+                .min(LocalDateTime::compareTo)
+                .orElse(null);
+    }
+
+    private boolean isBudgetTimelineEvent(CampaignBudgetTimeline event) {
+        if (event.getEventType() == CampaignBudgetTimelineEventType.SNAPSHOT) {
+            return true;
+        }
+        return event.getEventType() == CampaignBudgetTimelineEventType.TOP_UP
+                && (event.getBudgetTotal() != null || event.getTopUpAmount() != null);
     }
 
     private Integer resolveBudgetAt(List<CampaignBudgetTimeline> events, LocalDateTime at) {
