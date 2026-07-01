@@ -119,7 +119,7 @@ public class CampaignManageService {
         UUID groupId = request.isRepeat() ? UUID.randomUUID() : null;
         CampaignSlotRepeatMode mode = request.isRepeat()
                 ? parseRepeatMode(request.getRepeatMode())
-                : CampaignSlotRepeatMode.DAILY;
+                : null;
         List<Short> days = resolveDays(request.getDayOfWeek(), mode, request.isRepeat());
         for (Short day : days) {
             ensureNoSlotOverlap(advertId, cabinetId, day, start, end, null);
@@ -138,9 +138,9 @@ public class CampaignManageService {
                     .build();
             created.add(slotRepository.save(slot));
         }
-        String repeatLabel = repeatLabel(mode);
+        String scheduleLabel = formatScheduleLabel(request.isRepeat(), request.getDayOfWeek(), mode);
         changeLogService.log(advertId, cabinetId, user,
-                "Добавлен слот «" + formatSlotRange(start, end) + ", " + repeatLabel + "»");
+                "Добавлен слот «" + formatSlotRange(start, end) + ", " + scheduleLabel + "»");
         applySlotEditPolicy(advertId, cabinetId, stateRepository.findById(advertId).orElse(null));
         return created.stream().map(this::mapSlot).toList();
     }
@@ -509,11 +509,19 @@ public class CampaignManageService {
         if (!repeat && singleDay != null) {
             return List.of(singleDay);
         }
-        return switch (mode) {
+        CampaignSlotRepeatMode effectiveMode = mode != null ? mode : CampaignSlotRepeatMode.DAILY;
+        return switch (effectiveMode) {
             case DAILY -> List.of((short) 1, (short) 2, (short) 3, (short) 4, (short) 5, (short) 6, (short) 7);
             case WEEKENDS -> List.of((short) 6, (short) 7);
             case WEEKDAYS -> List.of((short) 1, (short) 2, (short) 3, (short) 4, (short) 5);
         };
+    }
+
+    private static String formatScheduleLabel(boolean repeat, Short dayOfWeek, CampaignSlotRepeatMode mode) {
+        if (!repeat) {
+            return dayOfWeek != null ? dayName(dayOfWeek) : "один день";
+        }
+        return repeatLabel(mode != null ? mode : CampaignSlotRepeatMode.DAILY);
     }
 
     private static String repeatLabel(CampaignSlotRepeatMode mode) {
