@@ -234,7 +234,6 @@ public class CampaignManageService {
 
         PromotionCampaign campaign = campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).orElse(null);
         if (campaign != null && campaign.getStatus() == CampaignStatus.ACTIVE) {
-            timelineService.recordStop(advertId, cabinetId);
             budgetTrailService.beginTrail(state);
             return controlService.enqueuePause(cabinet, advertId);
         }
@@ -265,7 +264,6 @@ public class CampaignManageService {
             }
             try {
                 controlService.enqueuePause(cabinet, advertId);
-                timelineService.recordStop(advertId, cabinetId);
                 budgetTrailService.beginTrail(state);
             } catch (Exception ignored) {
                 return;
@@ -380,7 +378,6 @@ public class CampaignManageService {
                 if (cabinet != null) {
                     controlService.enqueuePause(cabinet, advertId);
                     changeLogService.log(advertId, cabinetId, null, logMessage);
-                    timelineService.recordStop(advertId, cabinetId);
                     if (state != null) {
                         budgetTrailService.beginTrail(state);
                     }

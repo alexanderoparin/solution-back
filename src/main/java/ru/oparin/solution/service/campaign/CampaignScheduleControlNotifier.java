@@ -58,6 +58,16 @@ public class CampaignScheduleControlNotifier {
         writeHistoryOnce(advertId, cabinetId, "pause_error", "Остановка РК не выполнена: " + reason);
     }
 
+    /**
+     * Фактическая успешная пауза на WB (после выполнения события в очереди).
+     */
+    public void onPauseSucceededOnWb(Long advertId, Long cabinetId) {
+        lastHistoryCategory.remove(historyKey(cabinetId, advertId));
+        changeLogService.log(advertId, cabinetId, null, "РК остановлена на WB");
+        timelineService.recordStop(advertId, cabinetId);
+        log.info("РК advertId={} cabinetId={}: успешная остановка на WB", advertId, cabinetId);
+    }
+
     private void writeHistoryOnce(Long advertId, Long cabinetId, String category, String message) {
         String key = historyKey(cabinetId, advertId);
         String prev = lastHistoryCategory.put(key, category);

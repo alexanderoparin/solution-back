@@ -29,7 +29,6 @@ public class CampaignScheduleProcessor {
     private final CampaignManagementStateRepository stateRepository;
     private final PromotionCampaignRepository campaignRepository;
     private final CampaignManageService manageService;
-    private final CampaignBudgetTimelineService timelineService;
     private final CampaignBudgetFetchService budgetFetchService;
     private final CampaignAutoTopUpService autoTopUpService;
     private final CampaignBudgetTrailService budgetTrailService;
@@ -183,7 +182,6 @@ public class CampaignScheduleProcessor {
             CampaignControlEnqueueResponse response = controlService.enqueuePauseFromSchedule(cabinet, advertId);
             if (response.enqueued()) {
                 scheduleControlNotifier.onPauseEnqueued(advertId, cabinet.getId(), logMessage);
-                timelineService.recordStop(advertId, cabinet.getId());
                 budgetTrailService.beginTrail(state);
             }
         } catch (Exception e) {
