@@ -21,10 +21,10 @@ public class CampaignScheduleControlNotifier {
     private final ConcurrentHashMap<String, String> lastHistoryCategory = new ConcurrentHashMap<>();
 
     /**
-     * Запуск поставлен в очередь WB.
+     * Запуск поставлен в очередь.
      */
     public void onStartEnqueued(Long advertId, Long cabinetId) {
-        writeHistoryOnce(advertId, cabinetId, "start_enqueued", "Запуск РК поставлен в очередь WB");
+        writeHistoryOnce(advertId, cabinetId, "start_enqueued", "Запуск РК поставлен в очередь");
     }
 
     /**
@@ -35,20 +35,20 @@ public class CampaignScheduleControlNotifier {
     }
 
     /**
-     * Фактический успешный запуск на WB (после выполнения события в очереди).
+     * Фактический успешный запуск (после выполнения события в очереди или прямого вызова).
      */
     public void onStartSucceededOnWb(Long advertId, Long cabinetId) {
         lastHistoryCategory.remove(historyKey(cabinetId, advertId));
-        changeLogService.log(advertId, cabinetId, null, "РК запущена на WB");
+        changeLogService.log(advertId, cabinetId, null, "РК запущена");
         timelineService.recordStart(advertId, cabinetId);
-        log.info("РК advertId={} cabinetId={}: успешный запуск на WB", advertId, cabinetId);
+        log.info("РК advertId={} cabinetId={}: успешный запуск", advertId, cabinetId);
     }
 
     /**
-     * Пауза поставлена в очередь WB.
+     * Пауза поставлена в очередь.
      */
     public void onPauseEnqueued(Long advertId, Long cabinetId, String reason) {
-        writeHistoryOnce(advertId, cabinetId, "pause_enqueued", reason + " — поставлено в очередь WB");
+        writeHistoryOnce(advertId, cabinetId, "pause_enqueued", reason + " — поставлено в очередь");
     }
 
     /**
@@ -59,13 +59,13 @@ public class CampaignScheduleControlNotifier {
     }
 
     /**
-     * Фактическая успешная пауза на WB (после выполнения события в очереди).
+     * Фактическая успешная пауза (после выполнения события в очереди или прямого вызова).
      */
     public void onPauseSucceededOnWb(Long advertId, Long cabinetId) {
         lastHistoryCategory.remove(historyKey(cabinetId, advertId));
-        changeLogService.log(advertId, cabinetId, null, "РК остановлена на WB");
+        changeLogService.log(advertId, cabinetId, null, "РК остановлена");
         timelineService.recordStop(advertId, cabinetId);
-        log.info("РК advertId={} cabinetId={}: успешная остановка на WB", advertId, cabinetId);
+        log.info("РК advertId={} cabinetId={}: успешная остановка", advertId, cabinetId);
     }
 
     private void writeHistoryOnce(Long advertId, Long cabinetId, String category, String message) {
