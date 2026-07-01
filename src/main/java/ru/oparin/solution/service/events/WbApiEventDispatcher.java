@@ -18,6 +18,7 @@ import ru.oparin.solution.model.WbApiEventType;
 import ru.oparin.solution.repository.ProductCardRepository;
 import ru.oparin.solution.service.events.payload.AnalyticsSalesFunnelPayload;
 import ru.oparin.solution.service.events.payload.StocksByNmIdPayload;
+import ru.oparin.solution.service.wb.WbApiEventAttemptContext;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -320,6 +321,9 @@ public class WbApiEventDispatcher {
         if (cabinetId != null) {
             MDC.put("cabinetTag", "[cabinet:" + cabinetId + "]");
         }
+        int attemptCount = event.getAttemptCount() != null ? event.getAttemptCount() : 0;
+        int maxAttempts = event.getMaxAttempts() != null ? event.getMaxAttempts() : 1;
+        WbApiEventAttemptContext.set(attemptCount, maxAttempts, event.getId());
         ScheduledFuture<?> timeoutTask = null;
         try {
             if (!eventService.tryMarkRunning(event)) {
@@ -328,6 +332,7 @@ public class WbApiEventDispatcher {
             timeoutTask = scheduleExecutionTimeout(event);
             return executeRunningEvent(event);
         } finally {
+            WbApiEventAttemptContext.clear();
             clearExecutionTimeoutState(event.getId(), timeoutTask);
             MDC.remove("cabinetTag");
         }

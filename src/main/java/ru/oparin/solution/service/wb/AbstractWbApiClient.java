@@ -172,8 +172,10 @@ public abstract class AbstractWbApiClient {
 
                 if (response.getStatusCode().value() == 429 && attempt < maxRetries) {
                     log429Metric(endpoint, operationName);
+                    WbApiEventAttemptContext.AttemptDisplay display =
+                            WbApiEventAttemptContext.resolveAttemptDisplay(attempt, maxRetries);
                     log.warn("Получен 429 Too Many Requests (попытка {}/{}). Отложенный повтор через {} мс (без sleep).",
-                            attempt, maxRetries, retryDelayMs);
+                            display.attempt(), display.maxAttempts(), retryDelayMs);
                     throwDeferAfterMillis("WB API 429 Too Many Requests", retryDelayMs);
                 }
                 if (response.getStatusCode().value() == 429) {
@@ -367,12 +369,14 @@ public abstract class AbstractWbApiClient {
     }
 
     private void logRetryAndDefer(RetryDecision decision, String context, int attemptNum) {
+        WbApiEventAttemptContext.AttemptDisplay display =
+                WbApiEventAttemptContext.resolveAttemptDisplay(attemptNum + 1, MAX_CONNECTION_RETRIES);
         if (decision == RetryDecision.RETRY_504) {
             log.warn("504 Gateway Timeout при {} (попытка {}/{}). Отложенный повтор через {} мс (без sleep).",
-                    context, attemptNum + 1, MAX_CONNECTION_RETRIES, CONNECTION_RETRY_DELAY_MS);
+                    context, display.attempt(), display.maxAttempts(), CONNECTION_RETRY_DELAY_MS);
         } else {
             log.warn("Таймаут/ошибка соединения при {} (попытка {}/{}). Отложенный повтор через {} мс (без sleep).",
-                    context, attemptNum + 1, MAX_CONNECTION_RETRIES, CONNECTION_RETRY_DELAY_MS);
+                    context, display.attempt(), display.maxAttempts(), CONNECTION_RETRY_DELAY_MS);
         }
         throwDeferAfterMillis("WB API: " + context + " — временная ошибка сети или 504", CONNECTION_RETRY_DELAY_MS);
     }

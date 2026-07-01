@@ -454,8 +454,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                 delayMs = Math.min((long) sec * 1000L, (long) Integer.MAX_VALUE);
             }
         }
+        WbApiEventAttemptContext.AttemptDisplay display =
+                WbApiEventAttemptContext.resolveAttemptDisplay(retry, maxRetries429);
         log.warn("WB promotion 429 при {} (попытка {}/{}). Отложенный повтор через {} мс (без sleep).",
-                context, retry, maxRetries429, delayMs);
+                context, display.attempt(), display.maxAttempts(), delayMs);
         throwDeferAfterMillis("WB promotion 429 при " + context, delayMs);
     }
 
