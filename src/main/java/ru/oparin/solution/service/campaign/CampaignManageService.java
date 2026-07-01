@@ -140,7 +140,7 @@ public class CampaignManageService {
         }
         String scheduleLabel = formatScheduleLabel(request.isRepeat(), request.getDayOfWeek(), mode);
         changeLogService.log(advertId, cabinetId, user,
-                "Добавлен слот «" + formatSlotRange(start, end) + ", " + scheduleLabel + "»");
+                "Добавлен слот «" + scheduleLabel + " " + formatSlotRange(start, end) + "»");
         applySlotEditPolicy(advertId, cabinetId, stateRepository.findById(advertId).orElse(null));
         return created.stream().map(this::mapSlot).toList();
     }
@@ -195,8 +195,8 @@ public class CampaignManageService {
         ensureCampaign(advertId, cabinetId);
         CampaignScheduleSlot slot = slotRepository.findById(slotId)
                 .orElseThrow(() -> new IllegalArgumentException("Слот не найден"));
-        String msg = "Удален слот «" + formatSlotRange(slot.getStartTime(), slot.getEndTime())
-                + ", " + dayName(slot.getDayOfWeek()) + "»";
+        String msg = "Удален слот «" + dayName(slot.getDayOfWeek()) + " "
+                + formatSlotRange(slot.getStartTime(), slot.getEndTime()) + "»";
         slotRepository.delete(slot);
         changeLogService.log(advertId, cabinetId, user, msg);
         applySlotEditPolicy(advertId, cabinetId, stateRepository.findById(advertId).orElse(null));
