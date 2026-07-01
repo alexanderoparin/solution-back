@@ -175,13 +175,15 @@ public class CampaignManageService {
         CampaignManagementState state = stateRepository.findById(advertId).orElse(null);
         if (request.getBudgetRub() != null && !Objects.equals(oldBudget, request.getBudgetRub())) {
             changeLogService.log(advertId, cabinetId, user,
-                    "Изменен бюджет «было " + oldBudget + ", стало " + request.getBudgetRub() + "»");
+                    "Изменен бюджет «" + dayName(slot.getDayOfWeek()) + ", было " + oldBudget
+                            + ", стало " + request.getBudgetRub() + "»");
         }
         if (request.getStartTime() != null || request.getEndTime() != null) {
             String newTime = formatSlotRange(slot.getStartTime(), slot.getEndTime());
             if (!oldTime.equals(newTime)) {
                 changeLogService.log(advertId, cabinetId, user,
-                        "Изменено время «было " + oldTime + ", стало " + newTime + "»");
+                        "Изменено время «" + dayName(slot.getDayOfWeek()) + ", было " + oldTime
+                                + ", стало " + newTime + "»");
             }
         }
         applySlotEditPolicyAfterUpdate(advertId, cabinetId, state, slot, oldEnd, oldBudget, request);
