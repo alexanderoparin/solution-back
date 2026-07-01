@@ -69,13 +69,9 @@ public class CampaignBudgetFetchService {
                 state, advertId, cabinet.getId(), ZonedDateTime.now(ZONE))) {
             return cachedBudget(state);
         }
-        if (!rejectStaleCacheOnly
-                && state != null
-                && state.getLastBudgetTotal() != null
-                && state.getLastBudgetCheckedAt() != null
-                && !isBudgetCacheFromPreviousDay(state)
-                && isFresh(state.getLastBudgetCheckedAt(), tokenType)) {
-            return Optional.of(state.getLastBudgetTotal());
+        Optional<Integer> freshCached = freshCachedBudget(state, tokenType);
+        if (freshCached.isPresent()) {
+            return freshCached;
         }
         if (!budgetPollCoordinator.mayCallWbApi(cabinet.getId(), advertId)) {
             return rejectStaleCacheOnly
@@ -121,6 +117,20 @@ public class CampaignBudgetFetchService {
             return Optional.of(state.getLastBudgetTotal());
         }
         return Optional.empty();
+    }
+
+    /**
+     * Актуальный кэш за сегодня (МСК), ещё в пределах паузы endpoint — без повторного HTTP.
+     */
+    private Optional<Integer> freshCachedBudget(CampaignManagementState state, CabinetTokenType tokenType) {
+        if (state == null
+                || state.getLastBudgetTotal() == null
+                || state.getLastBudgetCheckedAt() == null
+                || isBudgetCacheFromPreviousDay(state)
+                || !isFresh(state.getLastBudgetCheckedAt(), tokenType)) {
+            return Optional.empty();
+        }
+        return Optional.of(state.getLastBudgetTotal());
     }
 
     /**
