@@ -5,8 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import ru.oparin.solution.dto.analytics.CampaignControlEnqueueResponse;
 import ru.oparin.solution.dto.analytics.PromotionControlCapabilitiesDto;
+import ru.oparin.solution.dto.analytics.ScheduleControlAttemptResult;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CampaignManagementStateRepository;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
@@ -159,14 +159,21 @@ public class CampaignScheduleProcessor {
         }
         if (campaign.getStatus() == CampaignStatus.READY_TO_START || campaign.getStatus() == CampaignStatus.PAUSED) {
             try {
-                CampaignControlEnqueueResponse response = controlService.enqueueStartFromSchedule(cabinet, advertId);
-                if (response.enqueued()) {
-                    scheduleControlNotifier.onStartEnqueued(advertId, cabinet.getId());
-                }
+                ScheduleControlAttemptResult result = controlService.attemptStartFromSchedule(cabinet, advertId);
+                handleScheduleStartResult(result, advertId, cabinet.getId());
             } catch (Exception e) {
                 scheduleControlNotifier.onStartFailed(advertId, cabinet.getId(), e.getMessage());
                 log.debug("Запуск по расписанию advertId={}: {}", advertId, e.getMessage());
             }
+        }
+    }
+
+    private void handleScheduleStartResult(ScheduleControlAttemptResult result, Long advertId, Long cabinetId) {
+        switch (result.outcome()) {
+            case DIRECT_SUCCESS -> scheduleControlNotifier.onStartSucceededOnWb(advertId, cabinetId);
+            case ENQUEUED -> scheduleControlNotifier.onStartEnqueued(advertId, cabinetId);
+            case FAILED -> scheduleControlNotifier.onStartFailed(advertId, cabinetId, result.message());
+            case SKIPPED_ALREADY_PENDING -> { }
         }
     }
 
@@ -179,14 +186,32 @@ public class CampaignScheduleProcessor {
             return;
         }
         try {
-            CampaignControlEnqueueResponse response = controlService.enqueuePauseFromSchedule(cabinet, advertId);
-            if (response.enqueued()) {
-                scheduleControlNotifier.onPauseEnqueued(advertId, cabinet.getId(), logMessage);
-                budgetTrailService.beginTrail(state);
-            }
+            ScheduleControlAttemptResult result = controlService.attemptPauseFromSchedule(cabinet, advertId);
+            handleSchedulePauseResult(result, advertId, cabinet.getId(), state, logMessage);
         } catch (Exception e) {
             scheduleControlNotifier.onPauseFailed(advertId, cabinet.getId(), e.getMessage());
             log.debug("Пауза по расписанию advertId={}: {}", advertId, e.getMessage());
+        }
+    }
+
+    private void handleSchedulePauseResult(
+            ScheduleControlAttemptResult result,
+            Long advertId,
+            Long cabinetId,
+            CampaignManagementState state,
+            String logMessage
+    ) {
+        switch (result.outcome()) {
+            case DIRECT_SUCCESS -> {
+                scheduleControlNotifier.onPauseSucceededOnWb(advertId, cabinetId);
+                budgetTrailService.beginTrail(state);
+            }
+            case ENQUEUED -> {
+                scheduleControlNotifier.onPauseEnqueued(advertId, cabinetId, logMessage);
+                budgetTrailService.beginTrail(state);
+            }
+            case FAILED -> scheduleControlNotifier.onPauseFailed(advertId, cabinetId, result.message());
+            case SKIPPED_ALREADY_PENDING -> { }
         }
     }
 

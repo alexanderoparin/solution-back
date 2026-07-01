@@ -73,6 +73,11 @@ public class CampaignBudgetFetchService {
         if (freshCached.isPresent()) {
             return freshCached;
         }
+        Optional<Integer> tickPollCache = cachedBudgetFromThisSchedulerTick(
+                cabinet.getId(), advertId, state, rejectStaleCacheOnly);
+        if (tickPollCache.isPresent()) {
+            return tickPollCache;
+        }
         if (!budgetPollCoordinator.mayCallWbApi(cabinet.getId(), advertId)) {
             return rejectStaleCacheOnly
                     ? Optional.empty()
@@ -93,6 +98,7 @@ public class CampaignBudgetFetchService {
                 state.setLastBudgetCheckedAt(LocalDateTime.now(ZONE));
             }
             timelineService.recordSnapshot(advertId, cabinet.getId(), budget.getTotal());
+            budgetPollCoordinator.markBudgetPolledThisTick(cabinet.getId(), advertId);
             return Optional.of(budget.getTotal());
         } catch (Exception e) {
             log.debug("Не удалось получить бюджет РК advertId={}: {}", advertId, e.getMessage());
@@ -117,6 +123,33 @@ public class CampaignBudgetFetchService {
             return Optional.of(state.getLastBudgetTotal());
         }
         return Optional.empty();
+    }
+
+    /**
+     * Кэш после единственного HTTP-опроса в текущем тике планировщика (пауза endpoint ~1 с не мешает).
+     */
+    private Optional<Integer> cachedBudgetFromThisSchedulerTick(
+            Long cabinetId,
+            Long advertId,
+            CampaignManagementState state,
+            boolean rejectStaleCacheOnly
+    ) {
+        if (!budgetPollCoordinator.wasBudgetPolledThisTick(cabinetId, advertId)) {
+            return Optional.empty();
+        }
+        if (rejectStaleCacheOnly) {
+            return todayCachedBudget(state);
+        }
+        return cachedBudget(state);
+    }
+
+    private Optional<Integer> todayCachedBudget(CampaignManagementState state) {
+        if (state == null
+                || state.getLastBudgetTotal() == null
+                || isBudgetCacheFromPreviousDay(state)) {
+            return Optional.empty();
+        }
+        return Optional.of(state.getLastBudgetTotal());
     }
 
     /**

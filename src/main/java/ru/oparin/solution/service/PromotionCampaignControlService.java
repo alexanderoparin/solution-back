@@ -1,13 +1,19 @@
 package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.dto.analytics.CampaignControlEnqueueResponse;
+import ru.oparin.solution.dto.analytics.ScheduleControlAttemptResult;
+import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.WbEventRateLimitService;
+import ru.oparin.solution.service.sync.PromotionCampaignSyncService;
+import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -15,6 +21,7 @@ import java.util.Set;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PromotionCampaignControlService {
 
     public static final String TRIGGER_UI_START = "BIDDER_UI_START";
@@ -32,6 +39,8 @@ public class PromotionCampaignControlService {
     private final WbApiEventService wbApiEventService;
     private final WbEventRateLimitService rateLimitService;
     private final PromotionCampaignControlWriteService promotionControlWriteService;
+    private final WbPromotionApiClient promotionApiClient;
+    private final PromotionCampaignSyncService promotionCampaignSyncService;
 
     /**
      * Ставит в очередь запуск кампании (ручное управление / UI).
@@ -48,6 +57,36 @@ public class PromotionCampaignControlService {
      */
     public CampaignControlEnqueueResponse enqueueStartFromSchedule(Cabinet cabinet, Long advertId) {
         return enqueueStart(cabinet, advertId, TRIGGER_SCHEDULE_START, false);
+    }
+
+    /**
+     * Запуск по расписанию: для персонального токена — сразу HTTP к WB; при неуспехе — событие в очередь.
+     */
+    public ScheduleControlAttemptResult attemptStartFromSchedule(Cabinet cabinet, Long advertId) {
+        try {
+            validateApiKey(cabinet);
+            promotionControlWriteService.ensureControlAllowed(cabinet);
+            PromotionCampaign campaign = findCampaignOrThrow(cabinet.getId(), advertId);
+            validateStatusForStart(campaign);
+        } catch (IllegalArgumentException e) {
+            return ScheduleControlAttemptResult.failed(e.getMessage());
+        }
+        if (!usesDirectScheduleControl(cabinet)) {
+            return toScheduleResult(enqueueStart(cabinet, advertId, TRIGGER_SCHEDULE_START, false));
+        }
+        try {
+            applyStartOnWb(cabinet, advertId);
+            return ScheduleControlAttemptResult.directSuccess();
+        } catch (WbApiUnauthorizedScopeException e) {
+            return handleUnauthorizedForSchedule(cabinet, e);
+        } catch (Exception e) {
+            if (PromotionCampaignControlWriteService.isReadOnlyTokenError(e)) {
+                promotionControlWriteService.recordReadOnlyTokenBlock(cabinet.getId());
+                return ScheduleControlAttemptResult.failed(PromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE);
+            }
+            log.debug("Прямой запуск по расписанию advertId={} не удался, очередь: {}", advertId, e.getMessage());
+            return toScheduleResult(enqueueStart(cabinet, advertId, TRIGGER_SCHEDULE_START, false));
+        }
     }
 
     private CampaignControlEnqueueResponse enqueueStart(
@@ -86,6 +125,36 @@ public class PromotionCampaignControlService {
      */
     public CampaignControlEnqueueResponse enqueuePauseFromSchedule(Cabinet cabinet, Long advertId) {
         return enqueuePause(cabinet, advertId, TRIGGER_SCHEDULE_PAUSE, false);
+    }
+
+    /**
+     * Пауза по расписанию: для персонального токена — сразу HTTP к WB; при неуспехе — событие в очередь.
+     */
+    public ScheduleControlAttemptResult attemptPauseFromSchedule(Cabinet cabinet, Long advertId) {
+        try {
+            validateApiKey(cabinet);
+            promotionControlWriteService.ensureControlAllowed(cabinet);
+            PromotionCampaign campaign = findCampaignOrThrow(cabinet.getId(), advertId);
+            validateStatusForPause(campaign);
+        } catch (IllegalArgumentException e) {
+            return ScheduleControlAttemptResult.failed(e.getMessage());
+        }
+        if (!usesDirectScheduleControl(cabinet)) {
+            return toScheduleResult(enqueuePause(cabinet, advertId, TRIGGER_SCHEDULE_PAUSE, false));
+        }
+        try {
+            applyPauseOnWb(cabinet, advertId);
+            return ScheduleControlAttemptResult.directSuccess();
+        } catch (WbApiUnauthorizedScopeException e) {
+            return handleUnauthorizedForSchedule(cabinet, e);
+        } catch (Exception e) {
+            if (PromotionCampaignControlWriteService.isReadOnlyTokenError(e)) {
+                promotionControlWriteService.recordReadOnlyTokenBlock(cabinet.getId());
+                return ScheduleControlAttemptResult.failed(PromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE);
+            }
+            log.debug("Прямая пауза по расписанию advertId={} не удалась, очередь: {}", advertId, e.getMessage());
+            return toScheduleResult(enqueuePause(cabinet, advertId, TRIGGER_SCHEDULE_PAUSE, false));
+        }
     }
 
     private CampaignControlEnqueueResponse enqueuePause(
@@ -143,6 +212,42 @@ public class PromotionCampaignControlService {
         if (seconds > 0) {
             throw new CampaignControlRateLimitException(seconds);
         }
+    }
+
+    private boolean usesDirectScheduleControl(Cabinet cabinet) {
+        return CabinetTokenType.effective(cabinet.getTokenType()) == CabinetTokenType.PERSONAL;
+    }
+
+    private void applyStartOnWb(Cabinet cabinet, Long advertId) {
+        promotionApiClient.startCampaign(cabinet.getApiKey(), advertId);
+        promotionCampaignSyncService.loadAndSaveAdvertsBatch(
+                cabinet, cabinet.getApiKey(), List.of(advertId));
+        promotionControlWriteService.clearBlock(cabinet.getId());
+    }
+
+    private void applyPauseOnWb(Cabinet cabinet, Long advertId) {
+        promotionApiClient.pauseCampaign(cabinet.getApiKey(), advertId);
+        promotionCampaignSyncService.loadAndSaveAdvertsBatch(
+                cabinet, cabinet.getApiKey(), List.of(advertId));
+        promotionControlWriteService.clearBlock(cabinet.getId());
+    }
+
+    private ScheduleControlAttemptResult handleUnauthorizedForSchedule(
+            Cabinet cabinet,
+            WbApiUnauthorizedScopeException exception
+    ) {
+        if (PromotionCampaignControlWriteService.isReadOnlyTokenError(exception)) {
+            promotionControlWriteService.recordReadOnlyTokenBlock(cabinet.getId());
+            return ScheduleControlAttemptResult.failed(PromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE);
+        }
+        return ScheduleControlAttemptResult.failed(exception.getMessage());
+    }
+
+    private ScheduleControlAttemptResult toScheduleResult(CampaignControlEnqueueResponse response) {
+        if (response.enqueued()) {
+            return ScheduleControlAttemptResult.enqueued(response.eventId());
+        }
+        return ScheduleControlAttemptResult.skippedPending();
     }
 
     /**

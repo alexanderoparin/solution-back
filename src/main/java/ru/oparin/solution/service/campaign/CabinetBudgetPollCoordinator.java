@@ -16,6 +16,8 @@ public class CabinetBudgetPollCoordinator {
 
     private static final ThreadLocal<Set<String>> API_GRANTED = new ThreadLocal<>();
     private static final ThreadLocal<Map<Long, Long>> TICK_LEADER_BY_CABINET = new ThreadLocal<>();
+    /** РК, по которым в текущем тике уже был успешный HTTP GET /adv/v1/budget. */
+    private static final ThreadLocal<Set<String>> BUDGET_POLLED_THIS_TICK = new ThreadLocal<>();
 
     private final ConcurrentHashMap<Long, Integer> roundRobinIndexByCabinet = new ConcurrentHashMap<>();
 
@@ -41,6 +43,7 @@ public class CabinetBudgetPollCoordinator {
         }
         API_GRANTED.set(granted);
         TICK_LEADER_BY_CABINET.set(leaders);
+        BUDGET_POLLED_THIS_TICK.set(new HashSet<>());
     }
 
     /**
@@ -83,9 +86,28 @@ public class CabinetBudgetPollCoordinator {
         return granted.contains(slotKey(cabinetId, advertId));
     }
 
+    /**
+     * Помечает успешный опрос бюджета WB в текущем тике планировщика (один HTTP на РК за тик).
+     */
+    public void markBudgetPolledThisTick(Long cabinetId, Long advertId) {
+        Set<String> polled = BUDGET_POLLED_THIS_TICK.get();
+        if (polled != null) {
+            polled.add(slotKey(cabinetId, advertId));
+        }
+    }
+
+    /**
+     * {@code true}, если для РК в этом тике планировщика бюджет уже получен по HTTP.
+     */
+    public boolean wasBudgetPolledThisTick(Long cabinetId, Long advertId) {
+        Set<String> polled = BUDGET_POLLED_THIS_TICK.get();
+        return polled != null && polled.contains(slotKey(cabinetId, advertId));
+    }
+
     public void endSchedulerTick() {
         API_GRANTED.remove();
         TICK_LEADER_BY_CABINET.remove();
+        BUDGET_POLLED_THIS_TICK.remove();
     }
 
     private static String slotKey(Long cabinetId, Long advertId) {
