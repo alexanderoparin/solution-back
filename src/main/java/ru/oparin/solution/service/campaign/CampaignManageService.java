@@ -209,18 +209,27 @@ public class CampaignManageService {
         CampaignManagementState state = getOrCreateState(advertId, cabinetId);
         state.setManualStopped(false);
         stateRepository.save(state);
+        changeLogService.log(advertId, cabinetId, user, "Расписание включено");
 
         ZonedDateTime now = ZonedDateTime.now(SCHEDULE_ZONE);
-        boolean inActiveSlot = findActiveSlotNow(advertId, cabinetId, now).isPresent();
-        if (inActiveSlot) {
-            budgetTrailService.clearTrail(state);
-            changeLogService.log(advertId, cabinetId, user, "Расписание включено");
-            timelineService.recordStart(advertId, cabinetId);
-            return controlService.enqueueStart(cabinet, advertId);
+        if (!findActiveSlotNow(advertId, cabinetId, now).isPresent()) {
+            return new CampaignControlEnqueueResponse(false, null, "Расписание включено");
         }
 
-        changeLogService.log(advertId, cabinetId, user, "Расписание включено");
-        return new CampaignControlEnqueueResponse(false, null, "Расписание включено");
+        PromotionCampaign campaign = campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).orElse(null);
+        if (campaign != null && campaign.getStatus() == CampaignStatus.ACTIVE) {
+            budgetTrailService.clearTrail(state);
+            timelineService.recordStart(advertId, cabinetId);
+            return new CampaignControlEnqueueResponse(false, null, "Расписание включено");
+        }
+        if (campaign != null && campaign.getStatus() == CampaignStatus.FINISHED) {
+            throw new IllegalArgumentException(
+                    "Нельзя запустить РК на WB: кампания завершена. Измените статус в кабинете WB или создайте новую РК.");
+        }
+
+        budgetTrailService.clearTrail(state);
+        timelineService.recordStart(advertId, cabinetId);
+        return controlService.enqueueStart(cabinet, advertId);
     }
 
     @Transactional
