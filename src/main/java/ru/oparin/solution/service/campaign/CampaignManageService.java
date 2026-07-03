@@ -31,6 +31,8 @@ import java.util.*;
 public class CampaignManageService {
 
     private static final ZoneId SCHEDULE_ZONE = ZoneId.of("Europe/Moscow");
+    private static final String SCHEDULE_STOPPED_READ_ONLY =
+            "Расписание отключено: " + PromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE;
     private final AnalyticsService analyticsService;
     private final PromotionCampaignRepository campaignRepository;
     private final CampaignAutoBudgetSettingsRepository autoBudgetRepository;
@@ -49,8 +51,9 @@ public class CampaignManageService {
     private final BidderStatusResolver bidderStatusResolver;
     private final CampaignBudgetTrailService budgetTrailService;
 
-    @Transactional(readOnly = true)
+    @Transactional
     public CampaignManageResponseDto getManage(Long advertId, Long cabinetId, User seller) {
+        syncScheduleOffIfControlBlocked(advertId, cabinetId);
         var detail = analyticsService.getCampaignDetail(advertId, cabinetId, seller != null ? seller.getId() : null);
         if (detail == null) {
             return null;
@@ -269,10 +272,7 @@ public class CampaignManageService {
         PromotionCampaign campaign = campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).orElse(null);
         boolean campaignWasActive = campaign != null && campaign.getStatus() == CampaignStatus.ACTIVE;
 
-        if (campaignWasActive) {
-            if (!controlWriteService.getCapabilities(cabinet).canControl()) {
-                return;
-            }
+        if (campaignWasActive && controlWriteService.getCapabilities(cabinet).canControl()) {
             try {
                 controlService.enqueuePause(cabinet, advertId);
                 budgetTrailService.beginTrail(state);
@@ -288,6 +288,47 @@ public class CampaignManageService {
         state.setManualStopped(true);
         SlotBudgetSpendUtils.resetSlotSession(state);
         changeLogService.log(advertId, cabinetId, null, message);
+        stateRepository.save(state);
+    }
+
+    /**
+     * Отключает расписание по всем РК кабинета после обнаружения read-only токена WB.
+     */
+    @Transactional
+    public void stopAllSchedulesDueToReadOnlyToken(Long cabinetId) {
+        if (cabinetId == null) {
+            return;
+        }
+        for (CampaignManagementState state : stateRepository.findByCabinetId(cabinetId)) {
+            disableScheduleLocally(state, SCHEDULE_STOPPED_READ_ONLY);
+        }
+    }
+
+    /**
+     * Синхронизирует UI/БД: при активной блокировке записи расписание должно быть выключено.
+     */
+    @Transactional
+    public void syncScheduleOffIfControlBlocked(Long advertId, Long cabinetId) {
+        CampaignManagementState state = stateRepository.findById(advertId).orElse(null);
+        if (state == null || state.isManualStopped()) {
+            return;
+        }
+        Cabinet cabinet = cabinetService.findById(cabinetId).orElse(null);
+        if (cabinet == null || controlWriteService.getCapabilities(cabinet).canControl()) {
+            return;
+        }
+        disableScheduleLocally(state, SCHEDULE_STOPPED_READ_ONLY);
+    }
+
+    private void disableScheduleLocally(CampaignManagementState state, String logMessage) {
+        if (state.isManualStopped()) {
+            return;
+        }
+        state.setManualStopped(true);
+        state.setActiveSlotId(null);
+        state.setBudgetAtSlotStart(null);
+        SlotBudgetSpendUtils.resetSlotSession(state);
+        changeLogService.log(state.getCampaignId(), state.getCabinetId(), null, logMessage);
         stateRepository.save(state);
     }
 

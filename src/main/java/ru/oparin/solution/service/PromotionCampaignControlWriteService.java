@@ -1,11 +1,13 @@
 package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.dto.analytics.PromotionControlCapabilitiesDto;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.service.campaign.CampaignManageService;
 
 import java.util.Locale;
 import java.util.Optional;
@@ -20,6 +22,7 @@ public class PromotionCampaignControlWriteService {
     public static final String READ_ONLY_USER_MESSAGE = CabinetScopeStatusService.PROMOTION_READ_ONLY_WRITE_MESSAGE;
 
     private final CabinetScopeStatusService cabinetScopeStatusService;
+    private final ObjectProvider<CampaignManageService> campaignManageServiceProvider;
 
     @Transactional
     public PromotionControlCapabilitiesDto getCapabilities(Cabinet cabinet) {
@@ -53,6 +56,7 @@ public class PromotionCampaignControlWriteService {
     @Transactional
     public void recordReadOnlyTokenBlock(Long cabinetId) {
         cabinetScopeStatusService.recordPromotionWriteReadOnlyBlock(cabinetId);
+        campaignManageServiceProvider.getObject().stopAllSchedulesDueToReadOnlyToken(cabinetId);
     }
 
     @Transactional
