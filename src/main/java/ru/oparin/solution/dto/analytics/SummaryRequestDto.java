@@ -83,6 +83,11 @@ public class SummaryRequestDto {
     private Boolean onlyPriority;
 
     /**
+     * Если true — только артикулы, привязанные к незавершённым РК кабинета.
+     */
+    private Boolean onlyInAdvertising;
+
+    /**
      * Поле сортировки списка артикулов (по умолчанию — дата появления на WB).
      */
     private String sortBy;

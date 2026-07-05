@@ -41,6 +41,7 @@ public class AnalyticsController {
             @RequestParam(required = false) Long cabinetId,
             @RequestParam(required = false) Boolean onlyWithPhoto,
             @RequestParam(required = false) Boolean onlyPriority,
+            @RequestParam(required = false) Boolean onlyInAdvertising,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(
@@ -53,7 +54,8 @@ public class AnalyticsController {
                 context.user(),
                 context.cabinetId(),
                 onlyWithPhoto,
-                onlyPriority
+                onlyPriority,
+                onlyInAdvertising
         );
         return ResponseEntity.ok(response);
     }
@@ -88,6 +90,7 @@ public class AnalyticsController {
                 request.getFilterToNone(),
                 request.getOnlyWithPhoto(),
                 request.getOnlyPriority(),
+                request.getOnlyInAdvertising(),
                 request.getSortBy(),
                 request.getSortDir()
         );
@@ -124,7 +127,8 @@ public class AnalyticsController {
                 request.getPeriods(),
                 request.getExcludedNmIds(),
                 request.getOnlyWithPhoto(),
-                request.getOnlyPriority()
+                request.getOnlyPriority(),
+                request.getOnlyInAdvertising()
         );
         
         return ResponseEntity.ok(response);

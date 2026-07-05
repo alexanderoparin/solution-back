@@ -81,23 +81,21 @@ public class AnalyticsService {
             Boolean filterToNone,
             Boolean onlyWithPhoto,
             Boolean onlyPriority,
+            Boolean onlyInAdvertising,
             String sortBy,
             String sortDir
     ) {
         validatePeriods(periods);
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
 
-        List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
-        if (Boolean.TRUE.equals(onlyWithPhoto)) {
-            visibleCards = visibleCards.stream()
-                    .filter(this::cardHasAnyPhoto)
-                    .collect(Collectors.toList());
-        }
-        if (Boolean.TRUE.equals(onlyPriority)) {
-            visibleCards = visibleCards.stream()
-                    .filter(c -> Boolean.TRUE.equals(c.getIsPriority()))
-                    .collect(Collectors.toList());
-        }
+        List<ProductCard> visibleCards = applyCatalogFilters(
+                getVisibleCards(seller.getId(), cabinetId, excludedNmIds),
+                seller.getId(),
+                cabinetId,
+                onlyWithPhoto,
+                onlyPriority,
+                onlyInAdvertising
+        );
 
         ArticleSummarySortField resolvedSortBy = ArticleSummarySortField.fromParam(sortBy);
         Sort.Direction resolvedSortDir = Sort.Direction.fromOptionalString(sortDir).orElse(Sort.Direction.DESC);
@@ -148,18 +146,21 @@ public class AnalyticsService {
      * Если onlyWithPhoto == true — только артикулы с заполненным фото.
      */
     @Transactional(readOnly = true)
-    public List<ArticleSummaryDto> getArticleList(User seller, Long cabinetId, Boolean onlyWithPhoto, Boolean onlyPriority) {
-        List<ProductCard> allCards = getVisibleCards(seller.getId(), cabinetId, null);
-        if (Boolean.TRUE.equals(onlyWithPhoto)) {
-            allCards = allCards.stream()
-                    .filter(this::cardHasAnyPhoto)
-                    .collect(Collectors.toList());
-        }
-        if (Boolean.TRUE.equals(onlyPriority)) {
-            allCards = allCards.stream()
-                    .filter(c -> Boolean.TRUE.equals(c.getIsPriority()))
-                    .collect(Collectors.toList());
-        }
+    public List<ArticleSummaryDto> getArticleList(
+            User seller,
+            Long cabinetId,
+            Boolean onlyWithPhoto,
+            Boolean onlyPriority,
+            Boolean onlyInAdvertising
+    ) {
+        List<ProductCard> allCards = applyCatalogFilters(
+                getVisibleCards(seller.getId(), cabinetId, null),
+                seller.getId(),
+                cabinetId,
+                onlyWithPhoto,
+                onlyPriority,
+                onlyInAdvertising
+        );
         sortProductCards(allCards, ArticleSummarySortField.WB_CREATED_AT, Sort.Direction.DESC);
         return mapToArticleSummaries(allCards, isItemRatingSupported(seller.getId(), cabinetId));
     }
@@ -186,13 +187,20 @@ public class AnalyticsService {
             List<PeriodDto> periods,
             List<Long> excludedNmIds,
             Boolean onlyWithPhoto,
-            Boolean onlyPriority
+            Boolean onlyPriority,
+            Boolean onlyInAdvertising
     ) {
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
         if (isAdvertisingMetric(metricName)) {
-            return getAdvertisingMetricGroup(seller, cabinetId, metricName, sortedPeriods, excludedNmIds, onlyWithPhoto, onlyPriority);
+            return getAdvertisingMetricGroup(
+                    seller, cabinetId, metricName, sortedPeriods, excludedNmIds,
+                    onlyWithPhoto, onlyPriority, onlyInAdvertising
+            );
         } else {
-            return getFunnelMetricGroup(seller, cabinetId, metricName, sortedPeriods, excludedNmIds, onlyWithPhoto, onlyPriority);
+            return getFunnelMetricGroup(
+                    seller, cabinetId, metricName, sortedPeriods, excludedNmIds,
+                    onlyWithPhoto, onlyPriority, onlyInAdvertising
+            );
         }
     }
 
@@ -203,19 +211,17 @@ public class AnalyticsService {
             List<PeriodDto> periods,
             List<Long> excludedNmIds,
             Boolean onlyWithPhoto,
-            Boolean onlyPriority
+            Boolean onlyPriority,
+            Boolean onlyInAdvertising
     ) {
-        List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
-        if (Boolean.TRUE.equals(onlyWithPhoto)) {
-            visibleCards = visibleCards.stream()
-                    .filter(this::cardHasAnyPhoto)
-                    .collect(Collectors.toList());
-        }
-        if (Boolean.TRUE.equals(onlyPriority)) {
-            visibleCards = visibleCards.stream()
-                    .filter(c -> Boolean.TRUE.equals(c.getIsPriority()))
-                    .collect(Collectors.toList());
-        }
+        List<ProductCard> visibleCards = applyCatalogFilters(
+                getVisibleCards(seller.getId(), cabinetId, excludedNmIds),
+                seller.getId(),
+                cabinetId,
+                onlyWithPhoto,
+                onlyPriority,
+                onlyInAdvertising
+        );
 
         List<ArticleMetricDto> articleMetrics = visibleCards.stream()
                 .map(card -> calculateArticleMetric(card, metricName, periods, seller.getId(), cabinetId, null))
@@ -236,19 +242,17 @@ public class AnalyticsService {
             List<PeriodDto> periods,
             List<Long> excludedNmIds,
             Boolean onlyWithPhoto,
-            Boolean onlyPriority
+            Boolean onlyPriority,
+            Boolean onlyInAdvertising
     ) {
-        List<ProductCard> visibleCards = getVisibleCards(seller.getId(), cabinetId, excludedNmIds);
-        if (Boolean.TRUE.equals(onlyWithPhoto)) {
-            visibleCards = visibleCards.stream()
-                    .filter(this::cardHasAnyPhoto)
-                    .collect(Collectors.toList());
-        }
-        if (Boolean.TRUE.equals(onlyPriority)) {
-            visibleCards = visibleCards.stream()
-                    .filter(c -> Boolean.TRUE.equals(c.getIsPriority()))
-                    .collect(Collectors.toList());
-        }
+        List<ProductCard> visibleCards = applyCatalogFilters(
+                getVisibleCards(seller.getId(), cabinetId, excludedNmIds),
+                seller.getId(),
+                cabinetId,
+                onlyWithPhoto,
+                onlyPriority,
+                onlyInAdvertising
+        );
         List<Long> campaignIds = getCampaignIdsForCabinet(seller.getId(), cabinetId);
 
         Map<PeriodDto, Map<Long, CampaignStatisticsAggregator.AdvertisingStats>> statsByPeriodByArticle = new HashMap<>();
@@ -623,6 +627,47 @@ public class AnalyticsService {
                 : productCardRepository.findByCabinet_User_Id(sellerId);
         return ProductCardFilter.filterVisibleCards(allCards, excludedNmIds).stream()
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Фильтры каталога артикулов: фото, приоритет, участие в незавершённых РК.
+     */
+    private List<ProductCard> applyCatalogFilters(
+            List<ProductCard> cards,
+            Long sellerId,
+            Long cabinetId,
+            Boolean onlyWithPhoto,
+            Boolean onlyPriority,
+            Boolean onlyInAdvertising
+    ) {
+        List<ProductCard> result = cards;
+        if (Boolean.TRUE.equals(onlyWithPhoto)) {
+            result = result.stream()
+                    .filter(this::cardHasAnyPhoto)
+                    .collect(Collectors.toList());
+        }
+        if (Boolean.TRUE.equals(onlyPriority)) {
+            result = result.stream()
+                    .filter(c -> Boolean.TRUE.equals(c.getIsPriority()))
+                    .collect(Collectors.toList());
+        }
+        if (Boolean.TRUE.equals(onlyInAdvertising)) {
+            Set<Long> advertisedNmIds = getNmIdsInNonFinishedCampaigns(sellerId, cabinetId);
+            result = result.stream()
+                    .filter(c -> c.getNmId() != null && advertisedNmIds.contains(c.getNmId()))
+                    .collect(Collectors.toList());
+        }
+        return result;
+    }
+
+    /**
+     * nmId артикулов, привязанных к незавершённым РК (по кабинету или всем кабинетам продавца).
+     */
+    private Set<Long> getNmIdsInNonFinishedCampaigns(Long sellerId, Long cabinetId) {
+        if (cabinetId != null) {
+            return campaignArticleRepository.findDistinctNmIdsByCabinetIdExcludingFinishedCampaigns(cabinetId);
+        }
+        return campaignArticleRepository.findDistinctNmIdsBySellerIdExcludingFinishedCampaigns(sellerId);
     }
 
     private void sortProductCards(

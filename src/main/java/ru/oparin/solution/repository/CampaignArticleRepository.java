@@ -9,6 +9,7 @@ import ru.oparin.solution.model.CampaignArticle;
 import ru.oparin.solution.model.CampaignArticleId;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Репозиторий для работы со связями рекламных кампаний и артикулов.
@@ -54,5 +55,25 @@ public interface CampaignArticleRepository extends JpaRepository<CampaignArticle
 
     @Query("SELECT c.campaignId, COUNT(c) FROM CampaignArticle c WHERE c.campaignId IN :ids GROUP BY c.campaignId")
     List<Object[]> countByCampaignIdIn(@Param("ids") List<Long> ids);
+
+    /**
+     * Уникальные nmId артикулов в незавершённых РК кабинета.
+     */
+    @Query("""
+            SELECT DISTINCT c.nmId FROM CampaignArticle c
+            WHERE c.campaign.cabinet.id = :cabinetId
+              AND c.campaign.status <> ru.oparin.solution.model.CampaignStatus.FINISHED
+            """)
+    Set<Long> findDistinctNmIdsByCabinetIdExcludingFinishedCampaigns(@Param("cabinetId") Long cabinetId);
+
+    /**
+     * Уникальные nmId артикулов в незавершённых РК всех кабинетов продавца.
+     */
+    @Query("""
+            SELECT DISTINCT c.nmId FROM CampaignArticle c
+            WHERE c.campaign.cabinet.user.id = :sellerId
+              AND c.campaign.status <> ru.oparin.solution.model.CampaignStatus.FINISHED
+            """)
+    Set<Long> findDistinctNmIdsBySellerIdExcludingFinishedCampaigns(@Param("sellerId") Long sellerId);
 }
 
