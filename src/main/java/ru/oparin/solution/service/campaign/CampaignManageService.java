@@ -194,15 +194,42 @@ public class CampaignManageService {
     }
 
     @Transactional
-    public void deleteSlot(Long advertId, Long cabinetId, Long slotId, User user) {
+    public void deleteSlot(Long advertId, Long cabinetId, Long slotId, User user, boolean deleteAll) {
         ensureCampaign(advertId, cabinetId);
+        if (deleteAll) {
+            deleteAllSlots(advertId, cabinetId, user);
+            return;
+        }
         CampaignScheduleSlot slot = slotRepository.findById(slotId)
                 .orElseThrow(() -> new IllegalArgumentException("Слот не найден"));
+        if (!advertId.equals(slot.getCampaignId()) || !cabinetId.equals(slot.getCabinetId())) {
+            throw new IllegalArgumentException("Слот не найден");
+        }
         String msg = "Удален слот «" + dayName(slot.getDayOfWeek()) + " "
                 + formatSlotRange(slot.getStartTime(), slot.getEndTime()) + "»";
         slotRepository.delete(slot);
         changeLogService.log(advertId, cabinetId, user, msg);
         applySlotEditPolicy(advertId, cabinetId, stateRepository.findById(advertId).orElse(null));
+    }
+
+    private void deleteAllSlots(Long advertId, Long cabinetId, User user) {
+        List<CampaignScheduleSlot> slots = slotRepository
+                .findByCampaignIdAndCabinetIdOrderByDayOfWeekAscStartTimeAsc(advertId, cabinetId);
+        if (slots.isEmpty()) {
+            return;
+        }
+        int count = slots.size();
+        slotRepository.deleteByCampaignIdAndCabinetId(advertId, cabinetId);
+        CampaignManagementState state = stateRepository.findById(advertId).orElse(null);
+        if (state != null) {
+            state.setActiveSlotId(null);
+            state.setBudgetAtSlotStart(null);
+            state.setSlotBudgetExhaustedSlotId(null);
+            state.setSlotTopUpsRub(0);
+            stateRepository.save(state);
+        }
+        changeLogService.log(advertId, cabinetId, user, "Удалено расписание показов (" + count + " слотов)");
+        applySlotEditPolicy(advertId, cabinetId, state);
     }
 
     @Transactional

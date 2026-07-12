@@ -169,6 +169,7 @@ public class CampaignManageController {
     public ResponseEntity<Void> deleteSlot(
             @PathVariable Long advertId,
             @PathVariable Long slotId,
+            @RequestParam(required = false, defaultValue = "false") boolean deleteAll,
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
@@ -180,7 +181,7 @@ public class CampaignManageController {
         }
         requireCampaignManageWrite(context, authentication);
         try {
-            manageService.deleteSlot(advertId, cabId, slotId, currentUser(authentication));
+            manageService.deleteSlot(advertId, cabId, slotId, currentUser(authentication), deleteAll);
             return ResponseEntity.noContent().build();
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
