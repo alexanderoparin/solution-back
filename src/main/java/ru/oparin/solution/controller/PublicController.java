@@ -28,7 +28,11 @@ public class PublicController {
     public ResponseEntity<MessageResponse> submitCabinetAuditRequest(
             @Valid @RequestBody LandingContactRequestDto request
     ) {
-        emailService.sendCabinetAuditRequestEmail(request.getName(), request.getTelegram());
+        emailService.sendCabinetAuditRequestEmail(
+                request.getName(),
+                request.getTelegram(),
+                request.getAdditionalInfo()
+        );
         return ResponseEntity.ok(new MessageResponse("Запрос отправлен. Мы свяжемся с вами в Telegram."));
     }
 
@@ -39,7 +43,11 @@ public class PublicController {
     public ResponseEntity<MessageResponse> submitAgencyConsultationRequest(
             @Valid @RequestBody LandingContactRequestDto request
     ) {
-        emailService.sendAgencyConsultationRequestEmail(request.getName(), request.getTelegram());
+        emailService.sendAgencyConsultationRequestEmail(
+                request.getName(),
+                request.getTelegram(),
+                request.getAdditionalInfo()
+        );
         return ResponseEntity.ok(new MessageResponse("Запрос отправлен. Мы свяжемся с вами в Telegram."));
     }
 }

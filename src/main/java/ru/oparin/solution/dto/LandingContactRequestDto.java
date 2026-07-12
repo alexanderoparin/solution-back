@@ -23,6 +23,10 @@ public class LandingContactRequestDto {
     @Size(max = 64, message = "Telegram слишком длинный")
     private String telegram;
 
+    /** Дополнительная информация (необязательно). */
+    @Size(max = 2000, message = "Слишком длинное сообщение")
+    private String additionalInfo;
+
     /** Согласие на обработку персональных данных. */
     @AssertTrue(message = "Необходимо согласие на обработку персональных данных")
     private Boolean agreeToPrivacy;

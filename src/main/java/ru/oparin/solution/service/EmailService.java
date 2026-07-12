@@ -97,31 +97,40 @@ public class EmailService {
     /**
      * Отправляет заявку на аудит рекламного кабинета на почту оператора.
      *
-     * @param name     имя заявителя
-     * @param telegram Telegram для связи
+     * @param name           имя заявителя
+     * @param telegram       Telegram для связи
+     * @param additionalInfo дополнительная информация (может быть пустой)
      */
-    public void sendCabinetAuditRequestEmail(String name, String telegram) {
+    public void sendCabinetAuditRequestEmail(String name, String telegram, String additionalInfo) {
         String subject = "Заявка на аудит рекламного кабинета — " + brandName;
         String text = "Новая заявка на аудит рекламного кабинета с лендинга.\n\n"
-                + "Имя: " + name + "\n"
-                + "Telegram: " + telegram + "\n\n"
-                + "— " + brandName;
+                + buildLandingLeadEmailBody(name, telegram, additionalInfo);
         sendLandingInboxEmail(subject, text, "аудит кабинета");
     }
 
     /**
      * Отправляет заявку на консультацию по ведению рекламных кабинетов.
      *
-     * @param name     имя заявителя
-     * @param telegram Telegram для связи
+     * @param name           имя заявителя
+     * @param telegram       Telegram для связи
+     * @param additionalInfo дополнительная информация (может быть пустой)
      */
-    public void sendAgencyConsultationRequestEmail(String name, String telegram) {
+    public void sendAgencyConsultationRequestEmail(String name, String telegram, String additionalInfo) {
         String subject = "Заявка на консультацию — ведение рекламных кабинетов — " + brandName;
         String text = "Новая заявка на консультацию по ведению рекламных кабинетов с лендинга.\n\n"
-                + "Имя: " + name + "\n"
-                + "Telegram: " + telegram + "\n\n"
-                + "— " + brandName;
+                + buildLandingLeadEmailBody(name, telegram, additionalInfo);
         sendLandingInboxEmail(subject, text, "консультацию по ведению кабинетов");
+    }
+
+    private String buildLandingLeadEmailBody(String name, String telegram, String additionalInfo) {
+        StringBuilder body = new StringBuilder();
+        body.append("Имя: ").append(name).append('\n');
+        body.append("Telegram: ").append(telegram).append('\n');
+        if (additionalInfo != null && !additionalInfo.isBlank()) {
+            body.append("Дополнительная информация:\n").append(additionalInfo.trim()).append('\n');
+        }
+        body.append("\n— ").append(brandName);
+        return body.toString();
     }
 
     private void sendLandingInboxEmail(String subject, String text, String requestLabel) {
