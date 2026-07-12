@@ -39,6 +39,7 @@ public class CampaignScheduleProcessor {
     private final CabinetService cabinetService;
     private final CampaignManageAccessService campaignManageAccessService;
     private final CampaignScheduleControlNotifier scheduleControlNotifier;
+    private final CampaignStartBudgetGuard startBudgetGuard;
 
     /**
      * Тик планировщика для одной кампании; коммит независим от других кампаний.
@@ -87,7 +88,7 @@ public class CampaignScheduleProcessor {
                     if (!SlotBudgetSpendUtils.isSlotBudgetExhausted(state, slot.getId())) {
                         autoTopUpService.tryTopUpInNewTransaction(advertId, cabinetId, cabinet)
                                 .ifPresent(amount -> reloadStateAfterTopUp(state, advertId, amount));
-                        ensureRunning(campaign, cabinet, advertId);
+                        ensureRunning(campaign, cabinet, advertId, state);
                     }
                 }
             }
@@ -147,7 +148,12 @@ public class CampaignScheduleProcessor {
                 });
     }
 
-    private void ensureRunning(PromotionCampaign campaign, Cabinet cabinet, Long advertId) {
+    private void ensureRunning(
+            PromotionCampaign campaign,
+            Cabinet cabinet,
+            Long advertId,
+            CampaignManagementState state
+    ) {
         if (campaign.getStatus() == CampaignStatus.ACTIVE) {
             return;
         }
@@ -157,22 +163,58 @@ public class CampaignScheduleProcessor {
         if (wbApiEventService.hasActivePromotionCampaignStart(cabinet.getId(), advertId)) {
             return;
         }
+
+        if (state.isStartBlockedNoBudget()) {
+            Optional<Integer> budget = budgetFetchService.fetchBudgetForDecision(cabinet, advertId, state);
+            if (budget.isEmpty() || budget.get() <= 0) {
+                return;
+            }
+            startBudgetGuard.clearBlockIfBudgetAvailable(state, budget.get());
+        } else if (isBudgetTooLowToStart(cabinet, advertId, state)) {
+            startBudgetGuard.blockStartDueToNoBudget(state, advertId, cabinet.getId());
+            return;
+        }
+
         if (campaign.getStatus() == CampaignStatus.READY_TO_START || campaign.getStatus() == CampaignStatus.PAUSED) {
             try {
                 ScheduleControlAttemptResult result = controlService.attemptStartFromSchedule(cabinet, advertId);
-                handleScheduleStartResult(result, advertId, cabinet.getId());
+                handleScheduleStartResult(result, advertId, cabinet.getId(), state);
             } catch (Exception e) {
-                scheduleControlNotifier.onStartFailed(advertId, cabinet.getId(), e.getMessage());
+                if (CampaignStartBudgetGuard.isNoBudgetToStartError(e.getMessage())) {
+                    startBudgetGuard.blockStartDueToNoBudget(state, advertId, cabinet.getId());
+                } else {
+                    scheduleControlNotifier.onStartFailed(advertId, cabinet.getId(), e.getMessage());
+                }
                 log.debug("Запуск по расписанию advertId={}: {}", advertId, e.getMessage());
             }
         }
     }
 
-    private void handleScheduleStartResult(ScheduleControlAttemptResult result, Long advertId, Long cabinetId) {
+    private boolean isBudgetTooLowToStart(Cabinet cabinet, Long advertId, CampaignManagementState state) {
+        Optional<Integer> budget = budgetFetchService.fetchBudgetForDecision(cabinet, advertId, state);
+        if (budget.isPresent()) {
+            startBudgetGuard.clearBlockIfBudgetAvailable(state, budget.get());
+            return budget.get() <= 0;
+        }
+        return state.getLastBudgetTotal() != null && state.getLastBudgetTotal() <= 0;
+    }
+
+    private void handleScheduleStartResult(
+            ScheduleControlAttemptResult result,
+            Long advertId,
+            Long cabinetId,
+            CampaignManagementState state
+    ) {
         switch (result.outcome()) {
             case DIRECT_SUCCESS -> scheduleControlNotifier.onStartSucceededOnWb(advertId, cabinetId);
             case ENQUEUED -> scheduleControlNotifier.onStartEnqueued(advertId, cabinetId);
-            case FAILED -> scheduleControlNotifier.onStartFailed(advertId, cabinetId, result.message());
+            case FAILED -> {
+                if (CampaignStartBudgetGuard.isNoBudgetToStartError(result.message())) {
+                    startBudgetGuard.blockStartDueToNoBudget(state, advertId, cabinetId);
+                } else {
+                    scheduleControlNotifier.onStartFailed(advertId, cabinetId, result.message());
+                }
+            }
             case SKIPPED_ALREADY_PENDING -> { }
         }
     }

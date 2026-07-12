@@ -68,6 +68,13 @@ public class CampaignManagementState {
     @Column(name = "budget_trail_until")
     private LocalDateTime budgetTrailUntil;
 
+    /**
+     * Запуск по расписанию заблокирован из-за нулевого бюджета на WB (до пополнения).
+     */
+    @Column(name = "start_blocked_no_budget", nullable = false)
+    @Builder.Default
+    private boolean startBlockedNoBudget = false;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

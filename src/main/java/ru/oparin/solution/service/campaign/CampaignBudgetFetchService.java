@@ -31,6 +31,7 @@ public class CampaignBudgetFetchService {
     private final CampaignBudgetTimelineService timelineService;
     private final CabinetBudgetPollCoordinator budgetPollCoordinator;
     private final CampaignBudgetPollEligibility pollEligibility;
+    private final CampaignStartBudgetGuard startBudgetGuard;
 
     /**
      * Возвращает бюджет кампании: из кэша состояния, если лимит не позволяет запрос, иначе — свежий ответ WB.
@@ -96,6 +97,7 @@ public class CampaignBudgetFetchService {
             if (state != null) {
                 state.setLastBudgetTotal(budget.getTotal());
                 state.setLastBudgetCheckedAt(LocalDateTime.now(ZONE));
+                startBudgetGuard.clearBlockIfBudgetAvailable(state, budget.getTotal());
             }
             timelineService.recordSnapshot(advertId, cabinet.getId(), budget.getTotal());
             budgetPollCoordinator.markBudgetPolledThisTick(cabinet.getId(), advertId);
@@ -178,6 +180,7 @@ public class CampaignBudgetFetchService {
         if (state != null) {
             state.setLastBudgetTotal(budgetTotal);
             state.setLastBudgetCheckedAt(LocalDateTime.now(ZONE));
+            startBudgetGuard.clearBlockIfBudgetAvailable(state, budgetTotal);
         }
         timelineService.recordSnapshot(advertId, cabinetId, budgetTotal);
     }

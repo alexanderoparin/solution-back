@@ -38,6 +38,7 @@ public class CampaignAutoTopUpService {
     private final CampaignBudgetFetchService budgetFetchService;
     private final CampaignChangeLogService changeLogService;
     private final CampaignBudgetTimelineService timelineService;
+    private final CampaignStartBudgetGuard startBudgetGuard;
 
     /**
      * Пополняет бюджет при необходимости и сохраняет учёт (журнал, timeline, состояние слота).
@@ -99,6 +100,7 @@ public class CampaignAutoTopUpService {
             int budgetAfterTopUp = budgetFetchService.resolveBudgetAfterTopUp(
                     budgetBeforeTopUp, topUpAmount, depositResponse);
             budgetFetchService.storeBudgetTotal(state, advertId, cabinetId, budgetAfterTopUp);
+            startBudgetGuard.clearBlockIfBudgetAvailable(state, budgetAfterTopUp);
 
             state.setTopUpsTodayCount(state.getTopUpsTodayCount() + 1);
             SlotBudgetSpendUtils.addSlotTopUp(state, topUpAmount);

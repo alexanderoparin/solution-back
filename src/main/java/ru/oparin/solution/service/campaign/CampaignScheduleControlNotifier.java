@@ -28,6 +28,18 @@ public class CampaignScheduleControlNotifier {
     }
 
     /**
+     * Запуск невозможен: на WB нет бюджета для старта.
+     */
+    public void onStartBlockedNoBudget(Long advertId, Long cabinetId) {
+        writeHistoryOnce(
+                advertId,
+                cabinetId,
+                "start_no_budget",
+                "Запуск РК не выполнен: нет бюджета. Пополните бюджет кампании или включите автопополнение"
+        );
+    }
+
+    /**
      * Не удалось поставить запуск в очередь (прочая ошибка).
      */
     public void onStartFailed(Long advertId, Long cabinetId, String reason) {

@@ -8,6 +8,7 @@ import ru.oparin.solution.dto.analytics.ScheduleControlAttemptResult;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.PromotionCampaignRepository;
+import ru.oparin.solution.service.campaign.CampaignStartBudgetGuard;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.WbEventRateLimitService;
 import ru.oparin.solution.service.sync.PromotionCampaignSyncService;
@@ -80,6 +81,9 @@ public class PromotionCampaignControlService {
         } catch (WbApiUnauthorizedScopeException e) {
             return handleUnauthorizedForSchedule(cabinet, e);
         } catch (Exception e) {
+            if (CampaignStartBudgetGuard.isNoBudgetToStartError(e.getMessage())) {
+                return ScheduleControlAttemptResult.failed(CampaignStartBudgetGuard.NO_BUDGET_USER_MESSAGE);
+            }
             if (PromotionCampaignControlWriteService.isReadOnlyTokenError(e)) {
                 promotionControlWriteService.recordReadOnlyTokenBlock(cabinet.getId());
                 return ScheduleControlAttemptResult.failed(PromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE);

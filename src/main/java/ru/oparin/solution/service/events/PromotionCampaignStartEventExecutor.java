@@ -7,6 +7,7 @@ import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.PromotionCampaignControlWriteService;
 import ru.oparin.solution.service.campaign.CampaignScheduleControlNotifier;
+import ru.oparin.solution.service.campaign.CampaignStartBudgetGuard;
 import ru.oparin.solution.service.events.payload.PromotionCampaignControlPayload;
 import ru.oparin.solution.service.sync.PromotionCampaignSyncService;
 import ru.oparin.solution.service.wb.WbPromotionApiClient;
@@ -26,6 +27,7 @@ public class PromotionCampaignStartEventExecutor implements WbApiEventExecutor {
     private final PromotionCampaignSyncService promotionCampaignSyncService;
     private final PromotionCampaignControlWriteService promotionControlWriteService;
     private final CampaignScheduleControlNotifier scheduleControlNotifier;
+    private final CampaignStartBudgetGuard startBudgetGuard;
 
     @Override
     public WbApiEventExecutionResult execute(WbApiEvent event) {
@@ -56,6 +58,10 @@ public class PromotionCampaignStartEventExecutor implements WbApiEventExecutor {
                 return WbApiEventExecutionResult.finalError(PromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE);
             }
             if (e.getMessage() != null && !e.getMessage().contains("429")) {
+                if (CampaignStartBudgetGuard.isNoBudgetToStartError(e.getMessage())) {
+                    startBudgetGuard.blockStartDueToNoBudget(payload.advertId(), cabinet.getId());
+                    return WbApiEventExecutionResult.finalError(CampaignStartBudgetGuard.NO_BUDGET_USER_MESSAGE);
+                }
                 return WbApiEventExecutionResult.finalError(e.getMessage());
             }
             return WbEventExecutionErrors.wrapDeferOrRetryable(e);
