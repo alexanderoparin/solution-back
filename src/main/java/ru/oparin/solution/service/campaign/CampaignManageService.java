@@ -6,6 +6,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.analytics.CampaignControlEnqueueResponse;
 import ru.oparin.solution.dto.analytics.manage.*;
+import ru.oparin.solution.dto.wb.PromotionBudgetDepositRequest;
+import ru.oparin.solution.dto.wb.PromotionBudgetResponse;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CampaignAutoBudgetSettingsRepository;
 import ru.oparin.solution.repository.CampaignManagementStateRepository;
@@ -52,6 +54,7 @@ public class CampaignManageService {
     private final CampaignManageAccessService campaignManageAccessService;
     private final BidderStatusResolver bidderStatusResolver;
     private final CampaignBudgetTrailService budgetTrailService;
+    private final CampaignStartBudgetGuard startBudgetGuard;
 
     @Transactional
     public CampaignManageResponseDto getManage(Long advertId, Long cabinetId, User seller) {
@@ -107,6 +110,65 @@ public class CampaignManageService {
         autoBudgetRepository.save(settings);
         changeLogService.log(advertId, cabinetId, user, "Редактирование настроек автопополнения бюджета");
         return mapAutoBudget(settings);
+    }
+
+    /**
+     * Единоразовое пополнение бюджета РК через WB API.
+     */
+    @Transactional
+    public CampaignManualTopUpResponseDto manualTopUp(
+            Long advertId,
+            Long cabinetId,
+            User user,
+            CampaignManualTopUpRequestDto request
+    ) {
+        ensureCampaign(advertId, cabinetId);
+        Cabinet cabinet = cabinetService.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
+        controlWriteService.ensureControlAllowed(cabinet);
+        validateAutoBudgetTopUpAmount(request.getTopUpAmount());
+        if (request.getSourceType() == null) {
+            throw new IllegalArgumentException("Укажите источник пополнения");
+        }
+
+        CampaignManagementState state = getOrCreateState(advertId, cabinetId);
+        int topUpAmount = request.getTopUpAmount();
+        int budgetBeforeTopUp = budgetFetchService.fetchBudgetForDecision(cabinet, advertId, state).orElse(0);
+
+        PromotionBudgetDepositRequest depositRequest = PromotionBudgetDepositRequest.builder()
+                .sum(topUpAmount)
+                .type(request.getSourceType())
+                .returnBudget(true)
+                .build();
+        PromotionBudgetResponse depositResponse;
+        try {
+            depositResponse = promotionApiClient.depositCampaignBudget(cabinet.getApiKey(), advertId, depositRequest);
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    e.getMessage() != null ? e.getMessage() : "Не удалось пополнить бюджет кампании");
+        }
+
+        int budgetAfterTopUp = budgetFetchService.resolveBudgetAfterTopUp(
+                budgetBeforeTopUp, topUpAmount, depositResponse);
+        budgetFetchService.storeBudgetTotal(state, advertId, cabinetId, budgetAfterTopUp);
+        startBudgetGuard.clearBlockIfBudgetAvailable(state, budgetAfterTopUp);
+        SlotBudgetSpendUtils.addSlotTopUp(state, topUpAmount);
+        stateRepository.save(state);
+
+        changeLogService.log(
+                advertId,
+                cabinetId,
+                user,
+                "Бюджет пополнен вручную на " + topUpAmount + " ₽ ("
+                        + budgetBeforeTopUp + " ₽ -> " + budgetAfterTopUp + " ₽)"
+        );
+        timelineService.recordTopUp(advertId, cabinetId, topUpAmount, budgetAfterTopUp);
+
+        return CampaignManualTopUpResponseDto.builder()
+                .topUpAmount(topUpAmount)
+                .budgetAfterTopUp(budgetAfterTopUp)
+                .message("Бюджет пополнен на " + topUpAmount + " ₽")
+                .build();
     }
 
     @Transactional

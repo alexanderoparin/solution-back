@@ -136,6 +136,20 @@ public class CampaignManageController {
                 advertId, requireCabinet(context), actor));
     }
 
+    @PostMapping("/budget/top-up")
+    public ResponseEntity<?> manualTopUp(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @Valid @RequestBody CampaignManualTopUpRequestDto request,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        User actor = currentUser(authentication);
+        return write(context, authentication, () -> manageService.manualTopUp(
+                advertId, requireCabinet(context), actor, request));
+    }
+
     @PostMapping("/slots")
     public ResponseEntity<?> createSlots(
             @PathVariable Long advertId,
