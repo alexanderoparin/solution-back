@@ -2,6 +2,7 @@ package ru.oparin.solution.dto;
 
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
@@ -26,6 +27,10 @@ public class LandingContactRequestDto {
     /** Дополнительная информация (необязательно). */
     @Size(max = 2000, message = "Слишком длинное сообщение")
     private String additionalInfo;
+
+    /** Кнопка/блок лендинга, с которого отправлена заявка. */
+    @NotNull(message = "Не указан источник заявки")
+    private LandingLeadSource source;
 
     /** Согласие на обработку персональных данных. */
     @AssertTrue(message = "Необходимо согласие на обработку персональных данных")

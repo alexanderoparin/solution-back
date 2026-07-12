@@ -31,7 +31,8 @@ public class PublicController {
         emailService.sendCabinetAuditRequestEmail(
                 request.getName(),
                 request.getTelegram(),
-                request.getAdditionalInfo()
+                request.getAdditionalInfo(),
+                request.getSource()
         );
         return ResponseEntity.ok(new MessageResponse("Запрос отправлен. Мы свяжемся с вами в Telegram."));
     }
@@ -46,7 +47,8 @@ public class PublicController {
         emailService.sendAgencyConsultationRequestEmail(
                 request.getName(),
                 request.getTelegram(),
-                request.getAdditionalInfo()
+                request.getAdditionalInfo(),
+                request.getSource()
         );
         return ResponseEntity.ok(new MessageResponse("Запрос отправлен. Мы свяжемся с вами в Telegram."));
     }

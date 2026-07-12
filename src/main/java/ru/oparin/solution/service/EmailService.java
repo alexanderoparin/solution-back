@@ -7,6 +7,7 @@ import org.springframework.mail.MailAuthenticationException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import ru.oparin.solution.dto.LandingLeadSource;
 
 /**
  * Сервис отправки писем (восстановление пароля и т.д.).
@@ -100,11 +101,17 @@ public class EmailService {
      * @param name           имя заявителя
      * @param telegram       Telegram для связи
      * @param additionalInfo дополнительная информация (может быть пустой)
+     * @param source         кнопка/блок лендинга, с которого отправлена заявка
      */
-    public void sendCabinetAuditRequestEmail(String name, String telegram, String additionalInfo) {
-        String subject = "Заявка на аудит рекламного кабинета — " + brandName;
+    public void sendCabinetAuditRequestEmail(
+            String name,
+            String telegram,
+            String additionalInfo,
+            LandingLeadSource source
+    ) {
+        String subject = "Заявка на аудит — " + source.getLabel() + " — " + brandName;
         String text = "Новая заявка на аудит рекламного кабинета с лендинга.\n\n"
-                + buildLandingLeadEmailBody(name, telegram, additionalInfo);
+                + buildLandingLeadEmailBody(name, telegram, additionalInfo, source);
         sendLandingInboxEmail(subject, text, "аудит кабинета");
     }
 
@@ -114,16 +121,28 @@ public class EmailService {
      * @param name           имя заявителя
      * @param telegram       Telegram для связи
      * @param additionalInfo дополнительная информация (может быть пустой)
+     * @param source         кнопка/блок лендинга, с которого отправлена заявка
      */
-    public void sendAgencyConsultationRequestEmail(String name, String telegram, String additionalInfo) {
-        String subject = "Заявка на консультацию — ведение рекламных кабинетов — " + brandName;
+    public void sendAgencyConsultationRequestEmail(
+            String name,
+            String telegram,
+            String additionalInfo,
+            LandingLeadSource source
+    ) {
+        String subject = "Заявка на консультацию — " + source.getLabel() + " — " + brandName;
         String text = "Новая заявка на консультацию по ведению рекламных кабинетов с лендинга.\n\n"
-                + buildLandingLeadEmailBody(name, telegram, additionalInfo);
+                + buildLandingLeadEmailBody(name, telegram, additionalInfo, source);
         sendLandingInboxEmail(subject, text, "консультацию по ведению кабинетов");
     }
 
-    private String buildLandingLeadEmailBody(String name, String telegram, String additionalInfo) {
+    private String buildLandingLeadEmailBody(
+            String name,
+            String telegram,
+            String additionalInfo,
+            LandingLeadSource source
+    ) {
         StringBuilder body = new StringBuilder();
+        body.append("Источник: ").append(source.getLabel()).append('\n');
         body.append("Имя: ").append(name).append('\n');
         body.append("Telegram: ").append(telegram).append('\n');
         if (additionalInfo != null && !additionalInfo.isBlank()) {
