@@ -75,6 +75,10 @@ public class CampaignManagementState {
     @Builder.Default
     private boolean startBlockedNoBudget = false;
 
+    /** Последняя проверка бюджета при блокировке запуска (МСК). */
+    @Column(name = "start_no_budget_checked_at")
+    private LocalDateTime startNoBudgetCheckedAt;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

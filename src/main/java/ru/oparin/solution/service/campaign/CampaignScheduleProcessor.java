@@ -88,7 +88,7 @@ public class CampaignScheduleProcessor {
                     if (!SlotBudgetSpendUtils.isSlotBudgetExhausted(state, slot.getId())) {
                         autoTopUpService.tryTopUpInNewTransaction(advertId, cabinetId, cabinet)
                                 .ifPresent(amount -> reloadStateAfterTopUp(state, advertId, amount));
-                        ensureRunning(campaign, cabinet, advertId, state);
+                        ensureRunning(campaign, cabinet, advertId, state, now);
                     }
                 }
             }
@@ -118,6 +118,7 @@ public class CampaignScheduleProcessor {
     }
 
     private void onSlotEnter(CampaignManagementState state, CampaignScheduleSlot slot, Cabinet cabinet) {
+        startBudgetGuard.resetForNewSlot(state);
         budgetTrailService.clearTrail(state);
         if (!budgetPollCoordinator.isTickLeader(cabinet.getId(), state.getCampaignId())) {
             budgetPollCoordinator.grantMandatoryPoll(cabinet.getId(), state.getCampaignId());
@@ -152,7 +153,8 @@ public class CampaignScheduleProcessor {
             PromotionCampaign campaign,
             Cabinet cabinet,
             Long advertId,
-            CampaignManagementState state
+            CampaignManagementState state,
+            ZonedDateTime now
     ) {
         if (campaign.getStatus() == CampaignStatus.ACTIVE) {
             return;
@@ -164,24 +166,29 @@ public class CampaignScheduleProcessor {
             return;
         }
 
+        if (!startBudgetGuard.isNoBudgetRecheckDue(state, now)) {
+            return;
+        }
+
         if (state.isStartBlockedNoBudget()) {
             Optional<Integer> budget = budgetFetchService.fetchBudgetForDecision(cabinet, advertId, state);
+            startBudgetGuard.markNoBudgetChecked(state, now);
             if (budget.isEmpty() || budget.get() <= 0) {
                 return;
             }
             startBudgetGuard.clearBlockIfBudgetAvailable(state, budget.get());
         } else if (isBudgetTooLowToStart(cabinet, advertId, state)) {
-            startBudgetGuard.blockStartDueToNoBudget(state, advertId, cabinet.getId());
+            startBudgetGuard.blockStartDueToNoBudget(state, advertId, cabinet.getId(), now);
             return;
         }
 
         if (campaign.getStatus() == CampaignStatus.READY_TO_START || campaign.getStatus() == CampaignStatus.PAUSED) {
             try {
                 ScheduleControlAttemptResult result = controlService.attemptStartFromSchedule(cabinet, advertId);
-                handleScheduleStartResult(result, advertId, cabinet.getId(), state);
+                handleScheduleStartResult(result, advertId, cabinet.getId(), state, now);
             } catch (Exception e) {
                 if (CampaignStartBudgetGuard.isNoBudgetToStartError(e.getMessage())) {
-                    startBudgetGuard.blockStartDueToNoBudget(state, advertId, cabinet.getId());
+                    startBudgetGuard.blockStartDueToNoBudget(state, advertId, cabinet.getId(), now);
                 } else {
                     scheduleControlNotifier.onStartFailed(advertId, cabinet.getId(), e.getMessage());
                 }
@@ -203,14 +210,15 @@ public class CampaignScheduleProcessor {
             ScheduleControlAttemptResult result,
             Long advertId,
             Long cabinetId,
-            CampaignManagementState state
+            CampaignManagementState state,
+            ZonedDateTime now
     ) {
         switch (result.outcome()) {
             case DIRECT_SUCCESS -> scheduleControlNotifier.onStartSucceededOnWb(advertId, cabinetId);
             case ENQUEUED -> scheduleControlNotifier.onStartEnqueued(advertId, cabinetId);
             case FAILED -> {
                 if (CampaignStartBudgetGuard.isNoBudgetToStartError(result.message())) {
-                    startBudgetGuard.blockStartDueToNoBudget(state, advertId, cabinetId);
+                    startBudgetGuard.blockStartDueToNoBudget(state, advertId, cabinetId, now);
                 } else {
                     scheduleControlNotifier.onStartFailed(advertId, cabinetId, result.message());
                 }
