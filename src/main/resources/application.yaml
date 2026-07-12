@@ -87,6 +87,7 @@ app:
   brand-name: "Click-I"
   mail:
     from: corp@click-i.ru
+    audit-to: corp@click-i.ru
   executors:
     core-pool-size: 4
     max-pool-size: 6

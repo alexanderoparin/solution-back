@@ -27,6 +27,9 @@ public class EmailService {
     @Value("${app.brand-name:Click-I}")
     private String brandName;
 
+    @Value("${app.mail.audit-to:corp@click-i.ru}")
+    private String auditInboxEmail;
+
     /**
      * Отправляет письмо со ссылкой для сброса пароля.
      *
@@ -88,6 +91,54 @@ public class EmailService {
         } catch (Exception e) {
             log.error("Ошибка отправки письма на {}: {}", toEmail, e.getMessage(), e);
             throw new RuntimeException("Не удалось отправить письмо. Попробуйте позже.", e);
+        }
+    }
+
+    /**
+     * Отправляет заявку на аудит рекламного кабинета на почту оператора.
+     *
+     * @param name     имя заявителя
+     * @param telegram Telegram для связи
+     */
+    public void sendCabinetAuditRequestEmail(String name, String telegram) {
+        String subject = "Заявка на аудит рекламного кабинета — " + brandName;
+        String text = "Новая заявка на аудит рекламного кабинета с лендинга.\n\n"
+                + "Имя: " + name + "\n"
+                + "Telegram: " + telegram + "\n\n"
+                + "— " + brandName;
+        sendLandingInboxEmail(subject, text, "аудит кабинета");
+    }
+
+    /**
+     * Отправляет заявку на консультацию по ведению рекламных кабинетов.
+     *
+     * @param name     имя заявителя
+     * @param telegram Telegram для связи
+     */
+    public void sendAgencyConsultationRequestEmail(String name, String telegram) {
+        String subject = "Заявка на консультацию — ведение рекламных кабинетов — " + brandName;
+        String text = "Новая заявка на консультацию по ведению рекламных кабинетов с лендинга.\n\n"
+                + "Имя: " + name + "\n"
+                + "Telegram: " + telegram + "\n\n"
+                + "— " + brandName;
+        sendLandingInboxEmail(subject, text, "консультацию по ведению кабинетов");
+    }
+
+    private void sendLandingInboxEmail(String subject, String text, String requestLabel) {
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromEmail);
+            message.setTo(auditInboxEmail);
+            message.setSubject(subject);
+            message.setText(text);
+            mailSender.send(message);
+            log.info("Заявка на {} отправлена на {}", requestLabel, auditInboxEmail);
+        } catch (MailAuthenticationException e) {
+            log.error("Ошибка SMTP-аутентификации при отправке заявки на {}: {}", requestLabel, e.getMessage());
+            throw new RuntimeException("Не удалось отправить запрос. Попробуйте позже.", e);
+        } catch (Exception e) {
+            log.error("Ошибка отправки заявки на {}: {}", requestLabel, e.getMessage(), e);
+            throw new RuntimeException("Не удалось отправить запрос. Попробуйте позже.", e);
         }
     }
 
