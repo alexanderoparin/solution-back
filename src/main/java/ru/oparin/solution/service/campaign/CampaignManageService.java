@@ -31,6 +31,8 @@ import java.util.*;
 public class CampaignManageService {
 
     private static final ZoneId SCHEDULE_ZONE = ZoneId.of("Europe/Moscow");
+    /** Минимальная сумма пополнения бюджета РК на Wildberries, ₽. */
+    private static final int MIN_TOP_UP_AMOUNT_RUB = 1000;
     private static final String SCHEDULE_STOPPED_READ_ONLY =
             "Расписание отключено: " + PromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE;
     private final AnalyticsService analyticsService;
@@ -85,6 +87,7 @@ public class CampaignManageService {
         controlWriteService.ensureControlAllowed(cabinetService.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден")));
         CampaignAutoBudgetSettings settings = getOrCreateAutoBudget(advertId, cabinetId);
+        validateAutoBudgetTopUpAmount(request.getTopUpAmount());
         settings.setEnabled(request.isEnabled());
         settings.setTopUpAmount(request.getTopUpAmount());
         settings.setSourceType(request.getSourceType());
@@ -518,6 +521,13 @@ public class CampaignManageService {
     private void ensureCampaign(Long advertId, Long cabinetId) {
         if (!campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).isPresent()) {
             throw new IllegalArgumentException("Кампания не найдена в этом кабинете");
+        }
+    }
+
+    private void validateAutoBudgetTopUpAmount(Integer topUpAmount) {
+        if (topUpAmount != null && topUpAmount < MIN_TOP_UP_AMOUNT_RUB) {
+            throw new IllegalArgumentException(
+                    "Минимальная сумма пополнения — " + MIN_TOP_UP_AMOUNT_RUB + " ₽");
         }
     }
 
