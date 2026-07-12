@@ -102,6 +102,33 @@ public class CampaignManageService {
         return mapAutoBudget(settings);
     }
 
+    /**
+     * Включает или выключает автопополнение без изменения суммы, источника и порогов.
+     */
+    @Transactional
+    public CampaignAutoBudgetDto setAutoBudgetEnabled(
+            Long advertId,
+            Long cabinetId,
+            User user,
+            boolean enabled
+    ) {
+        ensureCampaign(advertId, cabinetId);
+        controlWriteService.ensureControlAllowed(cabinetService.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден")));
+        CampaignAutoBudgetSettings settings = getOrCreateAutoBudget(advertId, cabinetId);
+        if (settings.isEnabled() != enabled) {
+            settings.setEnabled(enabled);
+            autoBudgetRepository.save(settings);
+            changeLogService.log(
+                    advertId,
+                    cabinetId,
+                    user,
+                    enabled ? "Автопополнение бюджета включено" : "Автопополнение бюджета выключено"
+            );
+        }
+        return mapAutoBudget(settings);
+    }
+
     @Transactional
     public CampaignAutoBudgetDto unlockAutoBudget(Long advertId, Long cabinetId, User user) {
         ensureCampaign(advertId, cabinetId);

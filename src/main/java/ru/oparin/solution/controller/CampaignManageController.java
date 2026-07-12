@@ -123,6 +123,20 @@ public class CampaignManageController {
                 advertId, requireCabinet(context), actor, request));
     }
 
+    @PutMapping("/auto-budget/enabled")
+    public ResponseEntity<?> setAutoBudgetEnabled(
+            @PathVariable Long advertId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @RequestBody CampaignAutoBudgetEnabledRequestDto request,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
+        User actor = currentUser(authentication);
+        return write(context, authentication, () -> manageService.setAutoBudgetEnabled(
+                advertId, requireCabinet(context), actor, request.isEnabled()));
+    }
+
     @PostMapping("/auto-budget/unlock")
     public ResponseEntity<?> unlockAutoBudget(
             @PathVariable Long advertId,
