@@ -1154,6 +1154,7 @@ public class WbApiEventService {
                 .status(event.getStatus().name())
                 .executorBeanName(event.getExecutorBeanName())
                 .cabinetId(event.getCabinet() != null ? event.getCabinet().getId() : null)
+                .cabinetName(event.getCabinet() != null ? event.getCabinet().getName() : null)
                 .dedupKey(event.getDedupKey())
                 .attemptCount(event.getAttemptCount())
                 .maxAttempts(event.getMaxAttempts())

@@ -11,6 +11,7 @@ public record WbApiEventDto(
         String status,
         String executorBeanName,
         Long cabinetId,
+        String cabinetName,
         String dedupKey,
         Integer attemptCount,
         Integer maxAttempts,
