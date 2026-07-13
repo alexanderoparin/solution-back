@@ -44,7 +44,13 @@ public class SellerContextService {
             owner = cabinet.getUser();
             if (!cabinetAccessService.isCabinetOwner(currentUser, cabinetId)
                     && !cabinetAccessService.hasSectionAccess(currentUser, cabinetId,
-                    ru.oparin.solution.model.CabinetAccessSection.PRODUCTS)) {
+                    ru.oparin.solution.model.CabinetAccessSection.SUMMARY)
+                    && !cabinetAccessService.hasSectionAccess(currentUser, cabinetId,
+                    ru.oparin.solution.model.CabinetAccessSection.PRODUCTS)
+                    && !cabinetAccessService.hasSectionAccess(currentUser, cabinetId,
+                    ru.oparin.solution.model.CabinetAccessSection.AD_CAMPAIGNS)
+                    && !cabinetAccessService.hasSectionAccess(currentUser, cabinetId,
+                    ru.oparin.solution.model.CabinetAccessSection.CAMPAIGN_MANAGE)) {
                 throw new UserException("Нет доступа к кабинету", HttpStatus.FORBIDDEN);
             }
         } else if (cabinetRepository.existsByIdAndUser_Id(
