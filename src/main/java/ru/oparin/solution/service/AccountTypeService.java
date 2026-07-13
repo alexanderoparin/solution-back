@@ -48,6 +48,9 @@ public class AccountTypeService {
         }
     }
 
+    /**
+     * Добавляет тип аккаунта пользователю, если его ещё нет (существующие типы не затрагиваются).
+     */
     @Transactional
     public void ensureAccountType(Long userId, AccountType accountType) {
         if (!userAccountTypeRepository.existsByUserIdAndAccountType(userId, accountType)) {

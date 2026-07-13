@@ -2,10 +2,11 @@ package ru.oparin.solution.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-import ru.oparin.solution.model.converter.CabinetAccessSectionsConverter;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -36,7 +37,7 @@ public class CabinetAccessGrant {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Convert(converter = CabinetAccessSectionsConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "sections", nullable = false, columnDefinition = "jsonb")
     @Builder.Default
     private List<CabinetAccessSection> sections = new ArrayList<>();

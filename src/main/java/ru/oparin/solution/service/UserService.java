@@ -325,7 +325,9 @@ public class UserService {
         if (request.getName() != null) {
             user.setName(request.getName().trim());
         }
-        if (request.getAccountTypes() != null && !request.getAccountTypes().isEmpty()) {
+        if (user.getRole() != Role.ADMIN
+                && request.getAccountTypes() != null
+                && !request.getAccountTypes().isEmpty()) {
             accountTypeService.replaceAccountTypes(user.getId(), request.getAccountTypes());
         }
         return userRepository.save(user);

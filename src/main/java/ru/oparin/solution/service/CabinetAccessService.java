@@ -61,9 +61,12 @@ public class CabinetAccessService {
         return cabinetRepository.existsByIdAndUser_Id(cabinetId, user.getId());
     }
 
+    /**
+     * Управление доступами к кабинету — только владелец (не ADMIN).
+     */
     @Transactional(readOnly = true)
     public boolean canManageCabinet(User user, Long cabinetId) {
-        return user.getRole() == Role.ADMIN || cabinetRepository.existsByIdAndUser_Id(cabinetId, user.getId());
+        return cabinetRepository.existsByIdAndUser_Id(cabinetId, user.getId());
     }
 
     @Transactional(readOnly = true)
@@ -134,8 +137,16 @@ public class CabinetAccessService {
             if (grantee.getId().equals(owner.getId())) {
                 throw new UserException("Нельзя выдать доступ самому себе", HttpStatus.BAD_REQUEST);
             }
-            upsertActiveGrant(cabinet, grantee, owner, request.sections(), request.comment(), request.validUntil(), null);
-            accountTypeService.ensureAccountType(grantee.getId(), AccountType.EMPLOYEE);
+            upsertActiveGrant(
+                    cabinet,
+                    grantee,
+                    owner,
+                    request.sections(),
+                    request.comment(),
+                    request.validUntil(),
+                    null
+            );
+            applyGrantedAccountType(grantee.getId(), request.accountType());
             return;
         }
 
@@ -153,6 +164,7 @@ public class CabinetAccessService {
                 .cabinet(cabinet)
                 .invitedByUser(owner)
                 .sections(new ArrayList<>(request.sections()))
+                .accountType(request.accountType())
                 .commentText(request.comment())
                 .status(CabinetAccessInvitationStatus.PENDING)
                 .validUntil(request.validUntil())
@@ -186,6 +198,38 @@ public class CabinetAccessService {
             throw new UserException("Приглашение не принадлежит кабинету", HttpStatus.BAD_REQUEST);
         }
         invitation.setStatus(CabinetAccessInvitationStatus.REVOKED);
+        invitationRepository.save(invitation);
+    }
+
+    @Transactional
+    public void updateGrantValidUntil(User owner, Long cabinetId, Long grantId, LocalDateTime validUntil) {
+        ensureCanManage(owner, cabinetId);
+        CabinetAccessGrant grant = grantRepository.findById(grantId)
+                .orElseThrow(() -> new UserException("Доступ не найден", HttpStatus.NOT_FOUND));
+        if (!grant.getCabinet().getId().equals(cabinetId)) {
+            throw new UserException("Доступ не принадлежит кабинету", HttpStatus.BAD_REQUEST);
+        }
+        if (grant.getStatus() != CabinetAccessGrantStatus.ACTIVE) {
+            throw new UserException("Можно изменить срок только для активного доступа", HttpStatus.BAD_REQUEST);
+        }
+        validateValidUntil(validUntil);
+        grant.setValidUntil(validUntil);
+        grantRepository.save(grant);
+    }
+
+    @Transactional
+    public void updateInvitationValidUntil(User owner, Long cabinetId, Long invitationId, LocalDateTime validUntil) {
+        ensureCanManage(owner, cabinetId);
+        CabinetAccessInvitation invitation = invitationRepository.findById(invitationId)
+                .orElseThrow(() -> new UserException("Приглашение не найдено", HttpStatus.NOT_FOUND));
+        if (!invitation.getCabinet().getId().equals(cabinetId)) {
+            throw new UserException("Приглашение не принадлежит кабинету", HttpStatus.BAD_REQUEST);
+        }
+        if (invitation.getStatus() != CabinetAccessInvitationStatus.PENDING) {
+            throw new UserException("Можно изменить срок только для ожидающего приглашения", HttpStatus.BAD_REQUEST);
+        }
+        validateValidUntil(validUntil);
+        invitation.setValidUntil(validUntil);
         invitationRepository.save(invitation);
     }
 
@@ -238,7 +282,15 @@ public class CabinetAccessService {
                 invitation.getValidUntil(),
                 invitation
         );
-        accountTypeService.ensureAccountType(user.getId(), AccountType.EMPLOYEE);
+        applyGrantedAccountType(user.getId(), invitation.getAccountType());
+    }
+
+    /**
+     * При выдаче доступа владелец указывает тип «Агентство» или «Сотрудник» —
+     * он добавляется в профиль пользователя, если ещё не был назначен.
+     */
+    private void applyGrantedAccountType(Long userId, AccountType accountType) {
+        accountTypeService.ensureAccountType(userId, accountType);
     }
 
     @Transactional(readOnly = true)
@@ -287,7 +339,7 @@ public class CabinetAccessService {
 
     private void ensureCanManage(User user, Long cabinetId) {
         if (!canManageCabinet(user, cabinetId)) {
-            throw new UserException("Нет прав на управление кабинетом", HttpStatus.FORBIDDEN);
+            throw new UserException("Только владелец кабинета может управлять доступами", HttpStatus.FORBIDDEN);
         }
     }
 
@@ -297,6 +349,19 @@ public class CabinetAccessService {
         }
         if (request.sections() == null || request.sections().isEmpty()) {
             throw new UserException("Выберите хотя бы один раздел", HttpStatus.BAD_REQUEST);
+        }
+        if (request.accountType() == null) {
+            throw new UserException("Выберите тип аккаунта", HttpStatus.BAD_REQUEST);
+        }
+        if (request.accountType() != AccountType.AGENCY && request.accountType() != AccountType.EMPLOYEE) {
+            throw new UserException("Доступ можно выдать только с типом «Агентство» или «Сотрудник»", HttpStatus.BAD_REQUEST);
+        }
+        validateValidUntil(request.validUntil());
+    }
+
+    private void validateValidUntil(LocalDateTime validUntil) {
+        if (validUntil != null && validUntil.isBefore(LocalDateTime.now())) {
+            throw new UserException("Дата окончания доступа не может быть в прошлом", HttpStatus.BAD_REQUEST);
         }
     }
 
@@ -334,7 +399,7 @@ public class CabinetAccessService {
         return CabinetAccessEntryDto.builder()
                 .id(grant.getId())
                 .kind("GRANT")
-                .userName(displayName(user))
+                .userName(resolveUserName(user))
                 .userEmail(user.getEmail())
                 .sections(grant.getSections())
                 .accessFrom(grant.getValidFrom())
@@ -359,6 +424,13 @@ public class CabinetAccessService {
                 .invitationStatus(invitation.getStatus())
                 .statusLabel("Приглашение отправлено / Ожидает принятия")
                 .build();
+    }
+
+    private static String resolveUserName(User user) {
+        if (user == null || user.getName() == null || user.getName().isBlank()) {
+            return null;
+        }
+        return user.getName();
     }
 
     private static String displayName(User user) {

@@ -2,10 +2,11 @@ package ru.oparin.solution.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-import ru.oparin.solution.model.converter.CabinetAccessSectionsConverter;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -42,10 +43,14 @@ public class CabinetAccessInvitation {
     @JoinColumn(name = "invited_by_user_id", nullable = false)
     private User invitedByUser;
 
-    @Convert(converter = CabinetAccessSectionsConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "sections", nullable = false, columnDefinition = "jsonb")
     @Builder.Default
     private List<CabinetAccessSection> sections = new ArrayList<>();
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "account_type", nullable = false, length = 20)
+    private AccountType accountType;
 
     @Column(name = "comment_text", length = 500)
     private String commentText;

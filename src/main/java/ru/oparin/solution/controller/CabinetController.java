@@ -73,6 +73,30 @@ public class CabinetController {
         return ResponseEntity.ok(MessageResponse.builder().message("Доступ отозван").build());
     }
 
+    @PatchMapping("/{id}/access/grants/{grantId}")
+    public ResponseEntity<MessageResponse> updateGrantValidUntil(
+            @PathVariable Long id,
+            @PathVariable Long grantId,
+            @RequestBody UpdateCabinetAccessValidUntilRequest request,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        cabinetAccessService.updateGrantValidUntil(user, id, grantId, request.validUntil());
+        return ResponseEntity.ok(MessageResponse.builder().message("Срок доступа обновлён").build());
+    }
+
+    @PatchMapping("/{id}/access/invitations/{invitationId}")
+    public ResponseEntity<MessageResponse> updateInvitationValidUntil(
+            @PathVariable Long id,
+            @PathVariable Long invitationId,
+            @RequestBody UpdateCabinetAccessValidUntilRequest request,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        cabinetAccessService.updateInvitationValidUntil(user, id, invitationId, request.validUntil());
+        return ResponseEntity.ok(MessageResponse.builder().message("Срок доступа обновлён").build());
+    }
+
     @DeleteMapping("/{id}/access/invitations/{invitationId}")
     public ResponseEntity<MessageResponse> revokeInvitation(
             @PathVariable Long id,
@@ -100,7 +124,7 @@ public class CabinetController {
             Authentication authentication
     ) {
         User user = userService.findByEmail(authentication.getName());
-        if (!cabinetAccessService.canManageCabinet(user, id)) {
+        if (!cabinetAccessService.isCabinetOwner(user, id)) {
             throw new UserException("Нет доступа к кабинету", HttpStatus.FORBIDDEN);
         }
         Long ownerId = cabinetService.findById(id).orElseThrow().getUser().getId();
