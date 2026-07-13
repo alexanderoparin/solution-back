@@ -43,42 +43,28 @@ public class UserController {
     private final EmailConfirmationService emailConfirmationService;
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
-    private final SellerManagerAccessService sellerManagerAccessService;
-    private final SellerWorkerService sellerWorkerService;
+    private final AccountTypeService accountTypeService;
+    private final ProfileSubscriptionService profileSubscriptionService;
+    private final AccountDeletionRequestService accountDeletionRequestService;
+    private final CabinetAccessService cabinetAccessService;
 
-    /**
-     * Обновление WB API ключа пользователя.
-     *
-     * @param request новый API ключ
-     * @param authentication данные аутентификации
-     * @return сообщение об успешном обновлении или ошибка
-     */
     @PutMapping("/api-key")
     public ResponseEntity<MessageResponse> updateApiKey(
             @Valid @RequestBody UpdateApiKeyRequest request,
             Authentication authentication
     ) {
         User user = getCurrentUser(authentication);
-        validateSellerRole(user);
-
+        validateCabinetOwner(user);
         userService.updateApiKey(user.getId(), request.getWbApiKey());
-
-        return ResponseEntity.ok(createSuccessMessage("API ключ успешно обновлен. Валидация будет выполнена при первом использовании."));
+        return ResponseEntity.ok(createSuccessMessage(
+                "API ключ успешно обновлен. Валидация будет выполнена при первом использовании."));
     }
 
-    /**
-     * Проверка WB API ключа пользователя.
-     *
-     * @param authentication данные аутентификации
-     * @return сообщение о результате проверки или ошибка
-     */
     @PostMapping("/api-key/validate")
     public ResponseEntity<MessageResponse> validateApiKey(Authentication authentication) {
         User user = getCurrentUser(authentication);
-        validateSellerRole(user);
-
+        validateCabinetOwner(user);
         wbApiKeyService.validateApiKey(user.getId());
-
         Cabinet cabinet = wbApiKeyService.findDefaultCabinetByUserId(user.getId());
         if (TRUE.equals(cabinet.getIsValid())) {
             return ResponseEntity.ok(createSuccessMessage("API ключ валиден"));
@@ -89,26 +75,22 @@ public class UserController {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(createSuccessMessage(errorMsg));
     }
 
-    /**
-     * Получение профиля текущего пользователя.
-     *
-     * @param authentication данные аутентификации
-     * @return профиль пользователя или ошибка
-     */
     @GetMapping("/profile")
     public ResponseEntity<UserProfileResponse> getProfile(Authentication authentication) {
         User user = getCurrentUser(authentication);
-        UserProfileResponse profile = buildUserProfile(user);
-
-        return ResponseEntity.ok(profile);
+        return ResponseEntity.ok(buildUserProfile(user));
     }
 
-    /**
-     * Отправка письма для подтверждения email (не для клиентов агентства; не чаще 1 раза в 12 ч).
-     *
-     * @param authentication данные аутентификации
-     * @return сообщение об успехе или ошибка (429 если письмо уже отправлялось недавно)
-     */
+    @PutMapping("/profile")
+    public ResponseEntity<UserProfileResponse> updateProfile(
+            @Valid @RequestBody UpdateProfileRequest request,
+            Authentication authentication
+    ) {
+        User user = getCurrentUser(authentication);
+        user = userService.updateProfile(user, request);
+        return ResponseEntity.ok(buildUserProfile(user));
+    }
+
     @PostMapping("/send-email-confirmation")
     public ResponseEntity<MessageResponse> sendEmailConfirmation(Authentication authentication) {
         User user = getCurrentUser(authentication);
@@ -116,51 +98,18 @@ public class UserController {
         return ResponseEntity.ok(createSuccessMessage("Письмо для подтверждения отправлено на вашу почту."));
     }
 
-    /**
-     * Список менеджеров с доступом к аккаунту селлера.
-     */
-    @GetMapping("/manager-access")
-    public ResponseEntity<List<SellerManagerAccessDto>> listManagerAccess(Authentication authentication) {
-        User user = getCurrentUser(authentication);
-        validateSellerRole(user);
-        return ResponseEntity.ok(sellerManagerAccessService.listManagersForSeller(user.getId()));
-    }
-
-    /**
-     * Выдать менеджеру доступ к аккаунту селлера по email.
-     */
-    @PostMapping("/manager-access")
-    public ResponseEntity<SellerManagerAccessDto> grantManagerAccess(
-            @Valid @RequestBody GrantManagerAccessRequest request,
+    @PostMapping("/deletion-request")
+    public ResponseEntity<MessageResponse> createDeletionRequest(
+            @Valid @RequestBody AccountDeletionRequestDto request,
             Authentication authentication
     ) {
         User user = getCurrentUser(authentication);
-        validateSellerRole(user);
-        SellerManagerAccessDto dto = sellerManagerAccessService.grantAccess(user, request.getManagerEmail());
-        return ResponseEntity.status(HttpStatus.CREATED).body(dto);
+        accountDeletionRequestService.createRequest(user, request);
+        return ResponseEntity.ok(createSuccessMessage(
+                "Запрос отправлен. Мы получили запрос на удаление профиля. "
+                        + "После обработки заявки вы получите уведомление на электронную почту."));
     }
 
-    /**
-     * Отозвать доступ менеджера к аккаунту селлера.
-     */
-    @DeleteMapping("/manager-access/{managerId}")
-    public ResponseEntity<MessageResponse> revokeManagerAccess(
-            @PathVariable Long managerId,
-            Authentication authentication
-    ) {
-        User user = getCurrentUser(authentication);
-        validateSellerRole(user);
-        sellerManagerAccessService.revokeAccess(user, managerId);
-        return ResponseEntity.ok(createSuccessMessage("Доступ менеджера отозван"));
-    }
-
-    /**
-     * Смена пароля пользователя.
-     *
-     * @param request данные для смены пароля
-     * @param authentication данные аутентификации
-     * @return сообщение об успешной смене пароля или ошибка
-     */
     @PutMapping("/password")
     public ResponseEntity<MessageResponse> changePassword(
             @Valid @RequestBody ChangePasswordRequest request,
@@ -168,37 +117,19 @@ public class UserController {
     ) {
         User user = getCurrentUser(authentication);
         userService.changePassword(user.getId(), request.getCurrentPassword(), request.getNewPassword());
-
         return ResponseEntity.ok(createSuccessMessage("Пароль успешно изменен"));
     }
 
-    /**
-     * Принудительный запуск обновления данных для текущего продавца.
-     * Запускает процесс обновления карточек, кампаний и аналитики без ожидания ночного шедулера.
-     *
-     * @param authentication данные аутентификации
-     * @return сообщение об успешном запуске обновления
-     */
     @PostMapping("/update-data")
     public ResponseEntity<MessageResponse> triggerDataUpdate(Authentication authentication) {
         User user = getCurrentUser(authentication);
-        validateSellerRole(user);
-
-        log.info("Ручной запуск обновления данных по селлеру (self-service): initiatedByRole={}, initiatedById={}, initiatedByEmail={}",
-                user.getRole(), user.getId(), user.getEmail());
-
-        // Запускаем обновление асинхронно
+        validateCabinetOwner(user);
+        log.info("Ручной запуск обновления данных: userId={}, email={}", user.getId(), user.getEmail());
         analyticsScheduler.triggerManualUpdate(user);
-
         return ResponseEntity.ok(createSuccessMessage(
-                "Обновление данных запущено. Процесс выполняется в фоновом режиме. " +
-                "Данные будут доступны через несколько минут."
-        ));
+                "Обновление данных запущено. Процесс выполняется в фоновом режиме."));
     }
 
-    /**
-     * Статус доступа текущего пользователя.
-     */
     @GetMapping("/access")
     public ResponseEntity<AccessStatusResponse> getAccessStatus(
             @RequestParam(required = false) Long sellerId,
@@ -218,26 +149,9 @@ public class UserController {
                 .subscriptionExpiresAt(activeSubscription != null ? activeSubscription.getExpiresAt() : null)
                 .campaignManage(campaignManage)
                 .build();
-
         return ResponseEntity.ok(response);
     }
 
-    private User resolveSellerForAccess(User actor, Long sellerId) {
-        if (actor.getRole() == Role.SELLER) {
-            return actor;
-        }
-        if (actor.getRole() == Role.WORKER) {
-            return sellerWorkerService.findSellerByWorkerId(actor.getId()).orElse(null);
-        }
-        if ((actor.getRole() == Role.ADMIN || actor.getRole() == Role.MANAGER) && sellerId != null) {
-            return userRepository.findById(sellerId).orElse(null);
-        }
-        return null;
-    }
-
-    /**
-     * Список платежей текущего пользователя (для ЛК).
-     */
     @GetMapping("/payments")
     public ResponseEntity<List<PaymentDto>> getMyPayments(Authentication authentication) {
         User user = getCurrentUser(authentication);
@@ -246,6 +160,16 @@ public class UserController {
                 .map(this::toPaymentDto)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(list);
+    }
+
+    private User resolveSellerForAccess(User actor, Long sellerId) {
+        if (actor.getRole() == Role.ADMIN && sellerId != null) {
+            return userRepository.findById(sellerId).orElse(null);
+        }
+        if (sellerId != null) {
+            return userRepository.findById(sellerId).orElse(null);
+        }
+        return actor;
     }
 
     private PaymentDto toPaymentDto(Payment p) {
@@ -261,64 +185,36 @@ public class UserController {
                 .build();
     }
 
-    /**
-     * Получает текущего пользователя из аутентификации.
-     */
     private User getCurrentUser(Authentication authentication) {
         return userService.findByEmail(authentication.getName());
     }
 
-    /**
-     * Проверяет, что пользователь имеет роль SELLER.
-     */
-    private void validateSellerRole(User user) {
-        if (user.getRole() != Role.SELLER) {
-            throw new UserException("Только SELLER может обновлять API ключ");
+    private void validateCabinetOwner(User user) {
+        if (user.getRole() == Role.ADMIN) {
+            return;
+        }
+        if (cabinetAccessService.getOverview(user, null).owned().isEmpty()) {
+            throw new UserException("Добавьте кабинет для выполнения операции", HttpStatus.FORBIDDEN);
         }
     }
 
-    /**
-     * Создает сообщение об успехе.
-     */
     private MessageResponse createSuccessMessage(String message) {
-        return MessageResponse.builder()
-                .message(message)
-                .build();
+        return MessageResponse.builder().message(message).build();
     }
 
-    /**
-     * Строит профиль пользователя.
-     */
     private UserProfileResponse buildUserProfile(User user) {
-        UserProfileResponse.UserProfileResponseBuilder builder = UserProfileResponse.builder()
+        return UserProfileResponse.builder()
                 .id(user.getId())
+                .name(user.getName())
                 .email(user.getEmail())
                 .role(user.getRole())
+                .accountTypes(accountTypeService.getAccountTypes(user.getId()))
                 .isActive(user.getIsActive())
                 .emailConfirmed(user.getEmailConfirmed())
-                .lastEmailConfirmationSentAt(user.getLastEmailConfirmationSentAt());
-
-        if (user.getRole() == Role.SELLER) {
-            builder.apiKey(buildApiKeyInfo(user.getId()));
-        }
-
-        return builder.build();
-    }
-
-    /**
-     * Строит информацию об API ключе для профиля.
-     * Возвращает null, если API ключ не найден.
-     */
-    private UserProfileResponse.ApiKeyInfo buildApiKeyInfo(Long userId) {
-        return wbApiKeyService.findDefaultCabinetByUserIdOptional(userId)
-                .map(cabinet -> UserProfileResponse.ApiKeyInfo.builder()
-                        .apiKey(cabinet.getApiKey())
-                        .tokenType(cabinet.getTokenType())
-                        .isValid(cabinet.getIsValid())
-                        .lastValidatedAt(cabinet.getLastValidatedAt())
-                        .validationError(cabinet.getValidationError())
-                        .lastDataUpdateAt(cabinet.getLastDataUpdateAt())
-                        .build())
-                .orElse(null);
+                .lastEmailConfirmationSentAt(user.getLastEmailConfirmationSentAt())
+                .createdAt(user.getCreatedAt())
+                .subscription(profileSubscriptionService.buildSummary(user))
+                .deletionRequest(accountDeletionRequestService.getStatus(user.getId()))
+                .build();
     }
 }

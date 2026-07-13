@@ -1,18 +1,25 @@
 package ru.oparin.solution.dto;
 
-import jakarta.validation.constraints.AssertTrue;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 import lombok.Getter;
 import lombok.Setter;
+import ru.oparin.solution.model.AccountType;
+
+import java.util.List;
 
 /**
- * DTO для регистрации продавца.
+ * DTO для регистрации пользователя.
  */
 @Getter
 @Setter
 public class RegisterRequest {
+
+    /**
+     * Имя пользователя.
+     */
+    @NotBlank(message = "Имя обязательно")
+    @Size(max = 255, message = "Имя слишком длинное")
+    private String name;
 
     /**
      * Email пользователя.
@@ -38,5 +45,16 @@ public class RegisterRequest {
      * Согласие на получение информационных и маркетинговых сообщений (необязательно).
      */
     private Boolean marketingConsent;
+
+    /**
+     * Типы аккаунта (минимум один).
+     */
+    @NotEmpty(message = "Укажите тип аккаунта")
+    private List<AccountType> accountTypes;
+
+    /**
+     * Токен приглашения (если регистрация по invite).
+     */
+    private String invitationToken;
 }
 

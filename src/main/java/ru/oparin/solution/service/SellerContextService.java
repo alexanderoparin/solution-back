@@ -9,12 +9,14 @@ import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
 
+import java.util.Comparator;
 import java.util.List;
 
 /**
- * Сервис для работы с контекстом продавца.
+ * Контекст кабинета для аналитики и рекламы.
  */
 @Service
 @RequiredArgsConstructor
@@ -24,162 +26,84 @@ public class SellerContextService {
     private final WbApiKeyService wbApiKeyService;
     private final UserRepository userRepository;
     private final CabinetService cabinetService;
-    private final SellerWorkerService sellerWorkerService;
-    private final SellerManagerAccessService sellerManagerAccessService;
+    private final CabinetAccessService cabinetAccessService;
+    private final CabinetRepository cabinetRepository;
 
-    /**
-     * Создает контекст продавца из данных аутентификации.
-     * Для SELLER использует текущего пользователя.
-     * Для WORKER — продавца из {@code seller_worker}; параметр {@code sellerId} из запроса игнорируется.
-     * Для ADMIN/MANAGER использует выбранного sellerId (если указан) или последнего активного селлера.
-     * Кабинет: по умолчанию (последний созданный) или из cabinetId, если передан и принадлежит селлеру.
-     *
-     * @param authentication данные аутентификации
-     * @param sellerId ID селлера (опционально, только для ADMIN/MANAGER)
-     * @param cabinetId ID кабинета (опционально; если передан и принадлежит селлеру — используется этот кабинет)
-     * @return контекст продавца
-     */
     @Transactional(readOnly = true)
     public SellerContext createContext(Authentication authentication, Long sellerId, Long cabinetId) {
         User currentUser = userService.findByEmail(authentication.getName());
+        User owner;
+        Cabinet cabinet;
 
-        User seller;
-        if (currentUser.getRole() == Role.SELLER) {
-            seller = currentUser;
-        } else if (currentUser.getRole() == Role.WORKER) {
-            seller = sellerWorkerService.findSellerByWorkerId(currentUser.getId())
-                    .orElseThrow(() -> new UserException(
-                            "У сотрудника не указан продавец-работодатель",
-                            HttpStatus.FORBIDDEN
-                    ));
-            if (!Boolean.TRUE.equals(seller.getIsActive())) {
-                throw new UserException(
-                        "Нельзя просматривать аналитику: аккаунт продавца неактивен",
-                        HttpStatus.FORBIDDEN
-                );
+        if (currentUser.getRole() == Role.ADMIN) {
+            owner = resolveAdminOwner(sellerId, cabinetId);
+            cabinet = resolveCabinet(owner.getId(), cabinetId);
+        } else if (cabinetId != null) {
+            cabinet = cabinetRepository.findById(cabinetId)
+                    .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+            owner = cabinet.getUser();
+            if (!cabinetAccessService.isCabinetOwner(currentUser, cabinetId)
+                    && !cabinetAccessService.hasSectionAccess(currentUser, cabinetId,
+                    ru.oparin.solution.model.CabinetAccessSection.PRODUCTS)) {
+                throw new UserException("Нет доступа к кабинету", HttpStatus.FORBIDDEN);
             }
-        } else if (currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER) {
-            if (sellerId != null) {
-                seller = userRepository.findById(sellerId)
-                        .orElseThrow(() -> new UserException(
-                                "Селлер не найден с ID: " + sellerId,
-                                HttpStatus.NOT_FOUND
-                        ));
-                validateCanViewSellerAnalytics(currentUser, seller);
-            } else {
-                seller = getLastActiveSeller(currentUser);
-                if (seller == null) {
-                    throw new UserException(
-                            "Не найдено активных селлеров для просмотра аналитики",
-                            HttpStatus.NOT_FOUND
-                    );
-                }
-            }
+        } else if (cabinetRepository.existsByIdAndUser_Id(
+                wbApiKeyService.findDefaultCabinetByUserId(currentUser.getId()).getId(), currentUser.getId())) {
+            owner = currentUser;
+            cabinet = wbApiKeyService.findDefaultCabinetByUserId(currentUser.getId());
         } else {
-            throw new UserException(
-                    "Только SELLER, WORKER, MANAGER или ADMIN могут просматривать аналитику",
-                    HttpStatus.FORBIDDEN
-            );
+            var grants = cabinetAccessService.getOverview(currentUser, null).granted();
+            if (grants.isEmpty()) {
+                throw new UserException("Не найдено доступных кабинетов", HttpStatus.NOT_FOUND);
+            }
+            cabinet = cabinetRepository.findById(grants.get(0).id())
+                    .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+            owner = cabinet.getUser();
         }
 
-        Cabinet cabinet = resolveCabinet(seller.getId(), cabinetId);
-        return new SellerContext(seller, cabinet);
-    }
-
-    /**
-     * Кабинет: если cabinetId передан и принадлежит селлеру — этот кабинет, иначе кабинет по умолчанию.
-     */
-    private Cabinet resolveCabinet(Long sellerId, Long cabinetId) {
-        if (cabinetId != null && cabinetService.existsByIdAndUser_Id(cabinetId, sellerId)) {
-            return cabinetService.findById(cabinetId)
-                    .orElseGet(() -> wbApiKeyService.findDefaultCabinetByUserId(sellerId));
+        if (!Boolean.TRUE.equals(owner.getIsActive())) {
+            throw new UserException("Аккаунт владельца кабинета неактивен", HttpStatus.FORBIDDEN);
         }
-        return wbApiKeyService.findDefaultCabinetByUserId(sellerId);
+        return new SellerContext(owner, cabinet);
     }
 
-    /**
-     * Создает контекст продавца (без указания cabinetId — используется кабинет по умолчанию).
-     */
     public SellerContext createContext(Authentication authentication, Long sellerId) {
         return createContext(authentication, sellerId, null);
     }
 
-    /**
-     * Создает контекст продавца (без указания sellerId и cabinetId).
-     */
     public SellerContext createContext(Authentication authentication) {
         return createContext(authentication, null, null);
     }
 
-    /**
-     * Получает последнего добавленного активного селлера с API ключом для текущего пользователя.
-     */
-    private User getLastActiveSeller(User currentUser) {
-        List<User> sellers;
-        if (currentUser.getRole() == Role.ADMIN) {
-            sellers = userRepository.findByRoleAndIsActive(Role.SELLER, true);
-        } else if (currentUser.getRole() == Role.MANAGER) {
-            sellers = sellerManagerAccessService.listActiveSellersForManager(currentUser.getId());
-        } else {
-            return null;
+    private User resolveAdminOwner(Long sellerId, Long cabinetId) {
+        if (cabinetId != null) {
+            Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                    .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+            return cabinet.getUser();
         }
-
-        // Фильтруем только селлеров с кабинетами
-        List<User> sellersWithCabinets = sellers.stream()
-                .filter(seller -> cabinetService.findDefaultByUserId(seller.getId()).isPresent())
+        if (sellerId != null) {
+            User seller = userRepository.findById(sellerId)
+                    .orElseThrow(() -> new UserException("Пользователь не найден: " + sellerId, HttpStatus.NOT_FOUND));
+            return seller;
+        }
+        List<User> owners = userRepository.findByRoleAndIsActive(Role.USER, true).stream()
+                .filter(u -> cabinetService.findDefaultByUserId(u.getId()).isPresent())
+                .sorted(Comparator.comparing(User::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
-
-        // Возвращаем последнего добавленного (по createdAt DESC)
-        return sellersWithCabinets.stream()
-                .sorted((a, b) -> {
-                    if (a.getCreatedAt() == null && b.getCreatedAt() == null) return 0;
-                    if (a.getCreatedAt() == null) return 1;
-                    if (b.getCreatedAt() == null) return -1;
-                    return b.getCreatedAt().compareTo(a.getCreatedAt());
-                })
-                .findFirst()
-                .orElse(null);
+        if (owners.isEmpty()) {
+            throw new UserException("Не найдено активных кабинетов", HttpStatus.NOT_FOUND);
+        }
+        return owners.get(0);
     }
 
-    /**
-     * Проверяет, может ли текущий пользователь просматривать аналитику указанного селлера.
-     */
-    private void validateCanViewSellerAnalytics(User currentUser, User seller) {
-        if (seller.getRole() != Role.SELLER) {
-            throw new UserException(
-                    "Указанный пользователь не является селлером",
-                    HttpStatus.BAD_REQUEST
-            );
+    private Cabinet resolveCabinet(Long ownerId, Long cabinetId) {
+        if (cabinetId != null && cabinetService.existsByIdAndUser_Id(cabinetId, ownerId)) {
+            return cabinetService.findById(cabinetId)
+                    .orElseGet(() -> wbApiKeyService.findDefaultCabinetByUserId(ownerId));
         }
-
-        if (!Boolean.TRUE.equals(seller.getIsActive())) {
-            throw new UserException(
-                    "Нельзя просматривать аналитику неактивного селлера",
-                    HttpStatus.BAD_REQUEST
-            );
-        }
-
-        if (currentUser.getRole() == Role.ADMIN) {
-            // ADMIN может просматривать аналитику любого активного селлера
-            return;
-        } else if (currentUser.getRole() == Role.MANAGER) {
-            if (!sellerManagerAccessService.canManagerAccessSeller(currentUser, seller)) {
-                throw new UserException(
-                        "MANAGER может просматривать аналитику только селлеров, выдавших ему доступ",
-                        HttpStatus.FORBIDDEN
-                );
-            }
-        } else {
-            throw new UserException(
-                    "Только MANAGER или ADMIN могут просматривать аналитику других селлеров",
-                    HttpStatus.FORBIDDEN
-            );
-        }
+        return wbApiKeyService.findDefaultCabinetByUserId(ownerId);
     }
 
-    /**
-     * Контекст продавца: пользователь-селлер и выбранный кабинет (ключ и id берутся из кабинета).
-     */
     public record SellerContext(User user, Cabinet cabinet) {
         public String apiKey() {
             return cabinet != null ? cabinet.getApiKey() : null;
@@ -190,4 +114,3 @@ public class SellerContextService {
         }
     }
 }
-

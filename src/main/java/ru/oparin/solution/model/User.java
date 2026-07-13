@@ -42,7 +42,13 @@ public class User {
     private String password;
 
     /**
-     * Роль пользователя: ADMIN, MANAGER, SELLER, WORKER.
+     * Отображаемое имя пользователя.
+     */
+    @Column(name = "name", length = 255)
+    private String name;
+
+    /**
+     * Системная роль: ADMIN или USER.
      */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -76,8 +82,7 @@ public class User {
     private Boolean marketingConsent = false;
 
     /**
-     * Клиент агентства: Управление РК и расписание без подписки campaign_*.
-     * Имеет смысл только для {@link Role#SELLER}.
+     * Клиент агентства: Управление РК без подписки campaign_* (legacy).
      */
     @Column(name = "agency_managed", nullable = false)
     @Builder.Default

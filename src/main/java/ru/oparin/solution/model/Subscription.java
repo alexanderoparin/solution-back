@@ -42,6 +42,13 @@ public class Subscription {
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
+    /**
+     * Автопродление (отображение в профиле).
+     */
+    @Column(name = "auto_renew", nullable = false)
+    @Builder.Default
+    private Boolean autoRenew = false;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

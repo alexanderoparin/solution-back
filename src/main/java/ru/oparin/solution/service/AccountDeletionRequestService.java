@@ -1,0 +1,94 @@
+package ru.oparin.solution.service;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import ru.oparin.solution.dto.AccountDeletionRequestAdminDto;
+import ru.oparin.solution.dto.AccountDeletionRequestDto;
+import ru.oparin.solution.dto.AccountDeletionStatusDto;
+import ru.oparin.solution.exception.UserException;
+import ru.oparin.solution.model.AccountDeletionRequest;
+import ru.oparin.solution.model.AccountDeletionRequestStatus;
+import ru.oparin.solution.model.User;
+import ru.oparin.solution.repository.AccountDeletionRequestRepository;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+/**
+ * Заявки пользователей на удаление аккаунта.
+ */
+@Service
+@RequiredArgsConstructor
+public class AccountDeletionRequestService {
+
+    private final AccountDeletionRequestRepository repository;
+    private final UserService userService;
+
+    @Transactional(readOnly = true)
+    public AccountDeletionStatusDto getStatus(Long userId) {
+        return repository.findByUser_IdAndStatus(userId, AccountDeletionRequestStatus.PENDING)
+                .map(r -> AccountDeletionStatusDto.builder()
+                        .hasPendingRequest(true)
+                        .status(r.getStatus())
+                        .message("Запрос на удаление отправлен и ожидает обработки. "
+                                + "Если запрос был отправлен по ошибке, обратитесь в поддержку corp@click-i.ru")
+                        .build())
+                .orElse(AccountDeletionStatusDto.builder()
+                        .hasPendingRequest(false)
+                        .build());
+    }
+
+    @Transactional
+    public void createRequest(User user, AccountDeletionRequestDto request) {
+        if (request.reason() == null) {
+            throw new UserException("Укажите причину удаления", HttpStatus.BAD_REQUEST);
+        }
+        if (repository.findByUser_IdAndStatus(user.getId(), AccountDeletionRequestStatus.PENDING).isPresent()) {
+            throw new UserException("Заявка на удаление уже отправлена", HttpStatus.CONFLICT);
+        }
+        repository.save(AccountDeletionRequest.builder()
+                .user(user)
+                .reason(request.reason())
+                .commentText(request.comment())
+                .status(AccountDeletionRequestStatus.PENDING)
+                .createdAt(LocalDateTime.now())
+                .build());
+    }
+
+    @Transactional(readOnly = true)
+    public List<AccountDeletionRequestAdminDto> listAll() {
+        return repository.findAllByOrderByCreatedAtDesc().stream()
+                .map(this::toAdminDto)
+                .toList();
+    }
+
+    @Transactional
+    public void approve(User admin, Long requestId) {
+        AccountDeletionRequest request = repository.findById(requestId)
+                .orElseThrow(() -> new UserException("Заявка не найдена", HttpStatus.NOT_FOUND));
+        if (request.getStatus() != AccountDeletionRequestStatus.PENDING) {
+            throw new UserException("Заявка уже обработана", HttpStatus.BAD_REQUEST);
+        }
+        request.setStatus(AccountDeletionRequestStatus.APPROVED);
+        request.setProcessedAt(LocalDateTime.now());
+        request.setProcessedByUser(admin);
+        repository.save(request);
+        userService.runDeletionAsync(request.getUser().getId());
+    }
+
+    private AccountDeletionRequestAdminDto toAdminDto(AccountDeletionRequest request) {
+        User user = request.getUser();
+        return AccountDeletionRequestAdminDto.builder()
+                .id(request.getId())
+                .userId(user.getId())
+                .userEmail(user.getEmail())
+                .userName(user.getName())
+                .reason(request.getReason())
+                .comment(request.getCommentText())
+                .status(request.getStatus())
+                .createdAt(request.getCreatedAt())
+                .build();
+    }
+}

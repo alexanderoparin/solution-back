@@ -11,7 +11,6 @@ import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.Subscription;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.SubscriptionRepository;
-import ru.oparin.solution.service.SellerWorkerService;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -41,7 +40,6 @@ public class CampaignManageAccessService {
 
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionProperties subscriptionProperties;
-    private final SellerWorkerService sellerWorkerService;
 
     /**
      * Пользователь, на чью подписку смотрим (селлер).
@@ -53,11 +51,8 @@ public class CampaignManageAccessService {
         if (actor == null) {
             return null;
         }
-        if (actor.getRole() == Role.SELLER) {
+        if (actor.getRole() == Role.USER || actor.getRole() == Role.ADMIN) {
             return actor;
-        }
-        if (actor.getRole() == Role.WORKER) {
-            return sellerWorkerService.findSellerByWorkerId(actor.getId()).orElse(null);
         }
         return null;
     }

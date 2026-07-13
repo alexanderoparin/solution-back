@@ -15,17 +15,17 @@ import ru.oparin.solution.dto.ManagedCabinetSortField;
 import ru.oparin.solution.dto.cabinet.*;
 import ru.oparin.solution.dto.wb.SellerInfoResponse;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.CabinetTokenType;
-import ru.oparin.solution.model.Role;
-import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.*;
+import ru.oparin.solution.repository.CabinetAccessGrantRepository;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.repository.spec.CabinetManagedSpecifications;
 import ru.oparin.solution.service.wb.Wb429RateLimitHeadersLogger;
 import ru.oparin.solution.service.wb.WbCommonApiClient;
 
+import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Сервис CRUD для кабинетов продавца.
@@ -46,9 +46,9 @@ public class CabinetService {
     private static final int MAX_CABINET_NAME_LENGTH = 255;
 
     private final CabinetRepository cabinetRepository;
+    private final CabinetAccessGrantRepository grantRepository;
     private final UserRepository userRepository;
-    private final SellerManagerAccessService sellerManagerAccessService;
-    private final SellerWorkerService sellerWorkerService;
+    private final CabinetAccessService cabinetAccessService;
     private final CabinetDeletionService cabinetDeletionService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final WbCommonApiClient wbCommonApiClient;
@@ -64,6 +64,25 @@ public class CabinetService {
     @Transactional(readOnly = true)
     public List<CabinetDto> listByUserId(Long userId, boolean maskApiKey) {
         return findCabinetsByUserId(userId).stream().map(c -> toDto(c, maskApiKey)).toList();
+    }
+
+    /**
+     * Собственные кабинеты и кабинеты с активным grant (для аналитики и выбора в шапке).
+     */
+    @Transactional(readOnly = true)
+    public List<CabinetDto> listAccessibleForUser(User user) {
+        List<CabinetDto> result = new ArrayList<>(listByUserId(user.getId(), false));
+        Set<Long> ids = result.stream().map(CabinetDto::getId).collect(Collectors.toSet());
+        LocalDateTime now = LocalDateTime.now();
+        for (var grant : grantRepository.findActiveGrantedForUser(
+                user.getId(), CabinetAccessGrantStatus.ACTIVE, now)) {
+            Long cabinetId = grant.getCabinet().getId();
+            if (!ids.contains(cabinetId)) {
+                result.add(toDto(grant.getCabinet(), true));
+                ids.add(cabinetId);
+            }
+        }
+        return result;
     }
 
     /**
@@ -95,27 +114,18 @@ public class CabinetService {
             String search,
             boolean onlyActiveUsers
     ) {
-        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
+        if (currentUser.getRole() != Role.ADMIN) {
             throw new UserException(CABINET_ACCESS_DENIED, HttpStatus.FORBIDDEN);
         }
         var spec = CabinetManagedSpecifications.managedList(currentUser, search, onlyActiveUsers);
         Page<Cabinet> cabinetPage = cabinetRepository.findAll(spec, pageable);
-        List<Long> sellerIds = cabinetPage.getContent().stream()
-                .map(c -> c.getUser().getId())
-                .distinct()
-                .toList();
-        Map<Long, List<String>> managerEmailsBySeller =
-                sellerManagerAccessService.findActiveManagerEmailsBySellerIds(sellerIds);
-        return cabinetPage.map(c -> {
-            Long sellerId = c.getUser().getId();
-            return ManagedCabinetRowDto.builder()
-                    .sellerId(sellerId)
-                    .sellerEmail(c.getUser().getEmail())
-                    .agencyManaged(Boolean.TRUE.equals(c.getUser().getAgencyManaged()))
-                    .managerEmails(managerEmailsBySeller.getOrDefault(sellerId, List.of()))
-                    .cabinet(toDto(c))
-                    .build();
-        });
+        return cabinetPage.map(c -> ManagedCabinetRowDto.builder()
+                .sellerId(c.getUser().getId())
+                .sellerEmail(c.getUser().getEmail())
+                .agencyManaged(Boolean.TRUE.equals(c.getUser().getAgencyManaged()))
+                .managerEmails(List.of())
+                .cabinet(toDto(c))
+                .build());
     }
 
     /**
@@ -125,7 +135,7 @@ public class CabinetService {
      */
     @Transactional(readOnly = true)
     public List<WorkContextCabinetDto> listWorkContextCabinets(User currentUser) {
-        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.MANAGER) {
+        if (currentUser.getRole() != Role.ADMIN) {
             throw new UserException(CABINET_ACCESS_DENIED, HttpStatus.FORBIDDEN);
         }
         List<Cabinet> list = cabinetRepository.findAll(
@@ -187,7 +197,7 @@ public class CabinetService {
     public CabinetDto create(Long userId, CreateCabinetRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserException("Пользователь не найден", HttpStatus.NOT_FOUND));
-        if (user.getRole() != Role.SELLER) {
+        if (user.getRole() != Role.USER && user.getRole() != Role.ADMIN) {
             throw new UserException(SELLER_ONLY_CREATE, HttpStatus.FORBIDDEN);
         }
         String trimmedApiKey = request.getApiKey().trim();
@@ -323,18 +333,25 @@ public class CabinetService {
      */
     @Transactional(readOnly = true)
     public void validateCabinetAccessForUpdate(Long cabinetId, User currentUser) {
-        Cabinet cabinet = findByIdWithUserOrThrow(cabinetId);
-        validateSellerCabinetAccess(cabinet.getUser(), currentUser, false);
+        if (currentUser.getRole() != Role.ADMIN) {
+            throw new UserException(CABINET_ACCESS_DENIED, HttpStatus.FORBIDDEN);
+        }
+        findByIdWithUserOrThrow(cabinetId);
     }
 
     /**
      * Проверяет право запуска обновления остатков по кабинету.
-     * Разрешено: владелец кабинета (SELLER), ADMIN или MANAGER (с доступом к селлеру).
+     * Разрешено: владелец кабинета, ADMIN или пользователь с grant на раздел «Товары».
      */
     @Transactional(readOnly = true)
     public void validateCabinetAccessForStocksUpdate(Long cabinetId, User currentUser) {
-        Cabinet cabinet = findByIdWithUserOrThrow(cabinetId);
-        validateSellerCabinetAccess(cabinet.getUser(), currentUser, true);
+        if (currentUser.getRole() == Role.ADMIN) {
+            return;
+        }
+        if (cabinetAccessService.hasSectionAccess(currentUser, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS)) {
+            return;
+        }
+        throw new UserException(CABINET_ACCESS_DENIED, HttpStatus.FORBIDDEN);
     }
 
     /**
@@ -362,24 +379,6 @@ public class CabinetService {
     @Transactional(readOnly = true)
     public List<Cabinet> findCabinetsWithApiKeyAndUser(Role role) {
         return cabinetRepository.findCabinetsWithApiKeyAndUser(role);
-    }
-
-    /**
-     * Все кабинеты с API-ключом у селлеров, доступных менеджеру (grant или legacy owner_id).
-     */
-    @Transactional(readOnly = true)
-    public List<Cabinet> findCabinetsWithApiKeyForManager(Long managerId) {
-        return cabinetRepository.findCabinetsWithApiKeyForManager(Role.SELLER, managerId);
-    }
-
-    /**
-     * Все кабинеты с API-ключом и активным SELLER, принадлежащим указанному владельцу (MANAGER).
-     * @deprecated используйте {@link #findCabinetsWithApiKeyForManager(Long)}
-     */
-    @Deprecated
-    @Transactional(readOnly = true)
-    public List<Cabinet> findCabinetsWithApiKeyAndUserAndOwnerId(Role role, Long ownerId) {
-        return cabinetRepository.findCabinetsWithApiKeyForManager(role, ownerId);
     }
 
     /**
@@ -423,32 +422,6 @@ public class CabinetService {
         }
         return cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new UserException(CABINET_NOT_FOUND, HttpStatus.NOT_FOUND));
-    }
-
-    private void validateSellerCabinetAccess(User seller, User currentUser, boolean allowSellerSelf) {
-        if (seller.getRole() != Role.SELLER) {
-            throw new UserException(CABINET_NOT_SELLER_OWNED, HttpStatus.FORBIDDEN);
-        }
-
-        if (currentUser.getRole() == Role.ADMIN) {
-            return;
-        }
-
-        if (currentUser.getRole() == Role.MANAGER
-                && sellerManagerAccessService.canManagerAccessSeller(currentUser.getId(), seller.getId())) {
-            return;
-        }
-
-        if (allowSellerSelf && currentUser.getRole() == Role.SELLER && seller.getId().equals(currentUser.getId())) {
-            return;
-        }
-
-        if (allowSellerSelf && currentUser.getRole() == Role.WORKER
-                && sellerWorkerService.isWorkerOfSeller(currentUser, seller)) {
-            return;
-        }
-
-        throw new UserException(CABINET_ACCESS_DENIED, HttpStatus.FORBIDDEN);
     }
 
     private void assertSellerInfoOrThrow(String apiKey) {

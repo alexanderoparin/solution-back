@@ -38,7 +38,7 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<MessageResponse> register(@Valid @RequestBody RegisterRequest request) {
         log.info("Регистрация пользователя с email = '{}'", request.getEmail());
-        userService.registerSeller(request);
+        userService.registerUser(request);
         
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -70,7 +70,7 @@ public class AuthController {
         log.info("Запрос сброса пароля для email = '{}'", request.getEmail());
         passwordResetService.forgotPassword(request.getEmail());
         return ResponseEntity.ok(createSuccessMessage(
-                "Если аккаунт с таким email существует, на него отправлена ссылка для сброса пароля."));
+                "На указанный email отправлена ссылка для сброса пароля. Проверьте почту."));
     }
 
     /**

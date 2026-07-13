@@ -265,8 +265,8 @@ public class SubscriptionPaymentService {
         if (!subscriptionProperties.isCampaignManagementEnabled()) {
             throw new UserException("Подписка на Управление РК отключена", HttpStatus.BAD_REQUEST);
         }
-        if (user.getRole() != Role.SELLER) {
-            throw new UserException("Оплату может инициировать только селлер", HttpStatus.FORBIDDEN);
+        if (user.getRole() != Role.USER) {
+            throw new UserException("Оплату может инициировать только владелец кабинета", HttpStatus.FORBIDDEN);
         }
         if (!Boolean.TRUE.equals(user.getEmailConfirmed())) {
             throw new UserException("Подтвердите почту перед оплатой", HttpStatus.FORBIDDEN);

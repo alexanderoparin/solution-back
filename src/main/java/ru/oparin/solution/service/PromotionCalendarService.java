@@ -156,7 +156,7 @@ public class PromotionCalendarService {
      * Для каждого кабинета вызывается syncPromotionsForCabinet через прокси — своя транзакция.
      */
     public void syncPromotionsForAllCabinets() {
-        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.USER);
         log.info("Запуск синхронизации акций для {} кабинетов", cabinets.size());
         for (Cabinet cabinet : cabinets) {
             try {

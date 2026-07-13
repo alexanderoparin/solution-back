@@ -52,41 +52,28 @@ public class SecurityConfig {
     private static final String AUTH_ENDPOINTS = "/auth/**";
     private static final String HEALTH_ENDPOINT = "/health";
     private static final String ADMIN_ENDPOINTS = "/admin/**";
-    private static final String SELLER_ENDPOINTS = "/seller/**";
-    private static final String WORKER_ENDPOINTS = "/worker/**";
     private static final String ANALYTICS_ENDPOINTS = "/analytics/**";
     private static final String ADVERTISING_ENDPOINTS = "/advertising/**";
     private static final String USERS_MANAGEMENT_ENDPOINTS = "/users/**";
     private static final String USERS_TRIGGER_STOCKS_UPDATE_ENDPOINT = "/users/cabinets/*/trigger-stocks-update";
     private static final String CABINETS_ENDPOINTS = "/cabinets/**";
+    private static final String INVITE_ENDPOINTS = "/public/invitations/**";
     private static final String SUBSCRIPTION_PLANS = "/subscription/plans";
     private static final String SUBSCRIPTION_STATUS = "/subscription/status";
     private static final String PUBLIC_ENDPOINTS = "/public/**";
     private static final String WEBHOOKS = "/webhooks/**";
     public static final String ADMIN = Role.ADMIN.name();
-    public static final String MANAGER = Role.MANAGER.name();
-    public static final String SELLER = Role.SELLER.name();
-    public static final String WORKER = Role.WORKER.name();
+    public static final String USER = Role.USER.name();
 
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final EmailConfirmationAccessFilter emailConfirmationAccessFilter;
 
-    /**
-     * Bean для кодирования паролей (BCrypt).
-     *
-     * @return кодировщик паролей
-     */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(BCRYPT_STRENGTH);
     }
 
-    /**
-     * Провайдер аутентификации.
-     *
-     * @return провайдер аутентификации
-     */
     @Bean
     public DaoAuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
@@ -95,23 +82,11 @@ public class SecurityConfig {
         return authProvider;
     }
 
-    /**
-     * Менеджер аутентификации.
-     *
-     * @param authConfig конфигурация аутентификации
-     * @return менеджер аутентификации
-     */
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
         return authConfig.getAuthenticationManager();
     }
 
-    /**
-     * Цепочка фильтров безопасности.
-     *
-     * @param http конфигурация HTTP-безопасности
-     * @return цепочка фильтров безопасности
-     */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -127,11 +102,6 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /**
-     * Конфигурация CORS.
-     *
-     * @return источник конфигурации CORS
-     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = createCorsConfiguration();
@@ -140,31 +110,24 @@ public class SecurityConfig {
         return source;
     }
 
-    /**
-     * Настраивает правила авторизации для различных эндпоинтов.
-     */
     private void configureAuthorization(
             AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry auth
     ) {
         auth
                 .requestMatchers(AUTH_ENDPOINTS, HEALTH_ENDPOINT).permitAll()
+                .requestMatchers(INVITE_ENDPOINTS).permitAll()
                 .requestMatchers(SUBSCRIPTION_PLANS, SUBSCRIPTION_STATUS).permitAll()
                 .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                 .requestMatchers(WEBHOOKS).permitAll()
                 .requestMatchers(ADMIN_ENDPOINTS).hasRole(ADMIN)
-                .requestMatchers(SELLER_ENDPOINTS).hasAnyRole(ADMIN, SELLER)
-                .requestMatchers(WORKER_ENDPOINTS).hasAnyRole(ADMIN, SELLER, WORKER)
-                .requestMatchers(ANALYTICS_ENDPOINTS).hasAnyRole(ADMIN, MANAGER, SELLER, WORKER)
-                .requestMatchers(ADVERTISING_ENDPOINTS).hasAnyRole(ADMIN, MANAGER, SELLER, WORKER)
-                .requestMatchers(USERS_TRIGGER_STOCKS_UPDATE_ENDPOINT).hasAnyRole(ADMIN, MANAGER, SELLER, WORKER)
-                .requestMatchers(USERS_MANAGEMENT_ENDPOINTS).hasAnyRole(ADMIN, MANAGER, SELLER)
-                .requestMatchers(CABINETS_ENDPOINTS).hasAnyRole(SELLER, WORKER)
+                .requestMatchers(ANALYTICS_ENDPOINTS).hasAnyRole(ADMIN, USER)
+                .requestMatchers(ADVERTISING_ENDPOINTS).hasAnyRole(ADMIN, USER)
+                .requestMatchers(USERS_TRIGGER_STOCKS_UPDATE_ENDPOINT).hasAnyRole(ADMIN, USER)
+                .requestMatchers(USERS_MANAGEMENT_ENDPOINTS).hasRole(ADMIN)
+                .requestMatchers(CABINETS_ENDPOINTS).hasAnyRole(ADMIN, USER)
                 .anyRequest().authenticated();
     }
 
-    /**
-     * Создает конфигурацию CORS.
-     */
     private CorsConfiguration createCorsConfiguration() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(ALLOWED_ORIGINS);

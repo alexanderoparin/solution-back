@@ -6,6 +6,7 @@ package ru.oparin.solution.model;
 public final class PlanCodes {
 
     public static final String CAMPAIGN_FREE = "campaign_free";
+    public static final String ANALYTICS_FREE = "analytics_free";
 
     private PlanCodes() {
     }

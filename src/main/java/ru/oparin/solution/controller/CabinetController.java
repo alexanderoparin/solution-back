@@ -7,22 +7,20 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.MessageResponse;
-import ru.oparin.solution.dto.cabinet.CabinetDto;
-import ru.oparin.solution.dto.cabinet.CreateCabinetRequest;
-import ru.oparin.solution.dto.cabinet.UpdateCabinetRequest;
+import ru.oparin.solution.dto.cabinet.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.service.CabinetAccessService;
 import ru.oparin.solution.service.CabinetService;
-import ru.oparin.solution.service.SellerWorkerService;
 import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.WbApiKeyService;
 
 import java.util.List;
 
 /**
- * API кабинетов продавца: список, создание, обновление (имя, API ключ), валидация ключа.
+ * API кабинетов: список, CRUD, обзор, управление доступами.
  */
 @RestController
 @RequestMapping("/cabinets")
@@ -32,59 +30,95 @@ public class CabinetController {
     private final CabinetService cabinetService;
     private final WbApiKeyService wbApiKeyService;
     private final UserService userService;
-    private final SellerWorkerService sellerWorkerService;
+    private final CabinetAccessService cabinetAccessService;
 
-    /**
-     * Список кабинетов: для SELLER — свои, для WORKER — кабинеты владельца (продавца).
-     * Сортировка по дате создания (новые первые); первый в списке — кабинет по умолчанию.
-     */
+    @GetMapping("/overview")
+    public ResponseEntity<CabinetsOverviewDto> overview(
+            @RequestParam(required = false) String search,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        return ResponseEntity.ok(cabinetAccessService.getOverview(user, search));
+    }
+
+    @GetMapping("/{id}/access")
+    public ResponseEntity<List<CabinetAccessEntryDto>> listAccess(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        return ResponseEntity.ok(cabinetAccessService.listAccessEntries(user, id));
+    }
+
+    @PostMapping("/{id}/access")
+    public ResponseEntity<MessageResponse> grantAccess(
+            @PathVariable Long id,
+            @Valid @RequestBody GrantCabinetAccessRequest request,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        cabinetAccessService.grantAccess(user, id, request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(MessageResponse.builder().message("Доступ выдан").build());
+    }
+
+    @DeleteMapping("/{id}/access/grants/{grantId}")
+    public ResponseEntity<MessageResponse> revokeGrant(
+            @PathVariable Long id,
+            @PathVariable Long grantId,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        cabinetAccessService.revokeGrant(user, id, grantId);
+        return ResponseEntity.ok(MessageResponse.builder().message("Доступ отозван").build());
+    }
+
+    @DeleteMapping("/{id}/access/invitations/{invitationId}")
+    public ResponseEntity<MessageResponse> revokeInvitation(
+            @PathVariable Long id,
+            @PathVariable Long invitationId,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        cabinetAccessService.revokeInvitation(user, id, invitationId);
+        return ResponseEntity.ok(MessageResponse.builder().message("Приглашение отозвано").build());
+    }
+
     @GetMapping
     public ResponseEntity<List<CabinetDto>> list(Authentication authentication) {
         User user = userService.findByEmail(authentication.getName());
-        Long ownerId = getCabinetOwnerUserId(user);
-        if (ownerId == null) {
-            throw new UserException("Доступ к кабинетам запрещён", HttpStatus.FORBIDDEN);
+        if (user.getRole() == Role.ADMIN) {
+            return ResponseEntity.ok(List.of());
         }
-        boolean maskApiKey = user.getRole() == Role.WORKER;
-        List<CabinetDto> cabinets = cabinetService.listByUserId(ownerId, maskApiKey);
+        List<CabinetDto> cabinets = cabinetService.listAccessibleForUser(user);
         return ResponseEntity.ok(cabinets);
     }
 
-    /**
-     * Один кабинет по ID (проверка принадлежности текущему пользователю).
-     */
     @GetMapping("/{id}")
     public ResponseEntity<CabinetDto> getById(
             @PathVariable Long id,
             Authentication authentication
     ) {
         User user = userService.findByEmail(authentication.getName());
-        Long ownerId = getCabinetOwnerUserId(user);
-        if (ownerId == null) {
-            throw new UserException("Доступ к кабинетам запрещён", HttpStatus.FORBIDDEN);
+        if (!cabinetAccessService.canManageCabinet(user, id)) {
+            throw new UserException("Нет доступа к кабинету", HttpStatus.FORBIDDEN);
         }
-        boolean maskApiKey = user.getRole() == Role.WORKER;
-        CabinetDto dto = cabinetService.getByIdAndUserId(id, ownerId, maskApiKey);
+        Long ownerId = cabinetService.findById(id).orElseThrow().getUser().getId();
+        CabinetDto dto = cabinetService.getByIdAndUserId(id, ownerId, false);
         return ResponseEntity.ok(dto);
     }
 
-    /**
-     * Создание кабинета (только SELLER).
-     */
     @PostMapping
     public ResponseEntity<CabinetDto> create(
             @Valid @RequestBody CreateCabinetRequest request,
             Authentication authentication
     ) {
         User user = userService.findByEmail(authentication.getName());
-        validateSellerRole(user);
+        validateCanCreateCabinet(user);
         CabinetDto created = cabinetService.create(user.getId(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
-    /**
-     * Обновление кабинета: имя и/или API ключ (опционально). Валидация ключа при первом использовании.
-     */
     @PatchMapping("/{id}")
     public ResponseEntity<CabinetDto> update(
             @PathVariable Long id,
@@ -92,66 +126,50 @@ public class CabinetController {
             Authentication authentication
     ) {
         User user = userService.findByEmail(authentication.getName());
-        validateSellerRole(user);
+        if (!cabinetAccessService.isCabinetOwner(user, id)) {
+            throw new UserException("Только владелец может редактировать кабинет", HttpStatus.FORBIDDEN);
+        }
         CabinetDto updated = cabinetService.update(id, user.getId(), request);
         return ResponseEntity.ok(updated);
     }
 
-    /**
-     * Запуск валидации API ключа кабинета.
-     */
     @PostMapping("/{id}/api-key/validate")
     public ResponseEntity<MessageResponse> validateApiKey(
             @PathVariable Long id,
             Authentication authentication
     ) {
         User user = userService.findByEmail(authentication.getName());
-        Long ownerId = getCabinetOwnerUserId(user);
-        if (ownerId == null) {
-            throw new UserException("Доступ к кабинетам запрещён", HttpStatus.FORBIDDEN);
+        if (!cabinetAccessService.isCabinetOwner(user, id) && user.getRole() != Role.ADMIN) {
+            throw new UserException("Нет доступа", HttpStatus.FORBIDDEN);
         }
+        Long ownerId = cabinetService.findById(id).orElseThrow().getUser().getId();
         wbApiKeyService.validateApiKey(id, ownerId);
         Cabinet cabinet = cabinetService.findCabinetByIdAndUserId(id, ownerId);
         boolean valid = Boolean.TRUE.equals(cabinet.getIsValid());
         MessageResponse body = MessageResponse.builder()
-                .message(valid
-                        ? "API ключ валиден"
-                        : (cabinet.getValidationError() != null
-                                ? cabinet.getValidationError()
-                                : "API ключ не прошёл проверку"))
+                .message(valid ? "API ключ валиден"
+                        : (cabinet.getValidationError() != null ? cabinet.getValidationError() : "API ключ не прошёл проверку"))
                 .build();
-        return valid
-                ? ResponseEntity.ok(body)
-                : ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        return valid ? ResponseEntity.ok(body) : ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
-    /**
-     * Удаление кабинета и всех связанных с ним данных.
-     */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(
             @PathVariable Long id,
             Authentication authentication
     ) {
         User user = userService.findByEmail(authentication.getName());
-        validateSellerRole(user);
+        if (!cabinetAccessService.isCabinetOwner(user, id)) {
+            throw new UserException("Только владелец может удалить кабинет", HttpStatus.FORBIDDEN);
+        }
         cabinetService.delete(id, user.getId());
         return ResponseEntity.noContent().build();
     }
 
-    private void validateSellerRole(User user) {
-        if (user.getRole() != Role.SELLER) {
-            throw new UserException("Только продавец может управлять кабинетами", HttpStatus.FORBIDDEN);
+    private void validateCanCreateCabinet(User user) {
+        if (user.getRole() == Role.ADMIN || user.getRole() == Role.USER) {
+            return;
         }
-    }
-
-    private Long getCabinetOwnerUserId(User user) {
-        if (user.getRole() == Role.SELLER) {
-            return user.getId();
-        }
-        if (user.getRole() == Role.WORKER) {
-            return sellerWorkerService.findSellerIdByWorkerId(user.getId()).orElse(null);
-        }
-        return null;
+        throw new UserException("Создание кабинета недоступно", HttpStatus.FORBIDDEN);
     }
 }

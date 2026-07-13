@@ -40,8 +40,10 @@ public class PasswordResetService {
     public void forgotPassword(String email) {
         Optional<User> userOpt = userRepository.findByEmail(email);
         if (userOpt.isEmpty()) {
-            log.debug("Запрос сброса пароля для несуществующего email: {}", email);
-            return;
+            throw new UserException(
+                    "Аккаунт с таким email не найден. Проверьте введенный адрес и попробуйте еще раз",
+                    HttpStatus.NOT_FOUND
+            );
         }
         User user = userOpt.get();
         tokenRepository.deleteByUser_Id(user.getId());

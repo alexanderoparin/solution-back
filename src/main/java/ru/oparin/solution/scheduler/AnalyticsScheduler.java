@@ -56,11 +56,6 @@ public class AnalyticsScheduler {
         fullUpdateOrchestrator.runFullUpdate(includeStocks);
     }
 
-    @Async("taskExecutor")
-    public void runFullAnalyticsUpdateForManagerAsync(Long managerId, boolean includeStocks) {
-        fullUpdateOrchestrator.runFullUpdateForManager(managerId, includeStocks);
-    }
-
     /**
      * Автоматическое обновление списка складов WB по кабинетам с ключом.
      * Запускается каждый день в 00:00.
@@ -86,7 +81,7 @@ public class AnalyticsScheduler {
      * Загружает User (join fetch), чтобы в асинхронных задачах не обращаться к lazy-прокси без сессии.
      */
     private List<Cabinet> findCabinetsWithApiKey() {
-        return cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
+        return cabinetService.findCabinetsWithApiKeyAndUser(Role.USER);
     }
 
     private DateRange calculateLastTwoWeeksPeriod() {

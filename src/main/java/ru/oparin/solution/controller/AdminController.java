@@ -5,19 +5,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.*;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.Plan;
-import ru.oparin.solution.model.WbApiEventStatus;
-import ru.oparin.solution.model.WbApiEventType;
+import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.PlanRepository;
 import ru.oparin.solution.repository.SubscriptionRepository;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
-import ru.oparin.solution.service.AdminSubscriptionService;
-import ru.oparin.solution.service.CabinetService;
-import ru.oparin.solution.service.PlanMapper;
+import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.events.WbApiEventService;
 
 import java.time.LocalDate;
@@ -41,6 +37,8 @@ public class AdminController {
     private final PlanRepository planRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final AdminSubscriptionService adminSubscriptionService;
+    private final AccountDeletionRequestService accountDeletionRequestService;
+    private final UserService userService;
     private final WbApiEventService wbApiEventService;
 
     public AdminController(CabinetService cabinetService,
@@ -49,6 +47,8 @@ public class AdminController {
                            PlanRepository planRepository,
                            SubscriptionRepository subscriptionRepository,
                            AdminSubscriptionService adminSubscriptionService,
+                           AccountDeletionRequestService accountDeletionRequestService,
+                           UserService userService,
                            WbApiEventService wbApiEventService) {
         this.cabinetService = cabinetService;
         this.analyticsScheduler = analyticsScheduler;
@@ -56,6 +56,8 @@ public class AdminController {
         this.planRepository = planRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.adminSubscriptionService = adminSubscriptionService;
+        this.accountDeletionRequestService = accountDeletionRequestService;
+        this.userService = userService;
         this.wbApiEventService = wbApiEventService;
     }
 
@@ -258,5 +260,17 @@ public class AdminController {
                 request.getExpiresAt()
         );
         return ResponseEntity.ok(dto);
+    }
+
+    @GetMapping("/deletion-requests")
+    public ResponseEntity<List<AccountDeletionRequestAdminDto>> listDeletionRequests() {
+        return ResponseEntity.ok(accountDeletionRequestService.listAll());
+    }
+
+    @PostMapping("/deletion-requests/{requestId}/approve")
+    public ResponseEntity<Map<String, String>> approveDeletionRequest(@PathVariable Long requestId) {
+        User admin = userService.findByEmail(SecurityContextHolder.getContext().getAuthentication().getName());
+        accountDeletionRequestService.approve(admin, requestId);
+        return ResponseEntity.ok(Map.of("message", "Заявка одобрена, удаление запущено"));
     }
 }

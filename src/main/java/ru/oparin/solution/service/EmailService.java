@@ -8,6 +8,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.dto.LandingLeadSource;
+import ru.oparin.solution.model.User;
 
 /**
  * Сервис отправки писем (восстановление пароля и т.д.).
@@ -168,6 +169,48 @@ public class EmailService {
             log.error("Ошибка отправки заявки на {}: {}", requestLabel, e.getMessage(), e);
             throw new RuntimeException("Не удалось отправить запрос. Попробуйте позже.", e);
         }
+    }
+
+    /**
+     * Письмо-приглашение в кабинет Clicki.
+     */
+    public void sendCabinetInvitationEmail(String toEmail, User inviter, String cabinetName, String token) {
+        String inviteLink = buildInviteLink(token);
+        String inviterLabel = inviter.getName() != null && !inviter.getName().isBlank()
+                ? inviter.getName()
+                : inviter.getEmail();
+        String subject = "Вас пригласили в " + brandName;
+        String text = "Здравствуйте!\n\n"
+                + "Пользователь " + inviterLabel + " предоставил вам доступ к системе " + brandName
+                + " (кабинет «" + cabinetName + "»).\n\n"
+                + "Для активации доступа зарегистрируйтесь или войдите в существующий аккаунт:\n\n"
+                + inviteLink + "\n\n"
+                + "Если вы не ожидали это приглашение, просто проигнорируйте письмо.\n\n"
+                + "С уважением,\nКоманда " + brandName;
+        sendSimple(toEmail, subject, text, "приглашение в кабинет");
+    }
+
+    private void sendSimple(String toEmail, String subject, String text, String context) {
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromEmail);
+            message.setTo(toEmail);
+            message.setSubject(subject);
+            message.setText(text);
+            mailSender.send(message);
+            log.info("Письмо ({}) отправлено на {}", context, toEmail);
+        } catch (MailAuthenticationException e) {
+            log.error("Ошибка SMTP при отправке ({}) на {}: {}", context, toEmail, e.getMessage());
+            throw new RuntimeException("Не удалось отправить письмо. Попробуйте позже.", e);
+        } catch (Exception e) {
+            log.error("Ошибка отправки ({}) на {}: {}", context, toEmail, e.getMessage(), e);
+            throw new RuntimeException("Не удалось отправить письмо. Попробуйте позже.", e);
+        }
+    }
+
+    private String buildInviteLink(String token) {
+        String base = frontendUrl.replaceAll("/$", "");
+        return base + "/invite/" + token;
     }
 
     private String buildResetLink(String token) {

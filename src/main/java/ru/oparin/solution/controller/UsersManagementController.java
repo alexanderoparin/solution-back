@@ -20,7 +20,10 @@ import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
-import ru.oparin.solution.service.*;
+import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.ProductCardAnalyticsService;
+import ru.oparin.solution.service.UserService;
+import ru.oparin.solution.service.WbApiKeyService;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.MainStepPayload;
 
@@ -47,7 +50,6 @@ public class UsersManagementController {
     private final AnalyticsScheduler analyticsScheduler;
     private final ProductCardAnalyticsService productCardAnalyticsService;
     private final WbApiEventService wbApiEventService;
-    private final SellerManagerAccessService sellerManagerAccessService;
 
     /**
      * Постраничное получение списка пользователей, которыми может управлять текущий пользователь.
@@ -106,7 +108,7 @@ public class UsersManagementController {
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        if (!isAdminOrManager(currentUser)) {
+        if (!isAdmin(currentUser)) {
             return forbiddenMessageResponse(MESSAGE_FORBIDDEN);
         }
 
@@ -121,22 +123,12 @@ public class UsersManagementController {
         }
 
         analyticsScheduler.recordAdminTriggered();
-        log.info("Ручной запуск полного обновления кабинетов: role={}, userId={}, email={}, scope={}, includeStocks={}",
-                currentUser.getRole(), currentUser.getId(), currentUser.getEmail(),
-                currentUser.getRole() == Role.MANAGER ? "manager-owned-cabinets" : "all-cabinets",
-                includeStocks);
-        if (currentUser.getRole() == Role.MANAGER) {
-            analyticsScheduler.runFullAnalyticsUpdateForManagerAsync(currentUser.getId(), includeStocks);
-        } else {
-            analyticsScheduler.runFullAnalyticsUpdateAsync(includeStocks);
-        }
-        String message = currentUser.getRole() == Role.MANAGER
-                ? (includeStocks
-                ? "Полное обновление кабинетов ваших селлеров (включая остатки) запущено в фоне."
-                : "Полное обновление кабинетов ваших селлеров запущено в фоне.")
-                : (includeStocks
+        log.info("Ручной запуск полного обновления кабинетов: role={}, userId={}, email={}, includeStocks={}",
+                currentUser.getRole(), currentUser.getId(), currentUser.getEmail(), includeStocks);
+        analyticsScheduler.runFullAnalyticsUpdateAsync(includeStocks);
+        String message = includeStocks
                 ? "Полное обновление всех активных кабинетов (включая остатки) запущено в фоне."
-                : "Полное обновление всех активных кабинетов запущено в фоне.");
+                : "Полное обновление всех активных кабинетов запущено в фоне.";
         return acceptedMessageResponse(message);
     }
 
@@ -232,7 +224,7 @@ public class UsersManagementController {
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        if (!isAdminOrManager(currentUser)) {
+        if (!isAdmin(currentUser)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         Pageable pageable = PageRequest.of(page, Math.clamp(size, 1, 100), CabinetService.sortForManagedList(sortBy, sortDir));
@@ -253,7 +245,7 @@ public class UsersManagementController {
     @GetMapping("/work-context-cabinets")
     public ResponseEntity<List<WorkContextCabinetDto>> getWorkContextCabinets(Authentication authentication) {
         User currentUser = getCurrentUser(authentication);
-        if (!isAdminOrManager(currentUser)) {
+        if (!isAdmin(currentUser)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         return ResponseEntity.ok(cabinetService.listWorkContextCabinets(currentUser));
@@ -268,16 +260,12 @@ public class UsersManagementController {
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        if (!isAdminOrManager(currentUser)) {
+        if (!isAdmin(currentUser)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         User seller = userService.findById(sellerId);
-        if (seller.getRole() != Role.SELLER) {
+        if (seller.getRole() != Role.USER) {
             return ResponseEntity.badRequest().build();
-        }
-        if (currentUser.getRole() == Role.MANAGER
-                && !sellerManagerAccessService.canManagerAccessSeller(currentUser, seller)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         List<CabinetDto> cabinets = cabinetService.listByUserId(seller.getId());
         return ResponseEntity.ok(cabinets);
@@ -299,31 +287,22 @@ public class UsersManagementController {
     ) {
         User currentUser = getCurrentUser(authentication);
 
-        if (!isAdminOrManager(currentUser)) {
+        if (!isAdmin(currentUser)) {
             return forbiddenMessageResponse("Недостаточно прав для выполнения операции");
         }
 
         User seller = userService.findById(sellerId);
-        if (seller.getRole() != Role.SELLER) {
+        if (seller.getRole() != Role.USER) {
             return ResponseEntity.badRequest()
                     .body(MessageResponse.builder()
-                            .message("Указанный пользователь не является селлером")
+                            .message("Указанный пользователь не является владельцем кабинетов")
                             .build());
         }
 
-        if (currentUser.getRole() == Role.MANAGER
-                && !sellerManagerAccessService.canManagerAccessSeller(currentUser, seller)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(MessageResponse.builder()
-                            .message("У вас нет доступа к данному селлеру")
-                            .build());
-        }
-
-        log.info("Ручной запуск обновления данных по селлеру: initiatedByRole={}, initiatedById={}, initiatedByEmail={}, sellerId={}, sellerEmail={}, includeStocks={}",
+        log.info("Ручной запуск обновления данных по пользователю: initiatedByRole={}, initiatedById={}, initiatedByEmail={}, sellerId={}, sellerEmail={}, includeStocks={}",
                 currentUser.getRole(), currentUser.getId(), currentUser.getEmail(), seller.getId(), seller.getEmail(), includeStocks);
-        
-        boolean skipIntervalCheck = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER;
-        analyticsScheduler.triggerManualUpdate(seller, skipIntervalCheck, includeStocks);
+
+        analyticsScheduler.triggerManualUpdate(seller, true, includeStocks);
 
         return okMessageResponse(includeStocks
                 ? "Обновление данных (включая остатки) запущено. Процесс выполняется в фоновом режиме. Данные будут доступны через несколько минут."
@@ -341,7 +320,7 @@ public class UsersManagementController {
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        if (!isAdminOrManager(currentUser)) {
+        if (!isAdmin(currentUser)) {
             return forbiddenMessageResponse(MESSAGE_FORBIDDEN);
         }
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
@@ -349,7 +328,7 @@ public class UsersManagementController {
         log.info("Ручной запуск обновления данных по кабинету: initiatedByRole={}, initiatedById={}, initiatedByEmail={}, cabinetId={}, sellerEmail={}",
                 currentUser.getRole(), currentUser.getId(), currentUser.getEmail(), cabinetId,
                 cabinet.getUser() != null ? cabinet.getUser().getEmail() : null);
-        boolean skipIntervalCheck = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER;
+        boolean skipIntervalCheck = true;
         analyticsScheduler.triggerManualUpdateByCabinet(cabinetId, skipIntervalCheck);
         return okMessageResponse("Обновление данных запущено. Процесс выполняется в фоновом режиме. Данные будут доступны через несколько минут.");
     }
@@ -364,7 +343,7 @@ public class UsersManagementController {
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        if (!isAdminOrManager(currentUser)) {
+        if (!isAdmin(currentUser)) {
             return forbiddenMessageResponse(MESSAGE_FORBIDDEN);
         }
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
@@ -390,7 +369,7 @@ public class UsersManagementController {
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        if (!isAdminOrManager(currentUser)) {
+        if (!isAdmin(currentUser)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
@@ -445,7 +424,7 @@ public class UsersManagementController {
                 .dateTo(d)
                 .includeStocks(false)
                 .build();
-        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.USER);
         for (Cabinet c : cabinets) {
             wbApiEventService.enqueuePromotionCalendarSyncCabinetEvent(c.getId(), payload, "ADMIN_BULK_CALENDAR");
         }
@@ -471,7 +450,7 @@ public class UsersManagementController {
                 .dateTo(d)
                 .includeStocks(false)
                 .build();
-        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER).stream()
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.USER).stream()
                 .filter(c -> CabinetTokenType.effective(c.getTokenType()).supportsItemRating())
                 .toList();
         for (Cabinet c : cabinets) {
@@ -485,10 +464,6 @@ public class UsersManagementController {
      */
     private User getCurrentUser(Authentication authentication) {
         return userService.findByEmail(authentication.getName());
-    }
-
-    private boolean isAdminOrManager(User currentUser) {
-        return currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER;
     }
 
     private boolean isAdmin(User currentUser) {

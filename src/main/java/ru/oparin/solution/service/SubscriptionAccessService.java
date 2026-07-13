@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Сервис проверки доступа к функционалу по подписке.
+ * Проверка доступа к функционалу по подписке и email.
  */
 @Service
 @RequiredArgsConstructor
@@ -24,69 +24,39 @@ public class SubscriptionAccessService {
 
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionProperties subscriptionProperties;
+    private final CabinetAccessService cabinetAccessService;
 
-    /**
-     * Проверяет, есть ли у пользователя доступ к продукту.
-     * ADMIN всегда имеет доступ. MANAGER и WORKER после подтверждения почты — без своей подписки.
-     * SELLER всегда платит сам (подписка на свой user_id).
-     * Остальные при неподтверждённой почте не имеют доступа.
-     * MANAGER после подтверждения почты имеет доступ без подписки.
-     * WORKER под селлером после подтверждения почты — доступ без своей подписки (кабинет селлера).
-     * При выключенной оплате после подтверждения почты — доступ без проверки подписки (кроме сценария с подпиской ниже).
-     *
-     * @param user пользователь
-     * @return true, если доступ разрешён
-     */
     public boolean hasAccess(User user) {
         if (user == null) {
             return false;
         }
-
         if (user.getRole() == Role.ADMIN) {
             return true;
         }
-
         if (!Boolean.TRUE.equals(user.getEmailConfirmed())) {
             return false;
         }
-
-        if (user.getRole() == Role.MANAGER || user.getRole() == Role.WORKER) {
-            return true;
-        }
-
         if (!subscriptionProperties.isBillingEnabled()) {
             return true;
         }
-
-        LocalDateTime now = LocalDateTime.now();
-        return subscriptionRepository
-                .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
-                        user.getId(),
-                        ACTIVE_STATUSES,
-                        now
-                )
-                .isPresent();
+        if (hasActiveSubscription(user)) {
+            return true;
+        }
+        return cabinetAccessService.hasAnyCabinetAccess(user);
     }
 
-    /**
-     * Возвращает активную подписку пользователя, если она есть.
-     * При выключенной оплате возвращает null (фронту не нужны даты подписки).
-     */
     public Subscription getActiveSubscription(User user) {
-        if (user == null) {
-            return null;
-        }
-        if (!subscriptionProperties.isBillingEnabled()) {
+        if (user == null || !subscriptionProperties.isBillingEnabled()) {
             return null;
         }
         LocalDateTime now = LocalDateTime.now();
         return subscriptionRepository
                 .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
-                        user.getId(),
-                        ACTIVE_STATUSES,
-                        now
-                )
+                        user.getId(), ACTIVE_STATUSES, now)
                 .orElse(null);
     }
-}
 
+    private boolean hasActiveSubscription(User user) {
+        return getActiveSubscription(user) != null;
+    }
+}

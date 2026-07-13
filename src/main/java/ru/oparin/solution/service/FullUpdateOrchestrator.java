@@ -28,13 +28,8 @@ public class FullUpdateOrchestrator {
     }
 
     public void runFullUpdate(boolean includeStocks) {
-        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.SELLER);
+        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyAndUser(Role.USER);
         runFullUpdateForCabinets(cabinets, "всем кабинетам", includeStocks);
-    }
-
-    public void runFullUpdateForManager(Long managerId, boolean includeStocks) {
-        List<Cabinet> cabinets = cabinetService.findCabinetsWithApiKeyForManager(managerId);
-        runFullUpdateForCabinets(cabinets, "кабинетам менеджера " + managerId, includeStocks);
     }
 
     private void runFullUpdateForCabinets(List<Cabinet> sourceCabinets, String scopeLabel, boolean includeStocks) {
