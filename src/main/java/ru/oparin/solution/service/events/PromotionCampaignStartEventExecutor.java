@@ -3,6 +3,7 @@ package ru.oparin.solution.service.events;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
+import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.PromotionCampaignControlWriteService;
@@ -52,7 +53,13 @@ public class PromotionCampaignStartEventExecutor implements WbApiEventExecutor {
                 return WbApiEventExecutionResult.finalError(PromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE);
             }
             return WbApiEventExecutionResult.finalError(e.getMessage());
+        } catch (WbRateLimitDeferException e) {
+            return WbEventExecutionErrors.fromDeferException(e);
         } catch (org.springframework.web.client.RestClientException e) {
+            WbApiEventExecutionResult deferResult = WbEventExecutionErrors.deferResultIfPresent(e);
+            if (deferResult != null) {
+                return deferResult;
+            }
             if (PromotionCampaignControlWriteService.isReadOnlyTokenError(e)) {
                 promotionControlWriteService.recordReadOnlyTokenBlock(cabinet.getId());
                 return WbApiEventExecutionResult.finalError(PromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE);
@@ -64,7 +71,7 @@ public class PromotionCampaignStartEventExecutor implements WbApiEventExecutor {
                 }
                 return WbApiEventExecutionResult.finalError(e.getMessage());
             }
-            return WbEventExecutionErrors.wrapDeferOrRetryable(e);
+            return WbEventExecutionErrors.wrapRestClientException(e);
         } catch (Exception e) {
             return WbEventExecutionErrors.wrapDeferOrRetryable(e);
         }

@@ -1,5 +1,6 @@
 package ru.oparin.solution.service.events;
 
+import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
 
 /**
@@ -13,14 +14,36 @@ public final class WbEventExecutionErrors {
     }
 
     /**
-     * Если в цепочке есть {@link WbRateLimitDeferException} — отложить событие; иначе retryable.
+     * Если в цепочке есть {@link WbRateLimitDeferException} — отложить событие; иначе {@code null}.
      */
-    public static WbApiEventExecutionResult wrapDeferOrRetryable(Throwable e) {
-        WbRateLimitDeferException defer = WbRateLimitDeferException.findInChain(e);
+    public static WbApiEventExecutionResult deferResultIfPresent(Throwable throwable) {
+        WbRateLimitDeferException defer = WbRateLimitDeferException.findInChain(throwable);
         if (defer != null) {
             return fromDeferException(defer);
         }
-        return WbApiEventExecutionResult.retryableError(e.getMessage());
+        return null;
+    }
+
+    /**
+     * Обрабатывает {@link RestClientException}: defer в цепочке, иначе retryable.
+     */
+    public static WbApiEventExecutionResult wrapRestClientException(RestClientException exception) {
+        WbApiEventExecutionResult deferResult = deferResultIfPresent(exception);
+        if (deferResult != null) {
+            return deferResult;
+        }
+        return WbApiEventExecutionResult.retryableError(exception.getMessage());
+    }
+
+    /**
+     * Если в цепочке есть {@link WbRateLimitDeferException} — отложить событие; иначе retryable.
+     */
+    public static WbApiEventExecutionResult wrapDeferOrRetryable(Throwable throwable) {
+        WbApiEventExecutionResult deferResult = deferResultIfPresent(throwable);
+        if (deferResult != null) {
+            return deferResult;
+        }
+        return WbApiEventExecutionResult.retryableError(throwable.getMessage());
     }
 
     /**

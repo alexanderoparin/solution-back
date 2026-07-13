@@ -10,6 +10,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.wb.*;
+import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.WbApiEventType;
 import ru.oparin.solution.service.PromotionCampaignControlWriteService;
@@ -182,6 +183,8 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             String userMessage = extractCampaignControlErrorMessage(e);
             logWbApiError(eventType.getUri(), e);
             throw new RestClientException(userMessage != null ? userMessage : e.getMessage(), e);
+        } catch (WbRateLimitDeferException e) {
+            throw e;
         } catch (RestClientException e) {
             throw e;
         } catch (Exception e) {
@@ -423,6 +426,8 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                 if (e.getStatusCode().value() == 429 && retry < maxRetries429) {
                     log429AndDefer(context, endpoint, operation, retry, maxRetries429, tokenType, e);
                 }
+                throw e;
+            } catch (WbRateLimitDeferException e) {
                 throw e;
             } catch (RestClientException e) {
                 if (e.getMessage() != null && e.getMessage().contains("429") && retry < maxRetries429) {
