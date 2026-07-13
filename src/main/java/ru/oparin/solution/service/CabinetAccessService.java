@@ -322,6 +322,8 @@ public class CabinetAccessService {
                 .lastValidatedAt(cabinet.getLastValidatedAt())
                 .apiKeyValid(cabinet.getIsValid())
                 .lastDataUpdateAt(cabinet.getLastDataUpdateAt())
+                .apiKeyMasked(maskApiKey(cabinet.getApiKey()))
+                .grantedByName(displayName(grant.getGrantedByUser()))
                 .sections(grant.getSections())
                 .build();
     }

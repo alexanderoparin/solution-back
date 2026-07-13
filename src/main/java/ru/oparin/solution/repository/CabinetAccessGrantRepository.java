@@ -20,6 +20,7 @@ public interface CabinetAccessGrantRepository extends JpaRepository<CabinetAcces
             select g from CabinetAccessGrant g
             join fetch g.cabinet c
             join fetch c.user
+            left join fetch g.grantedByUser
             where g.user.id = :userId
               and g.status = :status
               and (g.validUntil is null or g.validUntil > :now)

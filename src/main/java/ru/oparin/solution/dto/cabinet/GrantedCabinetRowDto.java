@@ -15,6 +15,8 @@ public record GrantedCabinetRowDto(
         LocalDateTime lastValidatedAt,
         Boolean apiKeyValid,
         LocalDateTime lastDataUpdateAt,
+        String apiKeyMasked,
+        String grantedByName,
         List<CabinetAccessSection> sections
 ) {
 }
