@@ -7,6 +7,7 @@ import java.util.List;
 @Builder
 public record CabinetsOverviewDto(
         List<OwnedCabinetRowDto> owned,
-        List<GrantedCabinetRowDto> granted
+        List<GrantedCabinetRowDto> granted,
+        List<PendingCabinetInvitationRowDto> pendingInvitations
 ) {
 }

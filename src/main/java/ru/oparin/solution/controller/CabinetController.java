@@ -59,7 +59,7 @@ public class CabinetController {
         User user = userService.findByEmail(authentication.getName());
         cabinetAccessService.grantAccess(user, id, request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(MessageResponse.builder().message("Доступ выдан").build());
+                .body(MessageResponse.builder().message("Приглашение отправлено").build());
     }
 
     @DeleteMapping("/{id}/access/grants/{grantId}")

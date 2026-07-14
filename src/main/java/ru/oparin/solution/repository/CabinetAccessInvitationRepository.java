@@ -28,4 +28,15 @@ public interface CabinetAccessInvitationRepository extends JpaRepository<Cabinet
     );
 
     List<CabinetAccessInvitation> findByCabinet_IdAndStatus(Long cabinetId, CabinetAccessInvitationStatus status);
+
+    @Query("""
+            select i from CabinetAccessInvitation i
+            where lower(i.email) = lower(:email)
+              and i.status = :status
+            order by i.createdAt desc
+            """)
+    List<CabinetAccessInvitation> findByEmailIgnoreCaseAndStatus(
+            @Param("email") String email,
+            @Param("status") CabinetAccessInvitationStatus status
+    );
 }

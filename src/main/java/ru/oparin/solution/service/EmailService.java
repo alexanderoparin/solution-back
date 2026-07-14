@@ -180,11 +180,11 @@ public class EmailService {
                 ? inviter.getName()
                 : inviter.getEmail();
         String subject = "Вас пригласили в " + brandName;
-        String text = "Здравствуйте!\n\n"
-                + "Пользователь " + inviterLabel + " предоставил вам доступ к системе " + brandName
-                + " (кабинет «" + cabinetName + "»).\n\n"
-                + "Для активации доступа зарегистрируйтесь или войдите в существующий аккаунт:\n\n"
-                + inviteLink + "\n\n"
+        String text = "Вас пригласили в " + brandName + ".\n\n"
+                + "Здравствуйте!\n\n"
+                + "Пользователь " + inviterLabel + " предоставил вам доступ к системе " + brandName + ".\n"
+                + "Для активации доступа зарегистрируйтесь или войдите в существующий аккаунт.\n\n"
+                + "Ссылка: " + inviteLink + "\n\n"
                 + "Если вы не ожидали это приглашение, просто проигнорируйте письмо.\n\n"
                 + "С уважением,\nКоманда " + brandName;
         sendSimple(toEmail, subject, text, "приглашение в кабинет");

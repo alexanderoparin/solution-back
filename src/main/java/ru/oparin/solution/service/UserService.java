@@ -75,6 +75,9 @@ public class UserService {
         user = userRepository.save(user);
         accountTypeService.replaceAccountTypes(user.getId(), request.getAccountTypes());
         profileSubscriptionService.createFreeAnalyticsSubscription(user);
+        if (request.getInvitationToken() != null && !request.getInvitationToken().isBlank()) {
+            cabinetAccessService.acceptInvitation(user, request.getInvitationToken().trim());
+        }
         return user;
     }
 

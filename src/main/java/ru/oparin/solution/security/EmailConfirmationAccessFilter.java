@@ -35,7 +35,8 @@ public class EmailConfirmationAccessFilter extends OncePerRequestFilter {
             "/api/user/send-email-confirmation",
             "/api/auth/confirm-email",
             "/api/cabinets",
-            "/api/users"
+            "/api/users",
+            "/api/public/invitations"
     );
 
     private final UserService userService;

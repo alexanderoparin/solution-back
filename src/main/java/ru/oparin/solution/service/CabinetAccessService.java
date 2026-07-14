@@ -50,7 +50,28 @@ public class CabinetAccessService {
                 .filter(g -> matchesSearch(g.getCabinet().getName(), q))
                 .map(this::toGrantedRow)
                 .collect(Collectors.toCollection(ArrayList::new));
-        return CabinetsOverviewDto.builder().owned(owned).granted(granted).build();
+        List<PendingCabinetInvitationRowDto> pendingInvitations = listPendingInvitationsForEmail(currentUser.getEmail()).stream()
+                .filter(inv -> matchesSearch(inv.cabinetName(), q))
+                .collect(Collectors.toCollection(ArrayList::new));
+        return CabinetsOverviewDto.builder()
+                .owned(owned)
+                .granted(granted)
+                .pendingInvitations(pendingInvitations)
+                .build();
+    }
+
+    /**
+     * Активные (ожидающие принятия) приглашения на email пользователя.
+     */
+    @Transactional(readOnly = true)
+    public List<PendingCabinetInvitationRowDto> listPendingInvitationsForEmail(String email) {
+        LocalDateTime now = LocalDateTime.now();
+        return invitationRepository
+                .findByEmailIgnoreCaseAndStatus(email, CabinetAccessInvitationStatus.PENDING)
+                .stream()
+                .filter(inv -> inv.getExpiresAt() == null || inv.getExpiresAt().isAfter(now))
+                .map(this::toPendingInvitationRow)
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -123,6 +144,10 @@ public class CabinetAccessService {
         return result;
     }
 
+    /**
+     * Создаёт PENDING-приглашение и отправляет письмо со ссылкой.
+     * Активный доступ (grant) появляется только после принятия приглашения.
+     */
     @Transactional
     public void grantAccess(User owner, Long cabinetId, GrantCabinetAccessRequest request) {
         ensureCanManage(owner, cabinetId);
@@ -131,23 +156,12 @@ public class CabinetAccessService {
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
 
+        if (email.equalsIgnoreCase(owner.getEmail())) {
+            throw new UserException("Нельзя выдать доступ самому себе", HttpStatus.BAD_REQUEST);
+        }
         Optional<User> existingUser = userRepository.findByEmail(email);
-        if (existingUser.isPresent()) {
-            User grantee = existingUser.get();
-            if (grantee.getId().equals(owner.getId())) {
-                throw new UserException("Нельзя выдать доступ самому себе", HttpStatus.BAD_REQUEST);
-            }
-            upsertActiveGrant(
-                    cabinet,
-                    grantee,
-                    owner,
-                    request.sections(),
-                    request.comment(),
-                    request.validUntil(),
-                    null
-            );
-            applyGrantedAccountType(grantee.getId(), request.accountType());
-            return;
+        if (existingUser.isPresent() && existingUser.get().getId().equals(owner.getId())) {
+            throw new UserException("Нельзя выдать доступ самому себе", HttpStatus.BAD_REQUEST);
         }
 
         invitationRepository.findPendingByCabinetAndEmail(cabinetId, email, CabinetAccessInvitationStatus.PENDING)
@@ -390,6 +404,21 @@ public class CabinetAccessService {
                 .apiKeyMasked(maskApiKey(cabinet.getApiKey()))
                 .grantedByName(displayName(grant.getGrantedByUser()))
                 .sections(grant.getSections())
+                .build();
+    }
+
+    private PendingCabinetInvitationRowDto toPendingInvitationRow(CabinetAccessInvitation invitation) {
+        User inviter = invitation.getInvitedByUser();
+        return PendingCabinetInvitationRowDto.builder()
+                .token(invitation.getToken())
+                .cabinetId(invitation.getCabinet().getId())
+                .cabinetName(invitation.getCabinet().getName())
+                .inviterName(displayName(inviter))
+                .inviterEmail(inviter != null ? inviter.getEmail() : null)
+                .sections(invitation.getSections())
+                .accessUntil(invitation.getValidUntil())
+                .expiresAt(invitation.getExpiresAt())
+                .createdAt(invitation.getCreatedAt())
                 .build();
     }
 
