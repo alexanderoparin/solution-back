@@ -108,6 +108,21 @@ public class CabinetController {
         return ResponseEntity.ok(MessageResponse.builder().message("Приглашение отозвано").build());
     }
 
+    /**
+     * Повторная отправка приглашения (для отозванных / отклонённых / истёкших).
+     */
+    @PostMapping("/{id}/access/invitations/{invitationId}/resend")
+    public ResponseEntity<MessageResponse> resendInvitation(
+            @PathVariable Long id,
+            @PathVariable Long invitationId,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        cabinetAccessService.resendInvitation(user, id, invitationId);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(MessageResponse.builder().message("Приглашение отправлено повторно").build());
+    }
+
     @GetMapping
     public ResponseEntity<List<CabinetDto>> list(Authentication authentication) {
         User user = userService.findByEmail(authentication.getName());

@@ -13,6 +13,10 @@ public record CabinetInvitationPreviewDto(
         List<CabinetAccessSection> sections,
         boolean expired,
         boolean alreadyAccepted,
+        /** Приглашённый отклонил приглашение. */
+        boolean declined,
+        /** Владелец отозвал приглашение. */
+        boolean revoked,
         String email
 ) {
 }

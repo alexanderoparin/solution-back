@@ -263,6 +263,8 @@ public class CabinetAccessService {
                 .sections(invitation.getSections())
                 .expired(expired)
                 .alreadyAccepted(accepted)
+                .declined(invitation.getStatus() == CabinetAccessInvitationStatus.DECLINED)
+                .revoked(invitation.getStatus() == CabinetAccessInvitationStatus.REVOKED)
                 .email(invitation.getEmail())
                 .build();
     }
@@ -302,7 +304,7 @@ public class CabinetAccessService {
 
     /**
      * Отклонение приглашения приглашённым пользователем.
-     * Статус становится {@link CabinetAccessInvitationStatus#REVOKED}, доступ не создаётся.
+     * Статус становится {@link CabinetAccessInvitationStatus#DECLINED}, доступ не создаётся.
      */
     @Transactional
     public void declineInvitation(User user, String token) {
@@ -319,9 +321,62 @@ public class CabinetAccessService {
         if (!user.getEmail().equalsIgnoreCase(invitation.getEmail())) {
             throw new UserException("Приглашение отправлено на другой email", HttpStatus.FORBIDDEN);
         }
-        invitation.setStatus(CabinetAccessInvitationStatus.REVOKED);
+        invitation.setStatus(CabinetAccessInvitationStatus.DECLINED);
         invitationRepository.save(invitation);
         log.info("Приглашение id={} отклонено пользователем id={}", invitation.getId(), user.getId());
+    }
+
+    /**
+     * Повторная отправка приглашения по отозванному / отклонённому / истёкшему приглашению.
+     * Создаётся новое PENDING-приглашение с теми же параметрами доступа.
+     */
+    @Transactional
+    public void resendInvitation(User owner, Long cabinetId, Long invitationId) {
+        ensureCanManage(owner, cabinetId);
+        CabinetAccessInvitation source = invitationRepository.findById(invitationId)
+                .orElseThrow(() -> new UserException("Приглашение не найдено", HttpStatus.NOT_FOUND));
+        if (!source.getCabinet().getId().equals(cabinetId)) {
+            throw new UserException("Приглашение не принадлежит кабинету", HttpStatus.BAD_REQUEST);
+        }
+        if (!canResendInvitation(source.getStatus())) {
+            throw new UserException("Повторно отправить можно только отозванное, отклонённое или истёкшее приглашение",
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        invitationRepository.findPendingByCabinetAndEmail(
+                        cabinetId, source.getEmail(), CabinetAccessInvitationStatus.PENDING)
+                .ifPresent(inv -> {
+                    inv.setStatus(CabinetAccessInvitationStatus.REVOKED);
+                    invitationRepository.save(inv);
+                });
+
+        String token = UUID.randomUUID().toString().replace("-", "");
+        LocalDateTime now = LocalDateTime.now();
+        CabinetAccessInvitation invitation = CabinetAccessInvitation.builder()
+                .token(token)
+                .email(source.getEmail())
+                .cabinet(source.getCabinet())
+                .invitedByUser(owner)
+                .sections(new ArrayList<>(source.getSections()))
+                .accountType(source.getAccountType())
+                .commentText(source.getCommentText())
+                .status(CabinetAccessInvitationStatus.PENDING)
+                .validUntil(source.getValidUntil())
+                .expiresAt(now.plusDays(INVITATION_TTL_DAYS))
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        invitationRepository.save(invitation);
+        emailService.sendCabinetInvitationEmail(
+                source.getEmail(), owner, source.getCabinet().getName(), token);
+        log.info("Повторно отправлено приглашение id={} (источник id={}) на {}",
+                invitation.getId(), source.getId(), source.getEmail());
+    }
+
+    private static boolean canResendInvitation(CabinetAccessInvitationStatus status) {
+        return status == CabinetAccessInvitationStatus.REVOKED
+                || status == CabinetAccessInvitationStatus.DECLINED
+                || status == CabinetAccessInvitationStatus.EXPIRED;
     }
 
     /**
@@ -483,7 +538,8 @@ public class CabinetAccessService {
     private static String invitationStatusLabel(CabinetAccessInvitationStatus status) {
         return switch (status) {
             case PENDING -> "Ожидает принятия";
-            case REVOKED -> "Приглашение отозвано";
+            case REVOKED -> "Отозвано владельцем";
+            case DECLINED -> "Отклонено пользователем";
             case EXPIRED -> "Приглашение истекло";
             case ACCEPTED -> "Принято";
         };
