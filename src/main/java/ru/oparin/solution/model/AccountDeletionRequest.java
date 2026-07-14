@@ -62,4 +62,8 @@ public class AccountDeletionRequest {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "processed_by_user_id")
     private User processedByUser;
+
+    /** Email админа на момент обработки — остаётся после удаления связи с пользователем. */
+    @Column(name = "processed_by_email", length = 255)
+    private String processedByEmail;
 }

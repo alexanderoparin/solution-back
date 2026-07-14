@@ -15,6 +15,8 @@ public record AccountDeletionRequestAdminDto(
         AccountDeletionReason reason,
         String comment,
         AccountDeletionRequestStatus status,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        LocalDateTime processedAt,
+        String processedByEmail
 ) {
 }

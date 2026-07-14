@@ -89,6 +89,7 @@ public class AccountDeletionRequestService {
         request.setStatus(AccountDeletionRequestStatus.APPROVED);
         request.setProcessedAt(LocalDateTime.now());
         request.setProcessedByUser(admin);
+        request.setProcessedByEmail(admin.getEmail());
         repository.save(request);
         userService.runDeletionAsync(targetUser.getId());
     }
@@ -103,6 +104,7 @@ public class AccountDeletionRequestService {
         request.setStatus(AccountDeletionRequestStatus.REJECTED);
         request.setProcessedAt(LocalDateTime.now());
         request.setProcessedByUser(admin);
+        request.setProcessedByEmail(admin.getEmail());
         repository.save(request);
         log.info("Заявка на удаление id={} отклонена админом id={}", requestId, admin.getId());
     }
@@ -160,6 +162,16 @@ public class AccountDeletionRequestService {
                 .comment(request.getCommentText())
                 .status(request.getStatus())
                 .createdAt(request.getCreatedAt())
+                .processedAt(request.getProcessedAt())
+                .processedByEmail(resolveProcessedByEmail(request))
                 .build();
+    }
+
+    private String resolveProcessedByEmail(AccountDeletionRequest request) {
+        if (request.getProcessedByEmail() != null && !request.getProcessedByEmail().isBlank()) {
+            return request.getProcessedByEmail();
+        }
+        User admin = request.getProcessedByUser();
+        return admin != null ? admin.getEmail() : null;
     }
 }
