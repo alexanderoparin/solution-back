@@ -14,10 +14,7 @@ import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -150,15 +147,28 @@ public class CabinetAccessService {
     @Transactional(readOnly = true)
     public List<CabinetAccessEntryDto> listAccessEntries(User owner, Long cabinetId) {
         ensureCanManage(owner, cabinetId);
+        List<CabinetAccessGrant> grants = grantRepository.findByCabinet_IdOrderByCreatedAtDesc(cabinetId);
+        Set<String> emailsWithActiveGrant = grants.stream()
+                .filter(g -> g.getStatus() == CabinetAccessGrantStatus.ACTIVE)
+                .map(g -> g.getUser().getEmail().trim().toLowerCase())
+                .collect(Collectors.toCollection(HashSet::new));
+
         List<CabinetAccessEntryDto> result = new ArrayList<>();
-        for (CabinetAccessGrant grant : grantRepository.findByCabinet_IdOrderByCreatedAtDesc(cabinetId)) {
+        for (CabinetAccessGrant grant : grants) {
             result.add(toAccessEntry(grant));
         }
         for (CabinetAccessInvitation invitation : invitationRepository.findByCabinet_IdOrderByCreatedAtDesc(cabinetId)) {
-            // ACCEPTED не показываем отдельно — доступ уже в ACTIVE grant
-            if (invitation.getStatus() != CabinetAccessInvitationStatus.ACCEPTED) {
-                result.add(toAccessEntry(invitation));
+            if (invitation.getStatus() == CabinetAccessInvitationStatus.ACCEPTED) {
+                // Доступ уже в ACTIVE grant
+                continue;
             }
+            String email = invitation.getEmail() != null ? invitation.getEmail().trim().toLowerCase() : "";
+            // Неактуальные приглашения не дублируем, если у email уже есть активный доступ
+            if (invitation.getStatus() != CabinetAccessInvitationStatus.PENDING
+                    && emailsWithActiveGrant.contains(email)) {
+                continue;
+            }
+            result.add(toAccessEntry(invitation));
         }
         return result;
     }
@@ -263,6 +273,49 @@ public class CabinetAccessService {
         }
         validateValidUntil(validUntil);
         invitation.setValidUntil(validUntil);
+        invitationRepository.save(invitation);
+    }
+
+    /**
+     * Обновляет разделы активного доступа.
+     */
+    @Transactional
+    public void updateGrantSections(User owner, Long cabinetId, Long grantId, List<CabinetAccessSection> sections) {
+        ensureCanManage(owner, cabinetId);
+        validateSections(sections);
+        CabinetAccessGrant grant = grantRepository.findById(grantId)
+                .orElseThrow(() -> new UserException("Доступ не найден", HttpStatus.NOT_FOUND));
+        if (!grant.getCabinet().getId().equals(cabinetId)) {
+            throw new UserException("Доступ не принадлежит кабинету", HttpStatus.BAD_REQUEST);
+        }
+        if (grant.getStatus() != CabinetAccessGrantStatus.ACTIVE) {
+            throw new UserException("Можно изменить разделы только для активного доступа", HttpStatus.BAD_REQUEST);
+        }
+        grant.setSections(new ArrayList<>(sections));
+        grantRepository.save(grant);
+    }
+
+    /**
+     * Обновляет разделы ожидающего приглашения.
+     */
+    @Transactional
+    public void updateInvitationSections(
+            User owner,
+            Long cabinetId,
+            Long invitationId,
+            List<CabinetAccessSection> sections
+    ) {
+        ensureCanManage(owner, cabinetId);
+        validateSections(sections);
+        CabinetAccessInvitation invitation = invitationRepository.findById(invitationId)
+                .orElseThrow(() -> new UserException("Приглашение не найдено", HttpStatus.NOT_FOUND));
+        if (!invitation.getCabinet().getId().equals(cabinetId)) {
+            throw new UserException("Приглашение не принадлежит кабинету", HttpStatus.BAD_REQUEST);
+        }
+        if (invitation.getStatus() != CabinetAccessInvitationStatus.PENDING) {
+            throw new UserException("Можно изменить разделы только для ожидающего приглашения", HttpStatus.BAD_REQUEST);
+        }
+        invitation.setSections(new ArrayList<>(sections));
         invitationRepository.save(invitation);
     }
 
@@ -459,9 +512,7 @@ public class CabinetAccessService {
         if (request.email() == null || request.email().isBlank()) {
             throw new UserException("Укажите email", HttpStatus.BAD_REQUEST);
         }
-        if (request.sections() == null || request.sections().isEmpty()) {
-            throw new UserException("Выберите хотя бы один раздел", HttpStatus.BAD_REQUEST);
-        }
+        validateSections(request.sections());
         if (request.accountType() == null) {
             throw new UserException("Выберите тип аккаунта", HttpStatus.BAD_REQUEST);
         }
@@ -469,6 +520,12 @@ public class CabinetAccessService {
             throw new UserException("Доступ можно выдать только с типом «Агентство» или «Сотрудник»", HttpStatus.BAD_REQUEST);
         }
         validateValidUntil(request.validUntil());
+    }
+
+    private void validateSections(List<CabinetAccessSection> sections) {
+        if (sections == null || sections.isEmpty()) {
+            throw new UserException("Выберите хотя бы один раздел", HttpStatus.BAD_REQUEST);
+        }
     }
 
     private void validateValidUntil(LocalDateTime validUntil) {

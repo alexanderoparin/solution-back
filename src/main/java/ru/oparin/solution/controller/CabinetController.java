@@ -97,6 +97,36 @@ public class CabinetController {
         return ResponseEntity.ok(MessageResponse.builder().message("Срок доступа обновлён").build());
     }
 
+    /**
+     * Обновление разделов активного доступа.
+     */
+    @PatchMapping("/{id}/access/grants/{grantId}/sections")
+    public ResponseEntity<MessageResponse> updateGrantSections(
+            @PathVariable Long id,
+            @PathVariable Long grantId,
+            @Valid @RequestBody UpdateCabinetAccessSectionsRequest request,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        cabinetAccessService.updateGrantSections(user, id, grantId, request.sections());
+        return ResponseEntity.ok(MessageResponse.builder().message("Разделы доступа обновлены").build());
+    }
+
+    /**
+     * Обновление разделов ожидающего приглашения.
+     */
+    @PatchMapping("/{id}/access/invitations/{invitationId}/sections")
+    public ResponseEntity<MessageResponse> updateInvitationSections(
+            @PathVariable Long id,
+            @PathVariable Long invitationId,
+            @Valid @RequestBody UpdateCabinetAccessSectionsRequest request,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        cabinetAccessService.updateInvitationSections(user, id, invitationId, request.sections());
+        return ResponseEntity.ok(MessageResponse.builder().message("Разделы приглашения обновлены").build());
+    }
+
     @DeleteMapping("/{id}/access/invitations/{invitationId}")
     public ResponseEntity<MessageResponse> revokeInvitation(
             @PathVariable Long id,
