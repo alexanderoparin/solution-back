@@ -137,7 +137,8 @@ public class CabinetAccessService {
             result.add(toAccessEntry(grant));
         }
         for (CabinetAccessInvitation invitation : invitationRepository.findByCabinet_IdOrderByCreatedAtDesc(cabinetId)) {
-            if (invitation.getStatus() == CabinetAccessInvitationStatus.PENDING) {
+            // ACCEPTED не показываем отдельно — доступ уже в ACTIVE grant
+            if (invitation.getStatus() != CabinetAccessInvitationStatus.ACCEPTED) {
                 result.add(toAccessEntry(invitation));
             }
         }
@@ -475,8 +476,17 @@ public class CabinetAccessService {
                 .grantedByLabel(displayName(invitation.getInvitedByUser()))
                 .grantedAt(invitation.getCreatedAt())
                 .invitationStatus(invitation.getStatus())
-                .statusLabel("Приглашение отправлено / Ожидает принятия")
+                .statusLabel(invitationStatusLabel(invitation.getStatus()))
                 .build();
+    }
+
+    private static String invitationStatusLabel(CabinetAccessInvitationStatus status) {
+        return switch (status) {
+            case PENDING -> "Ожидает принятия";
+            case REVOKED -> "Приглашение отозвано";
+            case EXPIRED -> "Приглашение истекло";
+            case ACCEPTED -> "Принято";
+        };
     }
 
     private static String resolveUserName(User user) {
