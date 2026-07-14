@@ -8,6 +8,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.dto.LandingLeadSource;
+import ru.oparin.solution.model.AccountDeletionReason;
 import ru.oparin.solution.model.User;
 
 /**
@@ -169,6 +170,40 @@ public class EmailService {
             log.error("Ошибка отправки заявки на {}: {}", requestLabel, e.getMessage(), e);
             throw new RuntimeException("Не удалось отправить запрос. Попробуйте позже.", e);
         }
+    }
+
+    /**
+     * Уведомление на корпоративную почту о новой заявке на удаление аккаунта.
+     *
+     * @param user       пользователь, подавший заявку
+     * @param requestId  ID заявки
+     * @param reason     причина удаления
+     * @param comment    комментарий пользователя (может быть null)
+     */
+    public void sendAccountDeletionRequestNotification(
+            User user,
+            Long requestId,
+            AccountDeletionReason reason,
+            String comment
+    ) {
+        String userLabel = user.getName() != null && !user.getName().isBlank()
+                ? user.getName() + " (" + user.getEmail() + ")"
+                : user.getEmail();
+        String reasonLabel = reason != null ? reason.getLabel() : "—";
+        String subject = "Заявка на удаление аккаунта #" + requestId + " — " + brandName;
+        StringBuilder text = new StringBuilder();
+        text.append("Поступила новая заявка на удаление аккаунта.\n\n");
+        text.append("ID заявки: ").append(requestId).append('\n');
+        text.append("Пользователь: ").append(userLabel).append('\n');
+        text.append("ID пользователя: ").append(user.getId()).append('\n');
+        text.append("Причина: ").append(reasonLabel).append('\n');
+        if (comment != null && !comment.isBlank()) {
+            text.append("Комментарий:\n").append(comment.trim()).append('\n');
+        }
+        text.append("\nРаздел в админке: ").append(frontendUrl.replaceAll("/$", ""))
+                .append("/admin/deletion-requests\n");
+        text.append("\n— ").append(brandName);
+        sendLandingInboxEmail(subject, text.toString(), "удаление аккаунта");
     }
 
     /**

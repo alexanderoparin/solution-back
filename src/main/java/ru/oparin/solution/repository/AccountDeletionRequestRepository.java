@@ -14,4 +14,6 @@ public interface AccountDeletionRequestRepository extends JpaRepository<AccountD
     List<AccountDeletionRequest> findByStatusOrderByCreatedAtDesc(AccountDeletionRequestStatus status);
 
     List<AccountDeletionRequest> findAllByOrderByCreatedAtDesc();
+
+    long countByStatus(AccountDeletionRequestStatus status);
 }

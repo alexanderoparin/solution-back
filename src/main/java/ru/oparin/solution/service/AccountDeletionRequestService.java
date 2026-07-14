@@ -1,6 +1,7 @@
 package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,10 +22,12 @@ import java.util.List;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AccountDeletionRequestService {
 
     private final AccountDeletionRequestRepository repository;
     private final UserService userService;
+    private final EmailService emailService;
 
     @Transactional(readOnly = true)
     public AccountDeletionStatusDto getStatus(Long userId) {
@@ -40,6 +43,14 @@ public class AccountDeletionRequestService {
                         .build());
     }
 
+    /**
+     * Число заявок в статусе PENDING (для бейджа в админке).
+     */
+    @Transactional(readOnly = true)
+    public long countPending() {
+        return repository.countByStatus(AccountDeletionRequestStatus.PENDING);
+    }
+
     @Transactional
     public void createRequest(User user, AccountDeletionRequestDto request) {
         if (request.reason() == null) {
@@ -48,13 +59,14 @@ public class AccountDeletionRequestService {
         if (repository.findByUser_IdAndStatus(user.getId(), AccountDeletionRequestStatus.PENDING).isPresent()) {
             throw new UserException("Заявка на удаление уже отправлена", HttpStatus.CONFLICT);
         }
-        repository.save(AccountDeletionRequest.builder()
+        AccountDeletionRequest saved = repository.save(AccountDeletionRequest.builder()
                 .user(user)
                 .reason(request.reason())
                 .commentText(request.comment())
                 .status(AccountDeletionRequestStatus.PENDING)
                 .createdAt(LocalDateTime.now())
                 .build());
+        notifyCorpInbox(user, saved);
     }
 
     @Transactional(readOnly = true)
@@ -76,6 +88,20 @@ public class AccountDeletionRequestService {
         request.setProcessedByUser(admin);
         repository.save(request);
         userService.runDeletionAsync(request.getUser().getId());
+    }
+
+    private void notifyCorpInbox(User user, AccountDeletionRequest request) {
+        try {
+            emailService.sendAccountDeletionRequestNotification(
+                    user,
+                    request.getId(),
+                    request.getReason(),
+                    request.getCommentText()
+            );
+        } catch (Exception e) {
+            log.error("Не удалось отправить уведомление о заявке на удаление id={}: {}",
+                    request.getId(), e.getMessage(), e);
+        }
     }
 
     private AccountDeletionRequestAdminDto toAdminDto(AccountDeletionRequest request) {

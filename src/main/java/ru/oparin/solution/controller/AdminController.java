@@ -267,6 +267,14 @@ public class AdminController {
         return ResponseEntity.ok(accountDeletionRequestService.listAll());
     }
 
+    /**
+     * Число ожидающих заявок на удаление (для бейджа в профиле админа).
+     */
+    @GetMapping("/deletion-requests/pending-count")
+    public ResponseEntity<Map<String, Long>> pendingDeletionRequestsCount() {
+        return ResponseEntity.ok(Map.of("count", accountDeletionRequestService.countPending()));
+    }
+
     @PostMapping("/deletion-requests/{requestId}/approve")
     public ResponseEntity<Map<String, String>> approveDeletionRequest(@PathVariable Long requestId) {
         User admin = userService.findByEmail(SecurityContextHolder.getContext().getAuthentication().getName());
