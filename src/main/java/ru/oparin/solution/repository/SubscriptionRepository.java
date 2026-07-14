@@ -17,6 +17,13 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
             LocalDateTime now
     );
 
+    Optional<Subscription> findFirstByUser_IdAndPlan_CodeStartingWithAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
+            Long userId,
+            String planCodePrefix,
+            java.util.Collection<String> statuses,
+            LocalDateTime now
+    );
+
     List<Subscription> findByUser_IdOrderByExpiresAtDesc(Long userId);
 
     Optional<Subscription> findFirstByUser_IdAndExpiresAtBeforeOrderByExpiresAtDesc(
