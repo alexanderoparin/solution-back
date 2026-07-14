@@ -125,9 +125,6 @@ public class WbApiEventDispatcher {
 
     private String formatExecutorPoolState() {
         ThreadPoolExecutor threadPool = cabinetUpdateExecutor.getThreadPoolExecutor();
-        if (threadPool == null) {
-            return "недоступен";
-        }
         return String.format(
                 "active=%d, pool=%d, core=%d, max=%d, queue=%d, completed=%d",
                 threadPool.getActiveCount(),
