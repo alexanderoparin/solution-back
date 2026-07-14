@@ -153,6 +153,21 @@ public class CabinetController {
                 .body(MessageResponse.builder().message("Приглашение отправлено повторно").build());
     }
 
+    /**
+     * Повторная выдача доступа по отозванному grant.
+     */
+    @PostMapping("/{id}/access/grants/{grantId}/reinvite")
+    public ResponseEntity<MessageResponse> reinviteFromGrant(
+            @PathVariable Long id,
+            @PathVariable Long grantId,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        cabinetAccessService.reinviteFromGrant(user, id, grantId);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(MessageResponse.builder().message("Приглашение отправлено повторно").build());
+    }
+
     @GetMapping
     public ResponseEntity<List<CabinetDto>> list(Authentication authentication) {
         User user = userService.findByEmail(authentication.getName());

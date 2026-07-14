@@ -147,30 +147,53 @@ public class CabinetAccessService {
     @Transactional(readOnly = true)
     public List<CabinetAccessEntryDto> listAccessEntries(User owner, Long cabinetId) {
         ensureCanManage(owner, cabinetId);
-        List<CabinetAccessGrant> grants = grantRepository.findByCabinet_IdOrderByCreatedAtDesc(cabinetId);
-        Set<String> emailsWithActiveGrant = grants.stream()
-                .filter(g -> g.getStatus() == CabinetAccessGrantStatus.ACTIVE)
-                .map(g -> g.getUser().getEmail().trim().toLowerCase())
-                .collect(Collectors.toCollection(HashSet::new));
-
-        List<CabinetAccessEntryDto> result = new ArrayList<>();
-        for (CabinetAccessGrant grant : grants) {
-            result.add(toAccessEntry(grant));
+        List<CabinetAccessEntryDto> all = new ArrayList<>();
+        for (CabinetAccessGrant grant : grantRepository.findByCabinet_IdOrderByCreatedAtDesc(cabinetId)) {
+            all.add(toAccessEntry(grant));
         }
         for (CabinetAccessInvitation invitation : invitationRepository.findByCabinet_IdOrderByCreatedAtDesc(cabinetId)) {
-            if (invitation.getStatus() == CabinetAccessInvitationStatus.ACCEPTED) {
-                // Доступ уже в ACTIVE grant
-                continue;
+            if (invitation.getStatus() != CabinetAccessInvitationStatus.ACCEPTED) {
+                all.add(toAccessEntry(invitation));
             }
-            String email = invitation.getEmail() != null ? invitation.getEmail().trim().toLowerCase() : "";
-            // Неактуальные приглашения не дублируем, если у email уже есть активный доступ
-            if (invitation.getStatus() != CabinetAccessInvitationStatus.PENDING
-                    && emailsWithActiveGrant.contains(email)) {
-                continue;
-            }
-            result.add(toAccessEntry(invitation));
         }
-        return result;
+
+        Map<String, CabinetAccessEntryDto> byEmail = new LinkedHashMap<>();
+        for (CabinetAccessEntryDto entry : all) {
+            String email = entry.userEmail() != null ? entry.userEmail().trim().toLowerCase() : "";
+            if (email.isEmpty()) {
+                continue;
+            }
+            CabinetAccessEntryDto current = byEmail.get(email);
+            if (current == null || isPreferredAccessEntry(entry, current)) {
+                byEmail.put(email, entry);
+            }
+        }
+        return new ArrayList<>(byEmail.values());
+    }
+
+    /**
+     * Выше приоритет: активный доступ → ожидающее приглашение → более свежая запись.
+     */
+    private static boolean isPreferredAccessEntry(CabinetAccessEntryDto candidate, CabinetAccessEntryDto current) {
+        int candidateRank = accessEntryRank(candidate);
+        int currentRank = accessEntryRank(current);
+        if (candidateRank != currentRank) {
+            return candidateRank > currentRank;
+        }
+        LocalDateTime candidateAt = candidate.accessFrom() != null ? candidate.accessFrom() : LocalDateTime.MIN;
+        LocalDateTime currentAt = current.accessFrom() != null ? current.accessFrom() : LocalDateTime.MIN;
+        return candidateAt.isAfter(currentAt);
+    }
+
+    private static int accessEntryRank(CabinetAccessEntryDto entry) {
+        if ("GRANT".equals(entry.kind()) && "Активен".equals(entry.statusLabel())) {
+            return 3;
+        }
+        if ("INVITATION".equals(entry.kind())
+                && entry.invitationStatus() == CabinetAccessInvitationStatus.PENDING) {
+            return 2;
+        }
+        return 1;
     }
 
     /**
@@ -442,6 +465,63 @@ public class CabinetAccessService {
                 source.getEmail(), owner, source.getCabinet().getName(), token);
         log.info("Повторно отправлено приглашение id={} (источник id={}) на {}",
                 invitation.getId(), source.getId(), source.getEmail());
+    }
+
+    /**
+     * Повторная выдача доступа по отозванному grant: создаёт новое PENDING-приглашение.
+     */
+    @Transactional
+    public void reinviteFromGrant(User owner, Long cabinetId, Long grantId) {
+        ensureCanManage(owner, cabinetId);
+        CabinetAccessGrant grant = grantRepository.findById(grantId)
+                .orElseThrow(() -> new UserException("Доступ не найден", HttpStatus.NOT_FOUND));
+        if (!grant.getCabinet().getId().equals(cabinetId)) {
+            throw new UserException("Доступ не принадлежит кабинету", HttpStatus.BAD_REQUEST);
+        }
+        if (grant.getStatus() != CabinetAccessGrantStatus.REVOKED) {
+            throw new UserException("Повторно выдать можно только отозванный доступ", HttpStatus.BAD_REQUEST);
+        }
+        User grantee = grant.getUser();
+        String email = grantee.getEmail().trim().toLowerCase();
+        AccountType accountType = resolveAccountTypeForReinvite(grantee.getId());
+
+        invitationRepository.findPendingByCabinetAndEmail(cabinetId, email, CabinetAccessInvitationStatus.PENDING)
+                .ifPresent(inv -> {
+                    inv.setStatus(CabinetAccessInvitationStatus.REVOKED);
+                    invitationRepository.save(inv);
+                });
+
+        String token = UUID.randomUUID().toString().replace("-", "");
+        LocalDateTime now = LocalDateTime.now();
+        CabinetAccessInvitation invitation = CabinetAccessInvitation.builder()
+                .token(token)
+                .email(email)
+                .cabinet(grant.getCabinet())
+                .invitedByUser(owner)
+                .sections(new ArrayList<>(grant.getSections()))
+                .accountType(accountType)
+                .commentText(grant.getCommentText())
+                .status(CabinetAccessInvitationStatus.PENDING)
+                .validUntil(grant.getValidUntil())
+                .expiresAt(now.plusDays(INVITATION_TTL_DAYS))
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        invitationRepository.save(invitation);
+        emailService.sendCabinetInvitationEmail(email, owner, grant.getCabinet().getName(), token);
+        log.info("Повторно выдано приглашение id={} по отозванному grant id={} на {}",
+                invitation.getId(), grant.getId(), email);
+    }
+
+    private AccountType resolveAccountTypeForReinvite(Long userId) {
+        List<AccountType> types = accountTypeService.getAccountTypes(userId);
+        if (types.contains(AccountType.AGENCY)) {
+            return AccountType.AGENCY;
+        }
+        if (types.contains(AccountType.EMPLOYEE)) {
+            return AccountType.EMPLOYEE;
+        }
+        return AccountType.EMPLOYEE;
     }
 
     private static boolean canResendInvitation(CabinetAccessInvitationStatus status) {
