@@ -12,6 +12,8 @@ public interface PlanRepository extends JpaRepository<Plan, Long> {
 
     List<Plan> findByIsActiveTrueOrderBySortOrderAsc();
 
+    List<Plan> findByIsActiveTrueAndCodeStartingWithOrderBySortOrderAsc(String codePrefix);
+
     List<Plan> findAllByOrderBySortOrderAsc();
 
     Optional<Plan> findByCode(String code);

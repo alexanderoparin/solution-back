@@ -7,6 +7,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.config.SubscriptionProperties;
 import ru.oparin.solution.dto.*;
+import ru.oparin.solution.model.PlanCodes;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.PlanRepository;
 import ru.oparin.solution.service.PlanMapper;
@@ -36,7 +37,8 @@ public class SubscriptionController {
         if (!subscriptionProperties.isCampaignManagementEnabled()) {
             return ResponseEntity.ok(List.of());
         }
-        List<PlanDto> list = planRepository.findByIsActiveTrueOrderBySortOrderAsc()
+        List<PlanDto> list = planRepository
+                .findByIsActiveTrueAndCodeStartingWithOrderBySortOrderAsc(PlanCodes.CAMPAIGN_PLAN_PREFIX)
                 .stream()
                 .map(PlanMapper::toDto)
                 .toList();
