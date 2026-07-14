@@ -78,16 +78,35 @@ public class AccountDeletionRequestService {
 
     @Transactional
     public void approve(User admin, Long requestId) {
-        AccountDeletionRequest request = repository.findById(requestId)
-                .orElseThrow(() -> new UserException("Заявка не найдена", HttpStatus.NOT_FOUND));
-        if (request.getStatus() != AccountDeletionRequestStatus.PENDING) {
-            throw new UserException("Заявка уже обработана", HttpStatus.BAD_REQUEST);
-        }
+        AccountDeletionRequest request = loadPending(requestId);
         request.setStatus(AccountDeletionRequestStatus.APPROVED);
         request.setProcessedAt(LocalDateTime.now());
         request.setProcessedByUser(admin);
         repository.save(request);
         userService.runDeletionAsync(request.getUser().getId());
+    }
+
+    /**
+     * Отклонение заявки: статус {@link AccountDeletionRequestStatus#REJECTED}, удаление не запускается.
+     * Пользователь сможет подать новую заявку.
+     */
+    @Transactional
+    public void reject(User admin, Long requestId) {
+        AccountDeletionRequest request = loadPending(requestId);
+        request.setStatus(AccountDeletionRequestStatus.REJECTED);
+        request.setProcessedAt(LocalDateTime.now());
+        request.setProcessedByUser(admin);
+        repository.save(request);
+        log.info("Заявка на удаление id={} отклонена админом id={}", requestId, admin.getId());
+    }
+
+    private AccountDeletionRequest loadPending(Long requestId) {
+        AccountDeletionRequest request = repository.findById(requestId)
+                .orElseThrow(() -> new UserException("Заявка не найдена", HttpStatus.NOT_FOUND));
+        if (request.getStatus() != AccountDeletionRequestStatus.PENDING) {
+            throw new UserException("Заявка уже обработана", HttpStatus.BAD_REQUEST);
+        }
+        return request;
     }
 
     private void notifyCorpInbox(User user, AccountDeletionRequest request) {

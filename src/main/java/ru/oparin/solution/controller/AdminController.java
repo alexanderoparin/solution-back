@@ -281,4 +281,14 @@ public class AdminController {
         accountDeletionRequestService.approve(admin, requestId);
         return ResponseEntity.ok(Map.of("message", "Заявка одобрена, удаление запущено"));
     }
+
+    /**
+     * Отклонение заявки на удаление аккаунта.
+     */
+    @PostMapping("/deletion-requests/{requestId}/reject")
+    public ResponseEntity<Map<String, String>> rejectDeletionRequest(@PathVariable Long requestId) {
+        User admin = userService.findByEmail(SecurityContextHolder.getContext().getAuthentication().getName());
+        accountDeletionRequestService.reject(admin, requestId);
+        return ResponseEntity.ok(Map.of("message", "Заявка отклонена"));
+    }
 }
