@@ -105,6 +105,24 @@ public class CabinetAccessService {
                 .orElse(false);
     }
 
+    /**
+     * Требует доступ хотя бы к одному из указанных разделов кабинета.
+     *
+     * @throws UserException 403, если раздел недоступен
+     */
+    @Transactional(readOnly = true)
+    public void requireAnySectionAccess(User user, Long cabinetId, CabinetAccessSection... sections) {
+        if (sections == null || sections.length == 0) {
+            return;
+        }
+        for (CabinetAccessSection section : sections) {
+            if (hasSectionAccess(user, cabinetId, section)) {
+                return;
+            }
+        }
+        throw new UserException("Нет доступа к этому разделу кабинета", HttpStatus.FORBIDDEN);
+    }
+
     @Transactional(readOnly = true)
     public List<CabinetAccessSection> getSectionsForUser(User user, Long cabinetId) {
         if (user.getRole() == Role.ADMIN || cabinetRepository.existsByIdAndUser_Id(cabinetId, user.getId())) {

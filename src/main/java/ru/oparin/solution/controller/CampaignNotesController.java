@@ -39,7 +39,7 @@ public class CampaignNotesController {
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.AD_CAMPAIGNS);
         List<CampaignNoteDto> notes = noteService.getNotes(campaignId, context);
         return ResponseEntity.ok(notes);
     }
@@ -52,7 +52,7 @@ public class CampaignNotesController {
             @Valid @RequestBody CreateNoteRequest request,
             Authentication authentication) {
         User currentUser = userService.findByEmail(authentication.getName());
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.AD_CAMPAIGNS);
         CampaignNoteDto note = noteService.createNote(campaignId, context, request, currentUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(note);
     }
@@ -66,7 +66,7 @@ public class CampaignNotesController {
             @Valid @RequestBody UpdateNoteRequest request,
             Authentication authentication) {
         User currentUser = userService.findByEmail(authentication.getName());
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.AD_CAMPAIGNS);
         CampaignNoteDto note = noteService.updateNote(noteId, campaignId, context, request, currentUser);
         return ResponseEntity.ok(note);
     }
@@ -79,7 +79,7 @@ public class CampaignNotesController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
         User currentUser = userService.findByEmail(authentication.getName());
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.AD_CAMPAIGNS);
         noteService.deleteNote(noteId, campaignId, context, currentUser);
         return ResponseEntity.noContent().build();
     }
@@ -93,7 +93,7 @@ public class CampaignNotesController {
             @RequestParam("file") MultipartFile file,
             Authentication authentication) {
         User currentUser = userService.findByEmail(authentication.getName());
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.AD_CAMPAIGNS);
         CampaignNoteFileDto dto = noteService.uploadFile(noteId, campaignId, context, file, currentUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(dto);
     }
@@ -106,7 +106,7 @@ public class CampaignNotesController {
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.AD_CAMPAIGNS);
         Path filePath = noteService.getFile(noteId, fileId, campaignId, context);
         Resource resource = new FileSystemResource(filePath);
         if (!resource.exists()) {
@@ -136,7 +136,7 @@ public class CampaignNotesController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
         User currentUser = userService.findByEmail(authentication.getName());
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.AD_CAMPAIGNS);
         noteService.deleteFile(noteId, fileId, campaignId, context, currentUser);
         return ResponseEntity.noContent().build();
     }

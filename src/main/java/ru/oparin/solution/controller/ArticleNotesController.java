@@ -46,7 +46,7 @@ public class ArticleNotesController {
             Authentication authentication) {
 
         User currentUser = userService.findByEmail(authentication.getName());
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         
         ArticleNoteDto note = noteService.createNote(nmId, context, request, currentUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(note);
@@ -62,7 +62,7 @@ public class ArticleNotesController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
 
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         List<ArticleNoteDto> notes = noteService.getNotes(nmId, context);
         return ResponseEntity.ok(notes);
     }
@@ -80,7 +80,7 @@ public class ArticleNotesController {
             Authentication authentication) {
 
         User currentUser = userService.findByEmail(authentication.getName());
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         ArticleNoteDto note = noteService.updateNote(noteId, nmId, context, request, currentUser);
         return ResponseEntity.ok(note);
     }
@@ -97,7 +97,7 @@ public class ArticleNotesController {
             Authentication authentication) {
 
         User currentUser = userService.findByEmail(authentication.getName());
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         noteService.deleteNote(noteId, nmId, context, currentUser);
         return ResponseEntity.noContent().build();
     }
@@ -115,7 +115,7 @@ public class ArticleNotesController {
             Authentication authentication) {
 
         User currentUser = userService.findByEmail(authentication.getName());
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         ru.oparin.solution.dto.notes.ArticleNoteFileDto fileDto = noteService.uploadFile(noteId, nmId, context, file, currentUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(fileDto);
     }
@@ -132,7 +132,7 @@ public class ArticleNotesController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication) {
 
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         Path filePath = noteService.getFile(noteId, fileId, nmId, context);
         
         Resource resource = new FileSystemResource(filePath);
@@ -171,7 +171,7 @@ public class ArticleNotesController {
             Authentication authentication) {
 
         User currentUser = userService.findByEmail(authentication.getName());
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         noteService.deleteFile(noteId, fileId, nmId, context, currentUser);
         return ResponseEntity.noContent().build();
     }

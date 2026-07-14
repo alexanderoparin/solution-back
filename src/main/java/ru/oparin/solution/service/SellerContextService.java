@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.CabinetAccessSection;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.CabinetRepository;
@@ -29,8 +30,26 @@ public class SellerContextService {
     private final CabinetAccessService cabinetAccessService;
     private final CabinetRepository cabinetRepository;
 
+    /**
+     * Контекст кабинета без требования конкретного раздела (достаточно любого доступа).
+     */
     @Transactional(readOnly = true)
     public SellerContext createContext(Authentication authentication, Long sellerId, Long cabinetId) {
+        return createContext(authentication, sellerId, cabinetId, (CabinetAccessSection[]) null);
+    }
+
+    /**
+     * Контекст кабинета с обязательным доступом к одному из переданных разделов.
+     *
+     * @param requiredSections разделы; если null или пусто — проверяется только наличие любого доступа
+     */
+    @Transactional(readOnly = true)
+    public SellerContext createContext(
+            Authentication authentication,
+            Long sellerId,
+            Long cabinetId,
+            CabinetAccessSection... requiredSections
+    ) {
         User currentUser = userService.findByEmail(authentication.getName());
         User owner;
         Cabinet cabinet;
@@ -43,14 +62,10 @@ public class SellerContextService {
                     .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
             owner = cabinet.getUser();
             if (!cabinetAccessService.isCabinetOwner(currentUser, cabinetId)
-                    && !cabinetAccessService.hasSectionAccess(currentUser, cabinetId,
-                    ru.oparin.solution.model.CabinetAccessSection.SUMMARY)
-                    && !cabinetAccessService.hasSectionAccess(currentUser, cabinetId,
-                    ru.oparin.solution.model.CabinetAccessSection.PRODUCTS)
-                    && !cabinetAccessService.hasSectionAccess(currentUser, cabinetId,
-                    ru.oparin.solution.model.CabinetAccessSection.AD_CAMPAIGNS)
-                    && !cabinetAccessService.hasSectionAccess(currentUser, cabinetId,
-                    ru.oparin.solution.model.CabinetAccessSection.CAMPAIGN_MANAGE)) {
+                    && !cabinetAccessService.hasSectionAccess(currentUser, cabinetId, CabinetAccessSection.SUMMARY)
+                    && !cabinetAccessService.hasSectionAccess(currentUser, cabinetId, CabinetAccessSection.PRODUCTS)
+                    && !cabinetAccessService.hasSectionAccess(currentUser, cabinetId, CabinetAccessSection.AD_CAMPAIGNS)
+                    && !cabinetAccessService.hasSectionAccess(currentUser, cabinetId, CabinetAccessSection.CAMPAIGN_MANAGE)) {
                 throw new UserException("Нет доступа к кабинету", HttpStatus.FORBIDDEN);
             }
         } else if (cabinetRepository.existsByIdAndUser_Id(
@@ -70,6 +85,11 @@ public class SellerContextService {
         if (!Boolean.TRUE.equals(owner.getIsActive())) {
             throw new UserException("Аккаунт владельца кабинета неактивен", HttpStatus.FORBIDDEN);
         }
+
+        if (requiredSections != null && requiredSections.length > 0 && cabinet != null) {
+            cabinetAccessService.requireAnySectionAccess(currentUser, cabinet.getId(), requiredSections);
+        }
+
         return new SellerContext(owner, cabinet);
     }
 

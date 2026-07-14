@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.analytics.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.CabinetAccessSection;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.campaign.CampaignManageAccessService;
@@ -58,7 +59,8 @@ public class AdvertisingController {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
                 sellerId,
-                cabinetId
+                cabinetId,
+                CabinetAccessSection.AD_CAMPAIGNS
         );
         Long resolvedCabinetId = context.cabinet() != null ? context.cabinet().getId() : null;
         List<CampaignDto> campaigns = analyticsService.listCampaignsByCabinet(
@@ -81,7 +83,8 @@ public class AdvertisingController {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
                 sellerId,
-                cabinetId
+                cabinetId,
+                CabinetAccessSection.AD_CAMPAIGNS
         );
         Cabinet cabinet = context.cabinet();
         if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
@@ -120,7 +123,8 @@ public class AdvertisingController {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
                 sellerId,
-                cabinetId
+                cabinetId,
+                CabinetAccessSection.AD_CAMPAIGNS
         );
         Cabinet cabinet = context.cabinet();
         if (cabinet == null) {
@@ -165,7 +169,8 @@ public class AdvertisingController {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
                 sellerId,
-                cabinetId
+                cabinetId,
+                CabinetAccessSection.CAMPAIGN_MANAGE
         );
         Cabinet cabinet = context.cabinet();
         if (cabinet == null) {
@@ -229,7 +234,8 @@ public class AdvertisingController {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
                 sellerId,
-                cabinetId
+                cabinetId,
+                CabinetAccessSection.AD_CAMPAIGNS
         );
         Long resolvedCabinetId = context.cabinet() != null ? context.cabinet().getId() : null;
         Long resolvedSellerId = context.user() != null ? context.user().getId() : null;
@@ -261,7 +267,8 @@ public class AdvertisingController {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
                 sellerId,
-                cabinetId
+                cabinetId,
+                CabinetAccessSection.AD_CAMPAIGNS
         );
         Long resolvedCabinetId = context.cabinet() != null ? context.cabinet().getId() : null;
         Long resolvedSellerId = context.user() != null ? context.user().getId() : null;

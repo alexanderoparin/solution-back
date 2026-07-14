@@ -39,7 +39,7 @@ public class WbApiController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         CardsListRequest requestWithDefaults = CardsListRequestBuilder.withDefaults(request);
         CardsListResponse response = contentApiClient.getCardsList(context.apiKey(), requestWithDefaults);
         
@@ -54,7 +54,7 @@ public class WbApiController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         CardsListRequest searchRequest = CardsListRequestBuilder.createSearchRequest(vendorCode);
         CardsListResponse response = contentApiClient.getCardsList(context.apiKey(), searchRequest);
         
@@ -66,7 +66,7 @@ public class WbApiController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         PingResponse response = contentApiClient.ping(context.apiKey());
         
         return ResponseEntity.ok(response);
@@ -78,7 +78,7 @@ public class WbApiController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         CardsListRequest requestWithDefaults = CardsListRequestBuilder.withDefaults(request);
         CardsListResponse response = contentApiClient.getCardsTrash(context.apiKey(), requestWithDefaults);
         
@@ -90,7 +90,7 @@ public class WbApiController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         SellerInfoResponse response = commonApiClient.getSellerInfo(context.apiKey());
         
         return ResponseEntity.ok(response);
@@ -102,7 +102,7 @@ public class WbApiController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         
         AnalyticsPeriodValidator.validate(request.getDateFrom(), request.getDateTo());
 
@@ -123,7 +123,7 @@ public class WbApiController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
 
         wbApiEventService.enqueueWarehousesSyncCabinetEvent(context.cabinet().getId(), "SELLER_WB_API");
 
@@ -137,7 +137,7 @@ public class WbApiController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId);
+        SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
         
         WbStocksSizesResponse response = stocksService.getWbStocksBySizes(
                 context.apiKey(),

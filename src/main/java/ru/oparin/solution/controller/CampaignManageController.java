@@ -44,7 +44,7 @@ public class CampaignManageController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.CAMPAIGN_MANAGE);
         Long resolvedCabinetId = ctx.cabinet() != null ? ctx.cabinet().getId() : null;
         CampaignManageResponseDto dto = manageService.getManage(advertId, resolvedCabinetId, ctx.user());
         if (dto == null) {
@@ -60,7 +60,7 @@ public class CampaignManageController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.CAMPAIGN_MANAGE);
         if (ctx.cabinet() == null) {
             return ResponseEntity.badRequest().build();
         }
@@ -74,7 +74,7 @@ public class CampaignManageController {
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.CAMPAIGN_MANAGE);
         if (ctx.cabinet() == null) {
             return ResponseEntity.badRequest().build();
         }
@@ -97,7 +97,7 @@ public class CampaignManageController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
             Authentication authentication
     ) {
-        SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId);
+        SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.CAMPAIGN_MANAGE);
         Long cabId = ctx.cabinet() != null ? ctx.cabinet().getId() : null;
         if (cabId == null) {
             return ResponseEntity.badRequest().build();
@@ -287,7 +287,7 @@ public class CampaignManageController {
     }
 
     private SellerContextService.SellerContext ctx(Long sellerId, Long cabinetId, Authentication authentication) {
-        return sellerContextService.createContext(authentication, sellerId, cabinetId);
+        return sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.CAMPAIGN_MANAGE);
     }
 
     private User currentUser(Authentication authentication) {

@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.analytics.*;
+import ru.oparin.solution.model.CabinetAccessSection;
 import ru.oparin.solution.service.AnalyticsService;
 import ru.oparin.solution.service.ArticleGoalService;
 import ru.oparin.solution.service.SellerContextService;
@@ -47,7 +48,8 @@ public class AnalyticsController {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
                 sellerId,
-                cabinetId
+                cabinetId,
+                CabinetAccessSection.PRODUCTS
         );
 
         List<ArticleSummaryDto> response = analyticsService.getArticleList(
@@ -75,7 +77,8 @@ public class AnalyticsController {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
                 request.getSellerId(),
-                request.getCabinetId()
+                request.getCabinetId(),
+                CabinetAccessSection.SUMMARY
         );
 
         SummaryResponseDto response = analyticsService.getSummary(
@@ -94,7 +97,7 @@ public class AnalyticsController {
                 request.getSortBy(),
                 request.getSortDir()
         );
-        
+
         return ResponseEntity.ok(response);
     }
 
@@ -115,7 +118,8 @@ public class AnalyticsController {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
                 request.getSellerId(),
-                request.getCabinetId()
+                request.getCabinetId(),
+                CabinetAccessSection.SUMMARY
         );
 
         String decodedMetricName = URLDecoder.decode(metricName, StandardCharsets.UTF_8);
@@ -130,7 +134,7 @@ public class AnalyticsController {
                 request.getOnlyPriority(),
                 request.getOnlyInAdvertising()
         );
-        
+
         return ResponseEntity.ok(response);
     }
 
@@ -151,7 +155,8 @@ public class AnalyticsController {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
                 request.getSellerId(),
-                request.getCabinetId()
+                request.getCabinetId(),
+                CabinetAccessSection.PRODUCTS
         );
 
         ArticleResponseDto response = analyticsService.getArticle(
@@ -165,7 +170,7 @@ public class AnalyticsController {
                 request.getDailyDataDateTo(),
                 request.getDailyDataCampaignAdvertId()
         );
-        
+
         return ResponseEntity.ok(response);
     }
 
@@ -183,7 +188,8 @@ public class AnalyticsController {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
                 sellerId,
-                cabinetId
+                cabinetId,
+                CabinetAccessSection.PRODUCTS
         );
         articleGoalService.upsertGoal(context.user(), context.cabinetId(), nmId, request.getGoal());
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
@@ -200,7 +206,8 @@ public class AnalyticsController {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
                 sellerId,
-                cabinetId
+                cabinetId,
+                CabinetAccessSection.PRODUCTS
         );
         analyticsService.updateArticlePriority(context.user(), context.cabinetId(), nmId, request.getPriority());
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
@@ -226,16 +233,15 @@ public class AnalyticsController {
         SellerContextService.SellerContext context = sellerContextService.createContext(
                 authentication,
                 sellerId,
-                cabinetId
+                cabinetId,
+                CabinetAccessSection.PRODUCTS
         );
-        
-        // Проверяем, что артикул принадлежит продавцу
+
         analyticsService.findCardBySeller(nmId, context.user().getId());
-        
+
         List<StockSizeDto> response = analyticsService.getStockSizes(nmId, warehouseName);
-        
+
         return ResponseEntity.ok(response);
     }
 
 }
-
