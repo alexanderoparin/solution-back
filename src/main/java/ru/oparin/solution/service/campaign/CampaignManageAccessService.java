@@ -86,7 +86,7 @@ public class CampaignManageAccessService {
         }
         LocalDateTime now = LocalDateTime.now();
         boolean hadCampaignSubscription = subscriptionRepository
-                .findFirstByUser_IdAndPlan_CodeStartingWithAndExpiresAtBeforeOrderByExpiresAtDesc(
+                .findLastExpiredCampaignByUserId(
                         seller.getId(), PlanCodes.CAMPAIGN_PLAN_PREFIX, now)
                 .isPresent();
         return hadCampaignSubscription ? SCHEDULE_STOPPED_SUBSCRIPTION_EXPIRED : SCHEDULE_STOPPED_NO_SUBSCRIPTION;
@@ -159,7 +159,7 @@ public class CampaignManageAccessService {
                         .build())
                 .orElseGet(() -> {
                     Subscription expired = subscriptionRepository
-                            .findFirstByUser_IdAndPlan_CodeStartingWithAndExpiresAtBeforeOrderByExpiresAtDesc(
+                            .findLastExpiredCampaignByUserId(
                                     holder.getId(), PlanCodes.CAMPAIGN_PLAN_PREFIX, now)
                             .orElse(null);
                     if (expired != null) {
@@ -183,7 +183,7 @@ public class CampaignManageAccessService {
     }
 
     private Optional<Subscription> findActiveCampaignSubscription(User holder) {
-        return subscriptionRepository.findFirstByUser_IdAndPlan_CodeStartingWithAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
+        return subscriptionRepository.findFirstActiveCampaignByUserId(
                 holder.getId(),
                 PlanCodes.CAMPAIGN_PLAN_PREFIX,
                 ACTIVE_STATUSES,

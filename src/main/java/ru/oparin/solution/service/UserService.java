@@ -172,14 +172,14 @@ public class UserService {
 
     /**
      * Создаёт подписку для нового самостоятельного селлера после подтверждения почты.
-     * При выключенной оплате — бессрочная активная подписка (до 100 лет), чтобы при включении оплаты доступ сохранился.
+     * При выключенной оплате — бессрочная активная подписка ({@code expires_at = NULL}).
      * При включённой оплате — триал на trialDays дней.
      */
     void createTrialSubscriptionForUser(User user) {
         LocalDateTime now = LocalDateTime.now();
         List<String> activeStatuses = List.of("active", "trial");
         boolean hasActive = subscriptionRepository
-                .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(user.getId(), activeStatuses, now)
+                .findFirstActiveByUserId(user.getId(), activeStatuses, now)
                 .isPresent();
         if (hasActive) {
             return;
@@ -189,7 +189,7 @@ public class UserService {
         LocalDateTime expiresAt;
         if (!subscriptionProperties.isBillingEnabled()) {
             status = "active";
-            expiresAt = now.plusYears(100);
+            expiresAt = null;
         } else {
             status = "trial";
             expiresAt = now.plusDays(subscriptionProperties.getTrialDays());

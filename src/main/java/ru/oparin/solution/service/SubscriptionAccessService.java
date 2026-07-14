@@ -51,8 +51,7 @@ public class SubscriptionAccessService {
         }
         LocalDateTime now = LocalDateTime.now();
         return subscriptionRepository
-                .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
-                        user.getId(), ACTIVE_STATUSES, now)
+                .findFirstActiveByUserId(user.getId(), ACTIVE_STATUSES, now)
                 .orElse(null);
     }
 

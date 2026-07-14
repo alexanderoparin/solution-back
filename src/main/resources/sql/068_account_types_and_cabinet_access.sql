@@ -180,7 +180,7 @@ SELECT
     p.id,
     'active',
     COALESCE(u.created_at, NOW()),
-    COALESCE(u.created_at, NOW()) + INTERVAL '1 year',
+    NULL,
     true,
     NOW(),
     NOW()
@@ -189,5 +189,7 @@ JOIN solution.plans p ON p.code = 'analytics_free'
 WHERE u.role = 'USER'
   AND NOT EXISTS (
       SELECT 1 FROM solution.subscriptions s
-      WHERE s.user_id = u.id AND s.status IN ('active', 'trial') AND s.expires_at > NOW()
+      WHERE s.user_id = u.id
+        AND s.status IN ('active', 'trial')
+        AND (s.expires_at IS NULL OR s.expires_at > NOW())
   );

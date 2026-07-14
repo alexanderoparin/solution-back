@@ -50,13 +50,11 @@ public class AdminSubscriptionService {
         LocalDateTime targetExpiresAt = expiresAt != null ? expiresAt : now.plusDays(plan.getPeriodDays());
 
         Subscription current = subscriptionRepository
-                .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
-                        user.getId(), List.of("active", "trial"), now
-                )
+                .findFirstActiveByUserId(user.getId(), List.of("active", "trial"), now)
                 .orElse(null);
 
         Subscription saved;
-        if (current != null && current.getExpiresAt().isAfter(now)) {
+        if (current != null) {
             current.setExpiresAt(targetExpiresAt);
             current.setPlan(plan);
             current.setStatus("active");

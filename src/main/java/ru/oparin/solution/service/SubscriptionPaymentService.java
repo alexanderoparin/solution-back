@@ -193,13 +193,14 @@ public class SubscriptionPaymentService {
         LocalDateTime now = LocalDateTime.now();
 
         Subscription current = subscriptionRepository
-                .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
-                        user.getId(), ACTIVE_STATUSES, now)
+                .findFirstActiveByUserId(user.getId(), ACTIVE_STATUSES, now)
                 .orElse(null);
 
         LocalDateTime base = now;
-        if (current != null && current.getExpiresAt().isAfter(now)) {
+        if (current != null && SubscriptionSupport.hasFutureExpiry(current, now)) {
             base = current.getExpiresAt();
+        }
+        if (current != null) {
             current.setExpiresAt(SubscriptionPeriodUtils.addPlanPeriod(base, plan));
             current.setStatus("active");
             current.setPlan(plan);
@@ -228,15 +229,16 @@ public class SubscriptionPaymentService {
 
         LocalDateTime now = LocalDateTime.now();
         Subscription current = subscriptionRepository
-                .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
-                        user.getId(), ACTIVE_STATUSES, now)
+                .findFirstActiveByUserId(user.getId(), ACTIVE_STATUSES, now)
                 .orElse(null);
 
         LocalDateTime periodEnd = SubscriptionPeriodUtils.addPlanPeriod(
                 now, payment.getPeriodDays(), payment.getPeriodType());
 
-        if (current != null && current.getExpiresAt().isAfter(now)) {
-            LocalDateTime base = current.getExpiresAt();
+        if (current != null) {
+            LocalDateTime base = SubscriptionSupport.hasFutureExpiry(current, now)
+                    ? current.getExpiresAt()
+                    : now;
             current.setExpiresAt(SubscriptionPeriodUtils.addPlanPeriod(
                     base, payment.getPeriodDays(), payment.getPeriodType()));
             current.setStatus("active");
@@ -315,7 +317,7 @@ public class SubscriptionPaymentService {
             return null;
         }
         return subscriptionRepository
-                .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
+                .findFirstActiveByUserId(
                         payment.getUser().getId(),
                         ACTIVE_STATUSES,
                         LocalDateTime.now()

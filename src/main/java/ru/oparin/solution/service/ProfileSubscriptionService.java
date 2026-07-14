@@ -33,8 +33,7 @@ public class ProfileSubscriptionService {
     public ProfileSubscriptionSummaryDto buildSummary(User user) {
         LocalDateTime now = LocalDateTime.now();
         Subscription subscription = subscriptionRepository
-                .findFirstByUser_IdAndStatusInAndExpiresAtAfterOrderByExpiresAtDesc(
-                        user.getId(), ACTIVE_STATUSES, now)
+                .findFirstActiveByUserId(user.getId(), ACTIVE_STATUSES, now)
                 .orElse(null);
         if (subscription == null) {
             return ProfileSubscriptionSummaryDto.builder()
@@ -72,7 +71,7 @@ public class ProfileSubscriptionService {
                 .plan(plan)
                 .status("active")
                 .startedAt(now)
-                .expiresAt(now.plusDays(plan.getPeriodDays()))
+                .expiresAt(null)
                 .autoRenew(true)
                 .createdAt(now)
                 .updatedAt(now)
