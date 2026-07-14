@@ -24,9 +24,21 @@ public class AccountDeletionRequest {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
+    /**
+     * Пользователь, подавший заявку. После удаления аккаунта становится {@code null}
+     * (история сохраняется через {@link #userEmail}/{@link #userName}).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
     private User user;
+
+    /** Email на момент заявки — остаётся после удаления пользователя. */
+    @Column(name = "user_email", nullable = false, length = 255)
+    private String userEmail;
+
+    /** Имя на момент заявки — остаётся после удаления пользователя. */
+    @Column(name = "user_name", length = 255)
+    private String userName;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "reason", nullable = false, length = 50)

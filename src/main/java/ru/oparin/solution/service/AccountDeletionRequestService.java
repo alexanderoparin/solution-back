@@ -61,6 +61,8 @@ public class AccountDeletionRequestService {
         }
         AccountDeletionRequest saved = repository.save(AccountDeletionRequest.builder()
                 .user(user)
+                .userEmail(user.getEmail())
+                .userName(user.getName())
                 .reason(request.reason())
                 .commentText(request.comment())
                 .status(AccountDeletionRequestStatus.PENDING)
@@ -79,11 +81,16 @@ public class AccountDeletionRequestService {
     @Transactional
     public void approve(User admin, Long requestId) {
         AccountDeletionRequest request = loadPending(requestId);
+        User targetUser = request.getUser();
+        if (targetUser == null) {
+            throw new UserException("Пользователь заявки уже удалён", HttpStatus.BAD_REQUEST);
+        }
+        fillUserSnapshotIfNeeded(request, targetUser);
         request.setStatus(AccountDeletionRequestStatus.APPROVED);
         request.setProcessedAt(LocalDateTime.now());
         request.setProcessedByUser(admin);
         repository.save(request);
-        userService.runDeletionAsync(request.getUser().getId());
+        userService.runDeletionAsync(targetUser.getId());
     }
 
     /**
@@ -123,13 +130,32 @@ public class AccountDeletionRequestService {
         }
     }
 
+    /**
+     * Дозаполняет snapshot email/name перед удалением пользователя (для старых заявок без snapshot).
+     */
+    private void fillUserSnapshotIfNeeded(AccountDeletionRequest request, User user) {
+        if (request.getUserEmail() == null || request.getUserEmail().isBlank()) {
+            request.setUserEmail(user.getEmail());
+        }
+        if (request.getUserName() == null || request.getUserName().isBlank()) {
+            request.setUserName(user.getName());
+        }
+    }
+
     private AccountDeletionRequestAdminDto toAdminDto(AccountDeletionRequest request) {
         User user = request.getUser();
+        Long userId = user != null ? user.getId() : null;
+        String email = request.getUserEmail() != null
+                ? request.getUserEmail()
+                : (user != null ? user.getEmail() : "—");
+        String name = request.getUserName() != null
+                ? request.getUserName()
+                : (user != null ? user.getName() : null);
         return AccountDeletionRequestAdminDto.builder()
                 .id(request.getId())
-                .userId(user.getId())
-                .userEmail(user.getEmail())
-                .userName(user.getName())
+                .userId(userId)
+                .userEmail(email)
+                .userName(name)
                 .reason(request.getReason())
                 .comment(request.getCommentText())
                 .status(request.getStatus())
