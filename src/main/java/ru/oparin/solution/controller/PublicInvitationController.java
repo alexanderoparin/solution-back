@@ -34,4 +34,17 @@ public class PublicInvitationController {
         cabinetAccessService.acceptInvitation(user, token);
         return ResponseEntity.ok(cabinetAccessService.previewInvitation(token));
     }
+
+    /**
+     * Отклонение приглашения текущим пользователем (email должен совпадать с приглашением).
+     */
+    @PostMapping("/{token}/decline")
+    public ResponseEntity<Void> decline(
+            @PathVariable String token,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        cabinetAccessService.declineInvitation(user, token);
+        return ResponseEntity.noContent().build();
+    }
 }

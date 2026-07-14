@@ -300,6 +300,30 @@ public class CabinetAccessService {
     }
 
     /**
+     * Отклонение приглашения приглашённым пользователем.
+     * Статус становится {@link CabinetAccessInvitationStatus#REVOKED}, доступ не создаётся.
+     */
+    @Transactional
+    public void declineInvitation(User user, String token) {
+        CabinetAccessInvitation invitation = invitationRepository.findByToken(token)
+                .orElseThrow(() -> new UserException("Приглашение не найдено", HttpStatus.NOT_FOUND));
+        if (invitation.getStatus() != CabinetAccessInvitationStatus.PENDING) {
+            throw new UserException("Приглашение уже обработано", HttpStatus.BAD_REQUEST);
+        }
+        if (invitation.getExpiresAt().isBefore(LocalDateTime.now())) {
+            invitation.setStatus(CabinetAccessInvitationStatus.EXPIRED);
+            invitationRepository.save(invitation);
+            throw new UserException("Срок действия приглашения истёк", HttpStatus.BAD_REQUEST);
+        }
+        if (!user.getEmail().equalsIgnoreCase(invitation.getEmail())) {
+            throw new UserException("Приглашение отправлено на другой email", HttpStatus.FORBIDDEN);
+        }
+        invitation.setStatus(CabinetAccessInvitationStatus.REVOKED);
+        invitationRepository.save(invitation);
+        log.info("Приглашение id={} отклонено пользователем id={}", invitation.getId(), user.getId());
+    }
+
+    /**
      * При выдаче доступа владелец указывает тип «Агентство» или «Сотрудник» —
      * он добавляется в профиль пользователя, если ещё не был назначен.
      */
