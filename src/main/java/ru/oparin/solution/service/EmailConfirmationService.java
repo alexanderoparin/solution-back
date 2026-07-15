@@ -82,10 +82,11 @@ public class EmailConfirmationService {
      * Подтверждает email по токену из ссылки.
      *
      * @param token токен из ссылки
+     * @return пользователь с подтверждённым email
      * @throws UserException если токен не найден или истёк
      */
     @Transactional
-    public void confirmEmail(String token) {
+    public User confirmEmail(String token) {
         Instant now = Instant.now();
         EmailConfirmationToken confirmationToken = tokenRepository.findByTokenAndExpiresAtAfter(token, now)
                 .orElseThrow(() -> new UserException(
@@ -98,5 +99,6 @@ public class EmailConfirmationService {
         userRepository.save(user);
         tokenRepository.delete(confirmationToken);
         log.info("Email подтверждён для пользователя {}", user.getEmail());
+        return user;
     }
 }

@@ -58,6 +58,18 @@ public class AuthService {
     }
 
     /**
+     * Выдаёт JWT без проверки пароля (после подтверждения email и т.п.).
+     *
+     * @param user пользователь
+     * @return ответ с JWT токеном
+     */
+    public AuthResponse issueTokenForUser(User user) {
+        String token = generateTokenForUser(user);
+        log.info("Выдан JWT после подтверждения email: email={}", user.getEmail());
+        return buildAuthResponse(user, token);
+    }
+
+    /**
      * Аутентифицирует пользователя по email и паролю.
      */
     private Authentication authenticateUser(LoginRequest request) {

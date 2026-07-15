@@ -91,15 +91,16 @@ public class AuthController {
 
     /**
      * Подтверждение email по токену из ссылки (публичный эндпоинт).
+     * После подтверждения сразу выдаётся JWT — пользователь попадает в профиль без отдельного входа.
      *
      * @param request токен из ссылки
-     * @return сообщение об успехе
+     * @return JWT и данные пользователя
      */
     @PostMapping("/confirm-email")
-    public ResponseEntity<MessageResponse> confirmEmail(@Valid @RequestBody ConfirmEmailRequest request) {
+    public ResponseEntity<AuthResponse> confirmEmail(@Valid @RequestBody ConfirmEmailRequest request) {
         log.info("Подтверждение email по токену");
-        emailConfirmationService.confirmEmail(request.getToken());
-        return ResponseEntity.ok(createSuccessMessage("Email успешно подтверждён. Можете войти в профиль."));
+        var user = emailConfirmationService.confirmEmail(request.getToken());
+        return ResponseEntity.ok(authService.issueTokenForUser(user));
     }
 
     /**
