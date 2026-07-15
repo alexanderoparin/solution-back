@@ -239,7 +239,7 @@ public class CabinetAccessService {
                 .updatedAt(now)
                 .build();
         invitationRepository.save(invitation);
-        emailService.sendCabinetInvitationEmail(email, owner, cabinet.getName(), token);
+        emailService.sendCabinetInvitationEmail(email, cabinet.getName(), token);
     }
 
     @Transactional
@@ -462,7 +462,7 @@ public class CabinetAccessService {
                 .build();
         invitationRepository.save(invitation);
         emailService.sendCabinetInvitationEmail(
-                source.getEmail(), owner, source.getCabinet().getName(), token);
+                source.getEmail(), source.getCabinet().getName(), token);
         log.info("Повторно отправлено приглашение id={} (источник id={}) на {}",
                 invitation.getId(), source.getId(), source.getEmail());
     }
@@ -508,7 +508,7 @@ public class CabinetAccessService {
                 .updatedAt(now)
                 .build();
         invitationRepository.save(invitation);
-        emailService.sendCabinetInvitationEmail(email, owner, grant.getCabinet().getName(), token);
+        emailService.sendCabinetInvitationEmail(email, grant.getCabinet().getName(), token);
         log.info("Повторно выдано приглашение id={} по отозванному grant id={} на {}",
                 invitation.getId(), grant.getId(), email);
     }

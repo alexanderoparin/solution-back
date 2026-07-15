@@ -208,16 +208,16 @@ public class EmailService {
 
     /**
      * Письмо-приглашение в кабинет Clicki.
+     * В тексте указывается название кабинета (обычно ИП/ООО).
      */
-    public void sendCabinetInvitationEmail(String toEmail, User inviter, String cabinetName, String token) {
+    public void sendCabinetInvitationEmail(String toEmail, String cabinetName, String token) {
         String inviteLink = buildInviteLink(token);
-        String inviterLabel = inviter.getName() != null && !inviter.getName().isBlank()
-                ? inviter.getName()
-                : inviter.getEmail();
-        String subject = "Вас пригласили в " + brandName;
-        String text = "Вас пригласили в " + brandName + ".\n\n"
-                + "Здравствуйте!\n\n"
-                + "Пользователь " + inviterLabel + " предоставил вам доступ к системе " + brandName + ".\n"
+        String cabinetLabel = cabinetName != null && !cabinetName.isBlank()
+                ? cabinetName.trim()
+                : "кабинет";
+        String subject = "Вам предоставлен доступ к кабинету «" + cabinetLabel + "» — " + brandName;
+        String text = "Здравствуйте!\n\n"
+                + "Вам предоставлен доступ к кабинету «" + cabinetLabel + "» в сервисе " + brandName + ".\n"
                 + "Для активации доступа зарегистрируйтесь или войдите в существующий аккаунт.\n\n"
                 + "Ссылка: " + inviteLink + "\n\n"
                 + "Если вы не ожидали это приглашение, просто проигнорируйте письмо.\n\n"

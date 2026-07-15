@@ -36,13 +36,16 @@ public class AuthController {
      * @return сообщение об успешной регистрации или ошибка
      */
     @PostMapping("/register")
-    public ResponseEntity<MessageResponse> register(@Valid @RequestBody RegisterRequest request) {
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         log.info("Регистрация пользователя с email = '{}'", request.getEmail());
         userService.registerUser(request);
-        
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(createSuccessMessage("Регистрация успешна. Теперь вы можете войти в систему."));
+
+        LoginRequest loginRequest = new LoginRequest();
+        loginRequest.setEmail(request.getEmail());
+        loginRequest.setPassword(request.getPassword());
+        AuthResponse response = authService.login(loginRequest);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     /**
