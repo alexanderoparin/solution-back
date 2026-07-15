@@ -84,7 +84,7 @@ wb:
 
 app:
   frontend-url: "https://click-i.ru"
-  brand-name: "Click-I"
+  brand-name: "Clicki"
   mail:
     from: corp@click-i.ru
     audit-to: corp@click-i.ru

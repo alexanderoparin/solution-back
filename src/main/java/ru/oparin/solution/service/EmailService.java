@@ -27,7 +27,7 @@ public class EmailService {
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
-    @Value("${app.brand-name:Click-I}")
+    @Value("${app.brand-name:Clicki}")
     private String brandName;
 
     @Value("${app.mail.audit-to:corp@click-i.ru}")

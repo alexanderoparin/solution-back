@@ -47,7 +47,7 @@ public class SubscriptionPaymentService {
     private final TochkaAcquiringService tochkaAcquiringService;
     private final ObjectMapper objectMapper;
 
-    @Value("${app.brand-name:Click-I}")
+    @Value("${app.brand-name:Clicki}")
     private String brandName;
 
     /**
