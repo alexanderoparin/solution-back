@@ -1243,7 +1243,7 @@ public class AnalyticsService {
         CampaignDto.CampaignDtoBuilder builder = CampaignDto.builder()
                 .id(c.getAdvertId())
                 .name(c.getName())
-                .type(c.getType() != null ? c.getType().getDescription() : null)
+                .type(c.getDisplayType())
                 .status(c.getStatus() != null ? c.getStatus().getCode() : null)
                 .statusName(c.getStatus() != null ? c.getStatus().getDescription() : null)
                 .createdAt(c.getCreateTime())

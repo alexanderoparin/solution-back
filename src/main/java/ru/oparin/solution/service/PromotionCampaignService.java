@@ -237,6 +237,7 @@ public class PromotionCampaignService {
         try {
             ru.oparin.solution.model.CampaignType campaignType = resolveCampaignType(campaignDto.getType());
             BidType bidType = resolveBidType(campaignDto.getBidType());
+            CampaignPaymentType paymentType = resolvePaymentType(campaignDto.getPaymentType());
             CampaignStatus status = resolveCampaignStatus(campaignDto.getStatus());
 
             return PromotionCampaign.builder()
@@ -246,6 +247,7 @@ public class PromotionCampaignService {
                     .type(campaignType)
                     .status(status)
                     .bidType(bidType)
+                    .paymentType(paymentType)
                     .startTime(parseDateTime(campaignDto.getStartTime()))
                     .endTime(parseDateTime(campaignDto.getEndTime()))
                     .createTime(parseDateTime(campaignDto.getCreateTime()))
@@ -273,6 +275,14 @@ public class PromotionCampaignService {
             log.warn("Неизвестный тип ставки: {}. Пропускаем.", bidTypeCode);
         }
         return bidType;
+    }
+
+    private CampaignPaymentType resolvePaymentType(String paymentTypeValue) {
+        CampaignPaymentType paymentType = CampaignPaymentType.fromApiValue(paymentTypeValue);
+        if (paymentType == null && paymentTypeValue != null && !paymentTypeValue.isBlank()) {
+            log.warn("Неизвестная модель оплаты кампании: {}. Пропускаем.", paymentTypeValue);
+        }
+        return paymentType;
     }
 
     private CampaignStatus resolveCampaignStatus(Integer statusCode) {
@@ -307,6 +317,7 @@ public class PromotionCampaignService {
         existing.setType(updated.getType());
         existing.setStatus(updated.getStatus());
         existing.setBidType(updated.getBidType());
+        existing.setPaymentType(updated.getPaymentType());
         existing.setStartTime(updated.getStartTime());
         existing.setEndTime(updated.getEndTime());
         existing.setCreateTime(updated.getCreateTime());

@@ -112,7 +112,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
     /**
      * Получение детальной информации о кампаниях (GET /api/advert/v2/adverts).
-     * Поддерживаются кампании с единой и ручной ставкой (типы 8 и 9). Максимум 50 ID за запрос.
+     * Поддерживаются кампании с единой, ручной и CPC-моделью оплаты. Максимум 50 ID за запрос.
      * При таймауте или ошибке соединения выполняются ретраи.
      *
      * @param apiKey API ключ продавца
@@ -289,6 +289,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                 .type(type)
                 .status(v2.getStatus())
                 .bidType(bidTypeCode)
+                .paymentType(v2.getSettings() != null ? v2.getSettings().getPaymentType() : null)
                 .startTime(ts != null ? ts.getStarted() : null)
                 .endTime(ts != null ? ts.getDeleted() : null)
                 .createTime(ts != null ? ts.getCreated() : null)

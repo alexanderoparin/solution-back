@@ -2,11 +2,7 @@ package ru.oparin.solution.dto.wb;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.util.List;
 
@@ -67,6 +63,12 @@ public class PromotionAdvertsResponse {
          */
         @JsonProperty("bid_type")
         private Integer bidType;
+
+        /**
+         * Модель оплаты: cpm — за показы, cpc — за клики.
+         */
+        @JsonProperty("payment_type")
+        private String paymentType;
 
         /**
          * Дата начала кампании.

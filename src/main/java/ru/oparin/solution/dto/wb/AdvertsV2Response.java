@@ -7,7 +7,8 @@ import lombok.*;
 import java.util.List;
 
 /**
- * DTO ответа GET /api/advert/v2/adverts — информация о кампаниях с единой или ручной ставкой.
+ * DTO ответа GET /api/advert/v2/adverts — информация о кампаниях,
+ * включая тип ставки и модель оплаты CPM/CPC.
  * Документация: <a href="https://dev.wildberries.ru/docs/openapi/promotion#tag/Kampanii/paths/~1api~1advert~1v2~1adverts/get">...</a>
  */
 @Getter

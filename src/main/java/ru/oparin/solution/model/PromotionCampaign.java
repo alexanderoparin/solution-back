@@ -69,6 +69,14 @@ public class PromotionCampaign {
     private BidType bidType;
 
     /**
+     * Модель оплаты из {@code settings.payment_type} WB API.
+     * CPC имеет приоритет при формировании отображаемого типа кампании.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_type", length = 10)
+    private CampaignPaymentType paymentType;
+
+    /**
      * Дата начала кампании.
      */
     @Column(name = "start_time")
@@ -105,5 +113,20 @@ public class PromotionCampaign {
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    /**
+     * Возвращает актуальное название типа кампании для интерфейса.
+     *
+     * @return CPC для оплаты за клики, иначе тип ставки WB
+     */
+    public String getDisplayType() {
+        if (paymentType == CampaignPaymentType.CPC) {
+            return "CPC";
+        }
+        if (bidType != null) {
+            return bidType.getDescription();
+        }
+        return type != null ? type.getDescription() : null;
+    }
 }
 
