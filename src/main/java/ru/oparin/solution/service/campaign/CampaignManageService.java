@@ -214,7 +214,7 @@ public class CampaignManageService {
         UUID groupId = request.isRepeat() ? UUID.randomUUID() : null;
         CampaignSlotRepeatMode mode = request.isRepeat()
                 ? parseRepeatMode(request.getRepeatMode())
-                : null;
+                : CampaignSlotRepeatMode.DAILY;
         List<Short> days = resolveDays(request.getDayOfWeek(), mode, request.isRepeat());
         for (Short day : days) {
             ensureNoSlotOverlap(advertId, cabinetId, day, start, end, null);

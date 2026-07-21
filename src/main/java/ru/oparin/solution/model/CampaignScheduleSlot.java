@@ -51,7 +51,8 @@ public class CampaignScheduleSlot {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "repeat_mode", nullable = false, length = 20)
-    private CampaignSlotRepeatMode repeatMode;
+    @Builder.Default
+    private CampaignSlotRepeatMode repeatMode = CampaignSlotRepeatMode.DAILY;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
