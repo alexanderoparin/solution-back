@@ -1,0 +1,915 @@
+package ru.oparin.solution.service.abtest;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+import ru.oparin.solution.dto.abtest.AbTestDto;
+import ru.oparin.solution.dto.abtest.AbTestVariantDto;
+import ru.oparin.solution.dto.abtest.CreateAbTestRequest;
+import ru.oparin.solution.dto.wb.CardDto;
+import ru.oparin.solution.dto.wb.CardsListRequest;
+import ru.oparin.solution.dto.wb.CardsListResponse;
+import ru.oparin.solution.model.*;
+import ru.oparin.solution.repository.*;
+import ru.oparin.solution.service.events.WbApiEventService;
+import ru.oparin.solution.service.wb.WbContentApiClient;
+
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * CRUD и бизнес-операции А/Б-тестов главного фото.
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class AbTestService {
+
+    private static final int MIN_INTERVAL_MINUTES = 30;
+    private static final int MAX_INTERVAL_MINUTES = 24 * 60;
+    private static final long MAX_UPLOAD_BYTES = 32L * 1024 * 1024;
+
+    private final AbTestRepository abTestRepository;
+    private final AbTestCampaignRepository abTestCampaignRepository;
+    private final AbTestVariantRepository abTestVariantRepository;
+    private final AbTestRotationLogRepository rotationLogRepository;
+    private final AbTestStatsSnapshotRepository snapshotRepository;
+    private final ProductCardRepository productCardRepository;
+    private final PromotionCampaignRepository promotionCampaignRepository;
+    private final CabinetRepository cabinetRepository;
+    private final WbContentApiClient contentApiClient;
+    private final WbApiEventService wbApiEventService;
+    private final ObjectMapper objectMapper;
+
+    @Value("${app.uploads.directory}")
+    private String uploadsDirectory;
+
+    @Value("${app.ab-test.min-views-per-variant:1000}")
+    private long minViewsPerVariant;
+
+    @Value("${app.ab-test.leader-relative-lift:0.10}")
+    private double leaderRelativeLift;
+
+    /**
+     * Список тестов кабинета.
+     *
+     * @param activeOnly если true — только ENABLED
+     */
+    @Transactional(readOnly = true)
+    public List<AbTestDto> list(Long cabinetId, boolean activeOnly) {
+        List<AbTest> tests = activeOnly
+                ? abTestRepository.findByCabinetIdOrderByCreatedAtDesc(cabinetId).stream()
+                .filter(t -> t.getStatus() == AbTestStatus.ENABLED || t.getStatus() == AbTestStatus.PENDING_START)
+                .collect(Collectors.toList())
+                : abTestRepository.findByCabinetIdOrderByCreatedAtDesc(cabinetId);
+        return tests.stream().map(this::toDto).collect(Collectors.toList());
+    }
+
+    /**
+     * Деталка теста.
+     */
+    @Transactional(readOnly = true)
+    public AbTestDto get(Long cabinetId, Long testId) {
+        AbTest test = requireTest(cabinetId, testId);
+        return toDto(test);
+    }
+
+    /**
+     * Создание теста: файлы на диск, запись в БД со статусом PENDING_START, WB — через очередь событий.
+     */
+    @Transactional
+    public AbTestDto create(Long cabinetId, CreateAbTestRequest request, List<MultipartFile> variantFiles) {
+        validateCreateRequest(request, variantFiles);
+        if (abTestRepository.existsByCabinetIdAndNmIdAndStatusIn(
+                cabinetId,
+                request.getNmId(),
+                List.of(AbTestStatus.ENABLED, AbTestStatus.PENDING_START))) {
+            throw new IllegalArgumentException("Для этого артикула уже есть активный или запускающийся А/Б-тест");
+        }
+
+        ProductCard card = productCardRepository.findByNmIdAndCabinet_Id(request.getNmId(), cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Артикул не найден в кабинете"));
+
+        for (Long advertId : request.getAdvertIds()) {
+            promotionCampaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId)
+                    .orElseThrow(() -> new IllegalArgumentException("Кампания не найдена в кабинете: " + advertId));
+        }
+
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
+        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+            throw new IllegalArgumentException("У кабинета отсутствует API-ключ");
+        }
+        validateTokenAllowsRotation(cabinet, request);
+
+        // Без синхронного WB: берём фото из нашей БД; уточнение галереи — в AB_TEST_START.
+        String mainUrl = firstNonBlank(card.getPhotoC246x328(), card.getPhotoTm());
+        if (mainUrl == null || mainUrl.isBlank()) {
+            throw new IllegalArgumentException("У карточки нет главного фото");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        AbTest test = AbTest.builder()
+                .cabinetId(cabinetId)
+                .nmId(request.getNmId())
+                .status(AbTestStatus.PENDING_START)
+                .rotationMode(request.getRotationMode())
+                .rotationViewsThreshold(request.getRotationViewsThreshold())
+                .rotationIntervalMinutes(request.getRotationIntervalMinutes())
+                .stopMode(request.getStopMode())
+                .durationDays(request.getDurationDays())
+                .endsAt(request.getStopMode() == AbTestStopMode.BY_DURATION
+                        ? now.plusDays(request.getDurationDays())
+                        : null)
+                .finishAction(request.getFinishAction())
+                .originalMainPhotoUrl(mainUrl)
+                .originalGalleryUrlsJson("[]")
+                .startedAt(now)
+                .lastRotatedAt(now)
+                .insightCode(AbTestInsightCode.DATA_LOW)
+                .lastWbError(null)
+                .build();
+        test = abTestRepository.save(test);
+
+        for (Long advertId : request.getAdvertIds()) {
+            abTestCampaignRepository.save(AbTestCampaign.builder()
+                    .abTestId(test.getId())
+                    .advertId(advertId)
+                    .build());
+        }
+
+        AbTestVariant control = abTestVariantRepository.save(AbTestVariant.builder()
+                .abTestId(test.getId())
+                .sortOrder(1)
+                .control(true)
+                .photoUrl(mainUrl)
+                .previewUrl(mainUrl)
+                .build());
+
+        int order = 2;
+        int uploadedCount = 0;
+        if (variantFiles != null) {
+            for (MultipartFile file : variantFiles) {
+                if (file == null || file.isEmpty()) {
+                    continue;
+                }
+                String storedName = storeUpload(file);
+                abTestVariantRepository.save(AbTestVariant.builder()
+                        .abTestId(test.getId())
+                        .sortOrder(order++)
+                        .control(false)
+                        .storedFileName(storedName)
+                        .photoUrl(null)
+                        .previewUrl(null)
+                        .build());
+                uploadedCount++;
+            }
+        }
+        if (uploadedCount < 1) {
+            throw new IllegalArgumentException("Загрузите хотя бы один дополнительный вариант фото");
+        }
+
+        test.setActiveVariantId(control.getId());
+        test.setActiveSinceViews(0);
+        abTestRepository.save(test);
+        rotationLogRepository.save(AbTestRotationLog.builder()
+                .abTestId(test.getId())
+                .variantId(control.getId())
+                .switchedAt(now)
+                .reason("CREATE")
+                .build());
+
+        wbApiEventService.enqueueAbTestStart(cabinetId, test.getId(), "AB_TEST_CREATE");
+        return toDto(test);
+    }
+
+    /**
+     * Включение или ручное отключение теста.
+     */
+    @Transactional
+    public AbTestDto updateStatus(Long cabinetId, Long testId, AbTestStatus status) {
+        AbTest test = requireTest(cabinetId, testId);
+        if (status == AbTestStatus.DISABLED
+                && (test.getStatus() == AbTestStatus.ENABLED || test.getStatus() == AbTestStatus.PENDING_START)) {
+            if (test.getStatus() == AbTestStatus.PENDING_START) {
+                test.setStatus(AbTestStatus.DISABLED);
+                test.setFinishedAt(LocalDateTime.now());
+                abTestRepository.save(test);
+            } else {
+                enqueueFinish(test, "MANUAL");
+            }
+        } else if (status == AbTestStatus.ENABLED && test.getStatus() == AbTestStatus.DISABLED) {
+            throw new IllegalArgumentException("Повторный запуск завершённого теста не поддерживается — создайте новый");
+        }
+        return toDto(test);
+    }
+
+    /**
+     * Поставить в очередь завершение теста (смена фото + DISABLED).
+     */
+    @Transactional
+    public void enqueueFinish(AbTest test, String reason) {
+        if (test.getStatus() != AbTestStatus.ENABLED) {
+            return;
+        }
+        List<AbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
+        AbTestVariant target;
+        if (test.getFinishAction() == AbTestFinishAction.KEEP_WINNER) {
+            target = variants.stream()
+                    .max(Comparator.comparing(AbTestVariant::computeCtr).thenComparing(AbTestVariant::getViews))
+                    .orElse(variants.get(0));
+        } else {
+            target = variants.stream().filter(AbTestVariant::isControl).findFirst()
+                    .orElse(variants.get(0));
+        }
+        wbApiEventService.enqueueAbTestApplyPhoto(
+                test.getCabinetId(),
+                test.getId(),
+                target.getId(),
+                "FINISH:" + reason,
+                true,
+                "AB_TEST_FINISH"
+        );
+    }
+
+    /**
+     * @deprecated используйте {@link #enqueueFinish(AbTest, String)}
+     */
+    @Transactional
+    public void finishTest(AbTest test, String reason) {
+        enqueueFinish(test, reason);
+    }
+
+    /**
+     * Поставить в очередь ротацию на следующий вариант.
+     */
+    @Transactional
+    public void enqueueRotateToNext(AbTest test, String reason) {
+        List<AbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
+        if (variants.size() < 2) {
+            return;
+        }
+        int currentIdx = 0;
+        for (int i = 0; i < variants.size(); i++) {
+            if (variants.get(i).getId().equals(test.getActiveVariantId())) {
+                currentIdx = i;
+                break;
+            }
+        }
+        AbTestVariant next = variants.get((currentIdx + 1) % variants.size());
+        wbApiEventService.enqueueAbTestApplyPhoto(
+                test.getCabinetId(),
+                test.getId(),
+                next.getId(),
+                reason,
+                false,
+                "AB_TEST_ROTATE"
+        );
+    }
+
+    /**
+     * @deprecated используйте {@link #enqueueRotateToNext(AbTest, String)}
+     */
+    @Transactional
+    public void rotateToNext(AbTest test, String reason) {
+        enqueueRotateToNext(test, reason);
+    }
+
+    /**
+     * Выполнить старт А/Б-теста (вызывается из WB event executor).
+     */
+    @Transactional
+    public void executeStart(Long abTestId) {
+        AbTest test = abTestRepository.findById(abTestId)
+                .orElseThrow(() -> new IllegalArgumentException("А/Б-тест не найден: " + abTestId));
+        if (test.getStatus() != AbTestStatus.PENDING_START) {
+            return;
+        }
+        Cabinet cabinet = cabinetRepository.findById(test.getCabinetId())
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
+
+        CardPhotos photos = resolveCardPhotos(cabinet.getApiKey(), test.getNmId());
+        if (photos.mainUrl() == null || photos.mainUrl().isBlank()) {
+            throw new IllegalStateException("Не удалось получить главное фото карточки для контрольного варианта");
+        }
+        test.setOriginalMainPhotoUrl(photos.mainUrl());
+        test.setOriginalGalleryUrlsJson(writeJson(photos.galleryUrls()));
+
+        List<AbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
+        AbTestVariant control = variants.stream().filter(AbTestVariant::isControl).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Нет control-варианта"));
+
+        // Скачиваем big/hq и сохраняем локально — дальше ротация/restore идут через media/file в слот 1.
+        String controlStoredName = downloadAndStoreFromUrl(photos.mainUrl());
+        control.setStoredFileName(controlStoredName);
+        control.setPhotoUrl(photos.mainUrl());
+        control.setPreviewUrl(photos.previewUrl() != null ? photos.previewUrl() : photos.mainUrl());
+        abTestVariantRepository.save(control);
+
+        List<AbTestVariant> uploaded = variants.stream().filter(v -> !v.isControl()).toList();
+        for (AbTestVariant variant : uploaded) {
+            uploadVariantFileToWb(cabinet.getApiKey(), test.getNmId(), variant, orderSlotForUpload(variant.getSortOrder()));
+        }
+        refreshVariantUrlsFromCard(cabinet.getApiKey(), test, uploaded);
+
+        // Сбрасываем галерею к исходной (временные слоты 2+ с вариантами теста убираем с карточки),
+        // затем ставим контрольное фото в слот 1 файлом — без потери качества.
+        restoreOriginalMediaSet(cabinet.getApiKey(), test);
+        applyMainPhoto(cabinet.getApiKey(), test, control);
+
+        test.setActiveVariantId(control.getId());
+        test.setActiveSinceViews(0);
+        test.setStatus(AbTestStatus.ENABLED);
+        test.setLastWbError(null);
+        test.setLastRotatedAt(LocalDateTime.now());
+        abTestRepository.save(test);
+
+        wbApiEventService.enqueueAbTestStatsPoll(test.getCabinetId(), test.getId(), "AB_TEST_START");
+    }
+
+    /**
+     * Выполнить смену главного фото (ротация или финиш) из event executor.
+     */
+    @Transactional
+    public void executeApplyPhoto(Long abTestId, Long variantId, String reason, boolean finishAfterApply) {
+        AbTest test = abTestRepository.findById(abTestId)
+                .orElseThrow(() -> new IllegalArgumentException("А/Б-тест не найден: " + abTestId));
+        if (finishAfterApply) {
+            if (test.getStatus() != AbTestStatus.ENABLED) {
+                return;
+            }
+        } else if (test.getStatus() != AbTestStatus.ENABLED) {
+            return;
+        }
+        Cabinet cabinet = cabinetRepository.findById(test.getCabinetId())
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
+        AbTestVariant variant = abTestVariantRepository.findByIdAndAbTestId(variantId, abTestId)
+                .orElseThrow(() -> new IllegalArgumentException("Вариант не найден"));
+
+        applyMainPhoto(cabinet.getApiKey(), test, variant);
+        test.setActiveVariantId(variant.getId());
+        test.setActiveSinceViews(variant.getViews());
+        test.setLastRotatedAt(LocalDateTime.now());
+        test.setLastWbError(null);
+
+        if (finishAfterApply) {
+            List<AbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
+            test.setStatus(AbTestStatus.DISABLED);
+            test.setFinishedAt(LocalDateTime.now());
+            updateInsight(test, variants);
+        }
+        abTestRepository.save(test);
+        rotationLogRepository.save(AbTestRotationLog.builder()
+                .abTestId(test.getId())
+                .variantId(variant.getId())
+                .switchedAt(LocalDateTime.now())
+                .reason(reason != null ? reason : "APPLY")
+                .build());
+    }
+
+    /**
+     * Зафиксировать ошибку WB по тесту (для UI).
+     */
+    @Transactional
+    public void markWbError(Long abTestId, String error) {
+        abTestRepository.findById(abTestId).ifPresent(test -> {
+            test.setLastWbError(error != null && error.length() > 2000 ? error.substring(0, 2000) : error);
+            if (test.getStatus() == AbTestStatus.PENDING_START) {
+                // оставляем PENDING_START — ретраи события; после финального фейла executor вызовет failStart
+            }
+            abTestRepository.save(test);
+        });
+    }
+
+    /**
+     * Финальный провал старта: тест отключается с ошибкой.
+     */
+    @Transactional
+    public void failStart(Long abTestId, String error) {
+        abTestRepository.findById(abTestId).ifPresent(test -> {
+            if (test.getStatus() == AbTestStatus.PENDING_START) {
+                test.setStatus(AbTestStatus.DISABLED);
+                test.setFinishedAt(LocalDateTime.now());
+                test.setLastWbError(error);
+                abTestRepository.save(test);
+            }
+        });
+    }
+
+    /**
+     * Пересчёт статусной строки по накопленным метрикам.
+     */
+    @Transactional
+    public void refreshInsight(AbTest test) {
+        List<AbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
+        updateInsight(test, variants);
+        abTestRepository.save(test);
+    }
+
+    /**
+     * Проверка автостопа TRUST_US: достаточно данных и есть лидер / нет разницы.
+     *
+     * @return true если тест нужно завершить
+     */
+    public boolean shouldAutoStopTrustUs(AbTest test, List<AbTestVariant> variants) {
+        if (variants.isEmpty()) {
+            return false;
+        }
+        boolean enough = variants.stream().allMatch(v -> v.getViews() >= minViewsPerVariant);
+        if (!enough) {
+            return false;
+        }
+        AbTestVariant best = variants.stream().max(Comparator.comparing(AbTestVariant::computeCtr)).orElse(null);
+        AbTestVariant second = variants.stream()
+                .filter(v -> best == null || !v.getId().equals(best.getId()))
+                .max(Comparator.comparing(AbTestVariant::computeCtr))
+                .orElse(null);
+        if (best == null || second == null) {
+            return true;
+        }
+        BigDecimal bestCtr = best.computeCtr();
+        BigDecimal secondCtr = second.computeCtr();
+        if (bestCtr.compareTo(BigDecimal.ZERO) <= 0) {
+            return true;
+        }
+        double lift = bestCtr.subtract(secondCtr)
+                .divide(bestCtr, 6, RoundingMode.HALF_UP)
+                .doubleValue();
+        return lift >= leaderRelativeLift || lift < leaderRelativeLift / 2.0;
+    }
+
+    private void updateInsight(AbTest test, List<AbTestVariant> variants) {
+        boolean enough = variants.stream().allMatch(v -> v.getViews() >= minViewsPerVariant);
+        if (!enough) {
+            test.setInsightCode(AbTestInsightCode.DATA_LOW);
+            return;
+        }
+        AbTestVariant best = variants.stream().max(Comparator.comparing(AbTestVariant::computeCtr)).orElse(null);
+        AbTestVariant second = variants.stream()
+                .filter(v -> best == null || !v.getId().equals(best.getId()))
+                .max(Comparator.comparing(AbTestVariant::computeCtr))
+                .orElse(null);
+        if (best == null || second == null) {
+            test.setInsightCode(AbTestInsightCode.DATA_LOW);
+            return;
+        }
+        BigDecimal bestCtr = best.computeCtr();
+        if (bestCtr.compareTo(BigDecimal.ZERO) <= 0) {
+            test.setInsightCode(AbTestInsightCode.NO_DIFF);
+            return;
+        }
+        double lift = bestCtr.subtract(second.computeCtr())
+                .divide(bestCtr, 6, RoundingMode.HALF_UP)
+                .doubleValue();
+        test.setInsightCode(lift >= leaderRelativeLift ? AbTestInsightCode.HAS_LEADER : AbTestInsightCode.NO_DIFF);
+    }
+
+    private void applyMainPhoto(String apiKey, AbTest test, AbTestVariant variant) {
+        if (variant.getStoredFileName() != null && !variant.getStoredFileName().isBlank()) {
+            Path path = Paths.get(uploadsDirectory).resolve(variant.getStoredFileName());
+            try {
+                byte[] bytes = Files.readAllBytes(path);
+                contentApiClient.uploadMediaFile(apiKey, test.getNmId(), 1, bytes, variant.getStoredFileName());
+                return;
+            } catch (IOException e) {
+                log.warn("Не удалось прочитать файл варианта id={}: {}", variant.getId(), e.getMessage());
+            }
+        }
+        List<String> urls = buildMediaUrlList(test, variant);
+        if (urls.isEmpty()) {
+            throw new IllegalStateException("Нет URL для media/save");
+        }
+        contentApiClient.saveMediaByUrls(apiKey, test.getNmId(), urls);
+    }
+
+    /**
+     * Восстанавливает исходный набор медиа карточки (главное + галерея) через media/save.
+     */
+    private void restoreOriginalMediaSet(String apiKey, AbTest test) {
+        String main = test.getOriginalMainPhotoUrl();
+        List<String> gallery = readGallery(test.getOriginalGalleryUrlsJson());
+        List<String> urls = new ArrayList<>();
+        if (main != null && !main.isBlank()) {
+            urls.add(main);
+        }
+        for (String g : gallery) {
+            if (g != null && !g.isBlank() && !g.equals(main)) {
+                urls.add(g);
+            }
+        }
+        if (urls.isEmpty()) {
+            throw new IllegalStateException("Нет URL исходной галереи для media/save");
+        }
+        contentApiClient.saveMediaByUrls(apiKey, test.getNmId(), urls);
+    }
+
+    private List<String> buildMediaUrlList(AbTest test, AbTestVariant variant) {
+        List<String> gallery = readGallery(test.getOriginalGalleryUrlsJson());
+        List<String> urls = new ArrayList<>();
+        String main = variant.getPhotoUrl() != null ? variant.getPhotoUrl() : test.getOriginalMainPhotoUrl();
+        if (main != null) {
+            urls.add(main);
+        }
+        for (String g : gallery) {
+            if (g != null && !g.equals(main)) {
+                urls.add(g);
+            }
+        }
+        return urls;
+    }
+
+    private void uploadVariantFileToWb(String apiKey, Long nmId, AbTestVariant variant, int photoNumber) {
+        Path path = Paths.get(uploadsDirectory).resolve(variant.getStoredFileName());
+        try {
+            byte[] bytes = Files.readAllBytes(path);
+            contentApiClient.uploadMediaFile(apiKey, nmId, photoNumber, bytes, variant.getStoredFileName());
+        } catch (IOException e) {
+            throw new IllegalStateException("Не удалось прочитать загруженный файл варианта", e);
+        }
+    }
+
+    private int orderSlotForUpload(int sortOrder) {
+        // Загружаем во временные слоты 2+
+        return Math.max(2, sortOrder);
+    }
+
+    private void refreshVariantUrlsFromCard(String apiKey, AbTest test, List<AbTestVariant> uploaded) {
+        try {
+            CardsListResponse response = contentApiClient.getCardsList(apiKey, cardsRequestForNm(test.getNmId()));
+            CardDto card = findCard(response, test.getNmId());
+            if (card == null || card.getPhotos() == null || card.getPhotos().isEmpty()) {
+                return;
+            }
+            List<CardDto.Photo> photos = card.getPhotos();
+            for (AbTestVariant variant : uploaded) {
+                int idx = Math.max(0, variant.getSortOrder() - 1);
+                if (idx < photos.size()) {
+                    CardDto.Photo photo = photos.get(idx);
+                    String url = firstNonBlank(photo.getBig(), photo.getHq(), photo.getC516x688(), photo.getC246x328(), photo.getTm());
+                    variant.setPhotoUrl(url);
+                    variant.setPreviewUrl(firstNonBlank(photo.getC246x328(), photo.getTm(), url));
+                    abTestVariantRepository.save(variant);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Не удалось обновить URL вариантов после upload: {}", e.getMessage());
+        }
+    }
+
+    private CardPhotos resolveCardPhotos(String apiKey, Long nmId) {
+        try {
+            CardsListResponse response = contentApiClient.getCardsList(apiKey, cardsRequestForNm(nmId));
+            CardDto dto = findCard(response, nmId);
+            if (dto != null && dto.getPhotos() != null && !dto.getPhotos().isEmpty()) {
+                List<CardDto.Photo> photos = dto.getPhotos();
+                String main = firstNonBlank(
+                        photos.get(0).getBig(),
+                        photos.get(0).getHq(),
+                        photos.get(0).getC516x688());
+                if (main == null) {
+                    throw new IllegalStateException(
+                            "У карточки nmId=" + nmId + " нет URL big/hq/c516x688 для контрольного фото");
+                }
+                String preview = firstNonBlank(photos.get(0).getC246x328(), photos.get(0).getTm(), main);
+                List<String> gallery = new ArrayList<>();
+                for (int i = 1; i < photos.size(); i++) {
+                    String u = firstNonBlank(
+                            photos.get(i).getBig(),
+                            photos.get(i).getHq(),
+                            photos.get(i).getC516x688(),
+                            photos.get(i).getC246x328());
+                    if (u != null) {
+                        gallery.add(u);
+                    }
+                }
+                return new CardPhotos(main, preview, gallery);
+            }
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Не удалось получить фото карточки nmId={} из Content API: {}", nmId, e.getMessage());
+            throw new IllegalStateException(
+                    "Не удалось получить фото карточки из Content API для контрольного варианта: " + e.getMessage(),
+                    e);
+        }
+        throw new IllegalStateException("Content API не вернул фото карточки nmId=" + nmId);
+    }
+
+    /**
+     * Скачивает фото по CDN URL WB и сохраняет в uploads для последующей загрузки через media/file.
+     *
+     * @param photoUrl URL big/hq главного фото
+     * @return имя сохранённого файла
+     */
+    private String downloadAndStoreFromUrl(String photoUrl) {
+        if (photoUrl == null || photoUrl.isBlank()) {
+            throw new IllegalStateException("Нет URL главного фото для скачивания");
+        }
+        try {
+            java.net.HttpURLConnection connection =
+                    (java.net.HttpURLConnection) java.net.URI.create(photoUrl).toURL().openConnection();
+            connection.setConnectTimeout(15_000);
+            connection.setReadTimeout(60_000);
+            connection.setInstanceFollowRedirects(true);
+            connection.setRequestProperty("User-Agent", "Clicki-AbTest/1.0");
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) {
+                throw new IllegalStateException("Не удалось скачать фото карточки: HTTP " + status);
+            }
+            byte[] bytes;
+            try (java.io.InputStream inputStream = connection.getInputStream()) {
+                bytes = inputStream.readAllBytes();
+            }
+            if (bytes.length == 0) {
+                throw new IllegalStateException("Скачанное фото карточки пустое");
+            }
+            if (bytes.length > MAX_UPLOAD_BYTES) {
+                throw new IllegalStateException("Скачанное фото больше 32 Мб");
+            }
+            String extension = extensionFromUrlOrContentType(photoUrl, connection.getContentType());
+            return storeBytes(bytes, extension);
+        } catch (IOException e) {
+            throw new IllegalStateException("Не удалось скачать главное фото карточки: " + e.getMessage(), e);
+        }
+    }
+
+    private String extensionFromUrlOrContentType(String photoUrl, String contentType) {
+        String lowerUrl = photoUrl.toLowerCase(Locale.ROOT);
+        if (lowerUrl.contains(".png")) {
+            return ".png";
+        }
+        if (lowerUrl.contains(".webp")) {
+            return ".webp";
+        }
+        if (lowerUrl.contains(".gif")) {
+            return ".gif";
+        }
+        if (lowerUrl.contains(".bmp")) {
+            return ".bmp";
+        }
+        if (contentType != null) {
+            String ct = contentType.toLowerCase(Locale.ROOT);
+            if (ct.contains("png")) {
+                return ".png";
+            }
+            if (ct.contains("webp")) {
+                return ".webp";
+            }
+            if (ct.contains("gif")) {
+                return ".gif";
+            }
+        }
+        return ".jpg";
+    }
+
+    private String storeBytes(byte[] bytes, String extension) {
+        try {
+            Path uploadsPath = Paths.get(uploadsDirectory);
+            if (!Files.exists(uploadsPath)) {
+                Files.createDirectories(uploadsPath);
+            }
+            String ext = extension != null && extension.startsWith(".") ? extension : ".jpg";
+            String unique = "abtest_" + UUID.randomUUID().toString().replace("-", "") + ext;
+            Files.write(uploadsPath.resolve(unique), bytes);
+            return unique;
+        } catch (IOException e) {
+            throw new IllegalStateException("Не удалось сохранить скачанное фото контрольного варианта", e);
+        }
+    }
+
+    private CardsListRequest cardsRequestForNm(Long nmId) {
+        return CardsListRequest.builder()
+                .settings(CardsListRequest.Settings.builder()
+                        .cursor(CardsListRequest.Cursor.builder().limit(100).build())
+                        .filter(CardsListRequest.Filter.builder().withPhoto(-1).textSearch(String.valueOf(nmId)).build())
+                        .build())
+                .build();
+    }
+
+    private CardDto findCard(CardsListResponse response, Long nmId) {
+        if (response == null || response.getCards() == null) {
+            return null;
+        }
+        return response.getCards().stream()
+                .filter(c -> nmId.equals(c.getNmId()))
+                .findFirst()
+                .orElse(response.getCards().isEmpty() ? null : response.getCards().get(0));
+    }
+
+    private String storeUpload(MultipartFile file) {
+        validateImageFile(file);
+        try {
+            Path uploadsPath = Paths.get(uploadsDirectory);
+            if (!Files.exists(uploadsPath)) {
+                Files.createDirectories(uploadsPath);
+            }
+            String original = file.getOriginalFilename() != null ? file.getOriginalFilename() : "photo.jpg";
+            String ext = "";
+            int dot = original.lastIndexOf('.');
+            if (dot >= 0) {
+                ext = original.substring(dot);
+            }
+            String unique = "abtest_" + UUID.randomUUID().toString().replace("-", "") + ext;
+            Path target = uploadsPath.resolve(unique);
+            Files.copy(file.getInputStream(), target);
+            return unique;
+        } catch (IOException e) {
+            throw new IllegalStateException("Не удалось сохранить файл варианта", e);
+        }
+    }
+
+    private void validateImageFile(MultipartFile file) {
+        if (file.getSize() > MAX_UPLOAD_BYTES) {
+            throw new IllegalArgumentException("Файл больше 32 Мб");
+        }
+        String name = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase(Locale.ROOT) : "";
+        if (!(name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png")
+                || name.endsWith(".bmp") || name.endsWith(".gif") || name.endsWith(".webp"))) {
+            throw new IllegalArgumentException("Поддерживаются JPG, PNG, BMP, GIF, WebP");
+        }
+    }
+
+    private void validateCreateRequest(CreateAbTestRequest request, List<MultipartFile> variantFiles) {
+        if (request.getAdvertIds() == null || request.getAdvertIds().isEmpty()) {
+            throw new IllegalArgumentException("Выберите хотя бы одну рекламную кампанию");
+        }
+        if (request.getRotationMode() == AbTestRotationMode.ROTATION_BY_VIEWS) {
+            if (request.getRotationViewsThreshold() == null || request.getRotationViewsThreshold() < 1) {
+                throw new IllegalArgumentException("Укажите порог показов для ротации");
+            }
+        } else if (request.getRotationMode() == AbTestRotationMode.ROTATION_BY_INTERVAL) {
+            Integer minutes = request.getRotationIntervalMinutes();
+            if (minutes == null || minutes < MIN_INTERVAL_MINUTES || minutes > MAX_INTERVAL_MINUTES) {
+                throw new IllegalArgumentException("Интервал ротации: от 30 минут до 24 часов");
+            }
+        }
+        if (request.getStopMode() == AbTestStopMode.BY_DURATION) {
+            if (request.getDurationDays() == null || request.getDurationDays() < 1) {
+                throw new IllegalArgumentException("Укажите длительность теста в днях");
+            }
+        }
+        long nonEmpty = variantFiles == null ? 0 : variantFiles.stream().filter(f -> f != null && !f.isEmpty()).count();
+        if (nonEmpty < 1) {
+            throw new IllegalArgumentException("Загрузите хотя бы один дополнительный вариант фото");
+        }
+    }
+
+    /**
+     * Базовый токен: fullstats не чаще 1 раза в час —
+     * короткая ротация по времени и несколько РК недоступны.
+     */
+    private void validateTokenAllowsRotation(Cabinet cabinet, CreateAbTestRequest request) {
+        CabinetTokenType tokenType = CabinetTokenType.effective(cabinet.getTokenType());
+        if (tokenType.supportsFrequentFullstats()) {
+            return;
+        }
+        if (request.getAdvertIds() != null && request.getAdvertIds().size() > 1) {
+            throw new IllegalArgumentException(
+                    "При базовом токене WB можно выбрать только одну РК: "
+                            + "статистика (fullstats) ограничена 1 запросом в час. "
+                            + "Смените токен кабинета на персональный/сервисный, чтобы опрашивать несколько РК.");
+        }
+        if (request.getRotationMode() == AbTestRotationMode.ROTATION_BY_INTERVAL
+                && request.getRotationIntervalMinutes() != null
+                && request.getRotationIntervalMinutes() < 60) {
+            throw new IllegalArgumentException(
+                    "Интервал ротации меньше 1 часа недоступен для базового токена WB: "
+                            + "статистика РК (fullstats) ограничена 1 запросом в час. "
+                            + "Выберите интервал от 1 часа или смените токен кабинета на персональный/сервисный.");
+        }
+    }
+
+    private AbTest requireTest(Long cabinetId, Long testId) {
+        return abTestRepository.findByIdAndCabinetId(testId, cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("А/Б-тест не найден"));
+    }
+
+    private AbTestDto toDto(AbTest test) {
+        List<AbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
+        List<Long> advertIds = abTestCampaignRepository.findByAbTestId(test.getId()).stream()
+                .map(AbTestCampaign::getAdvertId)
+                .collect(Collectors.toList());
+        long totalViews = variants.stream().mapToLong(AbTestVariant::getViews).sum();
+        BigDecimal bestCtr = variants.stream()
+                .map(AbTestVariant::computeCtr)
+                .max(BigDecimal::compareTo)
+                .orElse(BigDecimal.ZERO);
+
+        String title = productCardRepository.findByNmIdAndCabinet_Id(test.getNmId(), test.getCabinetId())
+                .map(ProductCard::getTitle)
+                .orElse(null);
+
+        List<AbTestVariantDto> variantDtos = variants.stream().map(v -> {
+            BigDecimal ctr = v.computeCtr();
+            BigDecimal share = totalViews > 0
+                    ? BigDecimal.valueOf(v.getViews()).multiply(BigDecimal.valueOf(100))
+                    .divide(BigDecimal.valueOf(totalViews), 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+            BigDecimal delta = bestCtr.subtract(ctr);
+            boolean losing = test.getInsightCode() == AbTestInsightCode.HAS_LEADER
+                    && ctr.compareTo(bestCtr) < 0
+                    && v.getViews() >= minViewsPerVariant;
+            return AbTestVariantDto.builder()
+                    .id(v.getId())
+                    .sortOrder(v.getSortOrder())
+                    .control(v.isControl())
+                    .photoUrl(v.getPhotoUrl())
+                    .previewUrl(v.getPreviewUrl() != null ? v.getPreviewUrl() : v.getPhotoUrl())
+                    .views(v.getViews())
+                    .clicks(v.getClicks())
+                    .atbs(v.getAtbs())
+                    .orders(v.getOrders())
+                    .ctr(ctr)
+                    .cr1(v.computeCr1())
+                    .cr(v.computeCr())
+                    .sharePercent(share)
+                    .activeOnWb(v.getId().equals(test.getActiveVariantId()))
+                    .ctrDeltaToBest(delta.negate())
+                    .losing(losing)
+                    .build();
+        }).collect(Collectors.toList());
+
+        return AbTestDto.builder()
+                .id(test.getId())
+                .cabinetId(test.getCabinetId())
+                .nmId(test.getNmId())
+                .title(title)
+                .status(test.getStatus())
+                .rotationMode(test.getRotationMode())
+                .rotationViewsThreshold(test.getRotationViewsThreshold())
+                .rotationIntervalMinutes(test.getRotationIntervalMinutes())
+                .stopMode(test.getStopMode())
+                .durationDays(test.getDurationDays())
+                .endsAt(test.getEndsAt())
+                .finishAction(test.getFinishAction())
+                .activeVariantId(test.getActiveVariantId())
+                .startedAt(test.getStartedAt())
+                .finishedAt(test.getFinishedAt())
+                .insightCode(test.getInsightCode())
+                .insightLabel(insightLabel(test.getInsightCode(), test.getStatus()))
+                .lastWbError(test.getLastWbError())
+                .advertIds(advertIds)
+                .variants(variantDtos)
+                .build();
+    }
+
+    private String insightLabel(AbTestInsightCode code, AbTestStatus status) {
+        if (status == AbTestStatus.PENDING_START) {
+            return "запускается…";
+        }
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case DATA_LOW -> "данных мало";
+            case NO_DIFF -> "разницы нет";
+            case HAS_LEADER -> null;
+        };
+    }
+
+    private List<String> readGallery(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<>() {});
+        } catch (JsonProcessingException e) {
+            return List.of();
+        }
+    }
+
+    private String writeJson(List<String> urls) {
+        try {
+            return objectMapper.writeValueAsString(urls != null ? urls : List.of());
+        } catch (JsonProcessingException e) {
+            return "[]";
+        }
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String v : values) {
+            if (v != null && !v.isBlank()) {
+                return v;
+            }
+        }
+        return null;
+    }
+
+    private record CardPhotos(String mainUrl, String previewUrl, List<String> galleryUrls) {}
+}

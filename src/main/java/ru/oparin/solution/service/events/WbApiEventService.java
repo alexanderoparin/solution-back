@@ -42,6 +42,9 @@ public class WbApiEventService {
     public static final String PROMOTION_CALENDAR_SYNC_EXECUTOR_BEAN = "promotionCalendarSyncCabinetEventExecutor";
     public static final String WAREHOUSES_SYNC_EXECUTOR_BEAN = "warehousesSyncCabinetEventExecutor";
     public static final String STOCKS_EXECUTOR_BEAN = "stocksByNmIdEventExecutor";
+    public static final String AB_TEST_START_EXECUTOR_BEAN = "abTestStartEventExecutor";
+    public static final String AB_TEST_APPLY_PHOTO_EXECUTOR_BEAN = "abTestApplyPhotoEventExecutor";
+    public static final String AB_TEST_STATS_POLL_EXECUTOR_BEAN = "abTestStatsPollEventExecutor";
     private static final int CONTENT_EVENT_MAX_ATTEMPTS = 3;
     private static final int CONTENT_EVENT_PRIORITY = 100;
     private static final int STOCKS_EVENT_MAX_ATTEMPTS = 5;
@@ -58,6 +61,8 @@ public class WbApiEventService {
     private static final int SIDECAR_EVENT_PRIORITY = 84;
     private static final int WAREHOUSES_EVENT_MAX_ATTEMPTS = 5;
     private static final int WAREHOUSES_EVENT_PRIORITY = 75;
+    private static final int AB_TEST_EVENT_MAX_ATTEMPTS = 5;
+    private static final int AB_TEST_EVENT_PRIORITY = 92;
 
     private static final Set<WbApiEventStatus> ACTIVE_STATUSES = Set.of(
             WbApiEventStatus.CREATED,
@@ -1087,6 +1092,120 @@ public class WbApiEventService {
                 event.getMaxAttempts(),
                 event.getLastError()
         );
+    }
+
+    /**
+     * Поставить в очередь старт А/Б-теста (загрузка медиа на WB).
+     *
+     * @return id события или null, если уже в очереди
+     */
+    @Transactional
+    public Long enqueueAbTestStart(Long cabinetId, Long abTestId, String triggerSource) {
+        String dedupKey = "AB_TEST_START:" + cabinetId + ":" + abTestId;
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("AB_TEST_START уже в очереди (dedupKey={})", dedupKey);
+            return null;
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        AbTestStartPayload payload = AbTestStartPayload.builder().abTestId(abTestId).build();
+        WbApiEvent event = WbApiEvent.builder()
+                .eventType(WbApiEventType.AB_TEST_START)
+                .status(WbApiEventStatus.CREATED)
+                .executorBeanName(AB_TEST_START_EXECUTOR_BEAN)
+                .cabinet(cabinet)
+                .payloadJson(writePayload(payload))
+                .dedupKey(dedupKey)
+                .attemptCount(0)
+                .maxAttempts(AB_TEST_EVENT_MAX_ATTEMPTS)
+                .nextAttemptAt(LocalDateTime.now())
+                .priority(AB_TEST_EVENT_PRIORITY)
+                .triggerSource(triggerSource)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        event = eventRepository.save(event);
+        return event.getId();
+    }
+
+    /**
+     * Поставить в очередь смену главного фото А/Б-теста.
+     *
+     * @return id события или null, если уже в очереди
+     */
+    @Transactional
+    public Long enqueueAbTestApplyPhoto(
+            Long cabinetId,
+            Long abTestId,
+            Long variantId,
+            String reason,
+            boolean finishAfterApply,
+            String triggerSource
+    ) {
+        String dedupKey = "AB_TEST_APPLY:" + cabinetId + ":" + abTestId + ":" + variantId + ":" + (finishAfterApply ? "F" : "R");
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("AB_TEST_APPLY_PHOTO уже в очереди (dedupKey={})", dedupKey);
+            return null;
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        AbTestApplyPhotoPayload payload = AbTestApplyPhotoPayload.builder()
+                .abTestId(abTestId)
+                .variantId(variantId)
+                .reason(reason)
+                .finishAfterApply(finishAfterApply)
+                .build();
+        WbApiEvent event = WbApiEvent.builder()
+                .eventType(WbApiEventType.AB_TEST_APPLY_PHOTO)
+                .status(WbApiEventStatus.CREATED)
+                .executorBeanName(AB_TEST_APPLY_PHOTO_EXECUTOR_BEAN)
+                .cabinet(cabinet)
+                .payloadJson(writePayload(payload))
+                .dedupKey(dedupKey)
+                .attemptCount(0)
+                .maxAttempts(AB_TEST_EVENT_MAX_ATTEMPTS)
+                .nextAttemptAt(LocalDateTime.now())
+                .priority(AB_TEST_EVENT_PRIORITY)
+                .triggerSource(triggerSource)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        event = eventRepository.save(event);
+        return event.getId();
+    }
+
+    /**
+     * Поставить в очередь опрос fullstats для А/Б-теста.
+     *
+     * @return id события или null, если уже в очереди
+     */
+    @Transactional
+    public Long enqueueAbTestStatsPoll(Long cabinetId, Long abTestId, String triggerSource) {
+        String dedupKey = "AB_TEST_STATS:" + cabinetId + ":" + abTestId;
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("AB_TEST_STATS_POLL уже в очереди (dedupKey={})", dedupKey);
+            return null;
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        AbTestStatsPollPayload payload = AbTestStatsPollPayload.builder().abTestId(abTestId).build();
+        WbApiEvent event = WbApiEvent.builder()
+                .eventType(WbApiEventType.AB_TEST_STATS_POLL)
+                .status(WbApiEventStatus.CREATED)
+                .executorBeanName(AB_TEST_STATS_POLL_EXECUTOR_BEAN)
+                .cabinet(cabinet)
+                .payloadJson(writePayload(payload))
+                .dedupKey(dedupKey)
+                .attemptCount(0)
+                .maxAttempts(AB_TEST_EVENT_MAX_ATTEMPTS)
+                .nextAttemptAt(LocalDateTime.now())
+                .priority(AB_TEST_EVENT_PRIORITY - 5)
+                .triggerSource(triggerSource)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        event = eventRepository.save(event);
+        return event.getId();
     }
 
     public <T> T readPayload(WbApiEvent event, Class<T> payloadType) {

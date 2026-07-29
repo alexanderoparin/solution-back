@@ -22,6 +22,14 @@ public enum CabinetTokenType {
     }
 
     /**
+     * Частый опрос fullstats (чаще 1 раза в час) доступен не для базового токена.
+     * У базового лимит {@code GET /adv/v3/fullstats} — 1 запрос в час.
+     */
+    public boolean supportsFrequentFullstats() {
+        return this != BASIC;
+    }
+
+    /**
      * Эффективный тип токена кабинета (null трактуется как BASIC).
      */
     public static CabinetTokenType effective(CabinetTokenType tokenType) {

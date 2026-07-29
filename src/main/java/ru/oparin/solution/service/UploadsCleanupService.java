@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import ru.oparin.solution.repository.AbTestVariantRepository;
 import ru.oparin.solution.repository.ArticleNoteFileRepository;
 import ru.oparin.solution.repository.CampaignNoteFileRepository;
 
@@ -27,6 +28,7 @@ public class UploadsCleanupService {
 
     private final ArticleNoteFileRepository articleNoteFileRepository;
     private final CampaignNoteFileRepository campaignNoteFileRepository;
+    private final AbTestVariantRepository abTestVariantRepository;
 
     @Value("${app.uploads.directory}")
     private String uploadsDirectory;
@@ -81,6 +83,12 @@ public class UploadsCleanupService {
         }
         for (String filePath : campaignNoteFileRepository.findAllFilePaths()) {
             referencedPaths.add(normalizeStoredPath(filePath));
+        }
+        Path uploadsRoot = Paths.get(uploadsDirectory).toAbsolutePath().normalize();
+        for (String fileName : abTestVariantRepository.findAllStoredFileNames()) {
+            if (fileName != null && !fileName.isBlank()) {
+                referencedPaths.add(uploadsRoot.resolve(fileName).normalize().toString());
+            }
         }
         return referencedPaths;
     }
