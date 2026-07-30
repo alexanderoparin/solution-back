@@ -10,7 +10,8 @@ import ru.oparin.solution.service.abtest.AbTestService;
 import ru.oparin.solution.service.events.payload.AbTestStartPayload;
 
 /**
- * Асинхронный старт А/Б-теста: загрузка вариантов и выставление главного фото на WB.
+ * Асинхронный старт А/Б-теста: по шагам (resolve → upload → refresh → restore → apply).
+ * Каждый шаг коммитится отдельно, чтобы defer rate-limit не откатывал уже сделанную работу.
  */
 @Component("abTestStartEventExecutor")
 @RequiredArgsConstructor
@@ -27,7 +28,15 @@ public class AbTestStartEventExecutor implements WbApiEventExecutor {
             return WbApiEventExecutionResult.finalError("Не указан id А/Б-теста");
         }
         try {
-            abTestService.executeStart(payload.abTestId());
+            Long cabinetId = event.getCabinet() != null ? event.getCabinet().getId() : null;
+            if (cabinetId == null) {
+                return WbApiEventExecutionResult.finalError("Не указан кабинет события А/Б-старта");
+            }
+            abTestService.processStartStepInNewTransaction(
+                    cabinetId,
+                    payload,
+                    event.getTriggerSource() != null ? event.getTriggerSource() : "AB_TEST_START"
+            );
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (WbRateLimitDeferException e) {
             // Отложенный повтор — не ошибка для UI

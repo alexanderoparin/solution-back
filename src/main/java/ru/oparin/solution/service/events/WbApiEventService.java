@@ -1095,36 +1095,94 @@ public class WbApiEventService {
     }
 
     /**
-     * Поставить в очередь старт А/Б-теста (загрузка медиа на WB).
+     * Поставить в очередь первый шаг старта А/Б-теста ({@code RESOLVE_CARD}).
      *
      * @return id события или null, если уже в очереди
      */
     @Transactional
     public Long enqueueAbTestStart(Long cabinetId, Long abTestId, String triggerSource) {
-        String dedupKey = "AB_TEST_START:" + cabinetId + ":" + abTestId;
-        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
-            log.debug("AB_TEST_START уже в очереди (dedupKey={})", dedupKey);
+        return enqueueAbTestStartStep(
+                cabinetId,
+                AbTestStartPayload.builder()
+                        .abTestId(abTestId)
+                        .step(AbTestStartStep.RESOLVE_CARD)
+                        .build(),
+                triggerSource,
+                LocalDateTime.now()
+        );
+    }
+
+    /**
+     * Следующий шаг старта А/Б с паузой под лимит media Content API.
+     */
+    @Transactional
+    public Long enqueueNextAbTestStartStep(Long cabinetId, AbTestStartPayload payload, String triggerSource) {
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        CabinetTokenType tokenType = cabinet.getTokenType() != null ? cabinet.getTokenType() : CabinetTokenType.BASIC;
+        long delayMs = WbApiEventType.CONTENT_MEDIA_FILE.getRequestDelayMs(tokenType);
+        LocalDateTime nextAttemptAt = LocalDateTime.now().plusNanos(delayMs * 1_000_000L);
+        log.info(
+                "Запланирован следующий шаг А/Б-старта: cabinetId={}, abTestId={}, step={}, variantId={}, delayMs={}, nextAttemptAt={}",
+                cabinetId,
+                payload.abTestId(),
+                payload.resolvedStep(),
+                payload.variantId(),
+                delayMs,
+                nextAttemptAt
+        );
+        return enqueueAbTestStartStep(cabinetId, payload, triggerSource, nextAttemptAt);
+    }
+
+    private Long enqueueAbTestStartStep(
+            Long cabinetId,
+            AbTestStartPayload payload,
+            String triggerSource,
+            LocalDateTime nextAttemptAt
+    ) {
+        AbTestStartStep step = payload.resolvedStep();
+        long variantKey = payload.variantId() != null ? payload.variantId() : 0L;
+        String dedupKey = "AB_TEST_START:" + cabinetId + ":" + payload.abTestId() + ":" + step + ":" + variantKey;
+        // Старый dedup без шага — не плодим параллельный монолитный старт.
+        String legacyDedupKey = "AB_TEST_START:" + cabinetId + ":" + payload.abTestId();
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)
+                || (step == AbTestStartStep.RESOLVE_CARD
+                && eventRepository.existsByDedupKeyAndStatusIn(legacyDedupKey, ACTIVE_STATUSES))) {
+            log.debug("AB_TEST_START шаг уже в очереди (dedupKey={})", dedupKey);
             return null;
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        AbTestStartPayload payload = AbTestStartPayload.builder().abTestId(abTestId).build();
+        AbTestStartPayload normalized = AbTestStartPayload.builder()
+                .abTestId(payload.abTestId())
+                .step(step)
+                .variantId(payload.variantId())
+                .build();
         WbApiEvent event = WbApiEvent.builder()
                 .eventType(WbApiEventType.AB_TEST_START)
                 .status(WbApiEventStatus.CREATED)
                 .executorBeanName(AB_TEST_START_EXECUTOR_BEAN)
                 .cabinet(cabinet)
-                .payloadJson(writePayload(payload))
+                .payloadJson(writePayload(normalized))
                 .dedupKey(dedupKey)
                 .attemptCount(0)
                 .maxAttempts(AB_TEST_EVENT_MAX_ATTEMPTS)
-                .nextAttemptAt(LocalDateTime.now())
+                .nextAttemptAt(nextAttemptAt)
                 .priority(AB_TEST_EVENT_PRIORITY)
                 .triggerSource(triggerSource)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
         event = eventRepository.save(event);
+        log.info(
+                "Создано событие шага А/Б-старта: eventId={}, cabinetId={}, abTestId={}, step={}, variantId={}, nextAttemptAt={}",
+                event.getId(),
+                cabinetId,
+                payload.abTestId(),
+                step,
+                payload.variantId(),
+                nextAttemptAt
+        );
         return event.getId();
     }
 

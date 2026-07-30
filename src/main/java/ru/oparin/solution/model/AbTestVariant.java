@@ -46,6 +46,13 @@ public class AbTestVariant {
     @Column(name = "stored_file_name", length = 512)
     private String storedFileName;
 
+    /**
+     * Файл варианта уже отправлен на WB (media/file) в ходе старта — шаг не повторяем после defer.
+     */
+    @Column(name = "wb_uploaded", nullable = false)
+    @Builder.Default
+    private boolean wbUploaded = false;
+
     @Column(name = "views", nullable = false)
     @Builder.Default
     private long views = 0;

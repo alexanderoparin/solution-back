@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import ru.oparin.solution.dto.abtest.AbTestDto;
@@ -18,6 +19,8 @@ import ru.oparin.solution.dto.wb.CardsListResponse;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.*;
 import ru.oparin.solution.service.events.WbApiEventService;
+import ru.oparin.solution.service.events.payload.AbTestStartPayload;
+import ru.oparin.solution.service.events.payload.AbTestStartStep;
 import ru.oparin.solution.service.wb.WbContentApiClient;
 
 import java.io.IOException;
@@ -289,45 +292,173 @@ public class AbTestService {
     }
 
     /**
-     * Выполнить старт А/Б-теста (вызывается из WB event executor).
+     * Один шаг старта А/Б в отдельной транзакции: успех коммитится до следующего события очереди.
+     * При rate-limit defer откатывается только текущий шаг, уже выполненные шаги сохраняются.
      */
-    @Transactional
-    public void executeStart(Long abTestId) {
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void processStartStepInNewTransaction(Long cabinetId, AbTestStartPayload payload, String triggerSource) {
+        Long abTestId = payload.abTestId();
+        AbTestStartStep step = payload.resolvedStep();
         AbTest test = abTestRepository.findById(abTestId)
                 .orElseThrow(() -> new IllegalArgumentException("А/Б-тест не найден: " + abTestId));
+        if (!Objects.equals(test.getCabinetId(), cabinetId)) {
+            throw new IllegalArgumentException("А/Б-тест не принадлежит кабинету события");
+        }
         if (test.getStatus() != AbTestStatus.PENDING_START) {
+            log.info("Пропуск шага А/Б-старта: testId={}, step={}, status={}", abTestId, step, test.getStatus());
             return;
         }
-        Cabinet cabinet = cabinetRepository.findById(test.getCabinetId())
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
+        String source = triggerSource != null ? triggerSource : "AB_TEST_START";
 
-        CardPhotos photos = resolveCardPhotos(cabinet.getApiKey(), test.getNmId());
-        if (photos.mainUrl() == null || photos.mainUrl().isBlank()) {
-            throw new IllegalStateException("Не удалось получить главное фото карточки для контрольного варианта");
+        log.info("Шаг А/Б-старта: testId={}, step={}, variantId={}", abTestId, step, payload.variantId());
+        switch (step) {
+            case RESOLVE_CARD -> executeResolveCardStep(cabinet, test, source);
+            case UPLOAD_VARIANT -> executeUploadVariantStep(cabinet, test, payload.variantId(), source);
+            case REFRESH_URLS -> executeRefreshUrlsStep(cabinet, test, source);
+            case RESTORE_GALLERY -> executeRestoreGalleryStep(cabinet, test, source);
+            case APPLY_CONTROL -> executeApplyControlStep(cabinet, test, source);
+            default -> throw new IllegalStateException("Неизвестный шаг А/Б-старта: " + step);
         }
-        test.setOriginalMainPhotoUrl(photos.mainUrl());
-        test.setOriginalGalleryUrlsJson(writeJson(photos.galleryUrls()));
+    }
 
+    private void executeResolveCardStep(Cabinet cabinet, AbTest test, String triggerSource) {
         List<AbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
         AbTestVariant control = variants.stream().filter(AbTestVariant::isControl).findFirst()
                 .orElseThrow(() -> new IllegalStateException("Нет control-варианта"));
 
-        // Скачиваем big/hq и сохраняем локально — дальше ротация/restore идут через media/file в слот 1.
-        String controlStoredName = downloadAndStoreFromUrl(photos.mainUrl());
-        control.setStoredFileName(controlStoredName);
-        control.setPhotoUrl(photos.mainUrl());
-        control.setPreviewUrl(photos.previewUrl() != null ? photos.previewUrl() : photos.mainUrl());
-        abTestVariantRepository.save(control);
+        boolean alreadyResolved = test.getOriginalMainPhotoUrl() != null
+                && !test.getOriginalMainPhotoUrl().isBlank()
+                && control.getStoredFileName() != null
+                && !control.getStoredFileName().isBlank();
+        if (!alreadyResolved) {
+            CardPhotos photos = resolveCardPhotos(cabinet.getApiKey(), test.getNmId());
+            if (photos.mainUrl() == null || photos.mainUrl().isBlank()) {
+                throw new IllegalStateException("Не удалось получить главное фото карточки для контрольного варианта");
+            }
+            test.setOriginalMainPhotoUrl(photos.mainUrl());
+            test.setOriginalGalleryUrlsJson(writeJson(photos.galleryUrls()));
+            abTestRepository.save(test);
 
-        List<AbTestVariant> uploaded = variants.stream().filter(v -> !v.isControl()).toList();
-        for (AbTestVariant variant : uploaded) {
-            uploadVariantFileToWb(cabinet.getApiKey(), test.getNmId(), variant, orderSlotForUpload(variant.getSortOrder()));
+            String controlStoredName = downloadAndStoreFromUrl(photos.mainUrl());
+            control.setStoredFileName(controlStoredName);
+            control.setPhotoUrl(photos.mainUrl());
+            control.setPreviewUrl(photos.previewUrl() != null ? photos.previewUrl() : photos.mainUrl());
+            abTestVariantRepository.save(control);
         }
-        refreshVariantUrlsFromCard(cabinet.getApiKey(), test, uploaded);
 
-        // Сбрасываем галерею к исходной (временные слоты 2+ с вариантами теста убираем с карточки),
-        // затем ставим контрольное фото в слот 1 файлом — без потери качества.
+        enqueueAfterResolve(cabinet.getId(), test.getId(), variants, triggerSource);
+    }
+
+    private void enqueueAfterResolve(Long cabinetId, Long abTestId, List<AbTestVariant> variants, String triggerSource) {
+        Optional<AbTestVariant> nextUpload = variants.stream()
+                .filter(v -> !v.isControl())
+                .filter(v -> !v.isWbUploaded())
+                .findFirst();
+        if (nextUpload.isPresent()) {
+            wbApiEventService.enqueueNextAbTestStartStep(
+                    cabinetId,
+                    AbTestStartPayload.builder()
+                            .abTestId(abTestId)
+                            .step(AbTestStartStep.UPLOAD_VARIANT)
+                            .variantId(nextUpload.get().getId())
+                            .build(),
+                    triggerSource
+            );
+            return;
+        }
+        wbApiEventService.enqueueNextAbTestStartStep(
+                cabinetId,
+                AbTestStartPayload.builder()
+                        .abTestId(abTestId)
+                        .step(AbTestStartStep.REFRESH_URLS)
+                        .build(),
+                triggerSource
+        );
+    }
+
+    private void executeUploadVariantStep(Cabinet cabinet, AbTest test, Long variantId, String triggerSource) {
+        if (variantId == null) {
+            throw new IllegalArgumentException("Для UPLOAD_VARIANT нужен variantId");
+        }
+        AbTestVariant variant = abTestVariantRepository.findByIdAndAbTestId(variantId, test.getId())
+                .orElseThrow(() -> new IllegalArgumentException("Вариант не найден: " + variantId));
+        if (variant.isControl()) {
+            throw new IllegalStateException("Control-вариант не загружается как UPLOAD_VARIANT");
+        }
+        if (!variant.isWbUploaded()) {
+            if (variant.getStoredFileName() == null || variant.getStoredFileName().isBlank()) {
+                throw new IllegalStateException("У варианта нет локального файла для media/file");
+            }
+            uploadVariantFileToWb(
+                    cabinet.getApiKey(),
+                    test.getNmId(),
+                    variant,
+                    orderSlotForUpload(variant.getSortOrder())
+            );
+            variant.setWbUploaded(true);
+            abTestVariantRepository.save(variant);
+        }
+
+        List<AbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
+        Optional<AbTestVariant> nextUpload = variants.stream()
+                .filter(v -> !v.isControl())
+                .filter(v -> !v.isWbUploaded())
+                .findFirst();
+        if (nextUpload.isPresent()) {
+            wbApiEventService.enqueueNextAbTestStartStep(
+                    cabinet.getId(),
+                    AbTestStartPayload.builder()
+                            .abTestId(test.getId())
+                            .step(AbTestStartStep.UPLOAD_VARIANT)
+                            .variantId(nextUpload.get().getId())
+                            .build(),
+                    triggerSource
+            );
+            return;
+        }
+        wbApiEventService.enqueueNextAbTestStartStep(
+                cabinet.getId(),
+                AbTestStartPayload.builder()
+                        .abTestId(test.getId())
+                        .step(AbTestStartStep.REFRESH_URLS)
+                        .build(),
+                triggerSource
+        );
+    }
+
+    private void executeRefreshUrlsStep(Cabinet cabinet, AbTest test, String triggerSource) {
+        List<AbTestVariant> uploaded = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId()).stream()
+                .filter(v -> !v.isControl())
+                .toList();
+        refreshVariantUrlsFromCard(cabinet.getApiKey(), test, uploaded);
+        wbApiEventService.enqueueNextAbTestStartStep(
+                cabinet.getId(),
+                AbTestStartPayload.builder()
+                        .abTestId(test.getId())
+                        .step(AbTestStartStep.RESTORE_GALLERY)
+                        .build(),
+                triggerSource
+        );
+    }
+
+    private void executeRestoreGalleryStep(Cabinet cabinet, AbTest test, String triggerSource) {
         restoreOriginalMediaSet(cabinet.getApiKey(), test);
+        wbApiEventService.enqueueNextAbTestStartStep(
+                cabinet.getId(),
+                AbTestStartPayload.builder()
+                        .abTestId(test.getId())
+                        .step(AbTestStartStep.APPLY_CONTROL)
+                        .build(),
+                triggerSource
+        );
+    }
+
+    private void executeApplyControlStep(Cabinet cabinet, AbTest test, String triggerSource) {
+        List<AbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
+        AbTestVariant control = variants.stream().filter(AbTestVariant::isControl).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Нет control-варианта"));
         applyMainPhoto(cabinet.getApiKey(), test, control);
 
         test.setActiveVariantId(control.getId());
@@ -337,7 +468,7 @@ public class AbTestService {
         test.setLastRotatedAt(LocalDateTime.now());
         abTestRepository.save(test);
 
-        wbApiEventService.enqueueAbTestStatsPoll(test.getCabinetId(), test.getId(), "AB_TEST_START");
+        wbApiEventService.enqueueAbTestStatsPoll(test.getCabinetId(), test.getId(), triggerSource);
     }
 
     /**
