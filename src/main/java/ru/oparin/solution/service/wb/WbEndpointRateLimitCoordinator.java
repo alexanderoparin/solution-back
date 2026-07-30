@@ -37,10 +37,10 @@ public class WbEndpointRateLimitCoordinator {
     private static final long CALENDAR_BUSY_WAIT_BUDGET_MS = 120_000L;
 
     /**
-     * Короткие паузы (spacing после 2xx, обычно 100–1000 мс) ждём в потоке, а не через defer события.
-     * Иначе подряд идущие media/file в А/Б-старте каждый раз откладывают весь старт.
+     * Короткие паузы (spacing после 2xx, обычно 1 с) ждём в потоке, а не через defer события.
+     * Старт А/Б делает цепочку media/file + media/save (~5–8 вызовов) — нужен запас под суммарный sleep.
      */
-    private static final long SHORT_SLOT_WAIT_BUDGET_MS = 5_000L;
+    private static final long SHORT_SLOT_WAIT_BUDGET_MS = 20_000L;
 
     private final WbHttpSuccessSpacingMsResolver httpSuccessSpacingMs;
     private final WbApiTokenTypeResolver tokenTypeResolver;

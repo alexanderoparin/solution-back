@@ -20,31 +20,26 @@ public enum WbApiEventType {
             "/content/v2/get/cards/trash",
             1L,
             1L),
-    /** Загрузка медиафайла в карточку (multipart). */
     CONTENT_MEDIA_FILE(
             WbApiBaseUrl.CONTENT,
             "/content/v3/media/file",
-            100L,
-            100L),
-    /** Замена набора медиа по ссылкам (первый URL — главное фото). */
+            1_800L,
+            1L),
     CONTENT_MEDIA_SAVE(
             WbApiBaseUrl.CONTENT,
             "/content/v3/media/save",
-            100L,
-            100L),
-    /** Асинхронный старт А/Б-теста: загрузка вариантов и выставление главного фото. */
+            1_800L,
+            1L),
     AB_TEST_START(
             WbApiBaseUrl.CONTENT,
             "/content/v3/media/file",
-            100L,
-            100L),
-    /** Асинхронная смена главного фото (ротация / финиш). */
+            1L,
+            1L),
     AB_TEST_APPLY_PHOTO(
             WbApiBaseUrl.CONTENT,
             "/content/v3/media/file",
-            100L,
-            100L),
-    /** Асинхронный опрос fullstats для атрибуции А/Б-теста. */
+            1L,
+            1L),
     AB_TEST_STATS_POLL(
             WbApiBaseUrl.PROMOTION,
             "/adv/v3/fullstats",
