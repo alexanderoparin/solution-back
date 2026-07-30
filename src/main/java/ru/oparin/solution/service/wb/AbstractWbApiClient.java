@@ -310,7 +310,7 @@ public abstract class AbstractWbApiClient {
     }
 
     /**
-     * Логирует I/O (сеть, DNS) и отложенные по лимиту WB вызовы одной строкой без стектрейса;
+     * Логирует I/O (сеть, DNS), отложенные по лимиту WB и ответы 5xx одной строкой без стектрейса;
      * остальные — с полным стеком.
      */
     protected void logIoErrorOrFull(String context, Throwable e) {
@@ -319,11 +319,41 @@ public abstract class AbstractWbApiClient {
             log.warn("Ошибка при {}: {} (отложено до {})", context, defer.getMessage(), defer.getDeferUntil());
             return;
         }
-        if (isConnectionIoError(e)) {
-            log.warn("Ошибка при {}: {}", context, e.getMessage());
-        } else {
-            log.error("Ошибка при {}: {}", context, e.getMessage(), e);
+        if (isConnectionIoError(e) || isHttpServerError(e)) {
+            log.warn("Ошибка при {}: {}", context, summarizeWithoutStack(e));
+            return;
         }
+        log.error("Ошибка при {}: {}", context, e.getMessage(), e);
+    }
+
+    /**
+     * Краткое описание без стека: для 5xx — статус и тело (как у 4xx), иначе message.
+     */
+    private static String summarizeWithoutStack(Throwable e) {
+        HttpServerErrorException serverError = findHttpServerError(e);
+        if (serverError != null) {
+            String body = serverError.getResponseBodyAsString();
+            if (body != null && !body.isBlank()) {
+                return serverError.getStatusCode().value() + " " + serverError.getStatusText()
+                        + ": " + truncateBody(body);
+            }
+            return serverError.getStatusCode().value() + " " + serverError.getStatusText();
+        }
+        return e.getMessage();
+    }
+
+    private static boolean isHttpServerError(Throwable e) {
+        return findHttpServerError(e) != null;
+    }
+
+    private static HttpServerErrorException findHttpServerError(Throwable e) {
+        if (e == null) {
+            return null;
+        }
+        if (e instanceof HttpServerErrorException he) {
+            return he;
+        }
+        return findHttpServerError(e.getCause());
     }
 
     /**
