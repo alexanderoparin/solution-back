@@ -402,6 +402,8 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                         throwIf401ScopeNotAllowed(e);
                         logWbApiError("статистика поисковых кластеров WB", e);
                         throw e;
+                    } catch (WbRateLimitDeferException e) {
+                        throw e;
                     } catch (RestClientException e) {
                         throw e;
                     } catch (Exception e) {

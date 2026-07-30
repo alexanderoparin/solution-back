@@ -314,16 +314,25 @@ public abstract class AbstractWbApiClient {
      * остальные — с полным стеком.
      */
     protected void logIoErrorOrFull(String context, Throwable e) {
-        WbRateLimitDeferException defer = WbRateLimitDeferException.findInChain(e);
-        if (defer != null) {
-            log.warn("Ошибка при {}: {} (отложено до {})", context, defer.getMessage(), defer.getDeferUntil());
-            return;
-        }
-        if (isConnectionIoError(e) || isHttpServerError(e)) {
+        if (isSoftLoggedWbError(e)) {
+            WbRateLimitDeferException defer = WbRateLimitDeferException.findInChain(e);
+            if (defer != null) {
+                log.warn("Ошибка при {}: {} (отложено до {})", context, defer.getMessage(), defer.getDeferUntil());
+                return;
+            }
             log.warn("Ошибка при {}: {}", context, summarizeWithoutStack(e));
             return;
         }
         log.error("Ошибка при {}: {}", context, e.getMessage(), e);
+    }
+
+    /**
+     * Ошибки WB, для которых стектрейс в логе не нужен: сеть/таймаут, 5xx, отложенный rate-limit.
+     */
+    public static boolean isSoftLoggedWbError(Throwable e) {
+        return isConnectionIoError(e)
+                || findHttpServerError(e) != null
+                || WbRateLimitDeferException.findInChain(e) != null;
     }
 
     /**
@@ -340,10 +349,6 @@ public abstract class AbstractWbApiClient {
             return serverError.getStatusCode().value() + " " + serverError.getStatusText();
         }
         return e.getMessage();
-    }
-
-    private static boolean isHttpServerError(Throwable e) {
-        return findHttpServerError(e) != null;
     }
 
     private static HttpServerErrorException findHttpServerError(Throwable e) {
