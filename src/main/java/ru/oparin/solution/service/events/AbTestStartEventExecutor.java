@@ -30,12 +30,11 @@ public class AbTestStartEventExecutor implements WbApiEventExecutor {
             abTestService.executeStart(payload.abTestId());
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (WbRateLimitDeferException e) {
-            abTestService.markWbError(payload.abTestId(), e.getMessage());
+            // Отложенный повтор — не ошибка для UI
             return WbEventExecutionErrors.fromDeferException(e);
         } catch (RestClientException e) {
             WbApiEventExecutionResult defer = WbEventExecutionErrors.deferResultIfPresent(e);
             if (defer != null) {
-                abTestService.markWbError(payload.abTestId(), e.getMessage());
                 return defer;
             }
             abTestService.markWbError(payload.abTestId(), e.getMessage());
@@ -46,6 +45,10 @@ public class AbTestStartEventExecutor implements WbApiEventExecutor {
             }
             return WbEventExecutionErrors.wrapRestClientException(e);
         } catch (Exception e) {
+            WbApiEventExecutionResult defer = WbEventExecutionErrors.deferResultIfPresent(e);
+            if (defer != null) {
+                return defer;
+            }
             abTestService.markWbError(payload.abTestId(), e.getMessage());
             return WbEventExecutionErrors.wrapDeferOrRetryable(e);
         }

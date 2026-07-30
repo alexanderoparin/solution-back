@@ -25,9 +25,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * На {@code 429} — {@code X-Ratelimit-Retry} / {@code X-Ratelimit-Reset}, иначе пауза как после 2xx.
  * <p>
  * Время «не раньше чем» для следующего запроса по слоту — в {@link #slots} ({@code nextAllowedAtMs}).
- * Для {@code /api/v1/calendar/} ожидание выполняется в потоке ({@code Thread.sleep}), чтобы один запуск
- * синка календаря догружал все акции без отложенного повтора события. Для остальных путей при ожидании
- * выбрасывается {@link ru.oparin.solution.exception.WbRateLimitDeferException}.
+ * Короткие паузы (spacing после 2xx) и календарь ждут в потоке; длинные ожидания (обычно после 429)
+ * откладывают событие через {@link WbRateLimitDeferException}.
  */
 @Component
 @RequiredArgsConstructor
@@ -36,6 +35,12 @@ public class WbEndpointRateLimitCoordinator {
 
     /** Максимум суммарного ожидания в {@code beforeRequest} для календаря; дальше — defer как раньше. */
     private static final long CALENDAR_BUSY_WAIT_BUDGET_MS = 120_000L;
+
+    /**
+     * Короткие паузы (spacing после 2xx, обычно 100–1000 мс) ждём в потоке, а не через defer события.
+     * Иначе подряд идущие media/file в А/Б-старте каждый раз откладывают весь старт.
+     */
+    private static final long SHORT_SLOT_WAIT_BUDGET_MS = 5_000L;
 
     private final WbHttpSuccessSpacingMsResolver httpSuccessSpacingMs;
     private final WbApiTokenTypeResolver tokenTypeResolver;
@@ -67,7 +72,8 @@ public class WbEndpointRateLimitCoordinator {
             return;
         }
         RateSlot slot = slots.computeIfAbsent(slotKey(apiKey, endpointKey), k -> new RateSlot());
-        long budgetUntil = System.currentTimeMillis() + CALENDAR_BUSY_WAIT_BUDGET_MS;
+        long calendarBudgetUntil = System.currentTimeMillis() + CALENDAR_BUSY_WAIT_BUDGET_MS;
+        long shortWaitBudgetUntil = System.currentTimeMillis() + SHORT_SLOT_WAIT_BUDGET_MS;
 
         while (true) {
             long until = slot.getNextAllowedAtMs();
@@ -75,32 +81,49 @@ public class WbEndpointRateLimitCoordinator {
             if (until <= now) {
                 return;
             }
-            if (!isCalendarApiPath(endpointKey)) {
-                throw WbRateLimitDeferException.untilEpochMilli(
-                        "Лимит WB по endpoint (токен+path): следующий запрос не раньше указанного времени.",
-                        until
-                );
+            long waitMs = until - now;
+
+            if (isCalendarApiPath(endpointKey)) {
+                if (now >= calendarBudgetUntil) {
+                    log.warn(
+                            "Календарь WB: ожидание слота по {} превысило {} мс, отложенный повтор",
+                            endpointKey,
+                            CALENDAR_BUSY_WAIT_BUDGET_MS
+                    );
+                    throw WbRateLimitDeferException.untilEpochMilli(
+                            "Лимит WB по endpoint (токен+path): следующий запрос не раньше указанного времени.",
+                            until
+                    );
+                }
+                long sleepMs = Math.min(waitMs, calendarBudgetUntil - now);
+                sleepMs = Math.max(1L, sleepMs);
+                log.debug("WB calendar endpoint slot wait: endpointKey={}, sleepMs={}", endpointKey, sleepMs);
+                sleepOrInterrupt(sleepMs, "Прервано ожидание лимита WB (календарь акций)");
+                continue;
             }
-            if (now >= budgetUntil) {
-                log.warn(
-                        "Календарь WB: ожидание слота по {} превысило {} мс, отложенный повтор",
-                        endpointKey,
-                        CALENDAR_BUSY_WAIT_BUDGET_MS
-                );
-                throw WbRateLimitDeferException.untilEpochMilli(
-                        "Лимит WB по endpoint (токен+path): следующий запрос не раньше указанного времени.",
-                        until
-                );
+
+            // Короткая техническая пауза (spacing) — ждём здесь; длинная (429) — defer события.
+            if (waitMs <= SHORT_SLOT_WAIT_BUDGET_MS && now < shortWaitBudgetUntil) {
+                long sleepMs = Math.min(waitMs, shortWaitBudgetUntil - now);
+                sleepMs = Math.max(1L, sleepMs);
+                log.debug("WB endpoint short slot wait: endpointKey={}, sleepMs={}", endpointKey, sleepMs);
+                sleepOrInterrupt(sleepMs, "Прервано ожидание лимита WB");
+                continue;
             }
-            long sleepMs = Math.min(until - now, budgetUntil - now);
-            sleepMs = Math.max(1L, sleepMs);
-            log.debug("WB calendar endpoint slot wait: endpointKey={}, sleepMs={}", endpointKey, sleepMs);
-            try {
-                Thread.sleep(sleepMs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("Прервано ожидание лимита WB (календарь акций)", e);
-            }
+
+            throw WbRateLimitDeferException.untilEpochMilli(
+                    "Лимит WB по endpoint (токен+path): следующий запрос не раньше указанного времени.",
+                    until
+            );
+        }
+    }
+
+    private static void sleepOrInterrupt(long sleepMs, String interruptMessage) {
+        try {
+            Thread.sleep(sleepMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interruptMessage, e);
         }
     }
 
