@@ -429,10 +429,8 @@ public class AbTestService {
     }
 
     private void executeRefreshUrlsStep(Cabinet cabinet, AbTest test, String triggerSource) {
-        List<AbTestVariant> uploaded = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId()).stream()
-                .filter(v -> !v.isControl())
-                .toList();
-        refreshVariantUrlsFromCard(cabinet.getApiKey(), test, uploaded);
+        // CDN URL слотов после upload не сохраняем: media/save возвращает исходную галерею,
+        // а пути big/N.webp позиционные — начинают показывать чужие фото. Превью — из uploads.
         wbApiEventService.enqueueNextAbTestStartStep(
                 cabinet.getId(),
                 AbTestStartPayload.builder()
@@ -677,29 +675,6 @@ public class AbTestService {
         return Math.max(2, sortOrder);
     }
 
-    private void refreshVariantUrlsFromCard(String apiKey, AbTest test, List<AbTestVariant> uploaded) {
-        try {
-            CardsListResponse response = contentApiClient.getCardsList(apiKey, cardsRequestForNm(test.getNmId()));
-            CardDto card = findCard(response, test.getNmId());
-            if (card == null || card.getPhotos() == null || card.getPhotos().isEmpty()) {
-                return;
-            }
-            List<CardDto.Photo> photos = card.getPhotos();
-            for (AbTestVariant variant : uploaded) {
-                int idx = Math.max(0, variant.getSortOrder() - 1);
-                if (idx < photos.size()) {
-                    CardDto.Photo photo = photos.get(idx);
-                    String url = firstNonBlank(photo.getBig(), photo.getHq(), photo.getC516x688(), photo.getC246x328(), photo.getTm());
-                    variant.setPhotoUrl(url);
-                    variant.setPreviewUrl(firstNonBlank(photo.getC516x688(), photo.getC246x328(), photo.getTm(), url));
-                    abTestVariantRepository.save(variant);
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Не удалось обновить URL вариантов после upload: {}", e.getMessage());
-        }
-    }
-
     private CardPhotos resolveCardPhotos(String apiKey, Long nmId) {
         try {
             CardsListResponse response = contentApiClient.getCardsList(apiKey, cardsRequestForNm(nmId));
@@ -927,6 +902,28 @@ public class AbTestService {
         }
     }
 
+    /**
+     * Путь к локальному файлу варианта в uploads (для отдачи превью в UI).
+     */
+    @Transactional(readOnly = true)
+    public Path resolveVariantImagePath(Long cabinetId, Long testId, Long variantId) {
+        requireTest(cabinetId, testId);
+        AbTestVariant variant = abTestVariantRepository.findByIdAndAbTestId(variantId, testId)
+                .orElseThrow(() -> new IllegalArgumentException("Вариант не найден"));
+        if (variant.getStoredFileName() == null || variant.getStoredFileName().isBlank()) {
+            throw new IllegalArgumentException("У варианта нет локального файла");
+        }
+        Path path = Paths.get(uploadsDirectory).resolve(variant.getStoredFileName()).normalize();
+        Path uploadsRoot = Paths.get(uploadsDirectory).toAbsolutePath().normalize();
+        if (!path.toAbsolutePath().normalize().startsWith(uploadsRoot)) {
+            throw new IllegalArgumentException("Некорректный путь файла варианта");
+        }
+        if (!Files.isRegularFile(path)) {
+            throw new IllegalArgumentException("Файл варианта не найден на диске");
+        }
+        return path;
+    }
+
     private AbTest requireTest(Long cabinetId, Long testId) {
         return abTestRepository.findByIdAndCabinetId(testId, cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("А/Б-тест не найден"));
@@ -957,12 +954,19 @@ public class AbTestService {
             boolean losing = test.getInsightCode() == AbTestInsightCode.HAS_LEADER
                     && ctr.compareTo(bestCtr) < 0
                     && v.getViews() >= minViewsPerVariant;
+            boolean hasLocalImage = v.getStoredFileName() != null && !v.getStoredFileName().isBlank();
+            // Для локальных файлов не отдаём позиционные CDN URL — они после restore врут.
+            String photoUrl = hasLocalImage ? null : v.getPhotoUrl();
+            String previewUrl = hasLocalImage
+                    ? null
+                    : (v.getPreviewUrl() != null ? v.getPreviewUrl() : v.getPhotoUrl());
             return AbTestVariantDto.builder()
                     .id(v.getId())
                     .sortOrder(v.getSortOrder())
                     .control(v.isControl())
-                    .photoUrl(v.getPhotoUrl())
-                    .previewUrl(v.getPreviewUrl() != null ? v.getPreviewUrl() : v.getPhotoUrl())
+                    .photoUrl(photoUrl)
+                    .previewUrl(previewUrl)
+                    .hasLocalImage(hasLocalImage)
                     .views(v.getViews())
                     .clicks(v.getClicks())
                     .atbs(v.getAtbs())

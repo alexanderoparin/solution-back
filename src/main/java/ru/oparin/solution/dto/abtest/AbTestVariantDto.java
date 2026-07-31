@@ -17,6 +17,11 @@ public class AbTestVariantDto {
     private boolean control;
     private String photoUrl;
     private String previewUrl;
+    /**
+     * Есть локальный файл в uploads — для UI брать картинку через API варианта, не CDN-слот карточки.
+     * После media/save пути вида {@code images/big/2.webp} снова указывают на исходную галерею.
+     */
+    private boolean hasLocalImage;
     private long views;
     private long clicks;
     private long atbs;

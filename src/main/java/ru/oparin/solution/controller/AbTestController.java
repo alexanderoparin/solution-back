@@ -3,6 +3,8 @@ package ru.oparin.solution.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -15,8 +17,10 @@ import ru.oparin.solution.model.CabinetAccessSection;
 import ru.oparin.solution.service.SellerContextService;
 import ru.oparin.solution.service.abtest.AbTestService;
 
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * API А/Б-тестов главного фото карточки WB.
@@ -66,6 +70,39 @@ public class AbTestController {
             return ResponseEntity.badRequest().build();
         }
         return ResponseEntity.ok(abTestService.get(ctx.cabinet().getId(), id));
+    }
+
+    /**
+     * Локальный файл варианта (загруженный пользователем / скачанный control) — стабильное превью для UI.
+     */
+    @GetMapping("/{id}/variants/{variantId}/image")
+    public ResponseEntity<Resource> variantImage(
+            @PathVariable Long id,
+            @PathVariable Long variantId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext ctx = sellerContextService.createContext(
+                authentication, sellerId, cabinetId, CabinetAccessSection.AD_CAMPAIGNS);
+        if (ctx.cabinet() == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        Path path = abTestService.resolveVariantImagePath(ctx.cabinet().getId(), id, variantId);
+        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        if (name.endsWith(".png")) {
+            mediaType = MediaType.IMAGE_PNG;
+        } else if (name.endsWith(".jpg") || name.endsWith(".jpeg")) {
+            mediaType = MediaType.IMAGE_JPEG;
+        } else if (name.endsWith(".webp")) {
+            mediaType = MediaType.parseMediaType("image/webp");
+        } else if (name.endsWith(".gif")) {
+            mediaType = MediaType.IMAGE_GIF;
+        }
+        return ResponseEntity.ok()
+                .contentType(mediaType)
+                .body(new FileSystemResource(path));
     }
 
     /**
