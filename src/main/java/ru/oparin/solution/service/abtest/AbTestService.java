@@ -23,14 +23,23 @@ import ru.oparin.solution.service.events.payload.AbTestStartPayload;
 import ru.oparin.solution.service.events.payload.AbTestStartStep;
 import ru.oparin.solution.service.wb.WbContentApiClient;
 
+import javax.imageio.IIOImage;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
+import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -44,6 +53,10 @@ public class AbTestService {
     private static final int MIN_INTERVAL_MINUTES = 30;
     private static final int MAX_INTERVAL_MINUTES = 24 * 60;
     private static final long MAX_UPLOAD_BYTES = 32L * 1024 * 1024;
+    /** Длинная сторона UI-превью варианта (px). */
+    private static final int UI_PREVIEW_MAX_SIDE = 720;
+    /** Качество JPEG UI-превью (0..1). */
+    private static final float UI_PREVIEW_JPEG_QUALITY = 0.82f;
 
     private final AbTestRepository abTestRepository;
     private final AbTestCampaignRepository abTestCampaignRepository;
@@ -969,6 +982,89 @@ public class AbTestService {
             throw new IllegalArgumentException("Файл варианта не найден на диске");
         }
         return path;
+    }
+
+    /**
+     * Лёгкое JPEG-превью для UI (кэш рядом с оригиналом). Оригинал не трогаем — он нужен для media/file на WB.
+     */
+    @Transactional(readOnly = true)
+    public Path resolveVariantUiPreviewPath(Long cabinetId, Long testId, Long variantId) {
+        Path original = resolveVariantImagePath(cabinetId, testId, variantId);
+        Path preview = original.resolveSibling(original.getFileName().toString() + ".ui.jpg");
+        try {
+            if (Files.isRegularFile(preview)
+                    && Files.getLastModifiedTime(preview).compareTo(Files.getLastModifiedTime(original)) >= 0
+                    && Files.size(preview) > 0) {
+                return preview;
+            }
+            if (!writeUiPreviewJpeg(original, preview)) {
+                log.warn("Не удалось сжать превью А/Б {}, отдаём оригинал", original.getFileName());
+                return original;
+            }
+            return preview;
+        } catch (IOException e) {
+            log.warn("Ошибка подготовки UI-превью {}: {}", original.getFileName(), e.getMessage());
+            return original;
+        }
+    }
+
+    /**
+     * Пишет JPEG-превью с длинной стороной ≤ {@link #UI_PREVIEW_MAX_SIDE}.
+     *
+     * @return false если исходник не удалось декодировать
+     */
+    private boolean writeUiPreviewJpeg(Path original, Path preview) throws IOException {
+        BufferedImage source = ImageIO.read(original.toFile());
+        if (source == null) {
+            return false;
+        }
+        int srcW = source.getWidth();
+        int srcH = source.getHeight();
+        if (srcW <= 0 || srcH <= 0) {
+            return false;
+        }
+        double scale = Math.min(1.0, (double) UI_PREVIEW_MAX_SIDE / Math.max(srcW, srcH));
+        int dstW = Math.max(1, (int) Math.round(srcW * scale));
+        int dstH = Math.max(1, (int) Math.round(srcH * scale));
+
+        BufferedImage rgb = new BufferedImage(dstW, dstH, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = rgb.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            graphics.setColor(Color.WHITE);
+            graphics.fillRect(0, 0, dstW, dstH);
+            graphics.drawImage(source, 0, 0, dstW, dstH, null);
+        } finally {
+            graphics.dispose();
+        }
+
+        Path temp = preview.resolveSibling(preview.getFileName().toString() + ".tmp");
+        Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpg");
+        if (!writers.hasNext()) {
+            return false;
+        }
+        ImageWriter writer = writers.next();
+        try {
+            ImageWriteParam param = writer.getDefaultWriteParam();
+            if (param.canWriteCompressed()) {
+                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                param.setCompressionQuality(UI_PREVIEW_JPEG_QUALITY);
+            }
+            try (ImageOutputStream output = ImageIO.createImageOutputStream(temp.toFile())) {
+                writer.setOutput(output);
+                writer.write(null, new IIOImage(rgb, null, null), param);
+            }
+            try {
+                Files.move(temp, preview, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException moveAtomicFailed) {
+                Files.move(temp, preview, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return true;
+        } finally {
+            writer.dispose();
+            Files.deleteIfExists(temp);
+        }
     }
 
     private AbTest requireTest(Long cabinetId, Long testId) {

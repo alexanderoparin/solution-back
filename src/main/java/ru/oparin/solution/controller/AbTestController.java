@@ -89,20 +89,21 @@ public class AbTestController {
         if (ctx.cabinet() == null) {
             return ResponseEntity.badRequest().build();
         }
-        Path path = abTestService.resolveVariantImagePath(ctx.cabinet().getId(), id, variantId);
+        Path path = abTestService.resolveVariantUiPreviewPath(ctx.cabinet().getId(), id, variantId);
         String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
-        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        MediaType mediaType = MediaType.IMAGE_JPEG;
         if (name.endsWith(".png")) {
             mediaType = MediaType.IMAGE_PNG;
-        } else if (name.endsWith(".jpg") || name.endsWith(".jpeg")) {
-            mediaType = MediaType.IMAGE_JPEG;
         } else if (name.endsWith(".webp")) {
             mediaType = MediaType.parseMediaType("image/webp");
         } else if (name.endsWith(".gif")) {
             mediaType = MediaType.IMAGE_GIF;
+        } else if (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".ui.jpg")) {
+            mediaType = MediaType.IMAGE_JPEG;
         }
         return ResponseEntity.ok()
                 .contentType(mediaType)
+                .cacheControl(org.springframework.http.CacheControl.maxAge(7, java.util.concurrent.TimeUnit.DAYS).cachePrivate())
                 .body(new FileSystemResource(path));
     }
 
