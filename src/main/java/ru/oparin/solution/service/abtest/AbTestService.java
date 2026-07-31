@@ -691,7 +691,7 @@ public class AbTestService {
                     CardDto.Photo photo = photos.get(idx);
                     String url = firstNonBlank(photo.getBig(), photo.getHq(), photo.getC516x688(), photo.getC246x328(), photo.getTm());
                     variant.setPhotoUrl(url);
-                    variant.setPreviewUrl(firstNonBlank(photo.getC246x328(), photo.getTm(), url));
+                    variant.setPreviewUrl(firstNonBlank(photo.getC516x688(), photo.getC246x328(), photo.getTm(), url));
                     abTestVariantRepository.save(variant);
                 }
             }
@@ -714,7 +714,11 @@ public class AbTestService {
                     throw new IllegalStateException(
                             "У карточки nmId=" + nmId + " нет URL big/hq/c516x688 для контрольного фото");
                 }
-                String preview = firstNonBlank(photos.get(0).getC246x328(), photos.get(0).getTm(), main);
+                String preview = firstNonBlank(
+                        photos.get(0).getC516x688(),
+                        photos.get(0).getC246x328(),
+                        photos.get(0).getTm(),
+                        main);
                 List<String> gallery = new ArrayList<>();
                 for (int i = 1; i < photos.size(); i++) {
                     String u = firstNonBlank(
