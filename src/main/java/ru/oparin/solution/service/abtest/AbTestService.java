@@ -231,7 +231,11 @@ public class AbTestService {
         List<AbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
         AbTestVariant target;
         if (test.getFinishAction() == AbTestFinishAction.KEEP_WINNER) {
-            target = variants.stream()
+            List<AbTestVariant> pool = variants.stream().filter(v -> !v.isPaused()).toList();
+            if (pool.isEmpty()) {
+                pool = variants;
+            }
+            target = pool.stream()
                     .max(Comparator.comparing(AbTestVariant::computeCtr).thenComparing(AbTestVariant::getViews))
                     .orElse(variants.get(0));
         } else {
@@ -257,22 +261,30 @@ public class AbTestService {
     }
 
     /**
-     * Поставить в очередь ротацию на следующий вариант.
+     * Поставить в очередь ротацию на следующий незапауженный вариант.
      */
     @Transactional
     public void enqueueRotateToNext(AbTest test, String reason) {
         List<AbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
-        if (variants.size() < 2) {
+        List<AbTestVariant> activePool = variants.stream().filter(v -> !v.isPaused()).toList();
+        if (activePool.size() < 2) {
             return;
         }
         int currentIdx = 0;
-        for (int i = 0; i < variants.size(); i++) {
-            if (variants.get(i).getId().equals(test.getActiveVariantId())) {
+        for (int i = 0; i < activePool.size(); i++) {
+            if (activePool.get(i).getId().equals(test.getActiveVariantId())) {
                 currentIdx = i;
                 break;
             }
         }
-        AbTestVariant next = variants.get((currentIdx + 1) % variants.size());
+        // Если текущий на паузе / не в пуле — берём первый активный; иначе следующий по кругу.
+        boolean currentInPool = activePool.stream().anyMatch(v -> v.getId().equals(test.getActiveVariantId()));
+        AbTestVariant next = currentInPool
+                ? activePool.get((currentIdx + 1) % activePool.size())
+                : activePool.get(0);
+        if (next.getId().equals(test.getActiveVariantId())) {
+            return;
+        }
         wbApiEventService.enqueueAbTestApplyPhoto(
                 test.getCabinetId(),
                 test.getId(),
@@ -281,6 +293,38 @@ public class AbTestService {
                 false,
                 "AB_TEST_ROTATE"
         );
+    }
+
+    /**
+     * Пауза / снятие паузы варианта во время работы теста.
+     * На паузе вариант не участвует в ротации; если паузим активный на ВБ — сразу ротация на другой.
+     */
+    @Transactional
+    public AbTestDto setVariantPaused(Long cabinetId, Long testId, Long variantId, boolean paused) {
+        AbTest test = requireTest(cabinetId, testId);
+        if (test.getStatus() != AbTestStatus.ENABLED) {
+            throw new IllegalArgumentException("Пауза варианта доступна только для включённого теста");
+        }
+        AbTestVariant variant = abTestVariantRepository.findByIdAndAbTestId(variantId, testId)
+                .orElseThrow(() -> new IllegalArgumentException("Вариант не найден"));
+        if (variant.isPaused() == paused) {
+            return toDto(test);
+        }
+        if (paused) {
+            long remainingActive = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(testId).stream()
+                    .filter(v -> !v.isPaused() && !v.getId().equals(variantId))
+                    .count();
+            if (remainingActive < 1) {
+                throw new IllegalArgumentException("Нельзя поставить на паузу последний активный вариант");
+            }
+        }
+        variant.setPaused(paused);
+        abTestVariantRepository.save(variant);
+
+        if (paused && variant.getId().equals(test.getActiveVariantId())) {
+            enqueueRotateToNext(test, "PAUSE_VARIANT");
+        }
+        return toDto(test);
     }
 
     /**
@@ -550,24 +594,26 @@ public class AbTestService {
 
     /**
      * Проверка автостопа TRUST_US: достаточно данных и есть лидер / нет разницы.
+     * Учитываются только варианты не на паузе.
      *
      * @return true если тест нужно завершить
      */
     public boolean shouldAutoStopTrustUs(AbTest test, List<AbTestVariant> variants) {
-        if (variants.isEmpty()) {
+        List<AbTestVariant> pool = variants.stream().filter(v -> !v.isPaused()).toList();
+        if (pool.size() < 2) {
             return false;
         }
-        boolean enough = variants.stream().allMatch(v -> v.getViews() >= minViewsPerVariant);
+        boolean enough = pool.stream().allMatch(v -> v.getViews() >= minViewsPerVariant);
         if (!enough) {
             return false;
         }
-        AbTestVariant best = variants.stream().max(Comparator.comparing(AbTestVariant::computeCtr)).orElse(null);
-        AbTestVariant second = variants.stream()
+        AbTestVariant best = pool.stream().max(Comparator.comparing(AbTestVariant::computeCtr)).orElse(null);
+        AbTestVariant second = pool.stream()
                 .filter(v -> best == null || !v.getId().equals(best.getId()))
                 .max(Comparator.comparing(AbTestVariant::computeCtr))
                 .orElse(null);
         if (best == null || second == null) {
-            return true;
+            return false;
         }
         BigDecimal bestCtr = best.computeCtr();
         BigDecimal secondCtr = second.computeCtr();
@@ -581,13 +627,14 @@ public class AbTestService {
     }
 
     private void updateInsight(AbTest test, List<AbTestVariant> variants) {
-        boolean enough = variants.stream().allMatch(v -> v.getViews() >= minViewsPerVariant);
+        List<AbTestVariant> pool = variants.stream().filter(v -> !v.isPaused()).toList();
+        boolean enough = pool.size() >= 2 && pool.stream().allMatch(v -> v.getViews() >= minViewsPerVariant);
         if (!enough) {
             test.setInsightCode(AbTestInsightCode.DATA_LOW);
             return;
         }
-        AbTestVariant best = variants.stream().max(Comparator.comparing(AbTestVariant::computeCtr)).orElse(null);
-        AbTestVariant second = variants.stream()
+        AbTestVariant best = pool.stream().max(Comparator.comparing(AbTestVariant::computeCtr)).orElse(null);
+        AbTestVariant second = pool.stream()
                 .filter(v -> best == null || !v.getId().equals(best.getId()))
                 .max(Comparator.comparing(AbTestVariant::computeCtr))
                 .orElse(null);
@@ -976,6 +1023,7 @@ public class AbTestService {
                     .cr(v.computeCr())
                     .sharePercent(share)
                     .activeOnWb(v.getId().equals(test.getActiveVariantId()))
+                    .paused(v.isPaused())
                     .ctrDeltaToBest(delta.negate())
                     .losing(losing)
                     .build();

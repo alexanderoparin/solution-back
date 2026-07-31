@@ -32,6 +32,8 @@ public class AbTestVariantDto {
     /** Доля показов среди всех вариантов, 0–100. */
     private BigDecimal sharePercent;
     private boolean activeOnWb;
+    /** Вариант на паузе — не участвует в ротации. */
+    private boolean paused;
     /** Относительный отрыв CTR к лучшему (для списка), может быть null. */
     private BigDecimal ctrDeltaToBest;
     private boolean losing;

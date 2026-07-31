@@ -53,6 +53,13 @@ public class AbTestVariant {
     @Builder.Default
     private boolean wbUploaded = false;
 
+    /**
+     * Вариант на паузе — не участвует в ротации (можно отсечь явно проигрывающий).
+     */
+    @Column(name = "paused", nullable = false)
+    @Builder.Default
+    private boolean paused = false;
+
     @Column(name = "views", nullable = false)
     @Builder.Default
     private long views = 0;

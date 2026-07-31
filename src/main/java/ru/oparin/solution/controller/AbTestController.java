@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import ru.oparin.solution.dto.abtest.AbTestDto;
 import ru.oparin.solution.dto.abtest.AbTestStatusUpdateRequest;
+import ru.oparin.solution.dto.abtest.AbTestVariantPauseRequest;
 import ru.oparin.solution.dto.abtest.CreateAbTestRequest;
 import ru.oparin.solution.model.CabinetAccessSection;
 import ru.oparin.solution.service.SellerContextService;
@@ -103,6 +104,28 @@ public class AbTestController {
         return ResponseEntity.ok()
                 .contentType(mediaType)
                 .body(new FileSystemResource(path));
+    }
+
+    /**
+     * Пауза / снятие паузы варианта (исключение из ротации).
+     */
+    @PatchMapping("/{id}/variants/{variantId}/pause")
+    public ResponseEntity<AbTestDto> setVariantPaused(
+            @PathVariable Long id,
+            @PathVariable Long variantId,
+            @Valid @RequestBody AbTestVariantPauseRequest body,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext ctx = sellerContextService.createContext(
+                authentication, sellerId, cabinetId, CabinetAccessSection.AD_CAMPAIGNS);
+        if (ctx.cabinet() == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(
+                abTestService.setVariantPaused(ctx.cabinet().getId(), id, variantId, Boolean.TRUE.equals(body.getPaused()))
+        );
     }
 
     /**

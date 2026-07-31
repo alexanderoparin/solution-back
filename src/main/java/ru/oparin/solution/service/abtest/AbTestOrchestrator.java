@@ -87,6 +87,12 @@ public class AbTestOrchestrator {
     }
 
     private boolean shouldRotate(AbTest test) {
+        if (test.getActiveVariantId() != null) {
+            AbTestVariant active = abTestVariantRepository.findById(test.getActiveVariantId()).orElse(null);
+            if (active != null && active.isPaused()) {
+                return true;
+            }
+        }
         if (test.getRotationMode() == AbTestRotationMode.ROTATION_BY_INTERVAL) {
             Integer minutes = test.getRotationIntervalMinutes();
             if (minutes == null || minutes < 1) {
