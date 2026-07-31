@@ -1313,7 +1313,13 @@ public class AnalyticsService {
      * Если dateFrom/dateTo не заданы — используются последние 14 дней.
      */
     @Transactional(readOnly = true)
-    public List<CampaignDto> listCampaignsByCabinet(Long cabinetId, LocalDate dateFrom, LocalDate dateTo, User seller) {
+    public List<CampaignDto> listCampaignsByCabinet(
+            Long cabinetId,
+            LocalDate dateFrom,
+            LocalDate dateTo,
+            User seller,
+            Long nmIdFilter
+    ) {
         if (cabinetId == null) {
             return Collections.emptyList();
         }
@@ -1353,6 +1359,8 @@ public class AnalyticsService {
                 cabinetId, seller, campaigns, statesByCampaignId, slotsByCampaignId);
 
         return campaigns.stream()
+                .filter(c -> nmIdFilter == null
+                        || nmIdsByCampaign.getOrDefault(c.getAdvertId(), Collections.emptySet()).contains(nmIdFilter))
                 .map(c -> {
                     Long advertId = c.getAdvertId();
                     Set<Long> scopeNmIds = nmIdsByCampaign.getOrDefault(advertId, Collections.emptySet());

@@ -52,6 +52,7 @@ public class AdvertisingController {
     public ResponseEntity<List<CampaignDto>> listCampaigns(
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
+            @RequestParam(required = false) Long nmId,
             @RequestParam(required = false) LocalDate dateFrom,
             @RequestParam(required = false) LocalDate dateTo,
             Authentication authentication
@@ -64,7 +65,7 @@ public class AdvertisingController {
         );
         Long resolvedCabinetId = context.cabinet() != null ? context.cabinet().getId() : null;
         List<CampaignDto> campaigns = analyticsService.listCampaignsByCabinet(
-                resolvedCabinetId, dateFrom, dateTo, context.user());
+                resolvedCabinetId, dateFrom, dateTo, context.user(), nmId);
         return ResponseEntity.ok(campaigns);
     }
 
