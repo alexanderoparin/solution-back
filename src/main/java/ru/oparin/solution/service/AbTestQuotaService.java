@@ -8,9 +8,11 @@ import ru.oparin.solution.dto.AbTestQuotaDto;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetAbTestQuota;
+import ru.oparin.solution.model.Plan;
 import ru.oparin.solution.model.PlanCodes;
 import ru.oparin.solution.repository.CabinetAbTestQuotaRepository;
 import ru.oparin.solution.repository.CabinetRepository;
+import ru.oparin.solution.repository.PlanRepository;
 
 /**
  * Квота запусков А/Б тестов на кабинет.
@@ -24,20 +26,23 @@ public class AbTestQuotaService {
     private final CabinetAbTestQuotaRepository quotaRepository;
     private final CabinetRepository cabinetRepository;
     private final CabinetEntitlementService cabinetEntitlementService;
+    private final PlanRepository planRepository;
 
     /**
-     * Создаёт стартовую квоту (3 бесплатных, ещё не активирована) для нового кабинета.
+     * Создаёт стартовую квоту (ещё не активирована) для нового кабинета.
+     * Число бесплатных тестов берётся из плана {@link PlanCodes#AB_PACK_FREE}.
      */
     @Transactional
     public void ensureQuota(Cabinet cabinet) {
         if (quotaRepository.findByCabinetId(cabinet.getId()).isPresent()) {
             return;
         }
+        int freeCredits = resolveFreeCredits();
         quotaRepository.save(CabinetAbTestQuota.builder()
                 .cabinet(cabinet)
-                .remaining(PlanCodes.AB_TEST_FREE_QUOTA)
+                .remaining(freeCredits)
                 .usedStarts(0)
-                .includedFree(PlanCodes.AB_TEST_FREE_QUOTA)
+                .includedFree(freeCredits)
                 .activated(false)
                 .build());
     }
@@ -48,7 +53,7 @@ public class AbTestQuotaService {
             return AbTestQuotaDto.builder()
                     .remaining(null)
                     .usedStarts(resolveUsed(cabinet.getId()))
-                    .includedFree(PlanCodes.AB_TEST_FREE_QUOTA)
+                    .includedFree(resolveFreeCredits())
                     .unlimited(true)
                     .activated(true)
                     .build();
@@ -78,7 +83,8 @@ public class AbTestQuotaService {
     }
 
     /**
-     * Явно подключает 3 бесплатных теста (если ещё не активировано).
+     * Явно подключает бесплатный пакет А/Б (план {@link PlanCodes#AB_PACK_FREE}), если ещё не активировано.
+     * Количество кредитов — актуальное {@code credit_amount} плана на момент активации.
      */
     @Transactional
     public AbTestQuotaDto activateFreeQuota(Cabinet cabinet) {
@@ -87,16 +93,18 @@ public class AbTestQuotaService {
         }
         CabinetAbTestQuota quota = getOrCreate(cabinet);
         if (!Boolean.TRUE.equals(quota.getActivated())) {
+            int freeCredits = resolveFreeCredits();
             quota.setActivated(true);
-            if (quota.getRemaining() == null || quota.getRemaining() < PlanCodes.AB_TEST_FREE_QUOTA) {
-                // если ещё не тратили и не покупали — гарантируем стартовые 3
-                if (quota.getUsedStarts() == null || quota.getUsedStarts() == 0) {
-                    quota.setRemaining(Math.max(
-                            quota.getRemaining() != null ? quota.getRemaining() : 0,
-                            PlanCodes.AB_TEST_FREE_QUOTA
-                    ));
+            int used = quota.getUsedStarts() != null ? quota.getUsedStarts() : 0;
+            if (used == 0) {
+                int rem = quota.getRemaining() != null ? quota.getRemaining() : 0;
+                int included = quota.getIncludedFree() != null ? quota.getIncludedFree() : 0;
+                // Только стартовая квота (ещё не покупали пакеты) — синхронизируем с планом из админки
+                if (rem <= included) {
+                    quota.setRemaining(freeCredits);
                 }
             }
+            quota.setIncludedFree(freeCredits);
             quotaRepository.save(quota);
         }
         return getQuotaDto(cabinet);
@@ -142,16 +150,29 @@ public class AbTestQuotaService {
         quotaRepository.save(quota);
     }
 
+    /**
+     * Актуальный размер бесплатного пакета из {@code plans.ab_pack_free.credit_amount}.
+     */
+    @Transactional(readOnly = true)
+    public int resolveFreeCredits() {
+        return planRepository.findByCode(PlanCodes.AB_PACK_FREE)
+                .filter(plan -> Boolean.TRUE.equals(plan.getIsActive()))
+                .map(Plan::getCreditAmount)
+                .filter(credits -> credits != null && credits > 0)
+                .orElse(PlanCodes.AB_TEST_FREE_QUOTA);
+    }
+
     private CabinetAbTestQuota getOrCreate(Cabinet cabinet) {
         return quotaRepository.findByCabinetId(cabinet.getId())
                 .orElseGet(() -> {
                     Cabinet managed = cabinetRepository.findById(cabinet.getId())
                             .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+                    int freeCredits = resolveFreeCredits();
                     return quotaRepository.save(CabinetAbTestQuota.builder()
                             .cabinet(managed)
-                            .remaining(PlanCodes.AB_TEST_FREE_QUOTA)
+                            .remaining(freeCredits)
                             .usedStarts(0)
-                            .includedFree(PlanCodes.AB_TEST_FREE_QUOTA)
+                            .includedFree(freeCredits)
                             .activated(false)
                             .build());
                 });

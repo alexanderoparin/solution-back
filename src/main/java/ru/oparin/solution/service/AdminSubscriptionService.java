@@ -52,11 +52,16 @@ public class AdminSubscriptionService {
         }
 
         if (plan.getKind() == PlanKind.AB_PACK) {
-            int credits = abCredits != null && abCredits > 0
-                    ? abCredits
-                    : (plan.getCreditAmount() != null ? plan.getCreditAmount() : 0);
-            abTestQuotaService.addCredits(cabinet, credits);
-            log.info("Админ начислил {} А/Б кредитов cabinetId={}", credits, cabinetId);
+            if (PlanCodes.AB_PACK_FREE.equals(plan.getCode()) && abCredits == null) {
+                abTestQuotaService.activateFreeQuota(cabinet);
+                log.info("Админ активировал бесплатный пакет А/Б cabinetId={}", cabinetId);
+            } else {
+                int credits = abCredits != null && abCredits > 0
+                        ? abCredits
+                        : (plan.getCreditAmount() != null ? plan.getCreditAmount() : 0);
+                abTestQuotaService.addCredits(cabinet, credits);
+                log.info("Админ начислил {} А/Б кредитов cabinetId={}", credits, cabinetId);
+            }
             return SubscriptionDto.builder()
                     .userId(owner.getId())
                     .cabinetId(cabinetId)

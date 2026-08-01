@@ -167,7 +167,8 @@ public class CabinetBillingService {
     }
 
     /**
-     * Явно активирует 3 бесплатных А/Б теста кабинета (владелец).
+     * Явно активирует бесплатный пакет А/Б тестов кабинета (владелец).
+     * Количество кредитов — из плана ab_pack_free (правится в админке).
      */
     @Transactional
     public AbTestQuotaDto activateAbFreeQuota(User actor, Long cabinetId) {
