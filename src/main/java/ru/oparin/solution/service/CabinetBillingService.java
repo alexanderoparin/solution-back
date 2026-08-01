@@ -35,6 +35,7 @@ public class CabinetBillingService {
     private final SubscriptionRepository subscriptionRepository;
     private final CabinetEntitlementService entitlementService;
     private final AbTestQuotaService abTestQuotaService;
+    private final SubscriptionPaymentService subscriptionPaymentService;
 
     /**
      * FREE-подписка + квота А/Б для нового кабинета.
@@ -169,6 +170,7 @@ public class CabinetBillingService {
     /**
      * Явно активирует бесплатный пакет А/Б тестов кабинета (владелец).
      * Количество кредитов — из плана ab_pack_free (правится в админке).
+     * Также создаёт/обновляет запись услуги в {@code subscriptions} (kind AB_PACK).
      */
     @Transactional
     public AbTestQuotaDto activateAbFreeQuota(User actor, Long cabinetId) {
@@ -180,6 +182,12 @@ public class CabinetBillingService {
         if (!canManage) {
             throw new UserException("Только владелец кабинета может подключить услугу", HttpStatus.FORBIDDEN);
         }
-        return abTestQuotaService.activateFreeQuota(cabinet);
+        AbTestQuotaDto quota = abTestQuotaService.activateFreeQuota(cabinet);
+        Plan freePack = planRepository.findByCode(PlanCodes.AB_PACK_FREE)
+                .orElseThrow(() -> new UserException(
+                        "План ab_pack_free не найден — примените миграцию 084",
+                        HttpStatus.INTERNAL_SERVER_ERROR));
+        subscriptionPaymentService.createOrExtendKindSubscription(cabinet.getUser(), cabinet, freePack);
+        return quota;
     }
 }

@@ -62,16 +62,8 @@ public class AdminSubscriptionService {
                 abTestQuotaService.addCredits(cabinet, credits);
                 log.info("Админ начислил {} А/Б кредитов cabinetId={}", credits, cabinetId);
             }
-            return SubscriptionDto.builder()
-                    .userId(owner.getId())
-                    .cabinetId(cabinetId)
-                    .planId(plan.getId())
-                    .planName(plan.getName())
-                    .planCode(plan.getCode())
-                    .planKind(plan.getKind().name())
-                    .status("credited")
-                    .startedAt(LocalDateTime.now())
-                    .build();
+            Subscription saved = subscriptionPaymentService.createOrExtendKindSubscription(owner, cabinet, plan);
+            return toSubscriptionDto(saved);
         }
 
         LocalDateTime now = LocalDateTime.now();

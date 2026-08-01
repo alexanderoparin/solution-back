@@ -187,15 +187,17 @@ public class SubscriptionPaymentService {
     }
 
     /**
-     * Создаёт или продлевает подписку kind MAIN/CAMPAIGN на кабинет.
+     * Создаёт или обновляет подписку kind MAIN/CAMPAIGN/AB_PACK на кабинет.
+     * Для AB_PACK — бессрочная услуга ({@code expires_at = null}), одна активная запись на кабинет.
      */
     @Transactional
     public Subscription createOrExtendKindSubscription(User user, Cabinet cabinet, Plan plan) {
-        if (plan.getKind() == PlanKind.AB_PACK) {
-            throw new UserException("Пакет А/Б не создаёт подписку", HttpStatus.BAD_REQUEST);
-        }
         LocalDateTime now = LocalDateTime.now();
         PlanKind kind = plan.getKind() != null ? plan.getKind() : PlanKind.CAMPAIGN;
+
+        if (kind == PlanKind.AB_PACK) {
+            return upsertAbPackSubscription(user, cabinet, plan, now);
+        }
 
         Subscription current = subscriptionRepository
                 .findFirstActiveByCabinetIdAndKind(cabinet.getId(), kind, ACTIVE_STATUSES, now)
@@ -234,6 +236,30 @@ public class SubscriptionPaymentService {
         return subscriptionRepository.save(subscription);
     }
 
+    /**
+     * Одна активная запись услуги А/Б на кабинет: при новой покупке обновляется план (последний пакет).
+     */
+    private Subscription upsertAbPackSubscription(User user, Cabinet cabinet, Plan plan, LocalDateTime now) {
+        boolean free = plan.getPriceRub() == null || plan.getPriceRub().compareTo(BigDecimal.ZERO) == 0;
+        Subscription current = subscriptionRepository
+                .findFirstActiveByCabinetIdAndKind(cabinet.getId(), PlanKind.AB_PACK, ACTIVE_STATUSES, now)
+                .orElse(null);
+        if (current != null) {
+            current.setPlan(plan);
+            current.setStatus(free ? "trial" : "active");
+            current.setExpiresAt(null);
+            return subscriptionRepository.save(current);
+        }
+        return subscriptionRepository.save(Subscription.builder()
+                .user(user)
+                .cabinet(cabinet)
+                .plan(plan)
+                .status(free ? "trial" : "active")
+                .startedAt(now)
+                .expiresAt(null)
+                .build());
+    }
+
     @Transactional
     public Subscription createOrExtendSubscriptionFromPayment(Payment payment) {
         applySuccessfulPayment(payment);
@@ -253,6 +279,13 @@ public class SubscriptionPaymentService {
         if (isAbPack(catalogPlan, payment.getPlanCode())) {
             int credits = resolveAbCredits(catalogPlan, payment.getPlanCode());
             abTestQuotaService.addCredits(cabinet, credits);
+            if (catalogPlan != null) {
+                Subscription abSub = createOrExtendKindSubscription(payment.getUser(), cabinet, catalogPlan);
+                payment.setSubscription(abSub);
+            } else {
+                log.warn("Платёж id={}: план А/Б {} не найден в каталоге — подписка не создана",
+                        payment.getId(), payment.getPlanCode());
+            }
             log.info("Платёж id={} начислил {} А/Б кредитов cabinetId={}", payment.getId(), credits, cabinet.getId());
             return;
         }
