@@ -55,7 +55,7 @@ public class CampaignScheduleProcessor {
         if (cabinet == null || cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
             return;
         }
-        if (!campaignManageAccessService.hasCampaignEntitlement(cabinet.getUser())) {
+        if (!campaignManageAccessService.hasCampaignEntitlement(cabinet)) {
             manageService.stopScheduleDueToLostEntitlement(state, cabinet, cabinet.getUser());
             return;
         }

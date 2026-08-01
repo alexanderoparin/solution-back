@@ -3,6 +3,7 @@ package ru.oparin.solution.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.Plan;
+import ru.oparin.solution.model.PlanKind;
 
 import java.util.List;
 import java.util.Optional;
@@ -13,6 +14,8 @@ public interface PlanRepository extends JpaRepository<Plan, Long> {
     List<Plan> findByIsActiveTrueOrderBySortOrderAsc();
 
     List<Plan> findByIsActiveTrueAndCodeStartingWithOrderBySortOrderAsc(String codePrefix);
+
+    List<Plan> findByIsActiveTrueAndKindOrderBySortOrderAsc(PlanKind kind);
 
     List<Plan> findAllByOrderBySortOrderAsc();
 

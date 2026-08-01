@@ -329,7 +329,7 @@ public class CampaignManageController {
             SellerContextService.SellerContext context,
             Authentication authentication
     ) {
-        campaignManageAccessService.requireAccess(currentUser(authentication), context.user());
+        campaignManageAccessService.requireAccess(currentUser(authentication), context.cabinet());
     }
 
     private ResponseEntity<?> control(

@@ -6,7 +6,7 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 /**
- * Запрос ручного назначения/продления подписки (только ADMIN).
+ * Запрос ручного назначения/продления подписки или начисления А/Б-квоты (ADMIN).
  */
 @Getter
 @Setter
@@ -15,12 +15,18 @@ import java.time.LocalDateTime;
 @Builder
 public class ExtendSubscriptionRequest {
 
-    @NotNull
+    /** Владелец (для аудита / совместимости). */
     private Long userId;
+
+    @NotNull
+    private Long cabinetId;
 
     @NotNull
     private Long planId;
 
-    /** Если не указано — считается от текущего момента + periodDays плана. */
+    /** Если не указано — считается от текущего момента + period плана (для MAIN/CAMPAIGN). */
     private LocalDateTime expiresAt;
+
+    /** Для AB_PACK: сколько кредитов начислить (если null — creditAmount плана). */
+    private Integer abCredits;
 }

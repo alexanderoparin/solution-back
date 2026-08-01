@@ -14,6 +14,7 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Payment;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.PaymentRepository;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
@@ -47,6 +48,7 @@ public class UserController {
     private final ProfileSubscriptionService profileSubscriptionService;
     private final AccountDeletionRequestService accountDeletionRequestService;
     private final CabinetAccessService cabinetAccessService;
+    private final CabinetRepository cabinetRepository;
 
     @PutMapping("/api-key")
     public ResponseEntity<MessageResponse> updateApiKey(
@@ -133,13 +135,20 @@ public class UserController {
     @GetMapping("/access")
     public ResponseEntity<AccessStatusResponse> getAccessStatus(
             @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
         User user = getCurrentUser(authentication);
         boolean hasAccess = subscriptionAccessService.hasAccess(user);
         var activeSubscription = subscriptionAccessService.getActiveSubscription(user);
-        User subscriptionSeller = resolveSellerForAccess(user, sellerId);
-        CampaignManageAccessDto campaignManage = campaignManageAccessService.buildAccessState(user, subscriptionSeller);
+        CampaignManageAccessDto campaignManage;
+        if (cabinetId != null) {
+            Cabinet cabinet = cabinetRepository.findById(cabinetId).orElse(null);
+            campaignManage = campaignManageAccessService.buildAccessState(user, cabinet);
+        } else {
+            User subscriptionSeller = resolveSellerForAccess(user, sellerId);
+            campaignManage = campaignManageAccessService.buildAccessState(user, subscriptionSeller);
+        }
 
         AccessStatusResponse response = AccessStatusResponse.builder()
                 .hasAccess(hasAccess)

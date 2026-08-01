@@ -18,6 +18,7 @@ import ru.oparin.solution.dto.wb.CardsListRequest;
 import ru.oparin.solution.dto.wb.CardsListResponse;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.*;
+import ru.oparin.solution.service.AbTestQuotaService;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.AbTestStartPayload;
 import ru.oparin.solution.service.events.payload.AbTestStartStep;
@@ -68,6 +69,7 @@ public class AbTestService {
     private final CabinetRepository cabinetRepository;
     private final WbContentApiClient contentApiClient;
     private final WbApiEventService wbApiEventService;
+    private final AbTestQuotaService abTestQuotaService;
     private final ObjectMapper objectMapper;
 
     @Value("${app.uploads.directory}")
@@ -129,6 +131,14 @@ public class AbTestService {
         if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
             throw new IllegalArgumentException("У кабинета отсутствует API-ключ");
         }
+        if (!abTestQuotaService.canStartAbTest(cabinet)) {
+            throw new ru.oparin.solution.exception.UserException(
+                    "Недостаточно квоты А/Б тестов. Купите пакет, чтобы создать тест.",
+                    org.springframework.http.HttpStatus.PAYMENT_REQUIRED
+            );
+        }
+        // Резервируем квоту при создании; при failStart вернём.
+        abTestQuotaService.consumeStart(cabinet);
         validateTokenAllowsRotation(cabinet, request);
 
         // Без синхронного WB: берём фото из нашей БД; уточнение галереи — в AB_TEST_START.
@@ -224,6 +234,7 @@ public class AbTestService {
                 test.setStatus(AbTestStatus.DISABLED);
                 test.setFinishedAt(LocalDateTime.now());
                 abTestRepository.save(test);
+                refundQuotaIfNeeded(cabinetId);
             } else {
                 enqueueFinish(test, "MANUAL");
             }
@@ -522,7 +533,7 @@ public class AbTestService {
         test.setLastWbError(null);
         test.setLastRotatedAt(LocalDateTime.now());
         abTestRepository.save(test);
-
+        // квота уже списана при create
         wbApiEventService.enqueueAbTestStatsPoll(test.getCabinetId(), test.getId(), triggerSource);
     }
 
@@ -581,7 +592,7 @@ public class AbTestService {
     }
 
     /**
-     * Финальный провал старта: тест отключается с ошибкой.
+     * Финальный провал старта: тест отключается с ошибкой, квота возвращается.
      */
     @Transactional
     public void failStart(Long abTestId, String error) {
@@ -591,8 +602,22 @@ public class AbTestService {
                 test.setFinishedAt(LocalDateTime.now());
                 test.setLastWbError(error);
                 abTestRepository.save(test);
+                refundQuotaIfNeeded(test.getCabinetId());
             }
         });
+    }
+
+    private void refundQuotaIfNeeded(Long cabinetId) {
+        cabinetRepository.findById(cabinetId).ifPresent(cabinet -> {
+            if (!cabinetEntitlementServiceHasUnlimited(cabinet)) {
+                abTestQuotaService.addCredits(cabinet, 1);
+            }
+        });
+    }
+
+    private boolean cabinetEntitlementServiceHasUnlimited(Cabinet cabinet) {
+        // избегаем лишней зависимости в сигнатуре — через quota DTO
+        return Boolean.TRUE.equals(abTestQuotaService.getQuotaDto(cabinet).getUnlimited());
     }
 
     /**

@@ -19,6 +19,11 @@ public class ErrorResponse {
     private String error;
 
     /**
+     * Машинный код ошибки (например AB_TEST_QUOTA_REQUIRED).
+     */
+    private String code;
+
+    /**
      * Секунды до повтора (например, при 429 от WB API в теле ответа создания кабинета).
      */
     private Long retryAfterSeconds;

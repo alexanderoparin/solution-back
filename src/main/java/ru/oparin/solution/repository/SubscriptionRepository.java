@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import ru.oparin.solution.model.PlanKind;
 import ru.oparin.solution.model.Subscription;
 
 import java.time.LocalDateTime;
@@ -15,8 +16,82 @@ import java.util.Optional;
 public interface SubscriptionRepository extends JpaRepository<Subscription, Long> {
 
     /**
-     * Активная подписка: статус active/trial и (бессрочная или expires_at в будущем).
+     * Активная подписка кабинета заданного kind.
      */
+    @Query("""
+            select s from Subscription s
+            left join fetch s.plan
+            where s.cabinet.id = :cabinetId
+              and s.plan.kind = :kind
+              and s.status in :statuses
+              and (s.expiresAt is null or s.expiresAt > :now)
+            order by s.expiresAt desc nulls first
+            """)
+    Optional<Subscription> findFirstActiveByCabinetIdAndKind(
+            @Param("cabinetId") Long cabinetId,
+            @Param("kind") PlanKind kind,
+            @Param("statuses") Collection<String> statuses,
+            @Param("now") LocalDateTime now
+    );
+
+    /**
+     * Активная подписка кабинета на план с префиксом кода (например campaign_).
+     */
+    @Query("""
+            select s from Subscription s
+            left join fetch s.plan
+            where s.cabinet.id = :cabinetId
+              and s.plan.code like concat(:planCodePrefix, '%')
+              and s.status in :statuses
+              and (s.expiresAt is null or s.expiresAt > :now)
+            order by s.expiresAt desc nulls first
+            """)
+    Optional<Subscription> findFirstActiveByCabinetIdAndCodePrefix(
+            @Param("cabinetId") Long cabinetId,
+            @Param("planCodePrefix") String planCodePrefix,
+            @Param("statuses") Collection<String> statuses,
+            @Param("now") LocalDateTime now
+    );
+
+    @Query("""
+            select s from Subscription s
+            left join fetch s.plan
+            where s.cabinet.id = :cabinetId
+            order by s.expiresAt desc nulls first
+            """)
+    List<Subscription> findByCabinet_IdOrderByExpiresAtDesc(@Param("cabinetId") Long cabinetId);
+
+    @Query("""
+            select s from Subscription s
+            left join fetch s.plan
+            where s.user.id = :userId
+            order by s.expiresAt desc nulls first
+            """)
+    List<Subscription> findByUser_IdOrderByExpiresAtDesc(@Param("userId") Long userId);
+
+    @Query("""
+            select s from Subscription s
+            left join fetch s.plan
+            where s.cabinet.id = :cabinetId
+              and s.plan.code like concat(:planCodePrefix, '%')
+              and s.expiresAt is not null
+              and s.expiresAt <= :now
+            order by s.expiresAt desc
+            """)
+    Optional<Subscription> findLastExpiredByCabinetIdAndCodePrefix(
+            @Param("cabinetId") Long cabinetId,
+            @Param("planCodePrefix") String planCodePrefix,
+            @Param("now") LocalDateTime now
+    );
+
+    boolean existsByCabinet_IdAndPlan_Code(Long cabinetId, String planCode);
+
+    boolean existsByUser_IdAndPlan_Code(Long userId, String planCode);
+
+    /**
+     * @deprecated используйте cabinet-scoped методы; оставлено для совместимости миграции.
+     */
+    @Deprecated
     @Query("""
             select s from Subscription s
             left join fetch s.plan
@@ -31,9 +106,7 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
             @Param("now") LocalDateTime now
     );
 
-    /**
-     * Активная подписка на план с кодом {@code campaign_*}.
-     */
+    @Deprecated
     @Query("""
             select s from Subscription s
             left join fetch s.plan
@@ -50,17 +123,7 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
             @Param("now") LocalDateTime now
     );
 
-    @Query("""
-            select s from Subscription s
-            left join fetch s.plan
-            where s.user.id = :userId
-            order by s.expiresAt desc nulls first
-            """)
-    List<Subscription> findByUser_IdOrderByExpiresAtDesc(@Param("userId") Long userId);
-
-    /**
-     * Последняя истёкшая подписка (только с заполненным expires_at).
-     */
+    @Deprecated
     @Query("""
             select s from Subscription s
             left join fetch s.plan
@@ -74,6 +137,7 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
             @Param("now") LocalDateTime now
     );
 
+    @Deprecated
     @Query("""
             select s from Subscription s
             left join fetch s.plan
@@ -88,6 +152,4 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
             @Param("planCodePrefix") String planCodePrefix,
             @Param("now") LocalDateTime now
     );
-
-    boolean existsByUser_IdAndPlan_Code(Long userId, String planCode);
 }

@@ -23,6 +23,8 @@ public final class PlanMapper {
                 .isActive(plan.getIsActive())
                 .code(plan.getCode())
                 .periodType(plan.getPeriodType() != null ? plan.getPeriodType().name() : null)
+                .kind(plan.getKind() != null ? plan.getKind().name() : null)
+                .creditAmount(plan.getCreditAmount())
                 .build();
     }
 }

@@ -24,4 +24,8 @@ public class PlanDto {
     private String code;
     /** DAYS или CALENDAR_MONTH. */
     private String periodType;
+    /** MAIN | CAMPAIGN | AB_PACK. */
+    private String kind;
+    /** Кредиты А/Б для пакетов. */
+    private Integer creditAmount;
 }

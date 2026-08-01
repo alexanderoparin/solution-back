@@ -4,6 +4,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
+import ru.oparin.solution.model.PlanKind;
 import ru.oparin.solution.model.PlanPeriodType;
 
 import java.math.BigDecimal;
@@ -39,4 +40,8 @@ public class CreatePlanRequest {
 
     @Builder.Default
     private PlanPeriodType periodType = PlanPeriodType.DAYS;
+
+    private PlanKind kind;
+
+    private Integer creditAmount;
 }

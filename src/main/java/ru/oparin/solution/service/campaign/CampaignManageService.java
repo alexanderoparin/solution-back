@@ -400,7 +400,7 @@ public class CampaignManageService {
             }
         }
 
-        String message = campaignManageAccessService.scheduleStopMessageForSeller(seller);
+        String message = campaignManageAccessService.scheduleStopMessageForCabinet(cabinet);
         if (campaignWasActive) {
             message = message + " Активная РК остановлена.";
         }

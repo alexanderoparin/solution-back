@@ -15,6 +15,7 @@ import ru.oparin.solution.dto.InitiatePaymentResponse;
 import ru.oparin.solution.dto.PaymentStatusResponse;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
+import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.PaymentRepository;
 import ru.oparin.solution.repository.PlanRepository;
 import ru.oparin.solution.repository.SubscriptionRepository;
@@ -26,7 +27,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Сервис активации подписок и оплаты через Точка Банк.
+ * Активация тарифов/услуг кабинета и оплата через Точка Банк.
  */
 @Service
 @RequiredArgsConstructor
@@ -42,33 +43,39 @@ public class SubscriptionPaymentService {
     private final PlanRepository planRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final PaymentRepository paymentRepository;
+    private final CabinetRepository cabinetRepository;
     private final SubscriptionProperties subscriptionProperties;
     private final TochkaProperties tochkaProperties;
     private final TochkaAcquiringService tochkaAcquiringService;
+    private final AbTestQuotaService abTestQuotaService;
     private final ObjectMapper objectMapper;
 
     @Value("${app.brand-name:Clicki}")
     private String brandName;
 
     /**
-     * Активирует бесплатный план без платёжной системы.
+     * Активирует бесплатный план услуги «Управление РК» для кабинета.
      */
     @Transactional
-    public ActivatePlanResponse activateFreePlan(User user, Long planId) {
+    public ActivatePlanResponse activateFreePlan(User user, Long planId, Long cabinetId) {
+        Cabinet cabinet = requireOwnedCabinet(user, cabinetId);
         if (!subscriptionProperties.isCampaignManagementEnabled()) {
             throw new UserException("Подписка на Управление РК отключена", HttpStatus.BAD_REQUEST);
         }
-        Plan plan = loadCampaignManagePlan(planId);
+        Plan plan = loadActivePlan(planId);
+        if (plan.getKind() != PlanKind.CAMPAIGN) {
+            throw new UserException("Бесплатная активация доступна только для услуги «Управление РК»", HttpStatus.BAD_REQUEST);
+        }
         if (plan.getPriceRub().compareTo(BigDecimal.ZERO) > 0) {
             throw new UserException("План требует оплаты", HttpStatus.BAD_REQUEST);
         }
         if (PlanCodes.CAMPAIGN_FREE.equals(plan.getCode())
-                && subscriptionRepository.existsByUser_IdAndPlan_Code(user.getId(), PlanCodes.CAMPAIGN_FREE)) {
+                && subscriptionRepository.existsByCabinet_IdAndPlan_Code(cabinet.getId(), PlanCodes.CAMPAIGN_FREE)) {
             throw new UserException("Бесплатный период уже был активирован", HttpStatus.BAD_REQUEST);
         }
 
-        Subscription subscription = createOrExtendSubscription(user, plan);
-        log.info("Активирован бесплатный план {} для пользователя id={}", plan.getCode(), user.getId());
+        Subscription subscription = createOrExtendKindSubscription(user, cabinet, plan);
+        log.info("Активирован бесплатный план {} для cabinetId={}", plan.getCode(), cabinet.getId());
         return ActivatePlanResponse.builder()
                 .subscriptionId(subscription.getId())
                 .expiresAt(subscription.getExpiresAt())
@@ -76,22 +83,27 @@ public class SubscriptionPaymentService {
     }
 
     /**
-     * Создаёт платёж и платёжную ссылку в Точка Банк.
+     * Создаёт платёж и платёжную ссылку в Точка Банк (PRO / Управление РК / пакет А/Б).
      */
     @Transactional
-    public InitiatePaymentResponse initiatePaidPlan(User user, Long planId) {
+    public InitiatePaymentResponse initiatePaidPlan(User user, Long planId, Long cabinetId) {
+        Cabinet cabinet = requireOwnedCabinet(user, cabinetId);
         validateSellerCanPay(user);
         if (!tochkaProperties.isConfiguredForPayments()) {
             throw new UserException("Оплата временно недоступна", HttpStatus.SERVICE_UNAVAILABLE);
         }
 
-        Plan plan = loadCampaignManagePlan(planId);
+        Plan plan = loadActivePlan(planId);
         if (plan.getPriceRub().compareTo(BigDecimal.ZERO) <= 0) {
             throw new UserException("Для бесплатного плана используйте активацию без оплаты", HttpStatus.BAD_REQUEST);
+        }
+        if (plan.getKind() == PlanKind.CAMPAIGN && !subscriptionProperties.isCampaignManagementEnabled()) {
+            throw new UserException("Подписка на Управление РК отключена", HttpStatus.BAD_REQUEST);
         }
 
         Payment payment = Payment.builder()
                 .user(user)
+                .cabinet(cabinet)
                 .planCode(plan.getCode())
                 .planName(plan.getName())
                 .periodDays(plan.getPeriodDays())
@@ -110,13 +122,13 @@ public class SubscriptionPaymentService {
         payment.setMetadata(buildPaymentMetadata(
                 tochkaResult.getOperationId(),
                 tochkaResult.getPaymentLink(),
-                "cm-" + payment.getId(),
+                "cab-" + cabinet.getId() + "-pay-" + payment.getId(),
                 tochkaResult.getStatus()
         ));
         paymentRepository.save(payment);
 
-        log.info("Создан платёж id={} operationId={} для userId={} plan={}",
-                payment.getId(), tochkaResult.getOperationId(), user.getId(), plan.getCode());
+        log.info("Создан платёж id={} operationId={} cabinetId={} plan={}",
+                payment.getId(), tochkaResult.getOperationId(), cabinet.getId(), plan.getCode());
 
         return InitiatePaymentResponse.builder()
                 .paymentId(payment.getId())
@@ -124,9 +136,6 @@ public class SubscriptionPaymentService {
                 .build();
     }
 
-    /**
-     * Статус платежа для владельца (только чтение из БД).
-     */
     @Transactional(readOnly = true)
     public PaymentStatusResponse getPaymentStatus(User user, Long paymentId) {
         Payment payment = paymentRepository.findById(paymentId)
@@ -142,17 +151,12 @@ public class SubscriptionPaymentService {
                 .build();
     }
 
-    /**
-     * Завершает платёж по operationId из webhook или polling (идемпотентно).
-     */
     @Transactional
     public void completePaymentByOperationId(String operationId, String tochkaStatus) {
         if (operationId == null || operationId.isBlank()) {
             return;
         }
-        Payment payment = paymentRepository
-                .findByExternalId(operationId)
-                .orElse(null);
+        Payment payment = paymentRepository.findByExternalId(operationId).orElse(null);
         if (payment == null) {
             log.warn("Payment not found for Tochka operationId={}", operationId);
             return;
@@ -165,16 +169,13 @@ public class SubscriptionPaymentService {
         if (tochkaStatus != null && TOCHKA_SUCCESS_STATUSES.contains(tochkaStatus)) {
             payment.setStatus(PaymentStatus.SUCCESS.getDbValue());
             payment.setPaidAt(LocalDateTime.now());
-            if (!hasPlanSnapshot(payment)) {
+            if (!hasPlanSnapshot(payment) && !isAbPackCode(payment.getPlanCode())) {
                 log.error("Plan snapshot missing for payment id={}", payment.getId());
                 paymentRepository.save(payment);
                 return;
             }
-            Subscription subscription = createOrExtendSubscriptionFromPayment(payment);
-            payment.setSubscription(subscription);
+            applySuccessfulPayment(payment);
             paymentRepository.save(payment);
-            log.info("Платёж id={} успешен, подписка id={} до {}",
-                    payment.getId(), subscription.getId(), subscription.getExpiresAt());
             return;
         }
 
@@ -186,50 +187,85 @@ public class SubscriptionPaymentService {
     }
 
     /**
-     * Создаёт или продлевает подписку на продукт плана.
+     * Создаёт или продлевает подписку kind MAIN/CAMPAIGN на кабинет.
      */
     @Transactional
-    public Subscription createOrExtendSubscription(User user, Plan plan) {
+    public Subscription createOrExtendKindSubscription(User user, Cabinet cabinet, Plan plan) {
+        if (plan.getKind() == PlanKind.AB_PACK) {
+            throw new UserException("Пакет А/Б не создаёт подписку", HttpStatus.BAD_REQUEST);
+        }
         LocalDateTime now = LocalDateTime.now();
+        PlanKind kind = plan.getKind() != null ? plan.getKind() : PlanKind.CAMPAIGN;
 
         Subscription current = subscriptionRepository
-                .findFirstActiveByUserId(user.getId(), ACTIVE_STATUSES, now)
+                .findFirstActiveByCabinetIdAndKind(cabinet.getId(), kind, ACTIVE_STATUSES, now)
                 .orElse(null);
 
-        LocalDateTime base = now;
-        if (current != null && SubscriptionSupport.hasFutureExpiry(current, now)) {
-            base = current.getExpiresAt();
-        }
         if (current != null) {
-            current.setExpiresAt(SubscriptionPeriodUtils.addPlanPeriod(base, plan));
-            current.setStatus("active");
+            LocalDateTime base = now;
+            if (SubscriptionSupport.hasFutureExpiry(current, now)) {
+                base = current.getExpiresAt();
+            }
+            // FREE бессрочный → PRO: ставим новый период от now
+            if (PlanCodes.ANALYTICS_FREE.equals(
+                    current.getPlan() != null ? current.getPlan().getCode() : null)
+                    && PlanCodes.PRO_MONTH.equals(plan.getCode())) {
+                base = now;
+            }
+            current.setExpiresAt(plan.getPriceRub().compareTo(BigDecimal.ZERO) == 0
+                    && PlanCodes.ANALYTICS_FREE.equals(plan.getCode())
+                    ? null
+                    : SubscriptionPeriodUtils.addPlanPeriod(base, plan));
+            current.setStatus(plan.getPriceRub().compareTo(BigDecimal.ZERO) == 0 ? "trial" : "active");
             current.setPlan(plan);
             return subscriptionRepository.save(current);
         }
 
         Subscription subscription = Subscription.builder()
                 .user(user)
+                .cabinet(cabinet)
                 .plan(plan)
                 .status(plan.getPriceRub().compareTo(BigDecimal.ZERO) == 0 ? "trial" : "active")
                 .startedAt(now)
-                .expiresAt(SubscriptionPeriodUtils.addPlanPeriod(now, plan))
+                .expiresAt(PlanCodes.ANALYTICS_FREE.equals(plan.getCode())
+                        ? null
+                        : SubscriptionPeriodUtils.addPlanPeriod(now, plan))
                 .build();
         return subscriptionRepository.save(subscription);
     }
 
-    /**
-     * Продлевает подписку по снимку тарифа из платежа (не зависит от актуальной записи plans).
-     */
     @Transactional
     public Subscription createOrExtendSubscriptionFromPayment(Payment payment) {
-        User user = payment.getUser();
+        applySuccessfulPayment(payment);
+        return payment.getSubscription();
+    }
+
+    private void applySuccessfulPayment(Payment payment) {
         Plan catalogPlan = payment.getPlanCode() != null
                 ? planRepository.findByCode(payment.getPlanCode()).orElse(null)
                 : null;
+        Cabinet cabinet = payment.getCabinet();
+        if (cabinet == null) {
+            log.error("Payment id={} без cabinet_id — некуда начислить", payment.getId());
+            return;
+        }
+
+        if (isAbPack(catalogPlan, payment.getPlanCode())) {
+            int credits = resolveAbCredits(catalogPlan, payment.getPlanCode());
+            abTestQuotaService.addCredits(cabinet, credits);
+            log.info("Платёж id={} начислил {} А/Б кредитов cabinetId={}", payment.getId(), credits, cabinet.getId());
+            return;
+        }
+
+        if (catalogPlan == null) {
+            log.error("Catalog plan missing for payment id={} code={}", payment.getId(), payment.getPlanCode());
+            return;
+        }
 
         LocalDateTime now = LocalDateTime.now();
+        PlanKind kind = catalogPlan.getKind() != null ? catalogPlan.getKind() : PlanKind.CAMPAIGN;
         Subscription current = subscriptionRepository
-                .findFirstActiveByUserId(user.getId(), ACTIVE_STATUSES, now)
+                .findFirstActiveByCabinetIdAndKind(cabinet.getId(), kind, ACTIVE_STATUSES, now)
                 .orElse(null);
 
         LocalDateTime periodEnd = SubscriptionPeriodUtils.addPlanPeriod(
@@ -239,43 +275,90 @@ public class SubscriptionPaymentService {
             LocalDateTime base = SubscriptionSupport.hasFutureExpiry(current, now)
                     ? current.getExpiresAt()
                     : now;
+            if (PlanCodes.ANALYTICS_FREE.equals(
+                    current.getPlan() != null ? current.getPlan().getCode() : null)
+                    && PlanCodes.PRO_MONTH.equals(catalogPlan.getCode())) {
+                base = now;
+            }
             current.setExpiresAt(SubscriptionPeriodUtils.addPlanPeriod(
                     base, payment.getPeriodDays(), payment.getPeriodType()));
             current.setStatus("active");
-            if (catalogPlan != null) {
-                current.setPlan(catalogPlan);
-            }
-            return subscriptionRepository.save(current);
+            current.setPlan(catalogPlan);
+            current = subscriptionRepository.save(current);
+            payment.setSubscription(current);
+            log.info("Платёж id={} продлил подписку id={} cabinetId={} до {}",
+                    payment.getId(), current.getId(), cabinet.getId(), current.getExpiresAt());
+            return;
         }
 
         Subscription subscription = Subscription.builder()
-                .user(user)
+                .user(payment.getUser())
+                .cabinet(cabinet)
                 .plan(catalogPlan)
                 .status("active")
                 .startedAt(now)
                 .expiresAt(periodEnd)
                 .build();
-        return subscriptionRepository.save(subscription);
+        subscription = subscriptionRepository.save(subscription);
+        payment.setSubscription(subscription);
+        log.info("Платёж id={} создал подписку id={} cabinetId={} до {}",
+                payment.getId(), subscription.getId(), cabinet.getId(), subscription.getExpiresAt());
+    }
+
+    private Cabinet requireOwnedCabinet(User user, Long cabinetId) {
+        if (cabinetId == null) {
+            throw new UserException("cabinetId обязателен", HttpStatus.BAD_REQUEST);
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
+        if (user.getRole() != Role.ADMIN
+                && (cabinet.getUser() == null || !cabinet.getUser().getId().equals(user.getId()))) {
+            throw new UserException("Оплату может инициировать только владелец кабинета", HttpStatus.FORBIDDEN);
+        }
+        return cabinet;
     }
 
     private boolean hasPlanSnapshot(Payment payment) {
-        return payment.getPeriodDays() != null
-                && payment.getPeriodType() != null;
+        return payment.getPeriodDays() != null && payment.getPeriodType() != null;
+    }
+
+    private boolean isAbPack(Plan plan, String planCode) {
+        if (plan != null && plan.getKind() == PlanKind.AB_PACK) {
+            return true;
+        }
+        return isAbPackCode(planCode);
+    }
+
+    private boolean isAbPackCode(String planCode) {
+        return planCode != null && planCode.startsWith(PlanCodes.AB_PACK_PREFIX);
+    }
+
+    private int resolveAbCredits(Plan plan, String planCode) {
+        if (plan != null && plan.getCreditAmount() != null && plan.getCreditAmount() > 0) {
+            return plan.getCreditAmount();
+        }
+        if (PlanCodes.AB_PACK_1.equals(planCode)) {
+            return 1;
+        }
+        if (PlanCodes.AB_PACK_5.equals(planCode)) {
+            return 5;
+        }
+        if (PlanCodes.AB_PACK_10.equals(planCode)) {
+            return 10;
+        }
+        return 0;
     }
 
     private void validateSellerCanPay(User user) {
-        if (!subscriptionProperties.isCampaignManagementEnabled()) {
-            throw new UserException("Подписка на Управление РК отключена", HttpStatus.BAD_REQUEST);
-        }
-        if (user.getRole() != Role.USER) {
+        if (user.getRole() != Role.USER && user.getRole() != Role.ADMIN) {
             throw new UserException("Оплату может инициировать только владелец кабинета", HttpStatus.FORBIDDEN);
         }
-        if (!Boolean.TRUE.equals(user.getEmailConfirmed())) {
+        if (user.getRole() == Role.USER && !Boolean.TRUE.equals(user.getEmailConfirmed())) {
             throw new UserException("Подтвердите почту перед оплатой", HttpStatus.FORBIDDEN);
         }
     }
 
-    private Plan loadCampaignManagePlan(Long planId) {
+    private Plan loadActivePlan(Long planId) {
         Plan plan = planRepository.findById(planId)
                 .orElseThrow(() -> new UserException("План не найден: " + planId, HttpStatus.NOT_FOUND));
         if (!Boolean.TRUE.equals(plan.getIsActive())) {
@@ -285,7 +368,13 @@ public class SubscriptionPaymentService {
     }
 
     private String buildPaymentDescription(Plan plan) {
-        return "Подписка «Управление РК»: " + plan.getName();
+        if (plan.getKind() == PlanKind.MAIN) {
+            return "Тариф «" + plan.getName() + "»";
+        }
+        if (plan.getKind() == PlanKind.AB_PACK) {
+            return "Пакет А/Б тестов: " + plan.getName();
+        }
+        return "Услуга «Управление РК»: " + plan.getName();
     }
 
     private String buildPaymentMetadata(
@@ -316,9 +405,16 @@ public class SubscriptionPaymentService {
         if (!PaymentStatus.SUCCESS.getDbValue().equals(payment.getStatus())) {
             return null;
         }
+        if (payment.getCabinet() == null || isAbPackCode(payment.getPlanCode())) {
+            return null;
+        }
+        PlanKind kind = planRepository.findByCode(payment.getPlanCode())
+                .map(Plan::getKind)
+                .orElse(PlanKind.CAMPAIGN);
         return subscriptionRepository
-                .findFirstActiveByUserId(
-                        payment.getUser().getId(),
+                .findFirstActiveByCabinetIdAndKind(
+                        payment.getCabinet().getId(),
+                        kind,
                         ACTIVE_STATUSES,
                         LocalDateTime.now()
                 )

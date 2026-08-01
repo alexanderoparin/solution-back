@@ -5,7 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * Запрос на инициацию оплаты тарифного плана.
+ * Запрос на инициацию оплаты тарифного плана / услуги кабинета.
  */
 @Getter
 @Setter
@@ -13,4 +13,7 @@ public class InitiatePaymentRequest {
 
     @NotNull(message = "planId обязателен")
     private Long planId;
+
+    @NotNull(message = "cabinetId обязателен")
+    private Long cabinetId;
 }

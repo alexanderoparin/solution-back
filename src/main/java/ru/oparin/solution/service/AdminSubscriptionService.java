@@ -8,21 +8,15 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.PaymentDto;
 import ru.oparin.solution.dto.SubscriptionDto;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.Payment;
-import ru.oparin.solution.model.Plan;
-import ru.oparin.solution.model.Subscription;
-import ru.oparin.solution.model.User;
-import ru.oparin.solution.repository.PaymentRepository;
-import ru.oparin.solution.repository.PlanRepository;
-import ru.oparin.solution.repository.SubscriptionRepository;
-import ru.oparin.solution.repository.UserRepository;
+import ru.oparin.solution.model.*;
+import ru.oparin.solution.repository.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Сервис админ-действий: ручное продление подписки и т.д.
+ * Админ-действия: ручное продление подписки кабинета / начисление А/Б.
  */
 @Service
 @RequiredArgsConstructor
@@ -33,24 +27,59 @@ public class AdminSubscriptionService {
     private final PlanRepository planRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final PaymentRepository paymentRepository;
+    private final CabinetRepository cabinetRepository;
+    private final SubscriptionPaymentService subscriptionPaymentService;
+    private final AbTestQuotaService abTestQuotaService;
 
     /**
-     * Назначить или продлить подписку пользователю (ручное действие админа).
-     * Если у пользователя уже есть активная подписка — продлевает её до expiresAt (или до now + periodDays).
-     * Иначе создаёт новую подписку.
+     * Назначить/продлить MAIN/CAMPAIGN или начислить AB_PACK кредиты кабинету.
      */
     @Transactional
-    public SubscriptionDto extendSubscription(Long userId, Long planId, LocalDateTime expiresAt) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new UserException("Пользователь не найден", HttpStatus.NOT_FOUND));
+    public SubscriptionDto extendSubscription(Long userId, Long cabinetId, Long planId, LocalDateTime expiresAt, Integer abCredits) {
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
         Plan plan = planRepository.findById(planId)
                 .orElseThrow(() -> new UserException("План не найден", HttpStatus.NOT_FOUND));
+        User owner = cabinet.getUser();
+        if (owner == null) {
+            throw new UserException("У кабинета нет владельца", HttpStatus.BAD_REQUEST);
+        }
+        if (userId != null && !owner.getId().equals(userId)) {
+            User explicit = userRepository.findById(userId)
+                    .orElseThrow(() -> new UserException("Пользователь не найден", HttpStatus.NOT_FOUND));
+            // userId в запросе — для совместимости UI; entitlement всегда на кабинет владельца
+            log.info("Админ extend: request.userId={} cabinet.ownerId={}", explicit.getId(), owner.getId());
+        }
+
+        if (plan.getKind() == PlanKind.AB_PACK) {
+            int credits = abCredits != null && abCredits > 0
+                    ? abCredits
+                    : (plan.getCreditAmount() != null ? plan.getCreditAmount() : 0);
+            abTestQuotaService.addCredits(cabinet, credits);
+            log.info("Админ начислил {} А/Б кредитов cabinetId={}", credits, cabinetId);
+            return SubscriptionDto.builder()
+                    .userId(owner.getId())
+                    .cabinetId(cabinetId)
+                    .planId(plan.getId())
+                    .planName(plan.getName())
+                    .planCode(plan.getCode())
+                    .planKind(plan.getKind().name())
+                    .status("credited")
+                    .startedAt(LocalDateTime.now())
+                    .build();
+        }
 
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime targetExpiresAt = expiresAt != null ? expiresAt : now.plusDays(plan.getPeriodDays());
+        LocalDateTime targetExpiresAt = expiresAt != null
+                ? expiresAt
+                : SubscriptionPeriodUtils.addPlanPeriod(now, plan);
 
         Subscription current = subscriptionRepository
-                .findFirstActiveByUserId(user.getId(), List.of("active", "trial"), now)
+                .findFirstActiveByCabinetIdAndKind(
+                        cabinet.getId(),
+                        plan.getKind() != null ? plan.getKind() : PlanKind.CAMPAIGN,
+                        List.of("active", "trial"),
+                        now)
                 .orElse(null);
 
         Subscription saved;
@@ -59,17 +88,13 @@ public class AdminSubscriptionService {
             current.setPlan(plan);
             current.setStatus("active");
             saved = subscriptionRepository.save(current);
-            log.info("Админ продлил подписку {} пользователя {} до {}", saved.getId(), userId, targetExpiresAt);
+            log.info("Админ продлил подписку {} cabinetId={} до {}", saved.getId(), cabinetId, targetExpiresAt);
         } else {
-            Subscription subscription = Subscription.builder()
-                    .user(user)
-                    .plan(plan)
-                    .status("active")
-                    .startedAt(now)
-                    .expiresAt(targetExpiresAt)
-                    .build();
-            saved = subscriptionRepository.save(subscription);
-            log.info("Админ создал подписку {} для пользователя {} до {}", saved.getId(), userId, targetExpiresAt);
+            saved = subscriptionPaymentService.createOrExtendKindSubscription(owner, cabinet, plan);
+            saved.setExpiresAt(targetExpiresAt);
+            saved.setStatus("active");
+            saved = subscriptionRepository.save(saved);
+            log.info("Админ создал подписку {} cabinetId={} до {}", saved.getId(), cabinetId, targetExpiresAt);
         }
         return toSubscriptionDto(saved);
     }
@@ -77,6 +102,13 @@ public class AdminSubscriptionService {
     @Transactional(readOnly = true)
     public List<SubscriptionDto> getSubscriptionsByUserId(Long userId) {
         return subscriptionRepository.findByUser_IdOrderByExpiresAtDesc(userId).stream()
+                .map(this::toSubscriptionDto)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<SubscriptionDto> getSubscriptionsByCabinetId(Long cabinetId) {
+        return subscriptionRepository.findByCabinet_IdOrderByExpiresAtDesc(cabinetId).stream()
                 .map(this::toSubscriptionDto)
                 .collect(Collectors.toList());
     }
@@ -94,8 +126,11 @@ public class AdminSubscriptionService {
         return SubscriptionDto.builder()
                 .id(s.getId())
                 .userId(s.getUser().getId())
+                .cabinetId(s.getCabinet() != null ? s.getCabinet().getId() : null)
                 .planId(planId)
                 .planName(planName)
+                .planCode(s.getPlan() != null ? s.getPlan().getCode() : null)
+                .planKind(s.getPlan() != null && s.getPlan().getKind() != null ? s.getPlan().getKind().name() : null)
                 .status(s.getStatus())
                 .startedAt(s.getStartedAt())
                 .expiresAt(s.getExpiresAt())

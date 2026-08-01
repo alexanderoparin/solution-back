@@ -35,6 +35,8 @@ public interface CabinetRepository extends JpaRepository<Cabinet, Long>, JpaSpec
 
     boolean existsByApiKey(String apiKey);
 
+    boolean existsByUser_Id(Long userId);
+
     /**
      * Проверка, что кабинет принадлежит пользователю (для контроля доступа).
      */

@@ -41,6 +41,14 @@ public class Plan {
     private String code;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "kind", length = 20)
+    private PlanKind kind;
+
+    /** Число кредитов А/Б для пакетов {@link PlanKind#AB_PACK}. */
+    @Column(name = "credit_amount")
+    private Integer creditAmount;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "period_type", nullable = false, length = 20)
     @Builder.Default
     private PlanPeriodType periodType = PlanPeriodType.DAYS;

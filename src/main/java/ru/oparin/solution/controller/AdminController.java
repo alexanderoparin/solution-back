@@ -213,6 +213,8 @@ public class AdminController {
                 .isActive(request.getIsActive() != null ? request.getIsActive() : true)
                 .code(request.getCode())
                 .periodType(request.getPeriodType())
+                .kind(request.getKind())
+                .creditAmount(request.getCreditAmount())
                 .build();
         plan = planRepository.save(plan);
         return ResponseEntity.status(HttpStatus.CREATED).body(toPlanDto(plan));
@@ -231,6 +233,8 @@ public class AdminController {
         if (request.getIsActive() != null) plan.setIsActive(request.getIsActive());
         if (request.getCode() != null) plan.setCode(request.getCode());
         if (request.getPeriodType() != null) plan.setPeriodType(request.getPeriodType());
+        if (request.getKind() != null) plan.setKind(request.getKind());
+        if (request.getCreditAmount() != null) plan.setCreditAmount(request.getCreditAmount());
         plan = planRepository.save(plan);
         return ResponseEntity.ok(toPlanDto(plan));
     }
@@ -251,15 +255,22 @@ public class AdminController {
         return ResponseEntity.ok(adminSubscriptionService.getPaymentsByUserId(userId));
     }
 
-    /** Ручное назначение/продление подписки пользователю. */
+    /** Ручное назначение/продление подписки кабинету. */
     @PostMapping("/subscription/extend")
     public ResponseEntity<SubscriptionDto> extendSubscription(@Valid @RequestBody ExtendSubscriptionRequest request) {
         SubscriptionDto dto = adminSubscriptionService.extendSubscription(
                 request.getUserId(),
+                request.getCabinetId(),
                 request.getPlanId(),
-                request.getExpiresAt()
+                request.getExpiresAt(),
+                request.getAbCredits()
         );
         return ResponseEntity.ok(dto);
+    }
+
+    @GetMapping("/cabinets/{cabinetId}/subscriptions")
+    public ResponseEntity<List<SubscriptionDto>> getCabinetSubscriptions(@PathVariable Long cabinetId) {
+        return ResponseEntity.ok(adminSubscriptionService.getSubscriptionsByCabinetId(cabinetId));
     }
 
     @GetMapping("/deletion-requests")

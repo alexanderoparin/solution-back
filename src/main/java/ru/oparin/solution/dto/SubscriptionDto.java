@@ -16,8 +16,11 @@ public class SubscriptionDto {
 
     private Long id;
     private Long userId;
+    private Long cabinetId;
     private Long planId;
     private String planName;
+    private String planCode;
+    private String planKind;
     private String status;
     private LocalDateTime startedAt;
     private LocalDateTime expiresAt;

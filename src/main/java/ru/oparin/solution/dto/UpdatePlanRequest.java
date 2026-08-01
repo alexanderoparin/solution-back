@@ -2,6 +2,7 @@ package ru.oparin.solution.dto;
 
 import jakarta.validation.constraints.DecimalMin;
 import lombok.*;
+import ru.oparin.solution.model.PlanKind;
 import ru.oparin.solution.model.PlanPeriodType;
 
 import java.math.BigDecimal;
@@ -23,4 +24,6 @@ public class UpdatePlanRequest {
     private Boolean isActive;
     private String code;
     private PlanPeriodType periodType;
+    private PlanKind kind;
+    private Integer creditAmount;
 }

@@ -18,7 +18,6 @@ import ru.oparin.solution.dto.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
-import ru.oparin.solution.model.Subscription;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.SubscriptionRepository;
 import ru.oparin.solution.repository.UserRepository;
@@ -46,6 +45,7 @@ public class UserService {
     private final ProfileSubscriptionService profileSubscriptionService;
     private final AccountTypeService accountTypeService;
     private final CabinetAccessService cabinetAccessService;
+    private final CabinetBillingService cabinetBillingService;
 
     @Lazy
     @Autowired
@@ -174,39 +174,10 @@ public class UserService {
     }
 
     /**
-     * Создаёт подписку для нового самостоятельного селлера после подтверждения почты.
-     * При выключенной оплате — бессрочная активная подписка ({@code expires_at = NULL}).
-     * При включённой оплате — триал на trialDays дней.
+     * Ранее создавал user-scoped триал. Тарифы теперь на кабинете — no-op.
      */
     void createTrialSubscriptionForUser(User user) {
-        LocalDateTime now = LocalDateTime.now();
-        List<String> activeStatuses = List.of("active", "trial");
-        boolean hasActive = subscriptionRepository
-                .findFirstActiveByUserId(user.getId(), activeStatuses, now)
-                .isPresent();
-        if (hasActive) {
-            return;
-        }
-
-        String status;
-        LocalDateTime expiresAt;
-        if (!subscriptionProperties.isBillingEnabled()) {
-            status = "active";
-            expiresAt = null;
-        } else {
-            status = "trial";
-            expiresAt = now.plusDays(subscriptionProperties.getTrialDays());
-        }
-
-        Subscription subscription = Subscription.builder()
-                .user(user)
-                .plan(null)
-                .status(status)
-                .startedAt(now)
-                .expiresAt(expiresAt)
-                .build();
-
-        subscriptionRepository.save(subscription);
+        // FREE + квота А/Б создаются в CabinetBillingService.initializeCabinetBilling
     }
 
     /**
@@ -227,10 +198,13 @@ public class UserService {
     private Cabinet createNewCabinet(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserException("Пользователь не найден: " + userId, HttpStatus.NOT_FOUND));
-        return Cabinet.builder()
+        Cabinet cabinet = Cabinet.builder()
                 .user(user)
                 .name("Основной кабинет")
                 .build();
+        cabinet = cabinetService.save(cabinet);
+        cabinetBillingService.initializeCabinetBilling(cabinet);
+        return cabinet;
     }
 
     /**

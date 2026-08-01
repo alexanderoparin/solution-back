@@ -52,6 +52,7 @@ public class CabinetService {
     private final CabinetDeletionService cabinetDeletionService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final WbCommonApiClient wbCommonApiClient;
+    private final CabinetBillingService cabinetBillingService;
 
     /**
      * Список кабинетов пользователя (продавца), отсортированный по дате создания (новые первые).
@@ -221,6 +222,7 @@ public class CabinetService {
                 .tokenType(request.getTokenType())
                 .build();
         cabinet = cabinetRepository.save(cabinet);
+        cabinetBillingService.initializeCabinetBilling(cabinet);
         return toDto(cabinet);
     }
 

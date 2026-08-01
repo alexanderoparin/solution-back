@@ -6,21 +6,16 @@ import org.springframework.stereotype.Service;
 import ru.oparin.solution.config.SubscriptionProperties;
 import ru.oparin.solution.dto.CampaignManageAccessDto;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.PlanCodes;
-import ru.oparin.solution.model.Role;
-import ru.oparin.solution.model.Subscription;
-import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.SubscriptionRepository;
+import ru.oparin.solution.service.CabinetEntitlementService;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
-import java.util.Optional;
 
 /**
- * Проверка entitlement на «Управление РК»: подписка campaign_* или клиент агентства ({@code agency_managed}).
- * <p>
- * Используется и для ручных операций (UI/API), и для планировщика расписания.
+ * Проверка entitlement на «Управление РК» на уровне кабинета:
+ * PRO / agency_managed / активная услуга campaign_*.
  */
 @Service
 @RequiredArgsConstructor
@@ -28,6 +23,7 @@ public class CampaignManageAccessService {
 
     public static final String SUBSCRIPTION_REQUIRED_CODE = "CAMPAIGN_MANAGE_SUBSCRIPTION_REQUIRED";
     public static final String STATUS_AGENCY = "AGENCY";
+    public static final String STATUS_PRO = "PRO";
 
     public static final String SCHEDULE_STOPPED_SUBSCRIPTION_EXPIRED =
             "Расписание отключено: истекла подписка на «Управление РК». "
@@ -36,13 +32,12 @@ public class CampaignManageAccessService {
             "Расписание отключено: нет активной подписки на «Управление РК». "
                     + "Оформите подписку и нажмите «Запустить» для автоматического запуска.";
 
-    private static final List<String> ACTIVE_STATUSES = List.of("active", "trial");
-
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionProperties subscriptionProperties;
+    private final CabinetEntitlementService cabinetEntitlementService;
 
     /**
-     * Пользователь, на чью подписку смотрим (селлер).
+     * Пользователь-селлер (владелец), если нужен для UI без кабинета.
      */
     public User resolveSubscriptionHolder(User actor, User seller) {
         if (seller != null) {
@@ -62,8 +57,19 @@ public class CampaignManageAccessService {
     }
 
     /**
-     * Право на автоматику и управление РК для владельца кабинета (селлера).
+     * Право на автоматику и управление РК для кабинета.
      */
+    public boolean hasCampaignEntitlement(Cabinet cabinet) {
+        if (!isCampaignManagementEnabled()) {
+            return true;
+        }
+        return cabinetEntitlementService.hasCampaignManageAccess(cabinet);
+    }
+
+    /**
+     * @deprecated предпочитайте {@link #hasCampaignEntitlement(Cabinet)}.
+     */
+    @Deprecated
     public boolean hasCampaignEntitlement(User seller) {
         if (!isCampaignManagementEnabled()) {
             return true;
@@ -74,27 +80,37 @@ public class CampaignManageAccessService {
         if (Boolean.TRUE.equals(seller.getAgencyManaged())) {
             return true;
         }
-        return findActiveCampaignSubscription(seller).isPresent();
+        // Без кабинета — нет cabinet-scoped подписки
+        return false;
     }
 
-    /**
-     * Текст события в журнале РК при отключении расписания из-за отсутствия entitlement.
-     */
-    public String scheduleStopMessageForSeller(User seller) {
-        if (seller == null) {
+    public String scheduleStopMessageForCabinet(Cabinet cabinet) {
+        if (cabinet == null) {
             return SCHEDULE_STOPPED_NO_SUBSCRIPTION;
         }
-        LocalDateTime now = LocalDateTime.now();
-        boolean hadCampaignSubscription = subscriptionRepository
-                .findLastExpiredCampaignByUserId(
-                        seller.getId(), PlanCodes.CAMPAIGN_PLAN_PREFIX, now)
-                .isPresent();
-        return hadCampaignSubscription ? SCHEDULE_STOPPED_SUBSCRIPTION_EXPIRED : SCHEDULE_STOPPED_NO_SUBSCRIPTION;
+        boolean had = cabinetEntitlementService.findLastExpiredCampaign(cabinet).isPresent();
+        return had ? SCHEDULE_STOPPED_SUBSCRIPTION_EXPIRED : SCHEDULE_STOPPED_NO_SUBSCRIPTION;
     }
 
     /**
-     * Есть ли право на ручные операции управления РК для текущего контекста.
+     * @deprecated предпочитайте {@link #scheduleStopMessageForCabinet(Cabinet)}.
      */
+    @Deprecated
+    public String scheduleStopMessageForSeller(User seller) {
+        return SCHEDULE_STOPPED_NO_SUBSCRIPTION;
+    }
+
+    public boolean hasAccess(User actor, Cabinet cabinet) {
+        if (!isCampaignManagementEnabled()) {
+            return true;
+        }
+        return hasCampaignEntitlement(cabinet);
+    }
+
+    /**
+     * @deprecated предпочитайте {@link #hasAccess(User, Cabinet)}.
+     */
+    @Deprecated
     public boolean hasAccess(User actor, User seller) {
         if (!isCampaignManagementEnabled()) {
             return true;
@@ -103,9 +119,19 @@ public class CampaignManageAccessService {
         return hasCampaignEntitlement(holder);
     }
 
+    public void requireAccess(User actor, Cabinet cabinet) {
+        if (!hasAccess(actor, cabinet)) {
+            throw new UserException(
+                    "Для использования Управления РК необходима подписка",
+                    HttpStatus.FORBIDDEN
+            );
+        }
+    }
+
     /**
-     * Требует entitlement для ручных операций; при отсутствии — {@link UserException} 403.
+     * @deprecated предпочитайте {@link #requireAccess(User, Cabinet)}.
      */
+    @Deprecated
     public void requireAccess(User actor, User seller) {
         if (!hasAccess(actor, seller)) {
             throw new UserException(
@@ -115,7 +141,7 @@ public class CampaignManageAccessService {
         }
     }
 
-    public CampaignManageAccessDto buildAccessState(User actor, User seller) {
+    public CampaignManageAccessDto buildAccessState(User actor, Cabinet cabinet) {
         if (!isCampaignManagementEnabled()) {
             return CampaignManageAccessDto.builder()
                     .enabled(false)
@@ -124,9 +150,7 @@ public class CampaignManageAccessService {
                     .canActivateFree(false)
                     .build();
         }
-
-        User holder = resolveSubscriptionHolder(actor, seller);
-        if (holder == null) {
+        if (cabinet == null) {
             return CampaignManageAccessDto.builder()
                     .enabled(true)
                     .hasAccess(false)
@@ -135,7 +159,8 @@ public class CampaignManageAccessService {
                     .build();
         }
 
-        if (Boolean.TRUE.equals(holder.getAgencyManaged())) {
+        User owner = cabinet.getUser();
+        if (owner != null && Boolean.TRUE.equals(owner.getAgencyManaged())) {
             return CampaignManageAccessDto.builder()
                     .enabled(true)
                     .hasAccess(true)
@@ -144,11 +169,25 @@ public class CampaignManageAccessService {
                     .build();
         }
 
-        LocalDateTime now = LocalDateTime.now();
-        boolean canActivateFree = !subscriptionRepository.existsByUser_IdAndPlan_Code(
-                holder.getId(), PlanCodes.CAMPAIGN_FREE);
+        if (cabinetEntitlementService.hasUnlimitedAccess(cabinet)) {
+            Subscription pro = cabinetEntitlementService.findActiveMainSubscription(cabinet).orElse(null);
+            return CampaignManageAccessDto.builder()
+                    .enabled(true)
+                    .hasAccess(true)
+                    .status(STATUS_PRO)
+                    .expiresAt(pro != null ? pro.getExpiresAt() : null)
+                    .daysRemaining(pro != null && pro.getExpiresAt() != null
+                            ? daysBetweenCeil(LocalDateTime.now(), pro.getExpiresAt())
+                            : null)
+                    .canActivateFree(false)
+                    .build();
+        }
 
-        return findActiveCampaignSubscription(holder)
+        LocalDateTime now = LocalDateTime.now();
+        boolean canActivateFree = !subscriptionRepository.existsByCabinet_IdAndPlan_Code(
+                cabinet.getId(), PlanCodes.CAMPAIGN_FREE);
+
+        return cabinetEntitlementService.findActiveCampaignSubscription(cabinet)
                 .map(sub -> CampaignManageAccessDto.builder()
                         .enabled(true)
                         .hasAccess(true)
@@ -158,10 +197,7 @@ public class CampaignManageAccessService {
                         .canActivateFree(canActivateFree)
                         .build())
                 .orElseGet(() -> {
-                    Subscription expired = subscriptionRepository
-                            .findLastExpiredCampaignByUserId(
-                                    holder.getId(), PlanCodes.CAMPAIGN_PLAN_PREFIX, now)
-                            .orElse(null);
+                    Subscription expired = cabinetEntitlementService.findLastExpiredCampaign(cabinet).orElse(null);
                     if (expired != null) {
                         int daysAgo = daysBetweenCeil(expired.getExpiresAt(), now);
                         return CampaignManageAccessDto.builder()
@@ -182,17 +218,37 @@ public class CampaignManageAccessService {
                 });
     }
 
-    private Optional<Subscription> findActiveCampaignSubscription(User holder) {
-        return subscriptionRepository.findFirstActiveCampaignByUserId(
-                holder.getId(),
-                PlanCodes.CAMPAIGN_PLAN_PREFIX,
-                ACTIVE_STATUSES,
-                LocalDateTime.now()
-        );
+    /**
+     * Состояние без кабинета (legacy /access) — только agency.
+     */
+    public CampaignManageAccessDto buildAccessState(User actor, User seller) {
+        if (!isCampaignManagementEnabled()) {
+            return CampaignManageAccessDto.builder()
+                    .enabled(false)
+                    .hasAccess(true)
+                    .status("NONE")
+                    .canActivateFree(false)
+                    .build();
+        }
+        User holder = resolveSubscriptionHolder(actor, seller);
+        if (holder != null && Boolean.TRUE.equals(holder.getAgencyManaged())) {
+            return CampaignManageAccessDto.builder()
+                    .enabled(true)
+                    .hasAccess(true)
+                    .status(STATUS_AGENCY)
+                    .canActivateFree(false)
+                    .build();
+        }
+        return CampaignManageAccessDto.builder()
+                .enabled(true)
+                .hasAccess(false)
+                .status("NONE")
+                .canActivateFree(false)
+                .build();
     }
 
     private static int daysBetweenCeil(LocalDateTime from, LocalDateTime to) {
-        if (to.isBefore(from) || to.isEqual(from)) {
+        if (to == null || from == null || to.isBefore(from) || to.isEqual(from)) {
             return 0;
         }
         return (int) ChronoUnit.DAYS.between(from.toLocalDate(), to.toLocalDate());

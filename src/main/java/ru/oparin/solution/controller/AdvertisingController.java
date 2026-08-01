@@ -179,7 +179,7 @@ public class AdvertisingController {
         }
         try {
             User actor = userService.findByEmail(authentication.getName());
-            campaignManageAccessService.requireAccess(actor, context.user());
+            campaignManageAccessService.requireAccess(actor, cabinet);
             CampaignControlEnqueueResponse response = start
                     ? promotionCampaignControlService.enqueueStart(cabinet, advertId)
                     : promotionCampaignControlService.enqueuePause(cabinet, advertId);
