@@ -108,13 +108,10 @@ public class WbApiEventDispatcher {
 
     private void logExecutionPlanAndPool(String phase, GroupedExecutionPlan plan) {
         log.info(
-                "WB events poll: {} — план: событий {}, цепочек (cabinet+type) {}, сразу отправлено в пул {}, "
-                        + "ожидают цепочку (ещё не в пуле) {}, {}",
+                "WB events poll: {} — план: событий {} (по одному на cabinet+type), сразу в пул {}, {}",
                 phase,
                 plan.futures().size(),
-                plan.executionGroupCount(),
                 plan.immediatePoolSubmits(),
-                plan.chainedPendingSubmits(),
                 formatExecutorPoolState()
         );
     }
@@ -137,58 +134,25 @@ public class WbApiEventDispatcher {
     }
 
     /**
-     * План async-выполнения: futures по порядку poll и счётчики постановки в {@code cabinetUpdateExecutor}.
-     *
-     * @param executionGroupCount     число уникальных пар (cabinetId, eventType)
-     * @param immediatePoolSubmits    задач сразу отправлено в пул (голова цепочки)
-     * @param chainedPendingSubmits   событий в цепочке, ещё не отправленных в пул
+     * План async-выполнения: все выбранные события сразу в пул (параллельно).
+     * Fair-poll уже гарантирует ≤1 событие на (cabinetId, eventType), поэтому цепочки не нужны.
      */
     private record GroupedExecutionPlan(
             List<CompletableFuture<EventExecutionOutcome>> futures,
-            int executionGroupCount,
-            int immediatePoolSubmits,
-            int chainedPendingSubmits
+            int immediatePoolSubmits
     ) {
     }
 
     /**
-     * Формирует план выполнения событий:
-     * <ul>
-     *     <li>между разными (cabinetId, eventType) — параллельно;</li>
-     *     <li>внутри одной пары (cabinetId, eventType) — строго последовательно.</li>
-     * </ul>
-     * Это сохраняет throughput, но устраняет «перемешивание» порядка внутри одной группы.
+     * Все due-события из fair-poll отправляются в пул сразу и параллельно.
+     * Следующее событие той же пары (cabinet, type) попадёт только в следующий poll.
      */
     private GroupedExecutionPlan buildGroupedExecutionPlan(List<WbApiEvent> events) {
-        Map<String, CompletableFuture<EventExecutionOutcome>> tailsByGroup = new HashMap<>();
         List<CompletableFuture<EventExecutionOutcome>> plan = new ArrayList<>(events.size());
-        int immediatePoolSubmits = 0;
-
         for (WbApiEvent event : events) {
-            String groupKey = executionGroupKey(event);
-            CompletableFuture<EventExecutionOutcome> prevTail = tailsByGroup.get(groupKey);
-            CompletableFuture<EventExecutionOutcome> nextFuture;
-            if (prevTail == null) {
-                immediatePoolSubmits++;
-                nextFuture = CompletableFuture.supplyAsync(() -> executeSingle(event), cabinetUpdateExecutor);
-            } else {
-                // Продолжаем цепочку даже если предыдущий future завершился с исключением/отменой.
-                nextFuture = prevTail
-                        .handle((ignored, ex) -> null)
-                        .thenCompose(ignored -> CompletableFuture.supplyAsync(() -> executeSingle(event), cabinetUpdateExecutor));
-            }
-            tailsByGroup.put(groupKey, nextFuture);
-            plan.add(nextFuture);
+            plan.add(CompletableFuture.supplyAsync(() -> executeSingle(event), cabinetUpdateExecutor));
         }
-        int executionGroupCount = tailsByGroup.size();
-        int chainedPendingSubmits = events.size() - immediatePoolSubmits;
-        return new GroupedExecutionPlan(plan, executionGroupCount, immediatePoolSubmits, chainedPendingSubmits);
-    }
-
-    private String executionGroupKey(WbApiEvent event) {
-        Long cabinetId = event.getCabinet() != null ? event.getCabinet().getId() : null;
-        String eventType = event.getEventType() != null ? event.getEventType().name() : "UNKNOWN";
-        return (cabinetId != null ? cabinetId : -1L) + "|" + eventType;
+        return new GroupedExecutionPlan(plan, plan.size());
     }
 
     /**

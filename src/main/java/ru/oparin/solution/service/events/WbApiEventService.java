@@ -23,6 +23,7 @@ import ru.oparin.solution.service.sync.PromotionCampaignSyncService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -761,16 +762,33 @@ public class WbApiEventService {
         return eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES);
     }
 
+    /**
+     * Due-события для poll: не больше одного на пару (кабинет, тип события).
+     * Лимиты WB на кабинет+endpoint — нет смысла тащить в один poll сотни STOCKS одного кабинета.
+     */
     @Transactional(readOnly = true)
     public List<WbApiEvent> findDueEvents() {
-        return eventRepository.findReadyEvents(
-                List.of(
-                        WbApiEventStatus.CREATED,
-                        WbApiEventStatus.FAILED_RETRYABLE,
-                        WbApiEventStatus.DEFERRED_RATE_LIMIT
-                ),
-                LocalDateTime.now()
+        List<WbApiEventStatus> statuses = List.of(
+                WbApiEventStatus.CREATED,
+                WbApiEventStatus.FAILED_RETRYABLE,
+                WbApiEventStatus.DEFERRED_RATE_LIMIT
         );
+        List<String> statusNames = statuses.stream().map(Enum::name).toList();
+        List<Long> ids = eventRepository.findReadyEventIdsOnePerCabinetAndType(statusNames, LocalDateTime.now());
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, WbApiEvent> byId = eventRepository.findAllByIdInWithCabinet(ids).stream()
+                .collect(Collectors.toMap(WbApiEvent::getId, e -> e, (a, b) -> a));
+        // Глобальный порядок для пула: выше priority раньше, затем FIFO по nextAttemptAt/id.
+        return ids.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
+                .sorted(Comparator
+                        .comparing(WbApiEvent::getPriority, Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(WbApiEvent::getNextAttemptAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(WbApiEvent::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
     }
 
     @Transactional

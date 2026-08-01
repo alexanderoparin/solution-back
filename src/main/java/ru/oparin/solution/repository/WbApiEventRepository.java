@@ -16,18 +16,29 @@ import java.util.List;
 
 public interface WbApiEventRepository extends JpaRepository<WbApiEvent, Long> {
 
+    /**
+     * Fair-poll: по одному due-событию на пару (cabinet_id, event_type).
+     * Внутри пары — максимальный priority, затем ближайший next_attempt_at, затем меньший id.
+     */
+    @Query(value = """
+            SELECT DISTINCT ON (e.cabinet_id, e.event_type) e.id
+              FROM solution.wb_api_events e
+             WHERE e.status IN (:statuses)
+               AND e.next_attempt_at <= :now
+             ORDER BY e.cabinet_id, e.event_type, e.priority DESC, e.next_attempt_at ASC, e.id ASC
+            """, nativeQuery = true)
+    List<Long> findReadyEventIdsOnePerCabinetAndType(
+            @Param("statuses") Collection<String> statuses,
+            @Param("now") LocalDateTime now
+    );
+
     @Query("""
             select e
             from WbApiEvent e
             join fetch e.cabinet
-            where e.status in :statuses
-              and e.nextAttemptAt <= :now
-            order by e.priority desc, e.nextAttemptAt asc, e.id asc
+            where e.id in :ids
             """)
-    List<WbApiEvent> findReadyEvents(
-            @Param("statuses") Collection<WbApiEventStatus> statuses,
-            @Param("now") LocalDateTime now
-    );
+    List<WbApiEvent> findAllByIdInWithCabinet(@Param("ids") Collection<Long> ids);
 
     @Query("""
             select e
