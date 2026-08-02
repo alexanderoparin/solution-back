@@ -5,26 +5,21 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Sort.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.oparin.solution.dto.CabinetBillingOverviewDto;
+import ru.oparin.solution.dto.*;
 import ru.oparin.solution.dto.CabinetBillingOverviewDto.AbTestsOverviewDto;
 import ru.oparin.solution.dto.CabinetBillingOverviewDto.CampaignOverviewDto;
 import ru.oparin.solution.dto.CabinetBillingOverviewDto.MainTariffOverviewDto;
-import ru.oparin.solution.dto.PageResponse;
-import ru.oparin.solution.dto.PaymentDto;
-import ru.oparin.solution.dto.SubscriptionDto;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.*;
 import ru.oparin.solution.repository.spec.CabinetManagedSpecifications;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -54,22 +49,26 @@ public class AdminSubscriptionService {
             User admin,
             int page,
             int size,
-            String search
+            String search,
+            CabinetBillingSortField sortBy,
+            Sort.Direction sortDir
     ) {
         if (admin == null || admin.getRole() != Role.ADMIN) {
             throw new UserException("Доступ только для ADMIN", HttpStatus.FORBIDDEN);
         }
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
-        PageRequest pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.ASC, "name"));
-        Page<Cabinet> cabinetPage = cabinetRepository.findAll(
-                CabinetManagedSpecifications.managedList(admin, search, false),
-                pageable
-        );
-        List<Cabinet> cabinets = cabinetPage.getContent();
-        if (cabinets.isEmpty()) {
+        CabinetBillingSortField effectiveSort =
+                sortBy != null ? sortBy : CabinetBillingSortField.CABINET_ID;
+        Sort.Direction effectiveDir = sortDir != null ? sortDir : Sort.Direction.DESC;
+        var spec = CabinetManagedSpecifications.managedList(admin, search, false);
+
+        if (isEntitySort(effectiveSort)) {
+            PageRequest pageable = PageRequest.of(safePage, safeSize, entitySort(effectiveSort, effectiveDir));
+            Page<Cabinet> cabinetPage = cabinetRepository.findAll(spec, pageable);
+            List<CabinetBillingOverviewDto> rows = buildOverviewRows(cabinetPage.getContent());
             return PageResponse.<CabinetBillingOverviewDto>builder()
-                    .content(List.of())
+                    .content(rows)
                     .totalElements(cabinetPage.getTotalElements())
                     .totalPages(cabinetPage.getTotalPages())
                     .size(cabinetPage.getSize())
@@ -77,6 +76,86 @@ public class AdminSubscriptionService {
                     .build();
         }
 
+        // MAIN / CAMPAIGN / AB — сортировка по вычисляемым полям после сборки DTO
+        List<Cabinet> allCabinets = cabinetRepository.findAll(spec, Sort.by(Order.asc("id")));
+        List<CabinetBillingOverviewDto> allRows = buildOverviewRows(allCabinets);
+        allRows.sort(billingComparator(effectiveSort, effectiveDir));
+        long total = allRows.size();
+        int from = Math.min(safePage * safeSize, allRows.size());
+        int to = Math.min(from + safeSize, allRows.size());
+        List<CabinetBillingOverviewDto> pageRows = allRows.subList(from, to);
+        int totalPages = safeSize == 0 ? 0 : (int) Math.ceil((double) total / safeSize);
+        return PageResponse.<CabinetBillingOverviewDto>builder()
+                .content(pageRows)
+                .totalElements(total)
+                .totalPages(totalPages)
+                .size(safeSize)
+                .number(safePage)
+                .build();
+    }
+
+    private static boolean isEntitySort(CabinetBillingSortField sortBy) {
+        return sortBy == CabinetBillingSortField.CABINET_ID
+                || sortBy == CabinetBillingSortField.CABINET_NAME
+                || sortBy == CabinetBillingSortField.SELLER_EMAIL;
+    }
+
+    private static Sort entitySort(CabinetBillingSortField sortBy, Sort.Direction direction) {
+        return switch (sortBy) {
+            case CABINET_ID -> Sort.by(new Order(direction, "id"));
+            case CABINET_NAME -> Sort.by(new Order(direction, "name").ignoreCase());
+            case SELLER_EMAIL -> Sort.by(new Order(direction, "user.email").ignoreCase());
+            default -> Sort.by(new Order(Sort.Direction.DESC, "id"));
+        };
+    }
+
+    private static Comparator<CabinetBillingOverviewDto> billingComparator(
+            CabinetBillingSortField sortBy,
+            Sort.Direction direction
+    ) {
+        Comparator<CabinetBillingOverviewDto> byId = Comparator.comparing(
+                CabinetBillingOverviewDto::getCabinetId,
+                Comparator.nullsLast(Long::compareTo)
+        );
+        Comparator<CabinetBillingOverviewDto> primary = switch (sortBy) {
+            case MAIN -> Comparator.comparing(
+                    r -> r.getMainTariff() != null && r.getMainTariff().getName() != null
+                            ? r.getMainTariff().getName().toLowerCase(Locale.ROOT)
+                            : "",
+                    String::compareTo
+            );
+            case CAMPAIGN -> Comparator
+                    .comparing((CabinetBillingOverviewDto r) ->
+                            r.getCampaign() != null && Boolean.TRUE.equals(r.getCampaign().getConnected()))
+                    .thenComparing(r -> {
+                        if (r.getCampaign() == null || r.getCampaign().getPlanName() == null) {
+                            return "";
+                        }
+                        return r.getCampaign().getPlanName().toLowerCase(Locale.ROOT);
+                    });
+            case AB -> Comparator
+                    .comparing((CabinetBillingOverviewDto r) ->
+                            r.getAbTests() != null && Boolean.TRUE.equals(r.getAbTests().getUnlimited()))
+                    .thenComparing(r -> {
+                        if (r.getAbTests() == null || r.getAbTests().getRemaining() == null) {
+                            return -1;
+                        }
+                        return r.getAbTests().getRemaining();
+                    })
+                    .thenComparing(r ->
+                            r.getAbTests() != null && Boolean.TRUE.equals(r.getAbTests().getActivated()));
+            default -> byId;
+        };
+        if (direction == Sort.Direction.DESC) {
+            primary = primary.reversed();
+        }
+        return primary.thenComparing(byId.reversed());
+    }
+
+    private List<CabinetBillingOverviewDto> buildOverviewRows(List<Cabinet> cabinets) {
+        if (cabinets.isEmpty()) {
+            return List.of();
+        }
         List<Long> ids = cabinets.stream().map(Cabinet::getId).toList();
         LocalDateTime now = LocalDateTime.now();
         List<Subscription> activeSubs = subscriptionRepository.findActiveByCabinetIdIn(ids, ACTIVE_STATUSES, now);
@@ -102,14 +181,7 @@ public class AdminSubscriptionService {
             rows.add(toOverviewDto(cabinet, mainByCabinet.get(cabinet.getId()),
                     campaignByCabinet.get(cabinet.getId()), quotaByCabinet.get(cabinet.getId())));
         }
-
-        return PageResponse.<CabinetBillingOverviewDto>builder()
-                .content(rows)
-                .totalElements(cabinetPage.getTotalElements())
-                .totalPages(cabinetPage.getTotalPages())
-                .size(cabinetPage.getSize())
-                .number(cabinetPage.getNumber())
-                .build();
+        return rows;
     }
 
     private CabinetBillingOverviewDto toOverviewDto(

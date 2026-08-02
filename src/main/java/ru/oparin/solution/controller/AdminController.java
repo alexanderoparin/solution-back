@@ -276,11 +276,14 @@ public class AdminController {
     public ResponseEntity<PageResponse<CabinetBillingOverviewDto>> getCabinetsBilling(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) String search
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = CabinetBillingSortField.DEFAULT_REQUEST_VALUE) CabinetBillingSortField sortBy,
+            @RequestParam(defaultValue = "DESC") org.springframework.data.domain.Sort.Direction sortDir
     ) {
         User admin = userService.findByEmail(
                 SecurityContextHolder.getContext().getAuthentication().getName());
-        return ResponseEntity.ok(adminSubscriptionService.pageCabinetBilling(admin, page, size, search));
+        return ResponseEntity.ok(adminSubscriptionService.pageCabinetBilling(
+                admin, page, size, search, sortBy, sortDir));
     }
 
     @GetMapping("/cabinets/{cabinetId}/subscriptions")
