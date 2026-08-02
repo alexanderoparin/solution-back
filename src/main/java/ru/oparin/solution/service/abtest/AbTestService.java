@@ -1103,10 +1103,15 @@ public class AbTestService {
                 .map(AbTestCampaign::getAdvertId)
                 .collect(Collectors.toList());
         long totalViews = variants.stream().mapToLong(AbTestVariant::getViews).sum();
+        // Лидер CTR — среди вариантов не на паузе (иначе оба активных «проигрывают» паузе).
         BigDecimal bestCtr = variants.stream()
+                .filter(v -> !v.isPaused())
                 .map(AbTestVariant::computeCtr)
                 .max(BigDecimal::compareTo)
-                .orElse(BigDecimal.ZERO);
+                .orElseGet(() -> variants.stream()
+                        .map(AbTestVariant::computeCtr)
+                        .max(BigDecimal::compareTo)
+                        .orElse(BigDecimal.ZERO));
 
         String title = productCardRepository.findByNmIdAndCabinet_Id(test.getNmId(), test.getCabinetId())
                 .map(ProductCard::getTitle)
@@ -1119,7 +1124,8 @@ public class AbTestService {
                     .divide(BigDecimal.valueOf(totalViews), 2, RoundingMode.HALF_UP)
                     : BigDecimal.ZERO;
             BigDecimal delta = bestCtr.subtract(ctr);
-            boolean losing = test.getInsightCode() == AbTestInsightCode.HAS_LEADER
+            boolean losing = !v.isPaused()
+                    && test.getInsightCode() == AbTestInsightCode.HAS_LEADER
                     && ctr.compareTo(bestCtr) < 0
                     && v.getViews() >= minViewsPerVariant;
             boolean hasLocalImage = v.getStoredFileName() != null && !v.getStoredFileName().isBlank();
