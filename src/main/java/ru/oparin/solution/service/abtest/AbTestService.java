@@ -1241,8 +1241,19 @@ public class AbTestService {
                     .paused(v.isPaused())
                     .ctrDeltaToBest(delta.negate())
                     .losing(losing)
+                    .winning(false)
                     .build();
         }).collect(Collectors.toList());
+
+        // Если есть проигрывающий — помечаем лидера CTR среди активных.
+        boolean anyLosing = variantDtos.stream().anyMatch(AbTestVariantDto::isLosing);
+        if (anyLosing) {
+            for (AbTestVariantDto dto : variantDtos) {
+                if (!dto.isPaused() && dto.getCtr() != null && dto.getCtr().compareTo(bestCtr) == 0) {
+                    dto.setWinning(true);
+                }
+            }
+        }
 
         return AbTestDto.builder()
                 .id(test.getId())

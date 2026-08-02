@@ -37,4 +37,6 @@ public class AbTestVariantDto {
     /** Относительный отрыв CTR к лучшему (для списка), может быть null. */
     private BigDecimal ctrDeltaToBest;
     private boolean losing;
+    /** Лидер CTR при наличии проигрывающих (insight HAS_LEADER). */
+    private boolean winning;
 }
