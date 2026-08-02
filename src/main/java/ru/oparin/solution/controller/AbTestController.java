@@ -10,10 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import ru.oparin.solution.dto.abtest.AbTestDto;
-import ru.oparin.solution.dto.abtest.AbTestStatusUpdateRequest;
-import ru.oparin.solution.dto.abtest.AbTestVariantPauseRequest;
-import ru.oparin.solution.dto.abtest.CreateAbTestRequest;
+import ru.oparin.solution.dto.abtest.*;
 import ru.oparin.solution.model.CabinetAccessSection;
 import ru.oparin.solution.service.SellerContextService;
 import ru.oparin.solution.service.abtest.AbTestService;
@@ -71,6 +68,25 @@ public class AbTestController {
             return ResponseEntity.badRequest().build();
         }
         return ResponseEntity.ok(abTestService.get(ctx.cabinet().getId(), id));
+    }
+
+    /**
+     * Изменение настроек ротации / остановки / поведения по завершении.
+     */
+    @PatchMapping("/{id}/settings")
+    public ResponseEntity<AbTestDto> updateSettings(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateAbTestSettingsRequest body,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext ctx = sellerContextService.createContext(
+                authentication, sellerId, cabinetId, CabinetAccessSection.AD_CAMPAIGNS);
+        if (ctx.cabinet() == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(abTestService.updateSettings(ctx.cabinet().getId(), id, body));
     }
 
     /**

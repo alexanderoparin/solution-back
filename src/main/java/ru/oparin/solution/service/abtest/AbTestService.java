@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 import ru.oparin.solution.dto.abtest.AbTestDto;
 import ru.oparin.solution.dto.abtest.AbTestVariantDto;
 import ru.oparin.solution.dto.abtest.CreateAbTestRequest;
+import ru.oparin.solution.dto.abtest.UpdateAbTestSettingsRequest;
 import ru.oparin.solution.dto.wb.CardDto;
 import ru.oparin.solution.dto.wb.CardsListRequest;
 import ru.oparin.solution.dto.wb.CardsListResponse;
@@ -220,6 +221,59 @@ public class AbTestService {
 
         wbApiEventService.enqueueAbTestStart(cabinetId, test.getId(), "AB_TEST_CREATE");
         return toDto(test);
+    }
+
+    /**
+     * Изменение настроек ротации / остановки / поведения по завершении.
+     * Доступно для {@link AbTestStatus#ENABLED} и {@link AbTestStatus#PENDING_START}.
+     */
+    @Transactional
+    public AbTestDto updateSettings(Long cabinetId, Long testId, UpdateAbTestSettingsRequest request) {
+        AbTest test = requireTest(cabinetId, testId);
+        if (test.getStatus() == AbTestStatus.DISABLED) {
+            throw new IllegalArgumentException("Нельзя изменить настройки завершённого теста");
+        }
+        validateSettingsFields(
+                request.getRotationMode(),
+                request.getRotationViewsThreshold(),
+                request.getRotationIntervalMinutes(),
+                request.getStopMode(),
+                request.getDurationDays()
+        );
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
+        validateTokenAllowsInterval(cabinet, request.getRotationMode(), request.getRotationIntervalMinutes());
+
+        applySettings(test, request);
+        abTestRepository.save(test);
+        return toDto(test);
+    }
+
+    /**
+     * Применяет поля настроек к сущности и пересчитывает {@code endsAt}.
+     * Срок BY_DURATION считается от {@code startedAt} (длительность теста с момента запуска).
+     */
+    private void applySettings(AbTest test, UpdateAbTestSettingsRequest request) {
+        test.setRotationMode(request.getRotationMode());
+        if (request.getRotationMode() == AbTestRotationMode.ROTATION_BY_VIEWS) {
+            test.setRotationViewsThreshold(request.getRotationViewsThreshold());
+            test.setRotationIntervalMinutes(null);
+        } else {
+            test.setRotationIntervalMinutes(request.getRotationIntervalMinutes());
+            test.setRotationViewsThreshold(null);
+        }
+
+        test.setStopMode(request.getStopMode());
+        if (request.getStopMode() == AbTestStopMode.BY_DURATION) {
+            test.setDurationDays(request.getDurationDays());
+            LocalDateTime anchor = test.getStartedAt() != null ? test.getStartedAt() : LocalDateTime.now();
+            test.setEndsAt(anchor.plusDays(request.getDurationDays()));
+        } else {
+            test.setDurationDays(null);
+            test.setEndsAt(null);
+        }
+
+        test.setFinishAction(request.getFinishAction());
     }
 
     /**
@@ -941,24 +995,44 @@ public class AbTestService {
         if (request.getAdvertIds() == null || request.getAdvertIds().isEmpty()) {
             throw new IllegalArgumentException("Выберите хотя бы одну рекламную кампанию");
         }
-        if (request.getRotationMode() == AbTestRotationMode.ROTATION_BY_VIEWS) {
-            if (request.getRotationViewsThreshold() == null || request.getRotationViewsThreshold() < 1) {
-                throw new IllegalArgumentException("Укажите порог показов для ротации");
-            }
-        } else if (request.getRotationMode() == AbTestRotationMode.ROTATION_BY_INTERVAL) {
-            Integer minutes = request.getRotationIntervalMinutes();
-            if (minutes == null || minutes < MIN_INTERVAL_MINUTES || minutes > MAX_INTERVAL_MINUTES) {
-                throw new IllegalArgumentException("Интервал ротации: от 30 минут до 24 часов");
-            }
-        }
-        if (request.getStopMode() == AbTestStopMode.BY_DURATION) {
-            if (request.getDurationDays() == null || request.getDurationDays() < 1) {
-                throw new IllegalArgumentException("Укажите длительность теста в днях");
-            }
-        }
+        validateSettingsFields(
+                request.getRotationMode(),
+                request.getRotationViewsThreshold(),
+                request.getRotationIntervalMinutes(),
+                request.getStopMode(),
+                request.getDurationDays()
+        );
         long nonEmpty = variantFiles == null ? 0 : variantFiles.stream().filter(f -> f != null && !f.isEmpty()).count();
         if (nonEmpty < 1) {
             throw new IllegalArgumentException("Загрузите хотя бы один дополнительный вариант фото");
+        }
+    }
+
+    /**
+     * Валидация полей ротации / остановки (создание и редактирование).
+     */
+    private void validateSettingsFields(
+            AbTestRotationMode rotationMode,
+            Integer rotationViewsThreshold,
+            Integer rotationIntervalMinutes,
+            AbTestStopMode stopMode,
+            Integer durationDays
+    ) {
+        if (rotationMode == AbTestRotationMode.ROTATION_BY_VIEWS) {
+            if (rotationViewsThreshold == null || rotationViewsThreshold < 1) {
+                throw new IllegalArgumentException("Укажите порог показов для ротации");
+            }
+        } else if (rotationMode == AbTestRotationMode.ROTATION_BY_INTERVAL) {
+            if (rotationIntervalMinutes == null
+                    || rotationIntervalMinutes < MIN_INTERVAL_MINUTES
+                    || rotationIntervalMinutes > MAX_INTERVAL_MINUTES) {
+                throw new IllegalArgumentException("Интервал ротации: от 30 минут до 24 часов");
+            }
+        }
+        if (stopMode == AbTestStopMode.BY_DURATION) {
+            if (durationDays == null || durationDays < 1) {
+                throw new IllegalArgumentException("Укажите длительность теста в днях");
+            }
         }
     }
 
@@ -967,19 +1041,33 @@ public class AbTestService {
      * короткая ротация по времени и несколько РК недоступны.
      */
     private void validateTokenAllowsRotation(Cabinet cabinet, CreateAbTestRequest request) {
+        if (request.getAdvertIds() != null && request.getAdvertIds().size() > 1) {
+            CabinetTokenType tokenType = CabinetTokenType.effective(cabinet.getTokenType());
+            if (!tokenType.supportsFrequentFullstats()) {
+                throw new IllegalArgumentException(
+                        "При базовом токене WB можно выбрать только одну РК: "
+                                + "статистика (fullstats) ограничена 1 запросом в час. "
+                                + "Смените токен кабинета на персональный/сервисный, чтобы опрашивать несколько РК.");
+            }
+        }
+        validateTokenAllowsInterval(cabinet, request.getRotationMode(), request.getRotationIntervalMinutes());
+    }
+
+    /**
+     * Базовый токен: интервал ротации по времени не короче 1 часа.
+     */
+    private void validateTokenAllowsInterval(
+            Cabinet cabinet,
+            AbTestRotationMode rotationMode,
+            Integer rotationIntervalMinutes
+    ) {
         CabinetTokenType tokenType = CabinetTokenType.effective(cabinet.getTokenType());
         if (tokenType.supportsFrequentFullstats()) {
             return;
         }
-        if (request.getAdvertIds() != null && request.getAdvertIds().size() > 1) {
-            throw new IllegalArgumentException(
-                    "При базовом токене WB можно выбрать только одну РК: "
-                            + "статистика (fullstats) ограничена 1 запросом в час. "
-                            + "Смените токен кабинета на персональный/сервисный, чтобы опрашивать несколько РК.");
-        }
-        if (request.getRotationMode() == AbTestRotationMode.ROTATION_BY_INTERVAL
-                && request.getRotationIntervalMinutes() != null
-                && request.getRotationIntervalMinutes() < 60) {
+        if (rotationMode == AbTestRotationMode.ROTATION_BY_INTERVAL
+                && rotationIntervalMinutes != null
+                && rotationIntervalMinutes < 60) {
             throw new IllegalArgumentException(
                     "Интервал ротации меньше 1 часа недоступен для базового токена WB: "
                             + "статистика РК (fullstats) ограничена 1 запросом в час. "
