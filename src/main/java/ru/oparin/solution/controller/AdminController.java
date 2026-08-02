@@ -268,6 +268,21 @@ public class AdminController {
         return ResponseEntity.ok(dto);
     }
 
+    /**
+     * Постраничный обзор тарифов и услуг кабинетов.
+     * Важно: объявлен до {@code /cabinets/{cabinetId}/...}, чтобы path не перехватывался.
+     */
+    @GetMapping("/cabinets/billing")
+    public ResponseEntity<PageResponse<CabinetBillingOverviewDto>> getCabinetsBilling(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String search
+    ) {
+        User admin = userService.findByEmail(
+                SecurityContextHolder.getContext().getAuthentication().getName());
+        return ResponseEntity.ok(adminSubscriptionService.pageCabinetBilling(admin, page, size, search));
+    }
+
     @GetMapping("/cabinets/{cabinetId}/subscriptions")
     public ResponseEntity<List<SubscriptionDto>> getCabinetSubscriptions(@PathVariable Long cabinetId) {
         return ResponseEntity.ok(adminSubscriptionService.getSubscriptionsByCabinetId(cabinetId));

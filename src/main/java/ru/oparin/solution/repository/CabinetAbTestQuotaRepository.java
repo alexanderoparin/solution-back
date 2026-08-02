@@ -6,12 +6,16 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.CabinetAbTestQuota;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
 public interface CabinetAbTestQuotaRepository extends JpaRepository<CabinetAbTestQuota, Long> {
 
     Optional<CabinetAbTestQuota> findByCabinetId(Long cabinetId);
+
+    List<CabinetAbTestQuota> findByCabinetIdIn(Collection<Long> cabinetIds);
 
     @Query("""
             select q from CabinetAbTestQuota q

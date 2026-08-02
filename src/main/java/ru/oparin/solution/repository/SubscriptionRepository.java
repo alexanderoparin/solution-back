@@ -84,6 +84,21 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
             @Param("now") LocalDateTime now
     );
 
+    @Query("""
+            select s from Subscription s
+            left join fetch s.plan
+            left join fetch s.cabinet
+            left join fetch s.user
+            where s.cabinet.id in :cabinetIds
+              and s.status in :statuses
+              and (s.expiresAt is null or s.expiresAt > :now)
+            """)
+    List<Subscription> findActiveByCabinetIdIn(
+            @Param("cabinetIds") Collection<Long> cabinetIds,
+            @Param("statuses") Collection<String> statuses,
+            @Param("now") LocalDateTime now
+    );
+
     boolean existsByCabinet_IdAndPlan_Code(Long cabinetId, String planCode);
 
     boolean existsByUser_IdAndPlan_Code(Long userId, String planCode);
