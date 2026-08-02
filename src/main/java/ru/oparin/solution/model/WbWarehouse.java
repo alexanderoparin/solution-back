@@ -1,11 +1,7 @@
 package ru.oparin.solution.model;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -43,6 +39,14 @@ public class WbWarehouse {
      */
     @Column(name = "address", length = 500)
     private String address;
+
+    /**
+     * Склад пострадал от ЧС (пожар и т.п.) — в UI остатков показывается огонёк.
+     * Проставляется вручную, синхронизация WB не перезаписывает.
+     */
+    @Builder.Default
+    @Column(name = "on_fire", nullable = false)
+    private Boolean onFire = false;
 
     /**
      * Дата создания записи в БД.

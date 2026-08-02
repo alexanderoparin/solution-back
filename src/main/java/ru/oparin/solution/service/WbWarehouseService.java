@@ -91,9 +91,14 @@ public class WbWarehouseService {
                 .id(dto.getId())
                 .name(dto.getName())
                 .address(dto.getAddress())
+                .onFire(false)
                 .build();
     }
 
+    /**
+     * Обновляет только поля из API WB.
+     * Флаг {@code onFire} не трогаем — его выставляют вручную в БД.
+     */
     private void updateWarehouseFields(WbWarehouse warehouse, WbWarehouseResponse dto) {
         warehouse.setName(dto.getName());
         warehouse.setAddress(dto.getAddress());

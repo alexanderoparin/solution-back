@@ -1168,11 +1168,11 @@ public class AnalyticsService {
                         )
                 ));
         
-        // Получаем названия складов
-        Map<Long, String> warehouseNames = warehouseRepository.findAll().stream()
+        // Названия и флаги складов
+        Map<Long, WbWarehouse> warehousesById = warehouseRepository.findAll().stream()
                 .collect(Collectors.toMap(
                         w -> Long.valueOf(w.getId()),
-                        WbWarehouse::getName,
+                        w -> w,
                         (existing, replacement) -> existing
                 ));
         
@@ -1181,10 +1181,13 @@ public class AnalyticsService {
                 .map(entry -> {
                     Long warehouseId = entry.getKey();
                     StockAggregate aggregate = entry.getValue();
-                    String warehouseName = warehouseNames.getOrDefault(warehouseId, "Склад " + warehouseId);
+                    WbWarehouse warehouse = warehousesById.get(warehouseId);
+                    String warehouseName = warehouse != null ? warehouse.getName() : "Склад " + warehouseId;
+                    boolean onFire = warehouse != null && Boolean.TRUE.equals(warehouse.getOnFire());
                     
                     return StockDto.builder()
                             .warehouseName(warehouseName)
+                            .onFire(onFire)
                             .amount(aggregate.getTotalAmount())
                             .updatedAt(aggregate.getLatestUpdate())
                             .build();
