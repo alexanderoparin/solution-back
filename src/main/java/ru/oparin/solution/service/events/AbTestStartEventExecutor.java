@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
+import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.service.abtest.AbTestService;
@@ -41,10 +42,16 @@ public class AbTestStartEventExecutor implements WbApiEventExecutor {
         } catch (WbRateLimitDeferException e) {
             // Отложенный повтор — не ошибка для UI
             return WbEventExecutionErrors.fromDeferException(e);
+        } catch (WbApiUnauthorizedScopeException e) {
+            // 401 / токен без нужной категории — без ретраев, сразу failStart
+            return failStartDueToToken(payload.abTestId(), e);
         } catch (RestClientException e) {
             WbApiEventExecutionResult defer = WbEventExecutionErrors.deferResultIfPresent(e);
             if (defer != null) {
                 return defer;
+            }
+            if (AbTestService.isWbUnauthorizedTokenError(e)) {
+                return failStartDueToToken(payload.abTestId(), e);
             }
             abTestService.markWbError(payload.abTestId(), e.getMessage());
             if (event.getAttemptCount() != null && event.getMaxAttempts() != null
@@ -58,8 +65,23 @@ public class AbTestStartEventExecutor implements WbApiEventExecutor {
             if (defer != null) {
                 return defer;
             }
+            if (AbTestService.isWbUnauthorizedTokenError(e)) {
+                return failStartDueToToken(payload.abTestId(), e);
+            }
             abTestService.markWbError(payload.abTestId(), e.getMessage());
+            if (event.getAttemptCount() != null && event.getMaxAttempts() != null
+                    && event.getAttemptCount() + 1 >= event.getMaxAttempts()) {
+                abTestService.failStart(payload.abTestId(), e.getMessage());
+                return WbApiEventExecutionResult.finalError(e.getMessage());
+            }
             return WbEventExecutionErrors.wrapDeferOrRetryable(e);
         }
+    }
+
+    private WbApiEventExecutionResult failStartDueToToken(Long abTestId, Throwable cause) {
+        String message = AbTestService.TOKEN_CONTENT_WRITE_REQUIRED;
+        log.warn("А/Б-старт testId={}: отказ токена WB ({}), завершаем PENDING_START", abTestId, cause.getMessage());
+        abTestService.failStart(abTestId, message);
+        return WbApiEventExecutionResult.finalError(message);
     }
 }

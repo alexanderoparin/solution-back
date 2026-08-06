@@ -17,6 +17,7 @@ import ru.oparin.solution.dto.abtest.UpdateAbTestSettingsRequest;
 import ru.oparin.solution.dto.wb.CardDto;
 import ru.oparin.solution.dto.wb.CardsListRequest;
 import ru.oparin.solution.dto.wb.CardsListResponse;
+import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.*;
 import ru.oparin.solution.service.AbTestQuotaService;
@@ -60,6 +61,35 @@ public class AbTestService {
     /** Качество JPEG UI-превью (0..1). */
     private static final float UI_PREVIEW_JPEG_QUALITY = 0.82f;
 
+    /**
+     * Сообщение для UI: токен без права записи в Content (типичный 401 на media/file).
+     */
+    public static final String TOKEN_CONTENT_WRITE_REQUIRED =
+            "Токен кабинета не подходит: нужен доступ на запись к категории «Контент» "
+                    + "(токен только на чтение не сможет загружать фото для А/Б-теста). "
+                    + "Создайте новый токен с правом изменения контента и обновите ключ в кабинете.";
+
+    /**
+     * {@code true}, если ошибка похожа на 401 / отказ токена WB.
+     */
+    public static boolean isWbUnauthorizedTokenError(Throwable error) {
+        if (error instanceof WbApiUnauthorizedScopeException) {
+            return true;
+        }
+        return isWbUnauthorizedTokenMessage(error != null ? error.getMessage() : null);
+    }
+
+    /**
+     * {@code true}, если текст ошибки указывает на 401 Unauthorized.
+     */
+    public static boolean isWbUnauthorizedTokenMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        String lower = message.toLowerCase(Locale.ROOT);
+        return lower.contains("401") || lower.contains("unauthorized");
+    }
+
     private final AbTestRepository abTestRepository;
     private final AbTestCampaignRepository abTestCampaignRepository;
     private final AbTestVariantRepository abTestVariantRepository;
@@ -94,6 +124,18 @@ public class AbTestService {
                 .filter(t -> t.getStatus() == AbTestStatus.ENABLED || t.getStatus() == AbTestStatus.PENDING_START)
                 .collect(Collectors.toList())
                 : abTestRepository.findByCabinetIdOrderByCreatedAtDesc(cabinetId);
+        for (AbTest test : tests) {
+            if (test.getStatus() == AbTestStatus.PENDING_START
+                    && isWbUnauthorizedTokenMessage(test.getLastWbError())) {
+                recoverUnauthorizedPendingStart(test.getId());
+            }
+        }
+        // Перечитываем после возможного recover (статус мог стать DISABLED).
+        tests = activeOnly
+                ? abTestRepository.findByCabinetIdOrderByCreatedAtDesc(cabinetId).stream()
+                .filter(t -> t.getStatus() == AbTestStatus.ENABLED || t.getStatus() == AbTestStatus.PENDING_START)
+                .collect(Collectors.toList())
+                : abTestRepository.findByCabinetIdOrderByCreatedAtDesc(cabinetId);
         return tests.stream().map(this::toDto).collect(Collectors.toList());
     }
 
@@ -103,6 +145,11 @@ public class AbTestService {
     @Transactional(readOnly = true)
     public AbTestDto get(Long cabinetId, Long testId) {
         AbTest test = requireTest(cabinetId, testId);
+        if (test.getStatus() == AbTestStatus.PENDING_START
+                && isWbUnauthorizedTokenMessage(test.getLastWbError())) {
+            recoverUnauthorizedPendingStart(testId);
+            test = requireTest(cabinetId, testId);
+        }
         return toDto(test);
     }
 
@@ -278,6 +325,7 @@ public class AbTestService {
 
     /**
      * Включение или ручное отключение теста.
+     * Перезапуск DISABLED возможен только если тест не дошёл до ENABLED ({@code failedAtStart}).
      */
     @Transactional
     public AbTestDto updateStatus(Long cabinetId, Long testId, AbTestStatus status) {
@@ -287,14 +335,58 @@ public class AbTestService {
             if (test.getStatus() == AbTestStatus.PENDING_START) {
                 test.setStatus(AbTestStatus.DISABLED);
                 test.setFinishedAt(LocalDateTime.now());
+                test.setFailedAtStart(true);
                 abTestRepository.save(test);
                 refundQuotaIfNeeded(cabinetId);
             } else {
                 enqueueFinish(test, "MANUAL");
             }
         } else if (status == AbTestStatus.ENABLED && test.getStatus() == AbTestStatus.DISABLED) {
-            throw new IllegalArgumentException("Повторный запуск завершённого теста не поддерживается — создайте новый");
+            if (!Boolean.TRUE.equals(test.getFailedAtStart())) {
+                throw new IllegalArgumentException("Повторный запуск завершённого теста не поддерживается — создайте новый");
+            }
+            return restartFailedStart(cabinetId, test);
         }
+        return toDto(test);
+    }
+
+    /**
+     * Перезапуск теста, упавшего на старте (после смены токена и т.п.).
+     */
+    private AbTestDto restartFailedStart(Long cabinetId, AbTest test) {
+        if (abTestRepository.existsByCabinetIdAndNmIdAndStatusIn(
+                cabinetId,
+                test.getNmId(),
+                List.of(AbTestStatus.ENABLED, AbTestStatus.PENDING_START))) {
+            throw new IllegalArgumentException("Для этого артикула уже есть активный или запускающийся А/Б-тест");
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
+        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+            throw new IllegalArgumentException("У кабинета отсутствует API-ключ");
+        }
+        if (!abTestQuotaService.canStartAbTest(cabinet)) {
+            throw new ru.oparin.solution.exception.UserException(
+                    "Недостаточно квоты А/Б тестов. Купите пакет, чтобы перезапустить тест.",
+                    org.springframework.http.HttpStatus.PAYMENT_REQUIRED
+            );
+        }
+        abTestQuotaService.consumeStart(cabinet);
+
+        LocalDateTime now = LocalDateTime.now();
+        test.setStatus(AbTestStatus.PENDING_START);
+        test.setFailedAtStart(false);
+        test.setLastWbError(null);
+        test.setFinishedAt(null);
+        test.setStartedAt(now);
+        test.setLastRotatedAt(now);
+        test.setInsightCode(AbTestInsightCode.DATA_LOW);
+        if (test.getStopMode() == AbTestStopMode.BY_DURATION && test.getDurationDays() != null) {
+            test.setEndsAt(now.plusDays(test.getDurationDays()));
+        }
+        abTestRepository.save(test);
+
+        wbApiEventService.enqueueAbTestStart(cabinetId, test.getId(), "AB_TEST_RESTART");
         return toDto(test);
     }
 
@@ -584,6 +676,7 @@ public class AbTestService {
         test.setActiveVariantId(control.getId());
         test.setActiveSinceViews(0);
         test.setStatus(AbTestStatus.ENABLED);
+        test.setFailedAtStart(false);
         test.setLastWbError(null);
         test.setLastRotatedAt(LocalDateTime.now());
         abTestRepository.save(test);
@@ -633,15 +726,33 @@ public class AbTestService {
 
     /**
      * Зафиксировать ошибку WB по тесту (для UI).
+     * При 401 / отказе токена сразу завершаем PENDING_START — ретраи бессмысленны.
      */
     @Transactional
     public void markWbError(Long abTestId, String error) {
+        if (isWbUnauthorizedTokenMessage(error)) {
+            failStart(abTestId, TOKEN_CONTENT_WRITE_REQUIRED);
+            return;
+        }
         abTestRepository.findById(abTestId).ifPresent(test -> {
             test.setLastWbError(error != null && error.length() > 2000 ? error.substring(0, 2000) : error);
             if (test.getStatus() == AbTestStatus.PENDING_START) {
                 // оставляем PENDING_START — ретраи события; после финального фейла executor вызовет failStart
             }
             abTestRepository.save(test);
+        });
+    }
+
+    /**
+     * Если старт завис в PENDING_START после 401 (событие уже FINAL, failStart не вызвали) — закрываем тест.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recoverUnauthorizedPendingStart(Long abTestId) {
+        abTestRepository.findById(abTestId).ifPresent(test -> {
+            if (test.getStatus() == AbTestStatus.PENDING_START
+                    && isWbUnauthorizedTokenMessage(test.getLastWbError())) {
+                failStart(abTestId, TOKEN_CONTENT_WRITE_REQUIRED);
+            }
         });
     }
 
@@ -654,6 +765,7 @@ public class AbTestService {
             if (test.getStatus() == AbTestStatus.PENDING_START) {
                 test.setStatus(AbTestStatus.DISABLED);
                 test.setFinishedAt(LocalDateTime.now());
+                test.setFailedAtStart(true);
                 test.setLastWbError(error);
                 abTestRepository.save(test);
                 refundQuotaIfNeeded(test.getCabinetId());
@@ -1274,6 +1386,7 @@ public class AbTestService {
                 .insightCode(test.getInsightCode())
                 .insightLabel(insightLabel(test.getInsightCode(), test.getStatus()))
                 .lastWbError(test.getLastWbError())
+                .canRestart(Boolean.TRUE.equals(test.getFailedAtStart()) && test.getStatus() == AbTestStatus.DISABLED)
                 .advertIds(advertIds)
                 .variants(variantDtos)
                 .build();

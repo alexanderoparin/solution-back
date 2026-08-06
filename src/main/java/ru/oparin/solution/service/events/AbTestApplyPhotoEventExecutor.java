@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
+import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.service.abtest.AbTestService;
@@ -36,10 +37,17 @@ public class AbTestApplyPhotoEventExecutor implements WbApiEventExecutor {
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (WbRateLimitDeferException e) {
             return WbEventExecutionErrors.fromDeferException(e);
+        } catch (WbApiUnauthorizedScopeException e) {
+            abTestService.markWbError(payload.abTestId(), AbTestService.TOKEN_CONTENT_WRITE_REQUIRED);
+            return WbApiEventExecutionResult.finalError(AbTestService.TOKEN_CONTENT_WRITE_REQUIRED);
         } catch (RestClientException e) {
             WbApiEventExecutionResult defer = WbEventExecutionErrors.deferResultIfPresent(e);
             if (defer != null) {
                 return defer;
+            }
+            if (AbTestService.isWbUnauthorizedTokenError(e)) {
+                abTestService.markWbError(payload.abTestId(), AbTestService.TOKEN_CONTENT_WRITE_REQUIRED);
+                return WbApiEventExecutionResult.finalError(AbTestService.TOKEN_CONTENT_WRITE_REQUIRED);
             }
             abTestService.markWbError(payload.abTestId(), e.getMessage());
             return WbEventExecutionErrors.wrapRestClientException(e);
@@ -47,6 +55,10 @@ public class AbTestApplyPhotoEventExecutor implements WbApiEventExecutor {
             WbApiEventExecutionResult defer = WbEventExecutionErrors.deferResultIfPresent(e);
             if (defer != null) {
                 return defer;
+            }
+            if (AbTestService.isWbUnauthorizedTokenError(e)) {
+                abTestService.markWbError(payload.abTestId(), AbTestService.TOKEN_CONTENT_WRITE_REQUIRED);
+                return WbApiEventExecutionResult.finalError(AbTestService.TOKEN_CONTENT_WRITE_REQUIRED);
             }
             abTestService.markWbError(payload.abTestId(), e.getMessage());
             return WbEventExecutionErrors.wrapDeferOrRetryable(e);

@@ -94,6 +94,14 @@ public class AbTest {
     @Column(name = "last_wb_error", columnDefinition = "TEXT")
     private String lastWbError;
 
+    /**
+     * Старт не завершился успешно (ошибка / отмена из PENDING_START).
+     * Такие тесты можно перезапустить после исправления токена.
+     */
+    @Builder.Default
+    @Column(name = "failed_at_start", nullable = false)
+    private Boolean failedAtStart = false;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

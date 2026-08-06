@@ -32,6 +32,8 @@ public class AbTestDto {
     private AbTestInsightCode insightCode;
     private String insightLabel;
     private String lastWbError;
+    /** Можно перезапустить (упал/отменён на старте, не дошёл до ENABLED). */
+    private Boolean canRestart;
     private List<Long> advertIds;
     private List<AbTestVariantDto> variants;
 }
