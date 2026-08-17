@@ -131,6 +131,24 @@ public enum WbApiEventType {
             "/api/v2/stocks-report/products/sizes",
             1_800L,
             20L),
+    /**
+     * Список складов продавца (GET marketplace /api/v3/warehouses).
+     * Интервал WB — 200 мс; в очереди держим 1 с.
+     */
+    FBS_WAREHOUSES_SYNC_CABINET(
+            WbApiBaseUrl.MARKETPLACE,
+            "/api/v3/warehouses",
+            1L,
+            1L),
+    /**
+     * Остатки FBS (POST marketplace /api/v3/stocks/{warehouseId}).
+     * URI без id, чтобы пауза матчилась по префиксу пути.
+     */
+    FBS_STOCKS_CABINET(
+            WbApiBaseUrl.MARKETPLACE,
+            "/api/v3/stocks",
+            1L,
+            1L),
     COMMON_SELLER_INFO(
             WbApiBaseUrl.COMMON,
             "/api/v1/seller-info",

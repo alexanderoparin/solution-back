@@ -25,6 +25,11 @@ public interface ProductBarcodeRepository extends JpaRepository<ProductBarcode, 
     List<ProductBarcode> findByNmIdAndCabinet_Id(Long nmId, Long cabinetId);
 
     /**
+     * Все баркоды кабинета.
+     */
+    List<ProductBarcode> findByCabinet_Id(Long cabinetId);
+
+    /**
      * Находит все баркоды для товара.
      */
     List<ProductBarcode> findByNmId(Long nmId);

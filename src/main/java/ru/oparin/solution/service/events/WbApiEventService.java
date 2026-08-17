@@ -43,6 +43,8 @@ public class WbApiEventService {
     public static final String PROMOTION_CALENDAR_SYNC_EXECUTOR_BEAN = "promotionCalendarSyncCabinetEventExecutor";
     public static final String WAREHOUSES_SYNC_EXECUTOR_BEAN = "warehousesSyncCabinetEventExecutor";
     public static final String STOCKS_EXECUTOR_BEAN = "stocksByNmIdEventExecutor";
+    public static final String FBS_WAREHOUSES_SYNC_EXECUTOR_BEAN = "fbsWarehousesSyncCabinetEventExecutor";
+    public static final String FBS_STOCKS_EXECUTOR_BEAN = "fbsStocksCabinetEventExecutor";
     public static final String AB_TEST_START_EXECUTOR_BEAN = "abTestStartEventExecutor";
     public static final String AB_TEST_APPLY_PHOTO_EXECUTOR_BEAN = "abTestApplyPhotoEventExecutor";
     public static final String AB_TEST_STATS_POLL_EXECUTOR_BEAN = "abTestStatsPollEventExecutor";
@@ -155,6 +157,7 @@ public class WbApiEventService {
         for (Long nmId : nmIds) {
             enqueueStocksByNmIdEvent(cabinetId, nmId, triggerSource);
         }
+        enqueueFbsWarehousesSyncCabinetEvent(cabinetId, triggerSource);
     }
 
     @Transactional
@@ -267,6 +270,7 @@ public class WbApiEventService {
         String dedupKey = "WAREHOUSES_SYNC_CABINET:" + cabinetId;
         if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
             log.debug("WB API warehouses sync уже существует (dedupKey={}), создание пропущено", dedupKey);
+            enqueueFbsWarehousesSyncCabinetEvent(cabinetId, triggerSource);
             return;
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
@@ -288,6 +292,86 @@ public class WbApiEventService {
                 .maxAttempts(WAREHOUSES_EVENT_MAX_ATTEMPTS)
                 .nextAttemptAt(LocalDateTime.now())
                 .priority(WAREHOUSES_EVENT_PRIORITY)
+                .triggerSource(triggerSource)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        eventRepository.save(event);
+        enqueueFbsWarehousesSyncCabinetEvent(cabinetId, triggerSource);
+    }
+
+    /**
+     * Ставит в очередь синхронизацию складов продавца кабинета (Marketplace API).
+     * После успеха исполнитель ставит событие остатков FBS.
+     *
+     * @param cabinetId     кабинет
+     * @param triggerSource источник постановки
+     */
+    @Transactional
+    public void enqueueFbsWarehousesSyncCabinetEvent(Long cabinetId, String triggerSource) {
+        String dedupKey = "FBS_WAREHOUSES_SYNC_CABINET:" + cabinetId;
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("WB API FBS warehouses sync уже существует (dedupKey={}), создание пропущено", dedupKey);
+            return;
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        LocalDate d = LocalDate.now();
+        MainStepPayload payload = MainStepPayload.builder()
+                .dateFrom(d)
+                .dateTo(d)
+                .includeStocks(false)
+                .build();
+        WbApiEvent event = WbApiEvent.builder()
+                .eventType(WbApiEventType.FBS_WAREHOUSES_SYNC_CABINET)
+                .status(WbApiEventStatus.CREATED)
+                .executorBeanName(FBS_WAREHOUSES_SYNC_EXECUTOR_BEAN)
+                .cabinet(cabinet)
+                .payloadJson(writePayload(payload))
+                .dedupKey(dedupKey)
+                .attemptCount(0)
+                .maxAttempts(WAREHOUSES_EVENT_MAX_ATTEMPTS)
+                .nextAttemptAt(LocalDateTime.now())
+                .priority(WAREHOUSES_EVENT_PRIORITY)
+                .triggerSource(triggerSource)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        eventRepository.save(event);
+    }
+
+    /**
+     * Ставит в очередь синхронизацию остатков FBS по всем складам продавца кабинета.
+     *
+     * @param cabinetId     кабинет
+     * @param triggerSource источник постановки
+     */
+    @Transactional
+    public void enqueueFbsStocksCabinetEvent(Long cabinetId, String triggerSource) {
+        String dedupKey = "FBS_STOCKS_CABINET:" + cabinetId;
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("WB API FBS stocks уже существует (dedupKey={}), создание пропущено", dedupKey);
+            return;
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        LocalDate d = LocalDate.now();
+        MainStepPayload payload = MainStepPayload.builder()
+                .dateFrom(d)
+                .dateTo(d)
+                .includeStocks(false)
+                .build();
+        WbApiEvent event = WbApiEvent.builder()
+                .eventType(WbApiEventType.FBS_STOCKS_CABINET)
+                .status(WbApiEventStatus.CREATED)
+                .executorBeanName(FBS_STOCKS_EXECUTOR_BEAN)
+                .cabinet(cabinet)
+                .payloadJson(writePayload(payload))
+                .dedupKey(dedupKey)
+                .attemptCount(0)
+                .maxAttempts(STOCKS_EVENT_MAX_ATTEMPTS)
+                .nextAttemptAt(LocalDateTime.now())
+                .priority(STOCKS_EVENT_PRIORITY)
                 .triggerSource(triggerSource)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())

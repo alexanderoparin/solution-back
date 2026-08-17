@@ -56,9 +56,14 @@ public class ArticleResponseDto {
     private List<String> wbPromotionTypes;
 
     /**
-     * Остатки товара на складах на текущий момент.
+     * Остатки FBO на складах WB.
      */
     private List<StockDto> stocks;
+
+    /**
+     * Остатки FBS на складах продавца.
+     */
+    private List<StockDto> fbsStocks;
 
     /**
      * Товары «в связке» (доп. товары для отображения рядом с артикулом).

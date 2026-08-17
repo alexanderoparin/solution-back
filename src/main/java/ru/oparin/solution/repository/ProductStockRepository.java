@@ -40,6 +40,11 @@ public interface ProductStockRepository extends JpaRepository<ProductStock, Long
     List<ProductStock> findByNmIdAndWarehouseId(Long nmId, Long warehouseId);
 
     /**
+     * Остатки артикула на складе WB в рамках кабинета.
+     */
+    List<ProductStock> findByNmIdAndWarehouseIdAndCabinet_Id(Long nmId, Long warehouseId, Long cabinetId);
+
+    /**
      * Находит все остатки для товара (на всех складах).
      */
     List<ProductStock> findByNmId(Long nmId);

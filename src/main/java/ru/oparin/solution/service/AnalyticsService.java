@@ -48,8 +48,10 @@ public class AnalyticsService {
     private final PromotionCampaignStatisticsRepository campaignStatisticsRepository;
     private final ProductPriceHistoryRepository priceHistoryRepository;
     private final ProductStockRepository stockRepository;
+    private final ProductFbsStockRepository fbsStockRepository;
     private final ProductBarcodeRepository barcodeRepository;
     private final WbWarehouseRepository warehouseRepository;
+    private final SellerWarehouseRepository sellerWarehouseRepository;
     private final FunnelMetricsCalculator funnelMetricsCalculator;
     private final AdvertisingMetricsCalculator advertisingMetricsCalculator;
     private final MetricValueCalculator metricValueCalculator;
@@ -575,6 +577,7 @@ public class AnalyticsService {
                 .wbPromotionNames(wbPromotionNames)
                 .wbPromotionTypes(wbPromotionTypes)
                 .stocks(getStocks(nmId, cardCabinetId))
+                .fbsStocks(getFbsStocks(nmId, cardCabinetId))
                 .bundleProducts(bundleProducts)
                 .lastStocksUpdateTriggeredAt(lastStocksUpdateTriggeredAt)
                 .articleGoal(articleGoal)
@@ -1186,6 +1189,7 @@ public class AnalyticsService {
                     boolean onFire = warehouse != null && Boolean.TRUE.equals(warehouse.getOnFire());
                     
                     return StockDto.builder()
+                            .warehouseId(warehouseId)
                             .warehouseName(warehouseName)
                             .onFire(onFire)
                             .amount(aggregate.getTotalAmount())
@@ -1193,6 +1197,61 @@ public class AnalyticsService {
                             .build();
                 })
                 .sorted((a, b) -> b.getAmount().compareTo(a.getAmount())) // Сортируем по убыванию количества
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Остатки FBS артикула на складах продавца кабинета.
+     */
+    private List<StockDto> getFbsStocks(Long nmId, Long cabinetId) {
+        if (cabinetId == null) {
+            return Collections.emptyList();
+        }
+        List<ProductFbsStock> stocks = fbsStockRepository.findByNmIdAndCabinet_Id(nmId, cabinetId);
+        if (stocks.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<Long, StockAggregate> stockByWarehouse = stocks.stream()
+                .collect(Collectors.groupingBy(
+                        ProductFbsStock::getWarehouseId,
+                        Collectors.collectingAndThen(
+                                Collectors.toList(),
+                                stockList -> {
+                                    int totalAmount = stockList.stream()
+                                            .mapToInt(ProductFbsStock::getAmount)
+                                            .sum();
+                                    LocalDateTime latestUpdate = stockList.stream()
+                                            .map(ProductFbsStock::getUpdatedAt)
+                                            .max(LocalDateTime::compareTo)
+                                            .orElse(null);
+                                    return new StockAggregate(totalAmount, latestUpdate);
+                                }
+                        )
+                ));
+
+        Map<Long, SellerWarehouse> warehousesById = sellerWarehouseRepository.findByCabinet_Id(cabinetId).stream()
+                .collect(Collectors.toMap(
+                        SellerWarehouse::getWarehouseId,
+                        w -> w,
+                        (existing, replacement) -> existing
+                ));
+
+        return stockByWarehouse.entrySet().stream()
+                .map(entry -> {
+                    Long warehouseId = entry.getKey();
+                    StockAggregate aggregate = entry.getValue();
+                    SellerWarehouse warehouse = warehousesById.get(warehouseId);
+                    String warehouseName = warehouse != null ? warehouse.getName() : "Склад " + warehouseId;
+                    return StockDto.builder()
+                            .warehouseId(warehouseId)
+                            .warehouseName(warehouseName)
+                            .onFire(false)
+                            .amount(aggregate.getTotalAmount())
+                            .updatedAt(aggregate.getLatestUpdate())
+                            .build();
+                })
+                .sorted((a, b) -> b.getAmount().compareTo(a.getAmount()))
                 .collect(Collectors.toList());
     }
 
@@ -1482,68 +1541,121 @@ public class AnalyticsService {
     }
 
     /**
-     * Получает детализацию остатков по размерам для товара на конкретном складе.
+     * Детализация остатков FBO по размерам на складе WB.
      *
-     * @param nmId артикул товара
-     * @param warehouseName название склада
-     * @return список остатков по размерам
+     * @param nmId          артикул
+     * @param warehouseName название склада, если {@code warehouseId} не задан
+     * @param warehouseId   ID склада WB (опционально)
+     * @param cabinetId     кабинет (опционально, сужает выборку)
+     * @return остатки по размерам, включая нули
      */
-    public List<StockSizeDto> getStockSizes(Long nmId, String warehouseName) {
-        // Находим ID склада по названию
-        Long warehouseId = warehouseRepository.findAll().stream()
-                .filter(w -> w.getName().equals(warehouseName))
-                .map(w -> Long.valueOf(w.getId()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Склад не найден: " + warehouseName));
-        
-        // Получаем все остатки для товара на этом складе
-        List<ProductStock> stocks = stockRepository.findByNmIdAndWarehouseId(nmId, warehouseId);
+    public List<StockSizeDto> getStockSizes(Long nmId, String warehouseName, Long warehouseId, Long cabinetId) {
+        Long resolvedWarehouseId = warehouseId;
+        if (resolvedWarehouseId == null) {
+            resolvedWarehouseId = warehouseRepository.findAll().stream()
+                    .filter(w -> w.getName().equals(warehouseName))
+                    .map(w -> Long.valueOf(w.getId()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Склад не найден: " + warehouseName));
+        }
 
-        // Получаем информацию о баркодах для этого товара (все размеры)
-        Map<String, ProductBarcode> barcodeMap = barcodeRepository.findByNmId(nmId).stream()
+        List<ProductStock> stocks = cabinetId != null
+                ? stockRepository.findByNmIdAndWarehouseIdAndCabinet_Id(nmId, resolvedWarehouseId, cabinetId)
+                : stockRepository.findByNmIdAndWarehouseId(nmId, resolvedWarehouseId);
+
+        List<ProductBarcode> barcodes = cabinetId != null
+                ? barcodeRepository.findByNmIdAndCabinet_Id(nmId, cabinetId)
+                : barcodeRepository.findByNmId(nmId);
+        Map<String, ProductBarcode> barcodeMap = barcodes.stream()
                 .collect(Collectors.toMap(
                         ProductBarcode::getBarcode,
                         b -> b,
                         (existing, replacement) -> existing
                 ));
-        
-        // Все уникальные размеры из баркодов (для вывода и нулевых остатков)
-        Map<String, StockSizeAggregate> allSizes = new HashMap<>();
-        for (ProductBarcode barcode : barcodeMap.values()) {
-            String sizeKey = barcode.getWbSize() != null && !barcode.getWbSize().isEmpty()
-                    ? barcode.getWbSize()
-                    : (barcode.getTechSize() != null ? barcode.getTechSize() : "Неизвестно");
-            if (!allSizes.containsKey(sizeKey)) {
-                allSizes.put(sizeKey, new StockSizeAggregate(
-                        barcode.getTechSize(),
-                        barcode.getWbSize(),
-                        0
-                ));
-            }
-        }
 
-        // Суммируем остатки по размерам из ProductStock
+        Map<String, StockSizeAggregate> allSizes = seedSizesFromBarcodes(barcodeMap.values());
         for (ProductStock stock : stocks) {
             ProductBarcode barcode = barcodeMap.get(stock.getBarcode());
             if (barcode == null) {
                 continue;
             }
-            String sizeKey = barcode.getWbSize() != null && !barcode.getWbSize().isEmpty()
-                    ? barcode.getWbSize()
-                    : (barcode.getTechSize() != null ? barcode.getTechSize() : "Неизвестно");
-            StockSizeAggregate agg = allSizes.get(sizeKey);
-            if (agg != null) {
-                agg.setAmount(agg.getAmount() + stock.getAmount());
-            } else {
-                allSizes.put(sizeKey, new StockSizeAggregate(
-                        barcode.getTechSize(),
-                        barcode.getWbSize(),
-                        stock.getAmount()
-                ));
+            addSizeAmount(allSizes, barcode, stock.getAmount());
+        }
+        return toStockSizeDtos(allSizes);
+    }
+
+    /**
+     * Детализация остатков FBS по размерам на складе продавца.
+     *
+     * @param nmId          артикул
+     * @param warehouseName название склада продавца, если {@code warehouseId} не задан
+     * @param warehouseId   ID склада продавца (опционально)
+     * @param cabinetId     кабинет
+     * @return остатки по размерам, включая нули
+     */
+    public List<StockSizeDto> getFbsStockSizes(Long nmId, String warehouseName, Long warehouseId, Long cabinetId) {
+        if (cabinetId == null) {
+            return Collections.emptyList();
+        }
+        Long resolvedWarehouseId = warehouseId;
+        if (resolvedWarehouseId == null) {
+            resolvedWarehouseId = sellerWarehouseRepository.findByCabinet_Id(cabinetId).stream()
+                    .filter(w -> w.getName().equals(warehouseName))
+                    .map(SellerWarehouse::getWarehouseId)
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Склад продавца не найден: " + warehouseName));
+        }
+
+        List<ProductFbsStock> stocks = fbsStockRepository.findByNmIdAndCabinet_IdAndWarehouseId(
+                nmId, cabinetId, resolvedWarehouseId);
+        List<ProductBarcode> barcodes = barcodeRepository.findByNmIdAndCabinet_Id(nmId, cabinetId);
+        Map<Long, ProductBarcode> barcodeByChrtId = new HashMap<>();
+        for (ProductBarcode barcode : barcodes) {
+            if (barcode.getChrtId() != null) {
+                barcodeByChrtId.putIfAbsent(barcode.getChrtId(), barcode);
             }
         }
 
-        // Формируем список DTO (все размеры, включая с нулём)
+        Map<String, StockSizeAggregate> allSizes = seedSizesFromBarcodes(barcodes);
+        for (ProductFbsStock stock : stocks) {
+            ProductBarcode barcode = barcodeByChrtId.get(stock.getChrtId());
+            if (barcode == null) {
+                continue;
+            }
+            addSizeAmount(allSizes, barcode, stock.getAmount());
+        }
+        return toStockSizeDtos(allSizes);
+    }
+
+    private Map<String, StockSizeAggregate> seedSizesFromBarcodes(Iterable<ProductBarcode> barcodes) {
+        Map<String, StockSizeAggregate> allSizes = new HashMap<>();
+        for (ProductBarcode barcode : barcodes) {
+            String sizeKey = sizeKey(barcode);
+            if (!allSizes.containsKey(sizeKey)) {
+                allSizes.put(sizeKey, new StockSizeAggregate(barcode.getTechSize(), barcode.getWbSize(), 0));
+            }
+        }
+        return allSizes;
+    }
+
+    private void addSizeAmount(Map<String, StockSizeAggregate> allSizes, ProductBarcode barcode, int amount) {
+        String sizeKey = sizeKey(barcode);
+        StockSizeAggregate agg = allSizes.get(sizeKey);
+        if (agg != null) {
+            agg.setAmount(agg.getAmount() + amount);
+        } else {
+            allSizes.put(sizeKey, new StockSizeAggregate(barcode.getTechSize(), barcode.getWbSize(), amount));
+        }
+    }
+
+    private static String sizeKey(ProductBarcode barcode) {
+        if (barcode.getWbSize() != null && !barcode.getWbSize().isEmpty()) {
+            return barcode.getWbSize();
+        }
+        return barcode.getTechSize() != null ? barcode.getTechSize() : "Неизвестно";
+    }
+
+    private List<StockSizeDto> toStockSizeDtos(Map<String, StockSizeAggregate> allSizes) {
         return allSizes.values().stream()
                 .map(agg -> StockSizeDto.builder()
                         .techSize(agg.getTechSize())
@@ -1551,7 +1663,6 @@ public class AnalyticsService {
                         .amount(agg.getAmount())
                         .build())
                 .sorted((a, b) -> {
-                    // Сортируем по wbSize (числовому размеру), если есть
                     if (a.getWbSize() != null && b.getWbSize() != null) {
                         try {
                             return Integer.compare(Integer.parseInt(a.getWbSize()), Integer.parseInt(b.getWbSize()));
@@ -1559,7 +1670,6 @@ public class AnalyticsService {
                             return a.getWbSize().compareTo(b.getWbSize());
                         }
                     }
-                    // Иначе по techSize
                     String aSize = a.getTechSize() != null ? a.getTechSize() : "";
                     String bSize = b.getTechSize() != null ? b.getTechSize() : "";
                     return aSize.compareTo(bSize);

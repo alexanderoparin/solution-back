@@ -8,6 +8,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.analytics.*;
 import ru.oparin.solution.model.CabinetAccessSection;
+import ru.oparin.solution.model.ProductCard;
 import ru.oparin.solution.service.AnalyticsService;
 import ru.oparin.solution.service.ArticleGoalService;
 import ru.oparin.solution.service.SellerContextService;
@@ -216,9 +217,12 @@ public class AnalyticsController {
     /**
      * Получает детализацию остатков по размерам для товара на конкретном складе.
      *
-     * @param nmId артикул товара
+     * @param nmId          артикул товара
      * @param warehouseName название склада
-     * @param sellerId ID продавца (опционально, для ADMIN/MANAGER)
+     * @param sellerId      ID продавца (опционально, для ADMIN/MANAGER)
+     * @param cabinetId     кабинет (опционально)
+     * @param warehouseId   ID склада (WB или продавца), если известен
+     * @param fulfillment   FBO (по умолчанию) или FBS
      * @param authentication данные аутентификации
      * @return список остатков по размерам
      */
@@ -228,6 +232,8 @@ public class AnalyticsController {
             @PathVariable String warehouseName,
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false, defaultValue = "FBO") String fulfillment,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(
@@ -237,9 +243,17 @@ public class AnalyticsController {
                 CabinetAccessSection.PRODUCTS
         );
 
-        analyticsService.findCardBySeller(nmId, context.user().getId());
+        ProductCard card = analyticsService.findCardBySeller(nmId, context.user().getId());
+        Long resolvedCabinetId = context.cabinetId() != null
+                ? context.cabinetId()
+                : (card.getCabinet() != null ? card.getCabinet().getId() : null);
 
-        List<StockSizeDto> response = analyticsService.getStockSizes(nmId, warehouseName);
+        List<StockSizeDto> response;
+        if ("FBS".equalsIgnoreCase(fulfillment)) {
+            response = analyticsService.getFbsStockSizes(nmId, warehouseName, warehouseId, resolvedCabinetId);
+        } else {
+            response = analyticsService.getStockSizes(nmId, warehouseName, warehouseId, resolvedCabinetId);
+        }
 
         return ResponseEntity.ok(response);
     }

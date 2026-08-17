@@ -312,6 +312,8 @@ public class CabinetService {
         cabinetDeletionService.deleteStepCampaigns(cabinetId);
         cabinetDeletionService.deleteStepPriceHistory(cabinetId);
         cabinetDeletionService.deleteStepStocks(cabinetId);
+        cabinetDeletionService.deleteStepFbsStocks(cabinetId);
+        cabinetDeletionService.deleteStepSellerWarehouses(cabinetId);
         cabinetDeletionService.deleteStepBarcodes(cabinetId);
         cabinetDeletionService.deleteStepCardAnalytics(cabinetId);
         cabinetDeletionService.deleteStepProductCards(cabinetId);

@@ -34,6 +34,8 @@ public class CabinetDeletionService {
     private final PromotionCampaignRepository promotionCampaignRepository;
     private final ProductPriceHistoryRepository productPriceHistoryRepository;
     private final ProductStockRepository productStockRepository;
+    private final ProductFbsStockRepository productFbsStockRepository;
+    private final SellerWarehouseRepository sellerWarehouseRepository;
     private final ProductBarcodeRepository productBarcodeRepository;
     private final ProductCardAnalyticsRepository productCardAnalyticsRepository;
     private final ProductCardRepository productCardRepository;
@@ -74,6 +76,20 @@ public class CabinetDeletionService {
         deleteByIdBatches("Остатки на складах",
                 () -> productStockRepository.findIdByCabinet_Id(cabinetId, PageRequest.of(0, BATCH_SIZE)),
                 productStockRepository::deleteAllById);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void deleteStepFbsStocks(Long cabinetId) {
+        deleteByIdBatches("Остатки FBS",
+                () -> productFbsStockRepository.findIdByCabinet_Id(cabinetId, PageRequest.of(0, BATCH_SIZE)),
+                productFbsStockRepository::deleteAllById);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void deleteStepSellerWarehouses(Long cabinetId) {
+        deleteByIdBatches("Склады продавца",
+                () -> sellerWarehouseRepository.findIdByCabinet_Id(cabinetId, PageRequest.of(0, BATCH_SIZE)),
+                sellerWarehouseRepository::deleteAllById);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

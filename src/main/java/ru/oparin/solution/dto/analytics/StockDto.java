@@ -14,6 +14,11 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class StockDto {
     /**
+     * ID склада: для FBO — {@code wb_warehouses.id}, для FBS — ID склада продавца.
+     */
+    private Long warehouseId;
+
+    /**
      * Название склада.
      */
     private String warehouseName;
