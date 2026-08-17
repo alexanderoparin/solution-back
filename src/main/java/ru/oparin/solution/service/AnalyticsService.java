@@ -1202,16 +1202,20 @@ public class AnalyticsService {
 
     /**
      * Остатки FBS артикула на складах продавца кабинета.
+     * Показываем все склады продавца: если WB не вернул размеры этого nmID, количество будет 0.
      */
     private List<StockDto> getFbsStocks(Long nmId, Long cabinetId) {
         if (cabinetId == null) {
             return Collections.emptyList();
         }
-        List<ProductFbsStock> stocks = fbsStockRepository.findByNmIdAndCabinet_Id(nmId, cabinetId);
-        if (stocks.isEmpty()) {
+        List<SellerWarehouse> warehouses = sellerWarehouseRepository.findByCabinet_Id(cabinetId).stream()
+                .filter(warehouse -> !Boolean.TRUE.equals(warehouse.getIsDeleting()))
+                .toList();
+        if (warehouses.isEmpty()) {
             return Collections.emptyList();
         }
 
+        List<ProductFbsStock> stocks = fbsStockRepository.findByNmIdAndCabinet_Id(nmId, cabinetId);
         Map<Long, StockAggregate> stockByWarehouse = stocks.stream()
                 .collect(Collectors.groupingBy(
                         ProductFbsStock::getWarehouseId,
@@ -1230,25 +1234,19 @@ public class AnalyticsService {
                         )
                 ));
 
-        Map<Long, SellerWarehouse> warehousesById = sellerWarehouseRepository.findByCabinet_Id(cabinetId).stream()
-                .collect(Collectors.toMap(
-                        SellerWarehouse::getWarehouseId,
-                        w -> w,
-                        (existing, replacement) -> existing
-                ));
-
-        return stockByWarehouse.entrySet().stream()
-                .map(entry -> {
-                    Long warehouseId = entry.getKey();
-                    StockAggregate aggregate = entry.getValue();
-                    SellerWarehouse warehouse = warehousesById.get(warehouseId);
-                    String warehouseName = warehouse != null ? warehouse.getName() : "Склад " + warehouseId;
+        return warehouses.stream()
+                .map(warehouse -> {
+                    StockAggregate aggregate = stockByWarehouse.get(warehouse.getWarehouseId());
+                    int amount = aggregate != null ? aggregate.getTotalAmount() : 0;
+                    LocalDateTime updatedAt = aggregate != null && aggregate.getLatestUpdate() != null
+                            ? aggregate.getLatestUpdate()
+                            : warehouse.getUpdatedAt();
                     return StockDto.builder()
-                            .warehouseId(warehouseId)
-                            .warehouseName(warehouseName)
+                            .warehouseId(warehouse.getWarehouseId())
+                            .warehouseName(warehouse.getName())
                             .onFire(false)
-                            .amount(aggregate.getTotalAmount())
-                            .updatedAt(aggregate.getLatestUpdate())
+                            .amount(amount)
+                            .updatedAt(updatedAt)
                             .build();
                 })
                 .sorted((a, b) -> b.getAmount().compareTo(a.getAmount()))

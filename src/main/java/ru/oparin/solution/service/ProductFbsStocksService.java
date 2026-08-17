@@ -74,6 +74,7 @@ public class ProductFbsStocksService {
             }
             try {
                 List<WbFbsStocksResponse.Item> items = fetchAllStocks(apiKey, warehouse.getWarehouseId(), chrtIds);
+                items = withMissingChrtAsZero(items, chrtIds);
                 self.replaceWarehouseStocks(cabinet, warehouse.getWarehouseId(), items, barcodeByChrtId);
             } catch (HttpClientErrorException.NotFound e) {
                 log.warn("Склад продавца warehouseId={} не найден в WB при запросе остатков FBS, cabinetId={}",
@@ -145,6 +146,31 @@ public class ProductFbsStocksService {
             }
         }
         return all;
+    }
+
+    /**
+     * WB не возвращает chrtId без записи остатка. Для снимка по артикулу дописываем amount=0.
+     */
+    private static List<WbFbsStocksResponse.Item> withMissingChrtAsZero(
+            List<WbFbsStocksResponse.Item> items,
+            List<Long> requestedChrtIds
+    ) {
+        Set<Long> returned = new HashSet<>();
+        for (WbFbsStocksResponse.Item item : items) {
+            if (item != null && item.getChrtId() != null) {
+                returned.add(item.getChrtId());
+            }
+        }
+        List<WbFbsStocksResponse.Item> result = new ArrayList<>(items);
+        for (Long chrtId : requestedChrtIds) {
+            if (returned.add(chrtId)) {
+                result.add(WbFbsStocksResponse.Item.builder()
+                        .chrtId(chrtId)
+                        .amount(0)
+                        .build());
+            }
+        }
+        return result;
     }
 
     private static List<Long> distinctChrtIds(List<ProductBarcode> barcodes) {
