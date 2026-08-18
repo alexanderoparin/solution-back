@@ -562,97 +562,34 @@ public class AbTestService {
             abTestVariantRepository.save(control);
         }
 
-        enqueueAfterResolve(cabinet.getId(), test.getId(), variants, triggerSource);
+        continueStartWithoutOverwritingGallery(cabinet.getId(), test.getId(), triggerSource);
     }
 
-    private void enqueueAfterResolve(Long cabinetId, Long abTestId, List<AbTestVariant> variants, String triggerSource) {
-        Optional<AbTestVariant> nextUpload = variants.stream()
-                .filter(v -> !v.isControl())
-                .filter(v -> !v.isWbUploaded())
-                .findFirst();
-        if (nextUpload.isPresent()) {
-            wbApiEventService.enqueueNextAbTestStartStep(
-                    cabinetId,
-                    AbTestStartPayload.builder()
-                            .abTestId(abTestId)
-                            .step(AbTestStartStep.UPLOAD_VARIANT)
-                            .variantId(nextUpload.get().getId())
-                            .build(),
-                    triggerSource
-            );
-            return;
-        }
+    /**
+     * Варианты больше не пишем в слоты 2+ карточки: это затирает галерею.
+     * Если старт уже успел загрузить варианты (флаг {@code wbUploaded}) — откатываем галерею.
+     */
+    private void continueStartWithoutOverwritingGallery(Long cabinetId, Long abTestId, String triggerSource) {
+        List<AbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(abTestId);
+        boolean galleryTouched = variants.stream().anyMatch(v -> !v.isControl() && v.isWbUploaded());
+        AbTestStartStep next = galleryTouched ? AbTestStartStep.RESTORE_GALLERY : AbTestStartStep.APPLY_CONTROL;
         wbApiEventService.enqueueNextAbTestStartStep(
                 cabinetId,
                 AbTestStartPayload.builder()
                         .abTestId(abTestId)
-                        .step(AbTestStartStep.REFRESH_URLS)
+                        .step(next)
                         .build(),
                 triggerSource
         );
     }
 
     private void executeUploadVariantStep(Cabinet cabinet, AbTest test, Long variantId, String triggerSource) {
-        if (variantId == null) {
-            throw new IllegalArgumentException("Для UPLOAD_VARIANT нужен variantId");
-        }
-        AbTestVariant variant = abTestVariantRepository.findByIdAndAbTestId(variantId, test.getId())
-                .orElseThrow(() -> new IllegalArgumentException("Вариант не найден: " + variantId));
-        if (variant.isControl()) {
-            throw new IllegalStateException("Control-вариант не загружается как UPLOAD_VARIANT");
-        }
-        if (!variant.isWbUploaded()) {
-            if (variant.getStoredFileName() == null || variant.getStoredFileName().isBlank()) {
-                throw new IllegalStateException("У варианта нет локального файла для media/file");
-            }
-            uploadVariantFileToWb(
-                    cabinet.getApiKey(),
-                    test.getNmId(),
-                    variant,
-                    orderSlotForUpload(variant.getSortOrder())
-            );
-            variant.setWbUploaded(true);
-            abTestVariantRepository.save(variant);
-        }
-
-        List<AbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
-        Optional<AbTestVariant> nextUpload = variants.stream()
-                .filter(v -> !v.isControl())
-                .filter(v -> !v.isWbUploaded())
-                .findFirst();
-        if (nextUpload.isPresent()) {
-            wbApiEventService.enqueueNextAbTestStartStep(
-                    cabinet.getId(),
-                    AbTestStartPayload.builder()
-                            .abTestId(test.getId())
-                            .step(AbTestStartStep.UPLOAD_VARIANT)
-                            .variantId(nextUpload.get().getId())
-                            .build(),
-                    triggerSource
-            );
-            return;
-        }
-        wbApiEventService.enqueueNextAbTestStartStep(
-                cabinet.getId(),
-                AbTestStartPayload.builder()
-                        .abTestId(test.getId())
-                        .step(AbTestStartStep.REFRESH_URLS)
-                        .build(),
-                triggerSource
-        );
+        log.info("Пропуск загрузки варианта в слоты 2+: testId={}, variantId={}", test.getId(), variantId);
+        continueStartWithoutOverwritingGallery(cabinet.getId(), test.getId(), triggerSource);
     }
 
     private void executeRefreshUrlsStep(Cabinet cabinet, AbTest test, String triggerSource) {
-        // CDN URL слотов после upload не сохраняем: media/save возвращает исходную галерею,
-        // а пути big/N.webp позиционные — начинают показывать чужие фото. Превью — из uploads.
-        wbApiEventService.enqueueNextAbTestStartStep(
-                cabinet.getId(),
-                AbTestStartPayload.builder()
-                        .abTestId(test.getId())
-                        .step(AbTestStartStep.RESTORE_GALLERY)
-                        .build(),
-                triggerSource
-        );
+        continueStartWithoutOverwritingGallery(cabinet.getId(), test.getId(), triggerSource);
     }
 
     private void executeRestoreGalleryStep(Cabinet cabinet, AbTest test, String triggerSource) {
@@ -909,21 +846,6 @@ public class AbTestService {
             }
         }
         return urls;
-    }
-
-    private void uploadVariantFileToWb(String apiKey, Long nmId, AbTestVariant variant, int photoNumber) {
-        Path path = Paths.get(uploadsDirectory).resolve(variant.getStoredFileName());
-        try {
-            byte[] bytes = Files.readAllBytes(path);
-            contentApiClient.uploadMediaFile(apiKey, nmId, photoNumber, bytes, variant.getStoredFileName());
-        } catch (IOException e) {
-            throw new IllegalStateException("Не удалось прочитать загруженный файл варианта", e);
-        }
-    }
-
-    private int orderSlotForUpload(int sortOrder) {
-        // Загружаем во временные слоты 2+
-        return Math.max(2, sortOrder);
     }
 
     private CardPhotos resolveCardPhotos(String apiKey, Long nmId) {

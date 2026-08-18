@@ -11,7 +11,7 @@ import ru.oparin.solution.service.abtest.AbTestService;
 import ru.oparin.solution.service.events.payload.AbTestStartPayload;
 
 /**
- * Асинхронный старт А/Б-теста: по шагам (resolve → upload → refresh → restore → apply).
+ * Асинхронный старт А/Б-теста: resolve → (restore, если галерею уже затёрли) → apply control в слот 1.
  * Каждый шаг коммитится отдельно, чтобы defer rate-limit не откатывал уже сделанную работу.
  */
 @Component("abTestStartEventExecutor")

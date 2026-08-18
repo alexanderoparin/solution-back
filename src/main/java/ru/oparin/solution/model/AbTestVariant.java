@@ -47,7 +47,8 @@ public class AbTestVariant {
     private String storedFileName;
 
     /**
-     * Файл варианта уже отправлен на WB (media/file) в ходе старта — шаг не повторяем после defer.
+     * Вариант успели загрузить в слот 2+ на старте (устаревший сценарий).
+     * Нужен, чтобы откатить галерею через {@code media/save}.
      */
     @Column(name = "wb_uploaded", nullable = false)
     @Builder.Default
