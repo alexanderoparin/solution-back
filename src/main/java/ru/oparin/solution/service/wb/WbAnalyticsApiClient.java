@@ -43,12 +43,12 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
     private final WbApiTokenTypeResolver tokenTypeResolver;
 
     /**
-     * Отчёт «Оценка товара» — одна страница (POST /api/analytics/v1/item-rating).
+     * Отчёт «Оценка товара» — одна страница (POST /api/analytics/v2/item-rating).
      * Период: вчера — вчера (снимок текущего рейтинга по правилам API).
      *
      * @param apiKey API-ключ (категория «Аналитика»)
      * @param offset смещение пагинации
-     * @return ответ с data.cards
+     * @return ответ с data.items
      */
     public ItemRatingResponse postItemRating(String apiKey, int offset) {
         String fullUrl = WbApiEventType.ANALYTICS_ITEM_RATING_CABINET.getDefaultUrl();

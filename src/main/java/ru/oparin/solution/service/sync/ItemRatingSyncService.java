@@ -24,7 +24,8 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 /**
- * Синхронизация рейтинга карточек из отчёта WB Analytics item-rating.
+ * Синхронизация рейтинга карточек из отчёта WB Analytics item-rating v2
+ * ({@code POST /api/analytics/v2/item-rating}, массив {@code data.items}).
  * Категория токена: Аналитика.
  */
 @Service
@@ -55,8 +56,7 @@ public class ItemRatingSyncService {
                 cabinet.getId(), step.offset(), step.syncStartedAt(), triggerSource);
 
         ItemRatingResponse response = analyticsApiClient.postItemRating(apiKey, step.offset());
-        List<ItemRatingCard> cards = response.getData() != null ? response.getData().getCards() : null;
-        List<ItemRatingCard> page = cards == null ? List.of() : cards;
+        List<ItemRatingCard> page = response.resolveItems();
         log.info("Страница item-rating получена: cabinetId={}, offset={}, pageSize={}",
                 cabinet.getId(), step.offset(), page.size());
 
@@ -104,8 +104,7 @@ public class ItemRatingSyncService {
 
         while (hasMore) {
             ItemRatingResponse response = analyticsApiClient.postItemRating(apiKey, offset);
-            List<ItemRatingCard> cards = response.getData() != null ? response.getData().getCards() : null;
-            List<ItemRatingCard> page = cards == null ? List.of() : cards;
+            List<ItemRatingCard> page = response.resolveItems();
             applyPageToProductCards(cabinetId, page, syncStartedAt);
 
             if (page.size() < PAGE_LIMIT) {

@@ -5,7 +5,7 @@ import lombok.*;
 
 /**
  * Запрос отчёта «Оценка товара».
- * Эндпоинт: POST /api/analytics/v1/item-rating
+ * Эндпоинт: POST /api/analytics/v2/item-rating
  */
 @Getter
 @Setter

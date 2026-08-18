@@ -105,10 +105,10 @@ public enum WbApiEventType {
             "/adv/v1/budget/deposit",
             720L,
             1L),
-    /** Отчёт «Оценка товара» по кабинету (POST /api/analytics/v1/item-rating). */
+    /** Отчёт «Оценка товара» по кабинету (POST /api/analytics/v2/item-rating). */
     ANALYTICS_ITEM_RATING_CABINET(
             WbApiBaseUrl.ANALYTICS,
-            "/api/analytics/v1/item-rating",
+            "/api/analytics/v2/item-rating",
             20L,
             20L),
     PROMOTION_CALENDAR_SYNC_CABINET(

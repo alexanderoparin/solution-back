@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
 
 /**
- * Элемент data.cards[] в отчёте item-rating.
+ * Элемент {@code data.items[]} в отчёте item-rating v2.
  */
 @Getter
 @Setter
@@ -19,12 +19,16 @@ public class ItemRatingCard {
     @JsonProperty("feedbackRating")
     private FeedbackRating feedbackRating;
 
+    /**
+     * Рейтинг товара по отзывам (шкала 1–5).
+     */
     @Getter
     @Setter
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
     public static class FeedbackRating {
+        /** Текущий рейтинг по отзывам. */
         @JsonProperty("current")
         private Double current;
     }
