@@ -70,7 +70,7 @@ public class UsersManagementController {
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
-        boolean onlySellersValue = onlySellers == null ? Boolean.TRUE : onlySellers;
+        boolean onlySellersValue = onlySellers != null && onlySellers;
         Pageable pageable = PageRequest.of(page, Math.clamp(size, 1, 100));
         var userPage = userService.getManagedUsersPageDto(currentUser, pageable, email, onlySellersValue, sortBy, sortDir);
         PageResponse<UserListItemDto> response = PageResponse.<UserListItemDto>builder()
