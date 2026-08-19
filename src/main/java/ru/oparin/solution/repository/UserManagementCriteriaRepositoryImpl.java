@@ -119,6 +119,7 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
         }
 
         Expression<?> sortExpression = switch (sortBy) {
+            case ID -> root.get(USER_ID_FIELD);
             case EMAIL -> root.get(USER_EMAIL_FIELD);
             case ROLE -> root.get(USER_ROLE_FIELD);
             case IS_ACTIVE -> root.get("isActive");

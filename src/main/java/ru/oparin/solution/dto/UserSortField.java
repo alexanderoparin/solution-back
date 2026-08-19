@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum UserSortField {
+    ID("id"),
     EMAIL("email"),
     ROLE("role"),
     IS_ACTIVE("isActive"),
@@ -14,7 +15,7 @@ public enum UserSortField {
     LAST_DATA_UPDATE_AT("lastDataUpdateAt"),
     LAST_DATA_UPDATE_REQUESTED_AT("lastDataUpdateRequestedAt");
 
-    public static final String DEFAULT_REQUEST_VALUE = "LAST_DATA_UPDATE_AT";
+    public static final String DEFAULT_REQUEST_VALUE = "ID";
 
     private final String paramValue;
 }

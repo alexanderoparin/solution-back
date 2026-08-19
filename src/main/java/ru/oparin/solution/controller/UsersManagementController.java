@@ -66,7 +66,7 @@ public class UsersManagementController {
             @RequestParam(required = false) String email,
             @RequestParam(required = false) Boolean onlySellers,
             @RequestParam(defaultValue = UserSortField.DEFAULT_REQUEST_VALUE) UserSortField sortBy,
-            @RequestParam(defaultValue = "ASC") Sort.Direction sortDir,
+            @RequestParam(defaultValue = "DESC") Sort.Direction sortDir,
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
