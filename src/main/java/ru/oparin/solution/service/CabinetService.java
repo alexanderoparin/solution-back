@@ -3,6 +3,7 @@ package ru.oparin.solution.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Sort.Order;
@@ -18,6 +19,7 @@ import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetAccessGrantRepository;
 import ru.oparin.solution.repository.CabinetRepository;
+import ru.oparin.solution.repository.SellerManagerAccessRepository;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.repository.spec.CabinetManagedSpecifications;
 import ru.oparin.solution.service.wb.Wb429RateLimitHeadersLogger;
@@ -53,6 +55,7 @@ public class CabinetService {
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final WbCommonApiClient wbCommonApiClient;
     private final CabinetBillingService cabinetBillingService;
+    private final SellerManagerAccessRepository sellerManagerAccessRepository;
 
     /**
      * Список кабинетов пользователя (продавца), отсортированный по дате создания (новые первые).
@@ -120,13 +123,53 @@ public class CabinetService {
         }
         var spec = CabinetManagedSpecifications.managedList(currentUser, search, onlyActiveUsers);
         Page<Cabinet> cabinetPage = cabinetRepository.findAll(spec, pageable);
-        return cabinetPage.map(c -> ManagedCabinetRowDto.builder()
-                .sellerId(c.getUser().getId())
-                .sellerEmail(c.getUser().getEmail())
-                .agencyManaged(Boolean.TRUE.equals(c.getUser().getAgencyManaged()))
-                .managerEmails(List.of())
-                .cabinet(toDto(c))
-                .build());
+        List<Cabinet> cabinets = cabinetPage.getContent();
+        if (cabinets.isEmpty()) {
+            return cabinetPage.map(c -> ManagedCabinetRowDto.builder()
+                    .sellerId(c.getUser().getId())
+                    .sellerEmail(c.getUser().getEmail())
+                    .agencyManaged(Boolean.TRUE.equals(c.getUser().getAgencyManaged()))
+                    .managerEmails(List.of())
+                    .cabinet(toDto(c))
+                    .build());
+        }
+
+        List<Long> sellerIds = cabinets.stream()
+                .map(c -> c.getUser().getId())
+                .distinct()
+                .toList();
+
+        Map<Long, List<String>> managerEmailsBySellerId = fetchActiveManagerEmailsBySellerIds(sellerIds);
+
+        List<ManagedCabinetRowDto> rows = cabinets.stream()
+                .map(c -> ManagedCabinetRowDto.builder()
+                        .sellerId(c.getUser().getId())
+                        .sellerEmail(c.getUser().getEmail())
+                        .agencyManaged(Boolean.TRUE.equals(c.getUser().getAgencyManaged()))
+                        .managerEmails(managerEmailsBySellerId.getOrDefault(c.getUser().getId(), List.of()))
+                        .cabinet(toDto(c))
+                        .build())
+                .toList();
+
+        return new PageImpl<>(rows, pageable, cabinetPage.getTotalElements());
+    }
+
+    private Map<Long, List<String>> fetchActiveManagerEmailsBySellerIds(List<Long> sellerIds) {
+        if (sellerIds == null || sellerIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<String>> result = new HashMap<>();
+        sellerManagerAccessRepository.findManagerEmailsBySellerIdsAndStatus(
+                sellerIds,
+                SellerManagerAccessStatus.ACTIVE
+        ).forEach(row -> {
+            String email = row.getManagerEmail();
+            if (email == null || email.isBlank()) {
+                return;
+            }
+            result.computeIfAbsent(row.getSellerId(), __ -> new ArrayList<>()).add(email);
+        });
+        return result;
     }
 
     /**

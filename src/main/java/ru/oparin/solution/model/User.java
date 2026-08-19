@@ -89,6 +89,12 @@ public class User {
     private Boolean agencyManaged = false;
 
     /**
+     * Когда пользователь в последний раз был замечен на сайте по авторизованному API-запросу.
+     */
+    @Column(name = "last_seen_at")
+    private LocalDateTime lastSeenAt;
+
+    /**
      * Дата создания записи.
      */
     @CreatedDate

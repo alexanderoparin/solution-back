@@ -13,6 +13,7 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
+import ru.oparin.solution.service.UserActivityService;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -29,6 +30,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String HEALTH_ENDPOINT = "/health";
 
     private final JwtTokenProvider tokenProvider;
+    private final UserActivityService userActivityService;
 
     /**
      * Определяет, должен ли фильтр обрабатывать данный запрос.
@@ -57,6 +59,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             
             if (isValidJwtToken(jwt)) {
                 setAuthenticationInContext(request, jwt);
+                updateLastSeenAt(jwt, requestURI);
             }
         } catch (ExpiredJwtException ex) {
             // Истекший токен - это нормальная ситуация, логируем как debug
@@ -128,5 +131,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         );
         authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
         return authentication;
+    }
+
+    /**
+     * Обновляет время последней активности пользователя, не влияя на обработку запроса при сбое.
+     */
+    private void updateLastSeenAt(String jwt, String requestURI) {
+        try {
+            Long userId = tokenProvider.getUserIdFromToken(jwt);
+            if (userId != null) {
+                userActivityService.touchLastSeenAt(userId);
+            }
+        } catch (Exception ex) {
+            logger.debug("Не удалось обновить last_seen_at для запроса " + requestURI + ": " + ex.getMessage());
+        }
     }
 }

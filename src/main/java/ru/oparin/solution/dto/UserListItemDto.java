@@ -42,6 +42,11 @@ public class UserListItemDto {
     private LocalDateTime createdAt;
 
     /**
+     * Дата и время последней активности пользователя по авторизованному запросу.
+     */
+    private LocalDateTime lastSeenAt;
+
+    /**
      * Email селлера-работодателя (только для WORKER).
      */
     private String ownerEmail;

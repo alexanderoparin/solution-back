@@ -454,6 +454,7 @@ public class UserService {
                 .isActive(user.getIsActive())
                 .agencyManaged(user.getAgencyManaged())
                 .createdAt(user.getCreatedAt())
+                .lastSeenAt(user.getLastSeenAt())
                 .ownerEmail(null)
                 .managerEmails(null)
                 .lastDataUpdateAt(dates.lastDataUpdateAt())
