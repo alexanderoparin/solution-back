@@ -99,7 +99,7 @@ app:
     stuck-check-delay-ms: 16000
     running-timeout-minutes: 15
     event-await-timeout-seconds: 60
-    poll-batch-size: 18 # сколько событий обработается за одну выгрузку
+    poll-batch-size: 30 # сколько событий обработается за одну выгрузку
   uploads:
     directory: /app/uploads
     max-file-size: 31457280  # 30 MB по умолчанию
