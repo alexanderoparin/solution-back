@@ -40,7 +40,7 @@ public class BidderStatusResolver {
             return BidderStatus.OFF;
         }
         Cabinet cabinet = cabinetId != null
-                ? cabinetRepository.findById(cabinetId).orElse(null)
+                ? cabinetRepository.findByIdWithUser(cabinetId).orElse(null)
                 : null;
         if (cabinet == null || !campaignManageAccessService.hasCampaignEntitlement(cabinet)) {
             return BidderStatus.NO_ACCESS;

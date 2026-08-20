@@ -64,7 +64,7 @@ public class CabinetBillingService {
 
     @Transactional(readOnly = true)
     public CabinetBillingStatusDto buildStatus(User actor, Long cabinetId) {
-        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+        Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
                 .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
         boolean canManage = actor != null
                 && cabinet.getUser() != null

@@ -143,7 +143,8 @@ public class UserController {
         var activeSubscription = subscriptionAccessService.getActiveSubscription(user);
         CampaignManageAccessDto campaignManage;
         if (cabinetId != null) {
-            Cabinet cabinet = cabinetRepository.findById(cabinetId).orElse(null);
+            // open-in-view=false: нужен JOIN FETCH user, иначе agency_managed/PRO не читаются
+            Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId).orElse(null);
             campaignManage = campaignManageAccessService.buildAccessState(user, cabinet);
         } else {
             User subscriptionSeller = resolveSellerForAccess(user, sellerId);
