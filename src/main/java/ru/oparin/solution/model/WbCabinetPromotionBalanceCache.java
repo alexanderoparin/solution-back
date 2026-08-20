@@ -33,6 +33,10 @@ public class WbCabinetPromotionBalanceCache {
     @Column(name = "bonus_rub")
     private Integer bonusRub;
 
+    /** Сумма промо-бонусов ({@code cashbacks}) из ответа WB. */
+    @Column(name = "cashback_rub")
+    private Integer cashbackRub;
+
     @Column(name = "fetched_at")
     private LocalDateTime fetchedAt;
 

@@ -537,7 +537,13 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         try {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             validateResponse(response);
-            return objectMapper.readValue(response.getBody(), WbPromotionBalanceResponse.class);
+            String body = response.getBody();
+            WbPromotionBalanceResponse parsed = objectMapper.readValue(body, WbPromotionBalanceResponse.class);
+            // На случай нестандартного JSON — добираем bonus/cashbacks из дерева.
+            if (parsed != null && body != null && !body.isBlank()) {
+                enrichBalanceFromRawJson(parsed, body);
+            }
+            return parsed;
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
             logWbApiError(BALANCE_OPERATION, e);
@@ -545,6 +551,38 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         } catch (Exception e) {
             logIoErrorOrFull(BALANCE_OPERATION, e);
             throw new RestClientException("Ошибка при получении баланса: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Подстраховывает парсинг {@code bonus} / {@code cashbacks}, если bean-маппинг их не заполнил.
+     */
+    private void enrichBalanceFromRawJson(WbPromotionBalanceResponse parsed, String body) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(body);
+            if (parsed.getBonus() == null && root.has("bonus") && !root.get("bonus").isNull()) {
+                parsed.setBonus(root.get("bonus").asInt());
+            }
+            if ((parsed.getCashbacks() == null || parsed.getCashbacks().isEmpty())
+                    && root.has("cashbacks")
+                    && root.get("cashbacks").isArray()) {
+                java.util.List<WbPromotionBalanceResponse.Cashback> list = new java.util.ArrayList<>();
+                for (com.fasterxml.jackson.databind.JsonNode node : root.get("cashbacks")) {
+                    Integer sum = node.has("sum") && !node.get("sum").isNull() ? node.get("sum").asInt() : null;
+                    Integer percent = node.has("percent") && !node.get("percent").isNull()
+                            ? node.get("percent").asInt() : null;
+                    String expiration = null;
+                    if (node.has("expiration_date") && !node.get("expiration_date").isNull()) {
+                        expiration = node.get("expiration_date").asText();
+                    } else if (node.has("expirationDate") && !node.get("expirationDate").isNull()) {
+                        expiration = node.get("expirationDate").asText();
+                    }
+                    list.add(new WbPromotionBalanceResponse.Cashback(sum, percent, expiration));
+                }
+                parsed.setCashbacks(list);
+            }
+        } catch (Exception e) {
+            log.debug("Не удалось дообогатить баланс из raw JSON: {}", e.getMessage());
         }
     }
 

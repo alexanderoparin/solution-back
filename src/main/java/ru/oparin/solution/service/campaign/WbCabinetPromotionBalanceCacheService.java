@@ -1,6 +1,7 @@
 package ru.oparin.solution.service.campaign;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.analytics.manage.BalanceRefreshResponseDto;
@@ -28,6 +29,7 @@ import java.util.Optional;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class WbCabinetPromotionBalanceCacheService {
 
     private final WbCabinetPromotionBalanceCacheRepository cacheRepository;
@@ -131,16 +133,25 @@ public class WbCabinetPromotionBalanceCacheService {
         return cache.getFetchedAt().plusNanos(delayMs * 1_000_000L).isAfter(LocalDateTime.now());
     }
 
-    /** Сохраняет ответ WB в {@code cabinet_promotion_balance_cache}. */
+    /** Сохраняет ответ WB в {@code wb_cabinet_promotion_balance_cache}. */
     private WbCabinetPromotionBalanceCache saveCache(Long cabinetId, WbPromotionBalanceResponse balance, String error) {
         WbCabinetPromotionBalanceCache entity = cacheRepository.findById(cabinetId)
                 .orElseGet(() -> WbCabinetPromotionBalanceCache.builder().cabinetId(cabinetId).build());
         if (balance != null) {
-            entity.setBalanceRub(balance.getBalance());
-            entity.setNetRub(balance.getNet());
-            entity.setBonusRub(balance.getBonus());
+            entity.setBalanceRub(balance.getBalance() != null ? balance.getBalance() : 0);
+            entity.setNetRub(balance.getNet() != null ? balance.getNet() : 0);
+            entity.setBonusRub(balance.resolveBonusRub());
+            entity.setCashbackRub(balance.resolveCashbackRub());
             entity.setFetchedAt(LocalDateTime.now());
             entity.setFetchError(null);
+            log.info(
+                    "Баланс WB сохранён: cabinetId={}, счёт={}, баланс={}, бонусы={}, промо={}",
+                    cabinetId,
+                    entity.getBalanceRub(),
+                    entity.getNetRub(),
+                    entity.getBonusRub(),
+                    entity.getCashbackRub()
+            );
         } else {
             entity.setFetchError(error);
         }
@@ -166,9 +177,22 @@ public class WbCabinetPromotionBalanceCacheService {
 
     private BalanceSourcesResponseDto mapSources(WbCabinetPromotionBalanceCache cache, boolean stale) {
         List<BalanceSourceOptionDto> sources = new ArrayList<>();
-        sources.add(BalanceSourceOptionDto.builder().type(0).label("Счёт").availableRub(cache.getBalanceRub()).build());
-        sources.add(BalanceSourceOptionDto.builder().type(1).label("Баланс").availableRub(cache.getNetRub()).build());
-        sources.add(BalanceSourceOptionDto.builder().type(3).label("Бонусы").availableRub(cache.getBonusRub()).build());
+        sources.add(BalanceSourceOptionDto.builder()
+                .type(0)
+                .label("Счёт")
+                .availableRub(cache.getBalanceRub() != null ? cache.getBalanceRub() : 0)
+                .build());
+        sources.add(BalanceSourceOptionDto.builder()
+                .type(1)
+                .label("Баланс")
+                .availableRub(cache.getNetRub() != null ? cache.getNetRub() : 0)
+                .build());
+        sources.add(BalanceSourceOptionDto.builder()
+                .type(3)
+                .label("Бонусы")
+                .availableRub(cache.getBonusRub() != null ? cache.getBonusRub() : 0)
+                .cashbackRub(cache.getCashbackRub() != null ? cache.getCashbackRub() : 0)
+                .build());
         return BalanceSourcesResponseDto.builder()
                 .sources(sources)
                 .fetchedAt(cache.getFetchedAt())
