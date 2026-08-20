@@ -167,6 +167,10 @@ public class WbCampaignManageService {
                 .type(request.getSourceType())
                 .returnBudget(true)
                 .build();
+        WbPromotionDepositCashbackSupport.applyFromCache(
+                depositRequest,
+                balanceCacheService.findCache(cabinetId).orElse(null)
+        );
         WbPromotionBudgetResponse depositResponse;
         try {
             depositResponse = promotionApiClient.depositCampaignBudget(cabinet.getApiKey(), advertId, depositRequest);
@@ -182,12 +186,16 @@ public class WbCampaignManageService {
         SlotBudgetSpendUtils.addSlotTopUp(state, topUpAmount);
         stateRepository.save(state);
 
+        String cashbackNote = depositRequest.getCashbackSum() != null && depositRequest.getCashbackSum() > 0
+                ? (", из них промо " + depositRequest.getCashbackSum() + " ₽ до "
+                + depositRequest.getCashbackPercent() + "%")
+                : "";
         changeLogService.log(
                 advertId,
                 cabinetId,
                 user,
                 "Бюджет пополнен вручную на " + topUpAmount + " ₽ ("
-                        + budgetBeforeTopUp + " ₽ -> " + budgetAfterTopUp + " ₽)"
+                        + budgetBeforeTopUp + " ₽ -> " + budgetAfterTopUp + " ₽)" + cashbackNote
         );
         timelineService.recordTopUp(advertId, cabinetId, topUpAmount, budgetAfterTopUp);
 

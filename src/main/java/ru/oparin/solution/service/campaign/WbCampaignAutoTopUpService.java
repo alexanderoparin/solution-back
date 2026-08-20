@@ -37,6 +37,7 @@ public class WbCampaignAutoTopUpService {
     private final WbCampaignChangeLogService changeLogService;
     private final WbCampaignBudgetTimelineService timelineService;
     private final WbCampaignStartBudgetGuard startBudgetGuard;
+    private final WbCabinetPromotionBalanceCacheService balanceCacheService;
 
     /**
      * Пополняет бюджет при необходимости и сохраняет учёт (журнал, timeline, состояние слота).
@@ -95,6 +96,10 @@ public class WbCampaignAutoTopUpService {
                     .type(settings.getSourceType() != null ? settings.getSourceType() : 1)
                     .returnBudget(true)
                     .build();
+            WbPromotionDepositCashbackSupport.applyFromCache(
+                    req,
+                    balanceCacheService.findCache(cabinetId).orElse(null)
+            );
             // HTTP deposit вне длинной TX.
             WbPromotionBudgetResponse depositResponse = promotionApiClient.depositCampaignBudget(
                     cabinet.getApiKey(), advertId, req);
@@ -107,14 +112,17 @@ public class WbCampaignAutoTopUpService {
             SlotBudgetSpendUtils.addSlotTopUp(state, topUpAmount);
             stateRepository.save(state);
 
+            String cashbackNote = req.getCashbackSum() != null && req.getCashbackSum() > 0
+                    ? (", из них промо " + req.getCashbackSum() + " ₽ до " + req.getCashbackPercent() + "%")
+                    : "";
             changeLogService.log(advertId, cabinetId, null,
                     "Бюджет пополнен автоматически на " + topUpAmount + " ₽ ("
-                            + budgetBeforeTopUp + " ₽ -> " + budgetAfterTopUp + " ₽)");
+                            + budgetBeforeTopUp + " ₽ -> " + budgetAfterTopUp + " ₽)" + cashbackNote);
             timelineService.recordTopUp(advertId, cabinetId, topUpAmount, budgetAfterTopUp);
             stateRepository.save(state);
 
-            log.info("Автопополнение advertId={}: зачислено {} ₽, остаток бюджета РК {}",
-                    advertId, topUpAmount, budgetAfterTopUp);
+            log.info("Автопополнение advertId={}: зачислено {} ₽{}, остаток бюджета РК {}",
+                    advertId, topUpAmount, cashbackNote, budgetAfterTopUp);
             return Optional.of(topUpAmount);
         } catch (Exception e) {
             log.warn("Автопополнение advertId={}: {}", advertId, e.getMessage());

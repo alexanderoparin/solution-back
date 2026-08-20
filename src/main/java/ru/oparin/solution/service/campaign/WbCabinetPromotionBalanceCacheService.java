@@ -51,6 +51,14 @@ public class WbCabinetPromotionBalanceCacheService {
         return resolveSources(cabinetId, true, true);
     }
 
+    /**
+     * Текущий кэш баланса кабинета (без обращения к WB).
+     */
+    @Transactional(readOnly = true)
+    public Optional<WbCabinetPromotionBalanceCache> findCache(Long cabinetId) {
+        return cacheRepository.findById(cabinetId);
+    }
+
     private BalanceRefreshResponseDto resolveSources(Long cabinetId, boolean tryRefreshIfMissing, boolean forceRefresh) {
         Cabinet cabinet = cabinetService.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
@@ -142,15 +150,17 @@ public class WbCabinetPromotionBalanceCacheService {
             entity.setNetRub(balance.getNet() != null ? balance.getNet() : 0);
             entity.setBonusRub(balance.resolveBonusRub());
             entity.setCashbackRub(balance.resolveCashbackRub());
+            entity.setCashbackPercent(balance.resolveCashbackPercent());
             entity.setFetchedAt(LocalDateTime.now());
             entity.setFetchError(null);
             log.info(
-                    "Баланс WB сохранён: cabinetId={}, счёт={}, баланс={}, бонусы={}, промо={}",
+                    "Баланс WB сохранён: cabinetId={}, счёт={}, баланс={}, бонусы={}, промо={} (до {}%)",
                     cabinetId,
                     entity.getBalanceRub(),
                     entity.getNetRub(),
                     entity.getBonusRub(),
-                    entity.getCashbackRub()
+                    entity.getCashbackRub(),
+                    entity.getCashbackPercent()
             );
         } else {
             entity.setFetchError(error);
@@ -176,22 +186,30 @@ public class WbCabinetPromotionBalanceCacheService {
     }
 
     private BalanceSourcesResponseDto mapSources(WbCabinetPromotionBalanceCache cache, boolean stale) {
+        int cashbackRub = cache.getCashbackRub() != null ? cache.getCashbackRub() : 0;
+        Integer cashbackPercent = cache.getCashbackPercent();
+        // Промо (cashbacks) в API WB списываются только с type 0/1, не с type 3 (bonus).
+        boolean showPromo = cashbackRub > 0 && cashbackPercent != null && cashbackPercent > 0;
+
         List<BalanceSourceOptionDto> sources = new ArrayList<>();
         sources.add(BalanceSourceOptionDto.builder()
                 .type(0)
                 .label("Счёт")
                 .availableRub(cache.getBalanceRub() != null ? cache.getBalanceRub() : 0)
+                .cashbackRub(showPromo ? cashbackRub : null)
+                .cashbackPercent(showPromo ? cashbackPercent : null)
                 .build());
         sources.add(BalanceSourceOptionDto.builder()
                 .type(1)
                 .label("Баланс")
                 .availableRub(cache.getNetRub() != null ? cache.getNetRub() : 0)
+                .cashbackRub(showPromo ? cashbackRub : null)
+                .cashbackPercent(showPromo ? cashbackPercent : null)
                 .build());
         sources.add(BalanceSourceOptionDto.builder()
                 .type(3)
                 .label("Бонусы")
                 .availableRub(cache.getBonusRub() != null ? cache.getBonusRub() : 0)
-                .cashbackRub(cache.getCashbackRub() != null ? cache.getCashbackRub() : 0)
                 .build());
         return BalanceSourcesResponseDto.builder()
                 .sources(sources)

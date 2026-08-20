@@ -37,6 +37,13 @@ public class WbCabinetPromotionBalanceCache {
     @Column(name = "cashback_rub")
     private Integer cashbackRub;
 
+    /**
+     * Процент от суммы пополнения, который можно оплатить промо-бонусами
+     * ({@code cashbacks[].percent} из GET /adv/v1/balance).
+     */
+    @Column(name = "cashback_percent")
+    private Integer cashbackPercent;
+
     @Column(name = "fetched_at")
     private LocalDateTime fetchedAt;
 
