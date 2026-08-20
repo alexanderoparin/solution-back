@@ -1,0 +1,129 @@
+package ru.oparin.solution.model;
+
+import jakarta.persistence.*;
+import lombok.*;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+/**
+ * Сущность карточки товара из WB API.
+ */
+@Entity
+@Table(name = "wb_product_cards", schema = "solution")
+@EntityListeners(AuditingEntityListener.class)
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class WbProductCard {
+
+    /**
+     * Уникальный идентификатор карточки товара (nmID из WB API).
+     */
+    @Id
+    @Column(name = "nm_id")
+    private Long nmId;
+
+    /**
+     * ID карточки товара (imtID из WB API).
+     * Карточки с одинаковым imtID считаются объединёнными.
+     */
+    @Column(name = "imt_id")
+    private Long imtId;
+
+    /**
+     * Кабинет, которому принадлежит артикул. Один артикул — один кабинет.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cabinet_id", nullable = false)
+    private Cabinet cabinet;
+
+    /**
+     * Название товара.
+     */
+    @Column(length = 500)
+    private String title;
+
+    /**
+     * Название категории товара.
+     */
+    @Column(name = "subject_name", length = 255)
+    private String subjectName;
+
+    /**
+     * Бренд товара.
+     */
+    @Column(length = 255)
+    private String brand;
+
+    /**
+     * Артикул продавца.
+     */
+    @Column(name = "vendor_code", length = 255)
+    private String vendorCode;
+
+    /**
+     * URL миниатюры первой фотографии товара.
+     */
+    @Column(name = "photo_tm", length = 1000)
+    private String photoTm;
+
+    /**
+     * URL превью первой фотографии (246×328, поле c246x328 в WB API).
+     */
+    @Column(name = "photo_c246x328", length = 1000)
+    private String photoC246x328;
+
+    /**
+     * Флаг приоритетной карточки: такие карточки обрабатываются в очереди событий раньше остальных.
+     */
+    @Builder.Default
+    @Column(name = "is_priority", nullable = false)
+    private Boolean isPriority = false;
+
+    /**
+     * Дата создания записи в БД.
+     */
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    /**
+     * Дата последнего обновления записи в БД.
+     */
+    @LastModifiedDate
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    /**
+     * Дата и время появления карточки на Wildberries (createdAt из WB Content API).
+     */
+    @Column(name = "wb_created_at", nullable = false)
+    private LocalDateTime wbCreatedAt;
+
+    @PrePersist
+    private void initWbCreatedAtIfAbsent() {
+        if (wbCreatedAt == null) {
+            wbCreatedAt = LocalDateTime.now();
+        }
+    }
+
+    /**
+     * Рейтинг по отзывам WB (feedbackRating), 1–5.
+     * Заполняется синхронизацией через Analytics API item-rating.
+     */
+    @Column(name = "rating", precision = 3, scale = 2)
+    private BigDecimal rating;
+
+    /**
+     * Время последнего успешного обновления рейтинга из item-rating (для финализации многошагового sync).
+     */
+    @Column(name = "rating_synced_at")
+    private LocalDateTime ratingSyncedAt;
+}
+

@@ -9,8 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
-import ru.oparin.solution.dto.wb.CalendarNomenclaturesResponse;
-import ru.oparin.solution.dto.wb.CalendarPromotionsResponse;
+import ru.oparin.solution.dto.wb.WbCalendarNomenclaturesResponse;
+import ru.oparin.solution.dto.wb.WbCalendarPromotionsResponse;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.WbApiEventType;
 
@@ -47,11 +47,11 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
      * @param allPromo      false — только доступные для участия, true — все
      * @return ответ с полем data.promotions
      */
-    public CalendarPromotionsResponse getPromotions(String apiKey, String startDateTime, String endDateTime, boolean allPromo) {
+    public WbCalendarPromotionsResponse getPromotions(String apiKey, String startDateTime, String endDateTime, boolean allPromo) {
         return executeWithConnectionRetry("список акций календаря за период", () -> getPromotionsOnce(apiKey, startDateTime, endDateTime, allPromo));
     }
 
-    private CalendarPromotionsResponse getPromotionsOnce(String apiKey, String startDateTime, String endDateTime, boolean allPromo) {
+    private WbCalendarPromotionsResponse getPromotionsOnce(String apiKey, String startDateTime, String endDateTime, boolean allPromo) {
         String url = UriComponentsBuilder.fromHttpUrl(WbApiEventType.PROMOTION_CALENDAR_SYNC_CABINET.getDefaultUrl())
                 .queryParam("startDateTime", startDateTime)
                 .queryParam("endDateTime", endDateTime)
@@ -68,7 +68,7 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
         try {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             validateResponse(response);
-            return objectMapper.readValue(response.getBody(), CalendarPromotionsResponse.class);
+            return objectMapper.readValue(response.getBody(), WbCalendarPromotionsResponse.class);
         } catch (WbRateLimitDeferException e) {
             log.warn("Ошибка при получении списка акций календаря: {} (отложено до {})", e.getMessage(), e.getDeferUntil());
             throw e;
@@ -110,19 +110,19 @@ public class WbCalendarApiClient extends AbstractWbApiClient {
             logWbApiCall(url, "номенклатуры в акции (promotionId=" + promotionId + ")");
 
             try {
-                CalendarNomenclaturesResponse body = executeWithConnectionRetry(
+                WbCalendarNomenclaturesResponse body = executeWithConnectionRetry(
                         "номенклатуры акции (promotionId=" + promotionId + ", offset=" + offset + ")",
                         () -> {
                             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
                             validateResponse(response);
-                            return objectMapper.readValue(response.getBody(), CalendarNomenclaturesResponse.class);
+                            return objectMapper.readValue(response.getBody(), WbCalendarNomenclaturesResponse.class);
                         }
                 );
                 if (body.getData() == null || body.getData().getNomenclatures() == null
                         || body.getData().getNomenclatures().isEmpty()) {
                     break;
                 }
-                for (CalendarNomenclaturesResponse.CalendarNomenclatureItem item : body.getData().getNomenclatures()) {
+                for (WbCalendarNomenclaturesResponse.CalendarNomenclatureItem item : body.getData().getNomenclatures()) {
                     if (item.getId() != null) {
                         allIds.add(item.getId());
                     }

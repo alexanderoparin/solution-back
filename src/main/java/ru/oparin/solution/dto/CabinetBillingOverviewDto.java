@@ -22,7 +22,7 @@ public class CabinetBillingOverviewDto {
 
     private MainTariffOverviewDto mainTariff;
     private CampaignOverviewDto campaign;
-    private AbTestsOverviewDto abTests;
+    private WbAbTestsOverviewDto abTests;
 
     @Getter
     @Setter
@@ -55,7 +55,7 @@ public class CabinetBillingOverviewDto {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class AbTestsOverviewDto {
+    public static class WbAbTestsOverviewDto {
         private Boolean connected;
         private Boolean activated;
         private Integer remaining;

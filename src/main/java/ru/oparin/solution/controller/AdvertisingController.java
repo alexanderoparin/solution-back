@@ -11,9 +11,9 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetAccessSection;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.*;
-import ru.oparin.solution.service.campaign.CampaignManageAccessService;
+import ru.oparin.solution.service.campaign.WbCampaignManageAccessService;
 import ru.oparin.solution.service.events.WbApiEventService;
-import ru.oparin.solution.service.events.payload.MainStepPayload;
+import ru.oparin.solution.service.events.payload.WbMainStepPayload;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -32,9 +32,9 @@ public class AdvertisingController {
     private final SellerContextService sellerContextService;
     private final AnalyticsService analyticsService;
     private final WbApiEventService wbApiEventService;
-    private final PromotionCampaignControlService promotionCampaignControlService;
-    private final PromotionCampaignControlWriteService promotionCampaignControlWriteService;
-    private final CampaignManageAccessService campaignManageAccessService;
+    private final WbPromotionCampaignControlService promotionCampaignControlService;
+    private final WbPromotionCampaignControlWriteService promotionCampaignControlWriteService;
+    private final WbCampaignManageAccessService campaignManageAccessService;
     private final UserService userService;
 
     /**
@@ -99,7 +99,7 @@ public class AdvertisingController {
             from = to;
             to = tmp;
         }
-        MainStepPayload payload = MainStepPayload.builder()
+        WbMainStepPayload payload = WbMainStepPayload.builder()
                 .dateFrom(from)
                 .dateTo(to)
                 .includeStocks(false)
@@ -185,7 +185,7 @@ public class AdvertisingController {
                     : promotionCampaignControlService.enqueuePause(cabinet, advertId);
             return ResponseEntity.status(response.enqueued() ? HttpStatus.ACCEPTED : HttpStatus.OK)
                     .body(response);
-        } catch (PromotionCampaignControlService.CampaignControlRateLimitException e) {
+        } catch (WbPromotionCampaignControlService.CampaignControlRateLimitException e) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .body(Map.of(
                             "message",
@@ -193,7 +193,7 @@ public class AdvertisingController {
                             "nextAvailableInSeconds",
                             e.getNextAvailableInSeconds()
                     ));
-        } catch (PromotionCampaignControlWriteService.CampaignControlWriteBlockedException e) {
+        } catch (WbPromotionCampaignControlWriteService.CampaignControlWriteBlockedException e) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of(
                             "message", e.getMessage(),
@@ -205,7 +205,7 @@ public class AdvertisingController {
         } catch (UserException e) {
             if (e.getHttpStatus() == HttpStatus.FORBIDDEN) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
-                        "error", CampaignManageAccessService.SUBSCRIPTION_REQUIRED_CODE,
+                        "error", WbCampaignManageAccessService.SUBSCRIPTION_REQUIRED_CODE,
                         "message", e.getMessage()
                 ));
             }

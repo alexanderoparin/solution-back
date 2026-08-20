@@ -1,0 +1,53 @@
+package ru.oparin.solution.service.events;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
+import ru.oparin.solution.model.WbApiEvent;
+import ru.oparin.solution.service.CabinetScopeStatusService;
+import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.WbPromotionCalendarService;
+import ru.oparin.solution.service.events.payload.WbMainStepPayload;
+
+@Component("promotionCalendarSyncCabinetEventExecutor")
+@RequiredArgsConstructor
+@Slf4j
+public class WbPromotionCalendarSyncCabinetEventExecutor implements WbApiEventExecutor {
+
+    private static final String MSG_SCOPE = "Для кабинета {} нет доступа к категории WB API: {}.";
+
+    private final WbApiEventService eventService;
+    private final CabinetService cabinetService;
+    private final WbPromotionCalendarService promotionCalendarService;
+    private final CabinetScopeStatusService cabinetScopeStatusService;
+
+    @Override
+    public WbApiEventExecutionResult execute(WbApiEvent event) {
+        WbMainStepPayload payload = eventService.readPayload(event, WbMainStepPayload.class);
+        var cabinet = cabinetService.findByIdWithUserOrThrow(event.getCabinet().getId());
+        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+            return WbApiEventExecutionResult.finalError("У кабинета отсутствует API ключ");
+        }
+        try {
+            promotionCalendarService.syncPromotionsForCabinet(cabinet);
+        } catch (WbApiUnauthorizedScopeException e) {
+            cabinetScopeStatusService.recordFailure(cabinet.getId(), e.getCategory(), e.getMessage());
+            log.warn(MSG_SCOPE, cabinet.getId(), e.getCategory().getDisplayName());
+        } catch (Exception e) {
+            WbApiEventExecutionResult deferOrRetry = WbEventExecutionErrors.wrapDeferOrRetryable(e);
+            if (deferOrRetry.deferUntil() != null) {
+                return deferOrRetry;
+            }
+            log.warn("Синхронизация акций календаря для кабинета {} завершилась с ошибкой: {}", cabinet.getId(), e.getMessage());
+        }
+        if (!isAdminBulkStandalone(event.getTriggerSource())) {
+            eventService.tryFinalizeMain(cabinet.getId(), event.getId());
+        }
+        return WbApiEventExecutionResult.completedSuccessfully();
+    }
+
+    private static boolean isAdminBulkStandalone(String triggerSource) {
+        return triggerSource != null && triggerSource.startsWith("ADMIN_BULK");
+    }
+}

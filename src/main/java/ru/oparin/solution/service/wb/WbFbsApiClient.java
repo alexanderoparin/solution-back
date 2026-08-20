@@ -36,8 +36,8 @@ public class WbFbsApiClient extends AbstractWbApiClient {
      * @param apiKey токен кабинета с категорией «Маркетплейс»
      * @return склады продавца; пустой список, если тело пустое
      */
-    public List<WbSellerWarehouseResponse> getSellerWarehouses(String apiKey) {
-        return executeWithConnectionRetry("список складов продавца", () -> getSellerWarehousesOnce(apiKey));
+    public List<WbSellerWarehouseResponse> getWbSellerWarehouses(String apiKey) {
+        return executeWithConnectionRetry("список складов продавца", () -> getWbSellerWarehousesOnce(apiKey));
     }
 
     /**
@@ -72,7 +72,7 @@ public class WbFbsApiClient extends AbstractWbApiClient {
         }
     }
 
-    private List<WbSellerWarehouseResponse> getSellerWarehousesOnce(String apiKey) {
+    private List<WbSellerWarehouseResponse> getWbSellerWarehousesOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
         String url = WbApiEventType.FBS_WAREHOUSES_SYNC_CABINET.getDefaultUrl();

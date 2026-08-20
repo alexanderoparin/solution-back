@@ -17,9 +17,9 @@ import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.WbApiEventRepository;
 import ru.oparin.solution.service.CabinetService;
-import ru.oparin.solution.service.ProductCardService;
+import ru.oparin.solution.service.WbProductCardService;
 import ru.oparin.solution.service.events.payload.*;
-import ru.oparin.solution.service.sync.PromotionCampaignSyncService;
+import ru.oparin.solution.service.sync.WbPromotionCampaignSyncService;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -44,7 +44,7 @@ public class WbApiEventService {
     public static final String PROMOTION_CALENDAR_SYNC_EXECUTOR_BEAN = "promotionCalendarSyncCabinetEventExecutor";
     public static final String WAREHOUSES_SYNC_EXECUTOR_BEAN = "warehousesSyncCabinetEventExecutor";
     public static final String STOCKS_EXECUTOR_BEAN = "stocksByNmIdEventExecutor";
-    public static final String FBS_WAREHOUSES_SYNC_EXECUTOR_BEAN = "fbsWarehousesSyncCabinetEventExecutor";
+    public static final String FBS_WAREHOUSES_SYNC_EXECUTOR_BEAN = "fbsWbWarehousesSyncCabinetEventExecutor";
     public static final String FBS_STOCKS_EXECUTOR_BEAN = "fbsStocksCabinetEventExecutor";
     public static final String AB_TEST_START_EXECUTOR_BEAN = "abTestStartEventExecutor";
     public static final String AB_TEST_APPLY_PHOTO_EXECUTOR_BEAN = "abTestApplyPhotoEventExecutor";
@@ -93,14 +93,14 @@ public class WbApiEventService {
     private final WbApiEventRepository eventRepository;
     private final CabinetRepository cabinetRepository;
     private final CabinetService cabinetService;
-    private final ProductCardService productCardService;
-    private final PromotionCampaignSyncService promotionCampaignSyncService;
+    private final WbProductCardService productCardService;
+    private final WbPromotionCampaignSyncService promotionCampaignSyncService;
     private final ObjectMapper objectMapper;
     private final WbEventsProperties wbEventsProperties;
 
     @Transactional
     public void enqueueInitialContentEvent(Long cabinetId, LocalDate dateFrom, LocalDate dateTo, boolean includeStocks, String triggerSource) {
-        ContentCardsListPagePayload payload = ContentCardsListPagePayload.builder()
+        WbContentCardsListPagePayload payload = WbContentCardsListPagePayload.builder()
                 .dateFrom(dateFrom)
                 .dateTo(dateTo)
                 .includeStocks(includeStocks)
@@ -110,7 +110,7 @@ public class WbApiEventService {
     }
 
     @Transactional
-    public void enqueueNextContentEvent(Long cabinetId, ContentCardsListPagePayload payload, String triggerSource) {
+    public void enqueueNextContentEvent(Long cabinetId, WbContentCardsListPagePayload payload, String triggerSource) {
         String dedupKey = buildContentDedupKey(
                 cabinetId,
                 payload.cursorNmId(),
@@ -130,7 +130,7 @@ public class WbApiEventService {
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        StocksByNmIdPayload payload = StocksByNmIdPayload.builder().nmId(nmId).build();
+        WbStocksByNmIdPayload payload = WbStocksByNmIdPayload.builder().nmId(nmId).build();
         WbApiEvent event = WbApiEvent.builder()
                 .eventType(WbApiEventType.STOCKS_BY_NMID)
                 .status(WbApiEventStatus.CREATED)
@@ -152,7 +152,7 @@ public class WbApiEventService {
     @Transactional
     public void enqueueAllStocksByNmIdForCabinet(Long cabinetId, String triggerSource) {
         List<Long> nmIds = productCardService.findByCabinetId(cabinetId).stream()
-                .map(ProductCard::getNmId)
+                .map(WbProductCard::getNmId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
@@ -163,7 +163,7 @@ public class WbApiEventService {
     }
 
     @Transactional
-    public void enqueueItemRatingSyncCabinetEvent(Long cabinetId, MainStepPayload payload, String triggerSource) {
+    public void enqueueItemRatingSyncCabinetEvent(Long cabinetId, WbMainStepPayload payload, String triggerSource) {
         String dedupKey = "ITEM_RATING_SYNC_CABINET:" + cabinetId + ":" + payload.dateFrom() + ":" + payload.dateTo();
         if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
             log.debug("WB API item-rating sync уже существует (dedupKey={}), создание пропущено", dedupKey);
@@ -175,7 +175,7 @@ public class WbApiEventService {
             log.debug("Пропуск item-rating sync: cabinetId={}, tokenType=BASIC", cabinetId);
             return;
         }
-        ItemRatingSyncStepPayload stepPayload = ItemRatingSyncStepPayload.builder()
+        WbItemRatingSyncStepPayload stepPayload = WbItemRatingSyncStepPayload.builder()
                 .offset(0)
                 .syncStartedAt(LocalDateTime.now())
                 .dateFrom(payload.dateFrom())
@@ -188,7 +188,7 @@ public class WbApiEventService {
     @Transactional
     public void enqueueNextItemRatingStepEvent(
             Long cabinetId,
-            ItemRatingSyncStepPayload payload,
+            WbItemRatingSyncStepPayload payload,
             String triggerSource
     ) {
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
@@ -207,7 +207,7 @@ public class WbApiEventService {
 
     private void enqueueItemRatingStepEvent(
             Cabinet cabinet,
-            ItemRatingSyncStepPayload payload,
+            WbItemRatingSyncStepPayload payload,
             String triggerSource,
             LocalDateTime nextAttemptAt,
             int priority
@@ -241,7 +241,7 @@ public class WbApiEventService {
     }
 
     @Transactional
-    public void enqueuePromotionCalendarSyncCabinetEvent(Long cabinetId, MainStepPayload payload, String triggerSource) {
+    public void enqueuePromotionCalendarSyncCabinetEvent(Long cabinetId, WbMainStepPayload payload, String triggerSource) {
         String dedupKey = "PROMOTION_CALENDAR_SYNC_CABINET:" + cabinetId + ":" + payload.dateFrom() + ":" + payload.dateTo();
         if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
             log.debug("WB API promotion calendar sync уже существует (dedupKey={}), создание пропущено", dedupKey);
@@ -278,7 +278,7 @@ public class WbApiEventService {
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
         LocalDate d = LocalDate.now();
-        MainStepPayload payload = MainStepPayload.builder()
+        WbMainStepPayload payload = WbMainStepPayload.builder()
                 .dateFrom(d)
                 .dateTo(d)
                 .includeStocks(false)
@@ -319,7 +319,7 @@ public class WbApiEventService {
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
         LocalDate d = LocalDate.now();
-        MainStepPayload payload = MainStepPayload.builder()
+        WbMainStepPayload payload = WbMainStepPayload.builder()
                 .dateFrom(d)
                 .dateTo(d)
                 .includeStocks(false)
@@ -358,7 +358,7 @@ public class WbApiEventService {
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
         LocalDate d = LocalDate.now();
-        MainStepPayload payload = MainStepPayload.builder()
+        WbMainStepPayload payload = WbMainStepPayload.builder()
                 .dateFrom(d)
                 .dateTo(d)
                 .includeStocks(false)
@@ -397,7 +397,7 @@ public class WbApiEventService {
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        AnalyticsSalesFunnelPayload payload = AnalyticsSalesFunnelPayload.builder()
+        WbAnalyticsSalesFunnelPayload payload = WbAnalyticsSalesFunnelPayload.builder()
                 .nmId(nmId)
                 .dateFrom(dateFrom)
                 .dateTo(dateTo)
@@ -422,7 +422,7 @@ public class WbApiEventService {
     }
 
     @Transactional
-    public void enqueuePricesRequestLevelEvents(Long cabinetId, MainStepPayload payload, String triggerSource) {
+    public void enqueuePricesRequestLevelEvents(Long cabinetId, WbMainStepPayload payload, String triggerSource) {
         enqueuePricesCabinetWithSppEvent(cabinetId, payload, triggerSource);
     }
 
@@ -430,7 +430,7 @@ public class WbApiEventService {
      * Одно событие: цены всеми батчами внутри исполнителя, затем СПП.
      */
     @Transactional
-    public void enqueuePricesCabinetWithSppEvent(Long cabinetId, MainStepPayload payload, String triggerSource) {
+    public void enqueuePricesCabinetWithSppEvent(Long cabinetId, WbMainStepPayload payload, String triggerSource) {
         String dedupKey = "PRICES_CABINET_WITH_SPP:" + cabinetId + ":" + payload.dateFrom() + ":" + payload.dateTo();
         if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
             log.debug("WB API событие цен+СПП уже существует (dedupKey={}), создание пропущено", dedupKey);
@@ -465,8 +465,8 @@ public class WbApiEventService {
      * @return id созданного события или {@code null}, если задача уже в очереди
      */
     @Transactional
-    public Long enqueuePromotionCampaignStart(Long cabinetId, Long advertId, String triggerSource) {
-        return enqueuePromotionCampaignControl(
+    public Long enqueueWbPromotionCampaignStart(Long cabinetId, Long advertId, String triggerSource) {
+        return enqueueWbPromotionCampaignControl(
                 cabinetId,
                 advertId,
                 WbApiEventType.PROMOTION_CAMPAIGN_START,
@@ -482,8 +482,8 @@ public class WbApiEventService {
      * @return id созданного события или {@code null}, если задача уже в очереди
      */
     @Transactional
-    public Long enqueuePromotionCampaignPause(Long cabinetId, Long advertId, String triggerSource) {
-        return enqueuePromotionCampaignControl(
+    public Long enqueueWbPromotionCampaignPause(Long cabinetId, Long advertId, String triggerSource) {
+        return enqueueWbPromotionCampaignControl(
                 cabinetId,
                 advertId,
                 WbApiEventType.PROMOTION_CAMPAIGN_PAUSE,
@@ -493,7 +493,7 @@ public class WbApiEventService {
         );
     }
 
-    private Long enqueuePromotionCampaignControl(
+    private Long enqueueWbPromotionCampaignControl(
             Long cabinetId,
             Long advertId,
             WbApiEventType eventType,
@@ -508,7 +508,7 @@ public class WbApiEventService {
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        PromotionCampaignControlPayload payload = PromotionCampaignControlPayload.builder()
+        WbPromotionCampaignControlPayload payload = WbPromotionCampaignControlPayload.builder()
                 .advertId(advertId)
                 .build();
         WbApiEvent event = WbApiEvent.builder()
@@ -532,7 +532,7 @@ public class WbApiEventService {
     }
 
     @Transactional
-    public boolean enqueuePromotionRequestLevelEvents(Long cabinetId, MainStepPayload payload, String triggerSource) {
+    public boolean enqueuePromotionRequestLevelEvents(Long cabinetId, WbMainStepPayload payload, String triggerSource) {
         String dedupKey = "PROMOTION_COUNT:" + promotionPeriodKey(cabinetId, payload.dateFrom(), payload.dateTo());
         if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
             log.debug("WB API promotion count event уже существует (dedupKey={}), создание пропущено", dedupKey);
@@ -560,7 +560,7 @@ public class WbApiEventService {
     }
 
     @Transactional
-    public void enqueuePromotionAdvertsBatchEvents(Long cabinetId, MainStepPayload payload, List<Long> campaignIds, String triggerSource) {
+    public void enqueuePromotionAdvertsBatchEvents(Long cabinetId, WbMainStepPayload payload, List<Long> campaignIds, String triggerSource) {
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
         int size = promotionCampaignSyncService.getCampaignsBatchSize(
@@ -575,7 +575,7 @@ public class WbApiEventService {
     @Transactional
     public void schedulePromotionStatsAfterAdvertsIfReady(
             Long cabinetId,
-            MainStepPayload payload,
+            WbMainStepPayload payload,
             String triggerSource,
             long excludeAdvertBatchEventId
     ) {
@@ -669,7 +669,7 @@ public class WbApiEventService {
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
         int batchSize = promotionCampaignSyncService.getNormqueryCampaignsBatchSize(
                 cabinet.getTokenType() != null ? cabinet.getTokenType() : CabinetTokenType.BASIC);
-        MainStepPayload payload = MainStepPayload.builder()
+        WbMainStepPayload payload = WbMainStepPayload.builder()
                 .dateFrom(dateFrom)
                 .dateTo(dateTo)
                 .includeStocks(includeStocks)
@@ -701,7 +701,7 @@ public class WbApiEventService {
             Long cabinetId,
             List<Long> campaignIds,
             int batchIndex,
-            MainStepPayload payload,
+            WbMainStepPayload payload,
             String triggerSource
     ) {
         String dedupKey = promotionNormQueryStatsDedupPrefix(cabinetId, payload.dateFrom(), payload.dateTo()) + batchIndex;
@@ -711,7 +711,7 @@ public class WbApiEventService {
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        PromotionNormQueryStatsBatchPayload batchPayload = PromotionNormQueryStatsBatchPayload.builder()
+        WbPromotionNormQueryStatsBatchPayload batchPayload = WbPromotionNormQueryStatsBatchPayload.builder()
                 .campaignIds(campaignIds)
                 .batchIndex(batchIndex)
                 .dateFrom(payload.dateFrom())
@@ -740,7 +740,7 @@ public class WbApiEventService {
             Long cabinetId,
             List<Long> campaignIds,
             int batchIndex,
-            MainStepPayload payload,
+            WbMainStepPayload payload,
             String triggerSource
     ) {
         String dedupKey = promotionAdvertsDedupPrefix(cabinetId, payload.dateFrom(), payload.dateTo()) + batchIndex;
@@ -750,7 +750,7 @@ public class WbApiEventService {
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        PromotionAdvertsBatchPayload batchPayload = PromotionAdvertsBatchPayload.builder()
+        WbPromotionAdvertsBatchPayload batchPayload = WbPromotionAdvertsBatchPayload.builder()
                 .campaignIds(campaignIds)
                 .batchIndex(batchIndex)
                 .dateFrom(payload.dateFrom())
@@ -779,7 +779,7 @@ public class WbApiEventService {
             Long cabinetId,
             List<Long> campaignIds,
             int batchIndex,
-            MainStepPayload payload,
+            WbMainStepPayload payload,
             String triggerSource
     ) {
         String dedupKey = promotionStatsDedupPrefix(cabinetId, payload.dateFrom(), payload.dateTo()) + batchIndex;
@@ -789,7 +789,7 @@ public class WbApiEventService {
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        PromotionStatsBatchPayload batchPayload = PromotionStatsBatchPayload.builder()
+        WbPromotionStatsBatchPayload batchPayload = WbPromotionStatsBatchPayload.builder()
                 .campaignIds(campaignIds)
                 .batchIndex(batchIndex)
                 .dateFrom(payload.dateFrom())
@@ -831,12 +831,12 @@ public class WbApiEventService {
     }
 
     @Transactional(readOnly = true)
-    public boolean hasActivePromotionCampaignStart(Long cabinetId, Long advertId) {
+    public boolean hasActiveWbPromotionCampaignStart(Long cabinetId, Long advertId) {
         return hasActivePromotionControl(cabinetId, advertId, "PROMOTION_START");
     }
 
     @Transactional(readOnly = true)
-    public boolean hasActivePromotionCampaignPause(Long cabinetId, Long advertId) {
+    public boolean hasActiveWbPromotionCampaignPause(Long cabinetId, Long advertId) {
         return hasActivePromotionControl(cabinetId, advertId, "PROMOTION_PAUSE");
     }
 
@@ -977,7 +977,7 @@ public class WbApiEventService {
 
     /**
      * Фиксирует успешное завершение основной волны по кабинету. События остатков при includeStocks
-     * создаются раньше — после полной загрузки карточек в {@link ContentCardsListPageEventExecutor}.
+     * создаются раньше — после полной загрузки карточек в {@link WbContentCardsListPageEventExecutor}.
      */
     @Transactional
     public void markMainCompleted(Long cabinetId) {
@@ -1209,12 +1209,12 @@ public class WbApiEventService {
      * @return id события или null, если уже в очереди
      */
     @Transactional
-    public Long enqueueAbTestStart(Long cabinetId, Long abTestId, String triggerSource) {
-        return enqueueAbTestStartStep(
+    public Long enqueueWbAbTestStart(Long cabinetId, Long abTestId, String triggerSource) {
+        return enqueueWbAbTestStartStep(
                 cabinetId,
-                AbTestStartPayload.builder()
+                WbAbTestStartPayload.builder()
                         .abTestId(abTestId)
-                        .step(AbTestStartStep.RESOLVE_CARD)
+                        .step(WbAbTestStartStep.RESOLVE_CARD)
                         .build(),
                 triggerSource,
                 LocalDateTime.now()
@@ -1225,7 +1225,7 @@ public class WbApiEventService {
      * Следующий шаг старта А/Б с паузой под лимит media Content API.
      */
     @Transactional
-    public Long enqueueNextAbTestStartStep(Long cabinetId, AbTestStartPayload payload, String triggerSource) {
+    public Long enqueueNextWbAbTestStartStep(Long cabinetId, WbAbTestStartPayload payload, String triggerSource) {
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
         CabinetTokenType tokenType = cabinet.getTokenType() != null ? cabinet.getTokenType() : CabinetTokenType.BASIC;
@@ -1240,29 +1240,29 @@ public class WbApiEventService {
                 delayMs,
                 nextAttemptAt
         );
-        return enqueueAbTestStartStep(cabinetId, payload, triggerSource, nextAttemptAt);
+        return enqueueWbAbTestStartStep(cabinetId, payload, triggerSource, nextAttemptAt);
     }
 
-    private Long enqueueAbTestStartStep(
+    private Long enqueueWbAbTestStartStep(
             Long cabinetId,
-            AbTestStartPayload payload,
+            WbAbTestStartPayload payload,
             String triggerSource,
             LocalDateTime nextAttemptAt
     ) {
-        AbTestStartStep step = payload.resolvedStep();
+        WbAbTestStartStep step = payload.resolvedStep();
         long variantKey = payload.variantId() != null ? payload.variantId() : 0L;
         String dedupKey = "AB_TEST_START:" + cabinetId + ":" + payload.abTestId() + ":" + step + ":" + variantKey;
         // Старый dedup без шага — не плодим параллельный монолитный старт.
         String legacyDedupKey = "AB_TEST_START:" + cabinetId + ":" + payload.abTestId();
         if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)
-                || (step == AbTestStartStep.RESOLVE_CARD
+                || (step == WbAbTestStartStep.RESOLVE_CARD
                 && eventRepository.existsByDedupKeyAndStatusIn(legacyDedupKey, ACTIVE_STATUSES))) {
             log.debug("AB_TEST_START шаг уже в очереди (dedupKey={})", dedupKey);
             return null;
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        AbTestStartPayload normalized = AbTestStartPayload.builder()
+        WbAbTestStartPayload normalized = WbAbTestStartPayload.builder()
                 .abTestId(payload.abTestId())
                 .step(step)
                 .variantId(payload.variantId())
@@ -1301,7 +1301,7 @@ public class WbApiEventService {
      * @return id события или null, если уже в очереди
      */
     @Transactional
-    public Long enqueueAbTestApplyPhoto(
+    public Long enqueueWbAbTestApplyPhoto(
             Long cabinetId,
             Long abTestId,
             Long variantId,
@@ -1316,7 +1316,7 @@ public class WbApiEventService {
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        AbTestApplyPhotoPayload payload = AbTestApplyPhotoPayload.builder()
+        WbAbTestApplyPhotoPayload payload = WbAbTestApplyPhotoPayload.builder()
                 .abTestId(abTestId)
                 .variantId(variantId)
                 .reason(reason)
@@ -1347,7 +1347,7 @@ public class WbApiEventService {
      * @return id события или null, если уже в очереди
      */
     @Transactional
-    public Long enqueueAbTestStatsPoll(Long cabinetId, Long abTestId, String triggerSource) {
+    public Long enqueueWbAbTestStatsPoll(Long cabinetId, Long abTestId, String triggerSource) {
         String dedupKey = "AB_TEST_STATS:" + cabinetId + ":" + abTestId;
         if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
             log.debug("AB_TEST_STATS_POLL уже в очереди (dedupKey={})", dedupKey);
@@ -1355,7 +1355,7 @@ public class WbApiEventService {
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
-        AbTestStatsPollPayload payload = AbTestStatsPollPayload.builder().abTestId(abTestId).build();
+        WbAbTestStatsPollPayload payload = WbAbTestStatsPollPayload.builder().abTestId(abTestId).build();
         WbApiEvent event = WbApiEvent.builder()
                 .eventType(WbApiEventType.AB_TEST_STATS_POLL)
                 .status(WbApiEventStatus.CREATED)
@@ -1383,7 +1383,7 @@ public class WbApiEventService {
         }
     }
 
-    private void enqueueContentEvent(Long cabinetId, ContentCardsListPagePayload payload, String dedupKey, String triggerSource) {
+    private void enqueueContentEvent(Long cabinetId, WbContentCardsListPagePayload payload, String dedupKey, String triggerSource) {
         if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
             log.debug("WB API event уже существует (dedupKey={}), создание пропущено", dedupKey);
             return;

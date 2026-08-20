@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
-import ru.oparin.solution.dto.wb.OrdersResponse;
+import ru.oparin.solution.dto.wb.WbOrdersResponse;
 import ru.oparin.solution.model.WbApiEventType;
 
 import java.time.LocalDate;
@@ -42,11 +42,11 @@ public class WbOrdersApiClient extends AbstractWbApiClient {
      * @param flag флаг для фильтрации заказов (1 - только реализованные)
      * @return список заказов
      */
-    public List<OrdersResponse.Order> getOrders(String apiKey, LocalDate dateFrom, Integer flag) {
+    public List<WbOrdersResponse.Order> getOrders(String apiKey, LocalDate dateFrom, Integer flag) {
         return executeWithConnectionRetry("заказы продавца (СПП)", () -> getOrdersOnce(apiKey, dateFrom, flag));
     }
 
-    private List<OrdersResponse.Order> getOrdersOnce(String apiKey, LocalDate dateFrom, Integer flag) {
+    private List<WbOrdersResponse.Order> getOrdersOnce(String apiKey, LocalDate dateFrom, Integer flag) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
 
@@ -73,9 +73,9 @@ public class WbOrdersApiClient extends AbstractWbApiClient {
                 throw new RestClientException("Неожиданный ответ от WB API: " + response.getStatusCode());
             }
 
-            List<OrdersResponse.Order> orders = objectMapper.readValue(
+            List<WbOrdersResponse.Order> orders = objectMapper.readValue(
                     response.getBody(),
-                    new TypeReference<List<OrdersResponse.Order>>() {}
+                    new TypeReference<List<WbOrdersResponse.Order>>() {}
             );
 
             log.info("Получено заказов: {}", orders != null ? orders.size() : 0);

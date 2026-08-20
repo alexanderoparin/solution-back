@@ -46,7 +46,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleUserException(UserException ex) {
         ErrorResponse.ErrorResponseBuilder builder = ErrorResponse.builder().error(ex.getMessage());
         if (ex.getHttpStatus() == HttpStatus.PAYMENT_REQUIRED) {
-            builder.code(ru.oparin.solution.service.AbTestQuotaService.AB_TEST_QUOTA_REQUIRED);
+            builder.code(ru.oparin.solution.service.WbAbTestQuotaService.AB_TEST_QUOTA_REQUIRED);
         }
         if (ex.getRetryAfterSeconds() != null) {
             builder.retryAfterSeconds(ex.getRetryAfterSeconds().longValue());

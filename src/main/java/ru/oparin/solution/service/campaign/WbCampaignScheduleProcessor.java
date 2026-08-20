@@ -1,0 +1,278 @@
+package ru.oparin.solution.service.campaign;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import ru.oparin.solution.dto.analytics.PromotionControlCapabilitiesDto;
+import ru.oparin.solution.dto.analytics.ScheduleControlAttemptResult;
+import ru.oparin.solution.model.*;
+import ru.oparin.solution.repository.WbCampaignManagementStateRepository;
+import ru.oparin.solution.repository.WbPromotionCampaignRepository;
+import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.WbPromotionCampaignControlService;
+import ru.oparin.solution.service.WbPromotionCampaignControlWriteService;
+import ru.oparin.solution.service.events.WbApiEventService;
+
+import java.time.ZonedDateTime;
+import java.util.Optional;
+
+/**
+ * Обработка одной РК в планировщике расписания.
+ * HTTP к WB не оборачивается длинной транзакцией БД.
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class WbCampaignScheduleProcessor {
+
+    private final WbCampaignManagementStateRepository stateRepository;
+    private final WbPromotionCampaignRepository campaignRepository;
+    private final WbCampaignManageService manageService;
+    private final WbCampaignBudgetFetchService budgetFetchService;
+    private final WbCampaignAutoTopUpService autoTopUpService;
+    private final WbCampaignBudgetTrailService budgetTrailService;
+    private final WbCabinetBudgetPollCoordinator budgetPollCoordinator;
+    private final WbPromotionCampaignControlService controlService;
+    private final WbPromotionCampaignControlWriteService promotionControlWriteService;
+    private final WbApiEventService wbApiEventService;
+    private final CabinetService cabinetService;
+    private final WbCampaignManageAccessService campaignManageAccessService;
+    private final WbCampaignScheduleControlNotifier scheduleControlNotifier;
+    private final WbCampaignStartBudgetGuard startBudgetGuard;
+
+    /**
+     * Тик планировщика для одной кампании.
+     * Без внешней длинной транзакции: HTTP к WB (бюджет / start / pause) не должен удерживать Hikari.
+     * Сохранения идут короткими транзакциями репозиториев / вложенных сервисов.
+     */
+    public void processCampaign(Long advertId, Long cabinetId, ZonedDateTime now) {
+        WbCampaignManagementState state = stateRepository.findById(advertId).orElse(null);
+        if (state == null || !state.isScheduleEnabled()) {
+            return;
+        }
+
+        Cabinet cabinet = cabinetService.findById(cabinetId).orElse(null);
+        if (cabinet == null || cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+            return;
+        }
+        if (!campaignManageAccessService.hasCampaignEntitlement(cabinet)) {
+            manageService.stopScheduleDueToLostEntitlement(state, cabinet, cabinet.getUser());
+            return;
+        }
+
+        WbPromotionCampaign campaign = campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).orElse(null);
+        if (campaign == null || campaign.getStatus() == WbCampaignStatus.FINISHED) {
+            return;
+        }
+
+        Optional<WbCampaignScheduleSlot> activeSlot = manageService.findActiveSlotNow(advertId, cabinetId, now);
+        boolean inSlot = activeSlot.isPresent() && !state.isManualStopped();
+
+        if (inSlot) {
+            WbCampaignScheduleSlot slot = activeSlot.get();
+            if (SlotBudgetSpendUtils.isSlotBudgetExhausted(state, slot.getId())) {
+                if (campaign.getStatus() == WbCampaignStatus.ACTIVE) {
+                    ensurePaused(cabinet, advertId, state, "РК остановлена: исчерпан бюджет слота");
+                }
+            } else {
+                if (state.getActiveSlotId() == null || !state.getActiveSlotId().equals(slot.getId())) {
+                    onSlotEnter(state, slot, cabinet);
+                }
+                if (state.getBudgetAtSlotStart() == null) {
+                    log.debug(
+                            "Слот advertId={}: ожидание свежего бюджета WB для базы расхода за слот",
+                            advertId
+                    );
+                } else {
+                    checkSlotBudgetCap(state, slot, cabinet);
+                    if (!SlotBudgetSpendUtils.isSlotBudgetExhausted(state, slot.getId())) {
+                        autoTopUpService.tryTopUpInNewTransaction(advertId, cabinetId, cabinet)
+                                .ifPresent(amount -> reloadStateAfterTopUp(state, advertId, amount));
+                        ensureRunning(campaign, cabinet, advertId, state, now);
+                    }
+                }
+            }
+        } else {
+            if (state.getActiveSlotId() != null || state.getSlotBudgetExhaustedSlotId() != null) {
+                onSlotLeave(state);
+            }
+            if (campaign.getStatus() == WbCampaignStatus.ACTIVE) {
+                ensurePaused(cabinet, advertId, state, "РК остановлена по расписанию");
+            } else {
+                budgetTrailService.pollDuringTrailIfNeeded(cabinet, state);
+            }
+        }
+        stateRepository.save(state);
+    }
+
+    private void reloadStateAfterTopUp(WbCampaignManagementState state, Long advertId, int amount) {
+        WbCampaignManagementState fresh = stateRepository.findById(advertId).orElse(null);
+        if (fresh == null) {
+            return;
+        }
+        state.setTopUpsTodayDate(fresh.getTopUpsTodayDate());
+        state.setTopUpsTodayCount(fresh.getTopUpsTodayCount());
+        state.setSlotTopUpsRub(fresh.getSlotTopUpsRub());
+        state.setLastBudgetTotal(fresh.getLastBudgetTotal());
+        state.setLastBudgetCheckedAt(fresh.getLastBudgetCheckedAt());
+    }
+
+    private void onSlotEnter(WbCampaignManagementState state, WbCampaignScheduleSlot slot, Cabinet cabinet) {
+        startBudgetGuard.resetForNewSlot(state);
+        budgetTrailService.clearTrail(state);
+        if (!budgetPollCoordinator.isTickLeader(cabinet.getId(), state.getCampaignId())) {
+            budgetPollCoordinator.grantMandatoryPoll(cabinet.getId(), state.getCampaignId());
+        }
+        budgetFetchService.fetchBudgetForSlotEnter(cabinet, state.getCampaignId(), state)
+                .ifPresent(fetched -> SlotBudgetSpendUtils.beginSlotSession(state, slot.getId(), fetched));
+    }
+
+    private void onSlotLeave(WbCampaignManagementState state) {
+        SlotBudgetSpendUtils.resetSlotSession(state);
+    }
+
+    private void checkSlotBudgetCap(
+            WbCampaignManagementState state,
+            WbCampaignScheduleSlot slot,
+            Cabinet cabinet
+    ) {
+        if (state.getBudgetAtSlotStart() == null) {
+            return;
+        }
+        budgetFetchService.fetchBudgetTotal(cabinet, state.getCampaignId(), state)
+                .ifPresent(total -> {
+                    int spent = SlotBudgetSpendUtils.computeSpentRub(state, total);
+                    if (spent >= slot.getBudgetRub()) {
+                        ensurePaused(cabinet, state.getCampaignId(), state, "РК остановлена: исчерпан бюджет слота");
+                        SlotBudgetSpendUtils.markSlotBudgetExhausted(state, slot.getId());
+                    }
+                });
+    }
+
+    private void ensureRunning(
+            WbPromotionCampaign campaign,
+            Cabinet cabinet,
+            Long advertId,
+            WbCampaignManagementState state,
+            ZonedDateTime now
+    ) {
+        if (campaign.getStatus() == WbCampaignStatus.ACTIVE) {
+            return;
+        }
+        if (!canControlPromotion(cabinet)) {
+            return;
+        }
+        if (wbApiEventService.hasActiveWbPromotionCampaignStart(cabinet.getId(), advertId)) {
+            return;
+        }
+
+        if (!startBudgetGuard.isNoBudgetRecheckDue(state, now)) {
+            return;
+        }
+
+        if (state.isStartBlockedNoBudget()) {
+            Optional<Integer> budget = budgetFetchService.fetchBudgetForDecision(cabinet, advertId, state);
+            startBudgetGuard.markNoBudgetChecked(state, now);
+            if (budget.isEmpty() || budget.get() <= 0) {
+                return;
+            }
+            startBudgetGuard.clearBlockIfBudgetAvailable(state, budget.get());
+        } else if (isBudgetTooLowToStart(cabinet, advertId, state)) {
+            startBudgetGuard.blockStartDueToNoBudget(state, advertId, cabinet.getId(), now);
+            return;
+        }
+
+        if (campaign.getStatus() == WbCampaignStatus.READY_TO_START || campaign.getStatus() == WbCampaignStatus.PAUSED) {
+            try {
+                ScheduleControlAttemptResult result = controlService.attemptStartFromSchedule(cabinet, advertId);
+                handleScheduleStartResult(result, advertId, cabinet.getId(), state, now);
+            } catch (Exception e) {
+                if (WbCampaignStartBudgetGuard.isNoBudgetToStartError(e.getMessage())) {
+                    startBudgetGuard.blockStartDueToNoBudget(state, advertId, cabinet.getId(), now);
+                } else {
+                    scheduleControlNotifier.onStartFailed(advertId, cabinet.getId(), e.getMessage());
+                }
+                log.debug("Запуск по расписанию advertId={}: {}", advertId, e.getMessage());
+            }
+        }
+    }
+
+    private boolean isBudgetTooLowToStart(Cabinet cabinet, Long advertId, WbCampaignManagementState state) {
+        Optional<Integer> budget = budgetFetchService.fetchBudgetForDecision(cabinet, advertId, state);
+        if (budget.isPresent()) {
+            startBudgetGuard.clearBlockIfBudgetAvailable(state, budget.get());
+            return budget.get() <= 0;
+        }
+        return state.getLastBudgetTotal() != null && state.getLastBudgetTotal() <= 0;
+    }
+
+    private void handleScheduleStartResult(
+            ScheduleControlAttemptResult result,
+            Long advertId,
+            Long cabinetId,
+            WbCampaignManagementState state,
+            ZonedDateTime now
+    ) {
+        switch (result.outcome()) {
+            case DIRECT_SUCCESS -> scheduleControlNotifier.onStartSucceededOnWb(advertId, cabinetId);
+            case ENQUEUED -> scheduleControlNotifier.onStartEnqueued(advertId, cabinetId);
+            case FAILED -> {
+                if (WbCampaignStartBudgetGuard.isNoBudgetToStartError(result.message())) {
+                    startBudgetGuard.blockStartDueToNoBudget(state, advertId, cabinetId, now);
+                } else {
+                    scheduleControlNotifier.onStartFailed(advertId, cabinetId, result.message());
+                }
+            }
+            case SKIPPED_ALREADY_PENDING -> { }
+        }
+    }
+
+    private void ensurePaused(Cabinet cabinet, Long advertId, WbCampaignManagementState state, String logMessage) {
+        if (!canControlPromotion(cabinet)) {
+            log.debug("Пауза advertId={} пропущена: {}", advertId, controlBlockMessage(cabinet));
+            return;
+        }
+        if (wbApiEventService.hasActiveWbPromotionCampaignPause(cabinet.getId(), advertId)) {
+            return;
+        }
+        try {
+            ScheduleControlAttemptResult result = controlService.attemptPauseFromSchedule(cabinet, advertId);
+            handleSchedulePauseResult(result, advertId, cabinet.getId(), state, logMessage);
+        } catch (Exception e) {
+            scheduleControlNotifier.onPauseFailed(advertId, cabinet.getId(), e.getMessage());
+            log.debug("Пауза по расписанию advertId={}: {}", advertId, e.getMessage());
+        }
+    }
+
+    private void handleSchedulePauseResult(
+            ScheduleControlAttemptResult result,
+            Long advertId,
+            Long cabinetId,
+            WbCampaignManagementState state,
+            String logMessage
+    ) {
+        switch (result.outcome()) {
+            case DIRECT_SUCCESS -> {
+                scheduleControlNotifier.onPauseSucceededOnWb(advertId, cabinetId);
+                budgetTrailService.beginTrail(state);
+            }
+            case ENQUEUED -> {
+                scheduleControlNotifier.onPauseEnqueued(advertId, cabinetId, logMessage);
+                budgetTrailService.beginTrail(state);
+            }
+            case FAILED -> scheduleControlNotifier.onPauseFailed(advertId, cabinetId, result.message());
+            case SKIPPED_ALREADY_PENDING -> { }
+        }
+    }
+
+    private boolean canControlPromotion(Cabinet cabinet) {
+        return promotionControlWriteService.getCapabilities(cabinet).canControl();
+    }
+
+    private String controlBlockMessage(Cabinet cabinet) {
+        PromotionControlCapabilitiesDto capabilities = promotionControlWriteService.getCapabilities(cabinet);
+        return capabilities.message() != null
+                ? capabilities.message()
+                : WbPromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE;
+    }
+}

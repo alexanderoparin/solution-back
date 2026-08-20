@@ -8,10 +8,10 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
-import ru.oparin.solution.dto.wb.CardsListRequest;
-import ru.oparin.solution.dto.wb.CardsListResponse;
-import ru.oparin.solution.dto.wb.ContentMediaSaveRequest;
-import ru.oparin.solution.dto.wb.PingResponse;
+import ru.oparin.solution.dto.wb.WbCardsListRequest;
+import ru.oparin.solution.dto.wb.WbCardsListResponse;
+import ru.oparin.solution.dto.wb.WbContentMediaSaveRequest;
+import ru.oparin.solution.dto.wb.WbPingResponse;
 import ru.oparin.solution.model.WbApiEventType;
 
 import java.util.List;
@@ -38,20 +38,20 @@ public class WbContentApiClient extends AbstractWbApiClient {
      * Получение списка карточек товаров селлера.
      * При таймауте или ошибке соединения выполняются ретраи.
      */
-    public CardsListResponse getCardsList(String apiKey, CardsListRequest request) {
+    public WbCardsListResponse getCardsList(String apiKey, WbCardsListRequest request) {
         return executeWithConnectionRetry("список карточек товаров", () -> getCardsListOnce(apiKey, request));
     }
 
-    private CardsListResponse getCardsListOnce(String apiKey, CardsListRequest request) {
+    private WbCardsListResponse getCardsListOnce(String apiKey, WbCardsListRequest request) {
         HttpHeaders headers = createAuthHeadersWithBearer(apiKey);
-        CardsListRequest requestBody = buildCardsListRequestBody(request);
-        HttpEntity<CardsListRequest> entity = new HttpEntity<>(requestBody, headers);
+        WbCardsListRequest requestBody = buildWbCardsListRequestBody(request);
+        HttpEntity<WbCardsListRequest> entity = new HttpEntity<>(requestBody, headers);
         String url = WbApiEventType.CONTENT_CARDS_LIST_PAGE.getDefaultUrl();
         logWbApiCall(url, "список карточек товаров");
 
         try {
             ResponseEntity<String> response = executePostRequest(url, entity);
-            return parseCardsListResponse(response);
+            return parseWbCardsListResponse(response);
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("список карточек товаров WB", e);
@@ -68,24 +68,24 @@ public class WbContentApiClient extends AbstractWbApiClient {
      * Получение списка карточек товаров из корзины (trash).
      * При таймауте или ошибке соединения выполняются ретраи.
      */
-    public CardsListResponse getCardsTrash(String apiKey, CardsListRequest request) {
+    public WbCardsListResponse getCardsTrash(String apiKey, WbCardsListRequest request) {
         return executeWithConnectionRetry("карточки из корзины", () -> getCardsTrashOnce(apiKey, request));
     }
 
-    private CardsListResponse getCardsTrashOnce(String apiKey, CardsListRequest request) {
+    private WbCardsListResponse getCardsTrashOnce(String apiKey, WbCardsListRequest request) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
-        CardsListRequest requestBody = buildTrashRequestBody(request);
-        HttpEntity<CardsListRequest> entity = new HttpEntity<>(requestBody, headers);
+        WbCardsListRequest requestBody = buildTrashRequestBody(request);
+        HttpEntity<WbCardsListRequest> entity = new HttpEntity<>(requestBody, headers);
         String url = WbApiEventType.CONTENT_CARDS_TRASH.getDefaultUrl();
         logWbApiCall(url, "карточки из корзины");
 
         try {
-            ResponseEntity<CardsListResponse> response = restTemplate.exchange(
+            ResponseEntity<WbCardsListResponse> response = restTemplate.exchange(
                     url,
                     HttpMethod.POST,
                     entity,
-                    CardsListResponse.class
+                    WbCardsListResponse.class
             );
             if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
                 throw new RestClientException("Неожиданный ответ от WB API: " + response.getStatusCode());
@@ -177,13 +177,13 @@ public class WbContentApiClient extends AbstractWbApiClient {
     }
 
     private void saveMediaByUrlsOnce(String apiKey, Long nmId, List<String> urls) {
-        ContentMediaSaveRequest request = ContentMediaSaveRequest.builder()
+        WbContentMediaSaveRequest request = WbContentMediaSaveRequest.builder()
                 .nmId(nmId)
                 .data(urls)
                 .build();
         HttpHeaders headers = createAuthHeadersWithBearer(apiKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<ContentMediaSaveRequest> entity = new HttpEntity<>(request, headers);
+        HttpEntity<WbContentMediaSaveRequest> entity = new HttpEntity<>(request, headers);
         String url = WbApiEventType.CONTENT_MEDIA_SAVE.getDefaultUrl();
         logWbApiCall(url, "сохранение медиа по ссылкам nmId=" + nmId + " count=" + (urls != null ? urls.size() : 0));
 
@@ -208,22 +208,22 @@ public class WbContentApiClient extends AbstractWbApiClient {
      * Проверка подключения к WB API.
      * При таймауте или ошибке соединения выполняются ретраи.
      */
-    public PingResponse ping(String apiKey) {
+    public WbPingResponse ping(String apiKey) {
         return executeWithConnectionRetry("проверка подключения (ping)", () -> pingOnce(apiKey));
     }
 
-    private PingResponse pingOnce(String apiKey) {
+    private WbPingResponse pingOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
         String url = WbApiEventType.CONTENT_CARDS_LIST_PAGE.getBaseUrl().getPingUrl();
         logWbApiCall(url, "проверка подключения (ping)");
 
         try {
-            ResponseEntity<PingResponse> response = restTemplate.exchange(
+            ResponseEntity<WbPingResponse> response = restTemplate.exchange(
                     url,
                     HttpMethod.GET,
                     entity,
-                    PingResponse.class
+                    WbPingResponse.class
             );
             if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
                 throw new RestClientException("Неожиданный ответ от WB API: " + response.getStatusCode());
@@ -241,53 +241,53 @@ public class WbContentApiClient extends AbstractWbApiClient {
         }
     }
 
-    private CardsListRequest buildCardsListRequestBody(CardsListRequest request) {
-        CardsListRequest.Cursor cursor = buildCursor(request);
-        CardsListRequest.Filter filter = buildFilter(request);
-        CardsListRequest.Sort sort = extractSort(request);
+    private WbCardsListRequest buildWbCardsListRequestBody(WbCardsListRequest request) {
+        WbCardsListRequest.Cursor cursor = buildCursor(request);
+        WbCardsListRequest.Filter filter = buildFilter(request);
+        WbCardsListRequest.Sort sort = extractSort(request);
         
-        CardsListRequest.Settings settings = CardsListRequest.Settings.builder()
+        WbCardsListRequest.Settings settings = WbCardsListRequest.Settings.builder()
                 .cursor(cursor)
                 .filter(filter)
                 .sort(sort)
                 .build();
         
-        return CardsListRequest.builder()
+        return WbCardsListRequest.builder()
                 .settings(settings)
                 .build();
     }
 
-    private CardsListRequest buildTrashRequestBody(CardsListRequest request) {
-        CardsListRequest.Cursor cursor = buildCursor(request);
+    private WbCardsListRequest buildTrashRequestBody(WbCardsListRequest request) {
+        WbCardsListRequest.Cursor cursor = buildCursor(request);
         
-        CardsListRequest.Settings settings = CardsListRequest.Settings.builder()
+        WbCardsListRequest.Settings settings = WbCardsListRequest.Settings.builder()
                 .cursor(cursor)
                 .build();
         
-        return CardsListRequest.builder()
+        return WbCardsListRequest.builder()
                 .settings(settings)
                 .build();
     }
 
-    private CardsListRequest.Cursor buildCursor(CardsListRequest request) {
-        CardsListRequest.Cursor cursorData = extractCursor(request);
+    private WbCardsListRequest.Cursor buildCursor(WbCardsListRequest request) {
+        WbCardsListRequest.Cursor cursorData = extractCursor(request);
         
         Integer limit = cursorData != null && cursorData.getLimit() != null 
                 ? cursorData.getLimit() 
                 : DEFAULT_LIMIT;
         
-        return CardsListRequest.Cursor.builder()
+        return WbCardsListRequest.Cursor.builder()
                 .limit(limit)
                 .nmID(cursorData != null ? cursorData.getNmID() : null)
                 .updatedAt(cursorData != null ? cursorData.getUpdatedAt() : null)
                 .build();
     }
 
-    private CardsListRequest.Filter buildFilter(CardsListRequest request) {
-        CardsListRequest.Filter filterData = extractFilter(request);
+    private WbCardsListRequest.Filter buildFilter(WbCardsListRequest request) {
+        WbCardsListRequest.Filter filterData = extractFilter(request);
         
         if (filterData == null) {
-            return CardsListRequest.Filter.builder()
+            return WbCardsListRequest.Filter.builder()
                     .withPhoto(WITH_PHOTO_ALL)
                     .build();
         }
@@ -296,7 +296,7 @@ public class WbContentApiClient extends AbstractWbApiClient {
             ? filterData.getWithPhoto() 
             : WITH_PHOTO_ALL;
         
-        return CardsListRequest.Filter.builder()
+        return WbCardsListRequest.Filter.builder()
                 .textSearch(filterData.getTextSearch())
                 .allowedCategoriesOnly(filterData.getAllowedCategoriesOnly())
                 .tagIDs(filterData.getTagIDs())
@@ -307,30 +307,30 @@ public class WbContentApiClient extends AbstractWbApiClient {
                 .build();
     }
 
-    private CardsListRequest.Cursor extractCursor(CardsListRequest request) {
+    private WbCardsListRequest.Cursor extractCursor(WbCardsListRequest request) {
         if (request != null && request.getSettings() != null) {
             return request.getSettings().getCursor();
         }
         return null;
     }
 
-    private CardsListRequest.Filter extractFilter(CardsListRequest request) {
+    private WbCardsListRequest.Filter extractFilter(WbCardsListRequest request) {
         if (request != null && request.getSettings() != null) {
             return request.getSettings().getFilter();
         }
         return null;
     }
 
-    private CardsListRequest.Sort extractSort(CardsListRequest request) {
+    private WbCardsListRequest.Sort extractSort(WbCardsListRequest request) {
         if (request != null && request.getSettings() != null) {
             return request.getSettings().getSort();
         }
         return null;
     }
 
-    private CardsListResponse parseCardsListResponse(ResponseEntity<String> response) {
+    private WbCardsListResponse parseWbCardsListResponse(ResponseEntity<String> response) {
         try {
-            return objectMapper.readValue(response.getBody(), CardsListResponse.class);
+            return objectMapper.readValue(response.getBody(), WbCardsListResponse.class);
         } catch (Exception e) {
             log.error("Ошибка при парсинге ответа от WB API: {}", e.getMessage());
             throw new RestClientException("Ошибка при парсинге ответа от WB API: " + e.getMessage(), e);

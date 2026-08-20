@@ -18,7 +18,7 @@ public class CabinetBillingStatusDto {
     private Long cabinetId;
     private MainTariffDto mainTariff;
     private List<ServiceStatusDto> services;
-    private AbTestQuotaDto abTestQuota;
+    private WbAbTestQuotaDto abTestQuota;
     private Boolean canManageBilling;
 
     @Getter

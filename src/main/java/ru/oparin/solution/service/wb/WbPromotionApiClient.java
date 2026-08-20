@@ -13,7 +13,7 @@ import ru.oparin.solution.dto.wb.*;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.WbApiEventType;
-import ru.oparin.solution.service.PromotionCampaignControlWriteService;
+import ru.oparin.solution.service.WbPromotionCampaignControlWriteService;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -61,7 +61,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
      * @param apiKey API ключ продавца
      * @return список кампаний по типам и статусам
      */
-    public PromotionCountResponse getPromotionCount(String apiKey) {
+    public WbPromotionCountResponse getPromotionCount(String apiKey) {
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
         return executeWith429Retry(
                 "количество кампаний по типам",
@@ -71,7 +71,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                 () -> executeWithConnectionRetry("количество кампаний по типам", () -> getPromotionCountOnce(apiKey)));
     }
 
-    private PromotionCountResponse getPromotionCountOnce(String apiKey) {
+    private WbPromotionCountResponse getPromotionCountOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
         String url = WbApiEventType.PROMOTION_COUNT.getDefaultUrl();
@@ -87,9 +87,9 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
             validateResponse(response);
 
-            PromotionCountResponse countResponse = objectMapper.readValue(
+            WbPromotionCountResponse countResponse = objectMapper.readValue(
                     response.getBody(),
-                    PromotionCountResponse.class
+                    WbPromotionCountResponse.class
             );
 
             log.info("Получено групп кампаний: {}, всего кампаний: {}",
@@ -117,11 +117,11 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
      *
      * @param apiKey API ключ продавца
      * @param campaignIds список ID кампаний (рекомендуется не более 50)
-     * @return детальная информация о кампаниях в формате PromotionAdvertsResponse
+     * @return детальная информация о кампаниях в формате WbPromotionAdvertsResponse
      */
-    public PromotionAdvertsResponse getAdvertsV2(String apiKey, List<Long> campaignIds) {
+    public WbPromotionAdvertsResponse getAdvertsV2(String apiKey, List<Long> campaignIds) {
         if (campaignIds == null || campaignIds.isEmpty()) {
-            return PromotionAdvertsResponse.builder().adverts(Collections.emptyList()).build();
+            return WbPromotionAdvertsResponse.builder().adverts(Collections.emptyList()).build();
         }
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
         return executeWith429Retry(
@@ -194,8 +194,8 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     }
 
     private String extractCampaignControlErrorMessage(HttpClientErrorException e) {
-        if (PromotionCampaignControlWriteService.isReadOnlyTokenError(e)) {
-            return PromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE;
+        if (WbPromotionCampaignControlWriteService.isReadOnlyTokenError(e)) {
+            return WbPromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE;
         }
         String body = e.getResponseBodyAsString();
         if (body == null || body.isBlank()) {
@@ -228,7 +228,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         return null;
     }
 
-    private PromotionAdvertsResponse getAdvertsV2Once(String apiKey, List<Long> campaignIds) {
+    private WbPromotionAdvertsResponse getAdvertsV2Once(String apiKey, List<Long> campaignIds) {
         List<Long> batch = campaignIds.size() > ADVERTS_V2_BATCH_SIZE
                 ? campaignIds.subList(0, ADVERTS_V2_BATCH_SIZE)
                 : campaignIds;
@@ -249,8 +249,8 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             );
             validateResponse(response);
 
-            AdvertsV2Response v2Response = objectMapper.readValue(response.getBody(), AdvertsV2Response.class);
-            List<PromotionAdvertsResponse.Campaign> campaigns = v2Response.getAdverts() == null
+            WbAdvertsV2Response v2Response = objectMapper.readValue(response.getBody(), WbAdvertsV2Response.class);
+            List<WbPromotionAdvertsResponse.Campaign> campaigns = v2Response.getAdverts() == null
                     ? Collections.emptyList()
                     : v2Response.getAdverts().stream()
                             .map(this::convertV2AdvertToCampaign)
@@ -258,7 +258,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                             .collect(Collectors.toList());
 
             log.info("Получено кампаний: {}", campaigns.size());
-            return PromotionAdvertsResponse.builder().adverts(campaigns).build();
+            return WbPromotionAdvertsResponse.builder().adverts(campaigns).build();
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("детальная информация о кампаниях WB", e);
@@ -271,19 +271,19 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         }
     }
 
-    private PromotionAdvertsResponse.Campaign convertV2AdvertToCampaign(AdvertsV2Response.Advert v2) {
+    private WbPromotionAdvertsResponse.Campaign convertV2AdvertToCampaign(WbAdvertsV2Response.Advert v2) {
         if (v2 == null || v2.getId() == null) return null;
         // bid_type: unified -> type 8 (AUTOMATIC), manual -> type 9 (AUCTION); bidType: unified->2, manual->1
         int type = "unified".equalsIgnoreCase(v2.getBidType()) ? 8 : 9;
         Integer bidTypeCode = "unified".equalsIgnoreCase(v2.getBidType()) ? 2 : 1;
         String name = v2.getSettings() != null ? v2.getSettings().getName() : null;
-        AdvertsV2Response.Timestamps ts = v2.getTimestamps();
+        WbAdvertsV2Response.Timestamps ts = v2.getTimestamps();
         List<Long> nmIds = v2.getNmSettings() == null ? new ArrayList<>()
                 : v2.getNmSettings().stream()
-                        .map(AdvertsV2Response.NmSetting::getNmId)
+                        .map(WbAdvertsV2Response.NmSetting::getNmId)
                         .filter(java.util.Objects::nonNull)
                         .collect(Collectors.toList());
-        return PromotionAdvertsResponse.Campaign.builder()
+        return WbPromotionAdvertsResponse.Campaign.builder()
                 .advertId(v2.getId())
                 .name(name)
                 .type(type)
@@ -307,7 +307,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
      * @param request запрос статистики
      * @return статистика по кампаниям
      */
-    public PromotionFullStatsResponse getPromotionFullStats(String apiKey, PromotionFullStatsRequest request) {
+    public WbPromotionFullStatsResponse getPromotionFullStats(String apiKey, WbPromotionFullStatsRequest request) {
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
         return executeWith429Retry(
                 "статистика кампаний за период",
@@ -333,12 +333,12 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
                 validateResponse(response);
 
-                List<PromotionFullStatsResponse.CampaignStats> statsList = objectMapper.readValue(
+                List<WbPromotionFullStatsResponse.CampaignStats> statsList = objectMapper.readValue(
                         response.getBody(),
-                        new TypeReference<List<PromotionFullStatsResponse.CampaignStats>>() {}
+                        new TypeReference<List<WbPromotionFullStatsResponse.CampaignStats>>() {}
                 );
 
-                PromotionFullStatsResponse statsResponse = PromotionFullStatsResponse.builder()
+                WbPromotionFullStatsResponse statsResponse = WbPromotionFullStatsResponse.builder()
                         .adverts(statsList)
                         .build();
 
@@ -370,7 +370,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
      * Статистика по поисковым кластерам с детализацией по дням.
      * POST /adv/v1/normquery/stats
      */
-    public NormQueryStatsResponse postNormQueryStats(String apiKey, NormQueryStatsRequest request) {
+    public WbNormQueryStatsResponse postNormQueryStats(String apiKey, WbNormQueryStatsRequest request) {
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
         return executeWith429Retry(
                 "статистика поисковых кластеров",
@@ -380,7 +380,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                 () -> executeWithConnectionRetry("статистика поисковых кластеров", () -> {
                     HttpHeaders headers = createAuthHeaders(apiKey);
                     headers.set("Content-Type", "application/json");
-                    HttpEntity<NormQueryStatsRequest> entity = new HttpEntity<>(request, headers);
+                    HttpEntity<WbNormQueryStatsRequest> entity = new HttpEntity<>(request, headers);
                     String url = WbApiEventType.PROMOTION_NORMQUERY_STATS_BATCH.getDefaultUrl();
                     logWbApiCall(url, "статистика поисковых кластеров");
                     try {
@@ -391,9 +391,9 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                                 String.class
                         );
                         validateResponse(response);
-                        NormQueryStatsResponse body = objectMapper.readValue(
+                        WbNormQueryStatsResponse body = objectMapper.readValue(
                                 response.getBody(),
-                                NormQueryStatsResponse.class
+                                WbNormQueryStatsResponse.class
                         );
                         int items = body != null && body.getItems() != null ? body.getItems().size() : 0;
                         log.info("Получено элементов normquery stats: {}", items);
@@ -491,7 +491,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     /**
      * Баланс кабинета продвижения (GET /adv/v1/balance).
      */
-    public PromotionBalanceResponse getBalance(String apiKey) {
+    public WbPromotionBalanceResponse getBalance(String apiKey) {
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
         return executeWith429Retry(
                 BALANCE_OPERATION,
@@ -504,7 +504,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     /**
      * Бюджет кампании (GET /adv/v1/budget).
      */
-    public PromotionBudgetResponse getCampaignBudget(String apiKey, long advertId) {
+    public WbPromotionBudgetResponse getCampaignBudget(String apiKey, long advertId) {
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
         return executeWith429Retry(
                 BUDGET_OPERATION,
@@ -518,7 +518,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
      * Пополнение бюджета кампании (POST /adv/v1/budget/deposit).
      * При {@code returnBudget=true} в теле запроса в ответе WB приходит актуальный бюджет.
      */
-    public PromotionBudgetResponse depositCampaignBudget(String apiKey, long advertId, PromotionBudgetDepositRequest request) {
+    public WbPromotionBudgetResponse depositCampaignBudget(String apiKey, long advertId, WbPromotionBudgetDepositRequest request) {
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
         return executeWith429Retry(
                 BUDGET_DEPOSIT_OPERATION,
@@ -529,7 +529,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                         () -> depositCampaignBudgetOnce(apiKey, advertId, request)));
     }
 
-    private PromotionBalanceResponse getBalanceOnce(String apiKey) {
+    private WbPromotionBalanceResponse getBalanceOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
         String url = WbApiEventType.PROMOTION_BALANCE.getDefaultUrl();
@@ -537,7 +537,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         try {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             validateResponse(response);
-            return objectMapper.readValue(response.getBody(), PromotionBalanceResponse.class);
+            return objectMapper.readValue(response.getBody(), WbPromotionBalanceResponse.class);
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
             logWbApiError(BALANCE_OPERATION, e);
@@ -548,7 +548,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         }
     }
 
-    private PromotionBudgetResponse getCampaignBudgetOnce(String apiKey, long advertId) {
+    private WbPromotionBudgetResponse getCampaignBudgetOnce(String apiKey, long advertId) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
         String url = UriComponentsBuilder.fromHttpUrl(WbApiEventType.PROMOTION_BUDGET_GET.getDefaultUrl())
@@ -558,7 +558,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         try {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             validateResponse(response);
-            return objectMapper.readValue(response.getBody(), PromotionBudgetResponse.class);
+            return objectMapper.readValue(response.getBody(), WbPromotionBudgetResponse.class);
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
             logWbApiError(BUDGET_OPERATION, e);
@@ -569,10 +569,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         }
     }
 
-    private PromotionBudgetResponse depositCampaignBudgetOnce(String apiKey, long advertId, PromotionBudgetDepositRequest request) {
+    private WbPromotionBudgetResponse depositCampaignBudgetOnce(String apiKey, long advertId, WbPromotionBudgetDepositRequest request) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<PromotionBudgetDepositRequest> entity = new HttpEntity<>(request, headers);
+        HttpEntity<WbPromotionBudgetDepositRequest> entity = new HttpEntity<>(request, headers);
         String url = UriComponentsBuilder.fromHttpUrl(WbApiEventType.PROMOTION_BUDGET_DEPOSIT.getDefaultUrl())
                 .queryParam("id", advertId)
                 .toUriString();
@@ -583,7 +583,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             if (response.getBody() == null || response.getBody().isBlank()) {
                 return null;
             }
-            return objectMapper.readValue(response.getBody(), PromotionBudgetResponse.class);
+            return objectMapper.readValue(response.getBody(), WbPromotionBudgetResponse.class);
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
             logWbApiError(BUDGET_DEPOSIT_OPERATION, e);
@@ -594,7 +594,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         }
     }
 
-    private void addQueryParameters(UriComponentsBuilder uriBuilder, PromotionFullStatsRequest request) {
+    private void addQueryParameters(UriComponentsBuilder uriBuilder, WbPromotionFullStatsRequest request) {
         if (request.getAdvertId() != null && !request.getAdvertId().isEmpty()) {
             String idsParam = request.getAdvertId().stream()
                     .map(String::valueOf)

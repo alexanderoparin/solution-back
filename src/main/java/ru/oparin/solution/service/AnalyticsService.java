@@ -15,7 +15,7 @@ import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.*;
 import ru.oparin.solution.service.analytics.*;
 import ru.oparin.solution.service.campaign.BidderStatusResolver;
-import ru.oparin.solution.service.campaign.CampaignGoalService;
+import ru.oparin.solution.service.campaign.WbCampaignGoalService;
 import ru.oparin.solution.util.ArticleRatingUtils;
 import ru.oparin.solution.util.PeriodGenerator;
 
@@ -41,28 +41,28 @@ public class AnalyticsService {
     /** Максимум календарных дней в одном запросе {@code dailyData} (защита от слишком тяжёлых выборок). */
     private static final int MAX_DAILY_DATA_SPAN_DAYS = 120;
 
-    private final ProductCardRepository productCardRepository;
-    private final ProductCardAnalyticsRepository analyticsRepository;
-    private final PromotionCampaignRepository campaignRepository;
-    private final CampaignArticleRepository campaignArticleRepository;
-    private final PromotionCampaignStatisticsRepository campaignStatisticsRepository;
-    private final ProductPriceHistoryRepository priceHistoryRepository;
-    private final ProductStockRepository stockRepository;
-    private final ProductFbsStockRepository fbsStockRepository;
-    private final ProductBarcodeRepository barcodeRepository;
+    private final WbProductCardRepository productCardRepository;
+    private final WbProductCardAnalyticsRepository analyticsRepository;
+    private final WbPromotionCampaignRepository campaignRepository;
+    private final WbCampaignArticleRepository campaignArticleRepository;
+    private final WbPromotionCampaignStatisticsRepository campaignStatisticsRepository;
+    private final WbProductPriceHistoryRepository priceHistoryRepository;
+    private final WbProductStockRepository stockRepository;
+    private final WbProductFbsStockRepository fbsStockRepository;
+    private final WbProductBarcodeRepository barcodeRepository;
     private final WbWarehouseRepository warehouseRepository;
-    private final SellerWarehouseRepository sellerWarehouseRepository;
+    private final WbSellerWarehouseRepository sellerWarehouseRepository;
     private final FunnelMetricsCalculator funnelMetricsCalculator;
     private final AdvertisingMetricsCalculator advertisingMetricsCalculator;
     private final MetricValueCalculator metricValueCalculator;
-    private final CampaignStatisticsAggregator campaignStatisticsAggregator;
-    private final PromotionNormQueryStatisticsService normQueryStatisticsService;
-    private final PromotionParticipationRepository promotionParticipationRepository;
+    private final WbCampaignStatisticsAggregator campaignStatisticsAggregator;
+    private final WbPromotionNormQueryStatisticsService normQueryStatisticsService;
+    private final WbPromotionParticipationRepository promotionParticipationRepository;
     private final CabinetService cabinetService;
-    private final ArticleGoalService articleGoalService;
-    private final CampaignGoalService campaignGoalService;
-    private final CampaignManagementStateRepository campaignManagementStateRepository;
-    private final CampaignScheduleSlotRepository campaignScheduleSlotRepository;
+    private final WbArticleGoalService articleGoalService;
+    private final WbCampaignGoalService campaignGoalService;
+    private final WbCampaignManagementStateRepository campaignManagementStateRepository;
+    private final WbCampaignScheduleSlotRepository campaignScheduleSlotRepository;
     private final BidderStatusResolver bidderStatusResolver;
 
 
@@ -90,7 +90,7 @@ public class AnalyticsService {
         validatePeriods(periods);
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
 
-        List<ProductCard> visibleCards = applyCatalogFilters(
+        List<WbProductCard> visibleCards = applyCatalogFilters(
                 getVisibleCards(seller.getId(), cabinetId, excludedNmIds),
                 seller.getId(),
                 cabinetId,
@@ -104,7 +104,7 @@ public class AnalyticsService {
 
         boolean paginated = page != null && size != null && size > 0;
         if (paginated) {
-            List<ProductCard> filtered = visibleCards;
+            List<WbProductCard> filtered = visibleCards;
             if (Boolean.TRUE.equals(filterToNone)) {
                 filtered = List.of();
             } else if (includedNmIds != null && !includedNmIds.isEmpty()) {
@@ -120,7 +120,7 @@ public class AnalyticsService {
             int total = filtered.size();
             int from = Math.min(page * size, total);
             int to = Math.min(from + size, total);
-            List<ProductCard> pageCards = from < to ? filtered.subList(from, to) : List.of();
+            List<WbProductCard> pageCards = from < to ? filtered.subList(from, to) : List.of();
             boolean itemRatingSupported = isItemRatingSupported(seller.getId(), cabinetId);
             return SummaryResponseDto.builder()
                     .periods(sortedPeriods)
@@ -133,7 +133,7 @@ public class AnalyticsService {
         Map<Integer, AggregatedMetricsDto> aggregatedMetrics = calculateAggregatedMetrics(
                 visibleCards, sortedPeriods, seller.getId(), cabinetId);
         boolean itemRatingSupported = isItemRatingSupported(seller.getId(), cabinetId);
-        List<ProductCard> sortedCards = new ArrayList<>(visibleCards);
+        List<WbProductCard> sortedCards = new ArrayList<>(visibleCards);
         sortProductCards(sortedCards, resolvedSortBy, resolvedSortDir);
         return SummaryResponseDto.builder()
                 .periods(sortedPeriods)
@@ -155,7 +155,7 @@ public class AnalyticsService {
             Boolean onlyPriority,
             Boolean onlyInAdvertising
     ) {
-        List<ProductCard> allCards = applyCatalogFilters(
+        List<WbProductCard> allCards = applyCatalogFilters(
                 getVisibleCards(seller.getId(), cabinetId, null),
                 seller.getId(),
                 cabinetId,
@@ -167,7 +167,7 @@ public class AnalyticsService {
         return mapToArticleSummaries(allCards, isItemRatingSupported(seller.getId(), cabinetId));
     }
 
-    private List<ProductCard> filterCardsBySearch(List<ProductCard> cards, String searchLower) {
+    private List<WbProductCard> filterCardsBySearch(List<WbProductCard> cards, String searchLower) {
         String lower = searchLower.toLowerCase();
         return cards.stream()
                 .filter(card ->
@@ -216,7 +216,7 @@ public class AnalyticsService {
             Boolean onlyPriority,
             Boolean onlyInAdvertising
     ) {
-        List<ProductCard> visibleCards = applyCatalogFilters(
+        List<WbProductCard> visibleCards = applyCatalogFilters(
                 getVisibleCards(seller.getId(), cabinetId, excludedNmIds),
                 seller.getId(),
                 cabinetId,
@@ -247,7 +247,7 @@ public class AnalyticsService {
             Boolean onlyPriority,
             Boolean onlyInAdvertising
     ) {
-        List<ProductCard> visibleCards = applyCatalogFilters(
+        List<WbProductCard> visibleCards = applyCatalogFilters(
                 getVisibleCards(seller.getId(), cabinetId, excludedNmIds),
                 seller.getId(),
                 cabinetId,
@@ -257,7 +257,7 @@ public class AnalyticsService {
         );
         List<Long> campaignIds = getCampaignIdsForCabinet(seller.getId(), cabinetId);
 
-        Map<PeriodDto, Map<Long, CampaignStatisticsAggregator.AdvertisingStats>> statsByPeriodByArticle = new HashMap<>();
+        Map<PeriodDto, Map<Long, WbCampaignStatisticsAggregator.AdvertisingStats>> statsByPeriodByArticle = new HashMap<>();
         for (PeriodDto period : periods) {
             statsByPeriodByArticle.put(period, campaignStatisticsAggregator.aggregateStatsByArticle(campaignIds, period));
         }
@@ -267,10 +267,10 @@ public class AnalyticsService {
                         : Collections.emptyMap();
 
         List<ArticleMetricDto> articleMetrics = new ArrayList<>();
-        CampaignStatisticsAggregator.AdvertisingStats emptyStats = new CampaignStatisticsAggregator.AdvertisingStats(
+        WbCampaignStatisticsAggregator.AdvertisingStats emptyStats = new WbCampaignStatisticsAggregator.AdvertisingStats(
                 0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO);
 
-        for (ProductCard card : visibleCards) {
+        for (WbProductCard card : visibleCards) {
             Long nmId = card.getNmId();
             if (nmId == null) {
                 continue;
@@ -278,7 +278,7 @@ public class AnalyticsService {
 
             List<PeriodMetricValueDto> periodValues = new ArrayList<>();
             for (PeriodDto period : periods) {
-                CampaignStatisticsAggregator.AdvertisingStats stats = statsByPeriodByArticle
+                WbCampaignStatisticsAggregator.AdvertisingStats stats = statsByPeriodByArticle
                         .getOrDefault(period, Collections.emptyMap())
                         .getOrDefault(nmId, emptyStats);
                 Object value = calculateAdvertisingMetricValue(
@@ -321,10 +321,10 @@ public class AnalyticsService {
     }
 
     private List<Long> getCampaignIdsForCabinet(Long sellerId, Long cabinetId) {
-        List<PromotionCampaign> campaigns = cabinetId != null
+        List<WbPromotionCampaign> campaigns = cabinetId != null
                 ? campaignRepository.findByCabinet_Id(cabinetId)
                 : campaignRepository.findByCabinet_User_Id(sellerId);
-        return campaigns.stream().map(PromotionCampaign::getAdvertId).collect(Collectors.toList());
+        return campaigns.stream().map(WbPromotionCampaign::getAdvertId).collect(Collectors.toList());
     }
 
     private BigDecimal calculateArticleAdvertisingChangePercent(
@@ -332,19 +332,19 @@ public class AnalyticsService {
             String metricName,
             PeriodDto period,
             List<PeriodDto> allPeriodsSortedByDate,
-            Map<PeriodDto, Map<Long, CampaignStatisticsAggregator.AdvertisingStats>> statsByPeriodByArticle,
+            Map<PeriodDto, Map<Long, WbCampaignStatisticsAggregator.AdvertisingStats>> statsByPeriodByArticle,
             Map<PeriodDto, Map<Long, BigDecimal>> funnelOrdersAmountByPeriodByArticle
     ) {
         PeriodDto previousPeriod = findPreviousPeriodByDateOrder(period, allPeriodsSortedByDate);
         if (previousPeriod == null) {
             return null;
         }
-        CampaignStatisticsAggregator.AdvertisingStats currentStats = statsByPeriodByArticle
+        WbCampaignStatisticsAggregator.AdvertisingStats currentStats = statsByPeriodByArticle
                 .getOrDefault(period, Collections.emptyMap())
-                .getOrDefault(nmId, new CampaignStatisticsAggregator.AdvertisingStats(0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO));
-        CampaignStatisticsAggregator.AdvertisingStats previousStats = statsByPeriodByArticle
+                .getOrDefault(nmId, new WbCampaignStatisticsAggregator.AdvertisingStats(0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO));
+        WbCampaignStatisticsAggregator.AdvertisingStats previousStats = statsByPeriodByArticle
                 .getOrDefault(previousPeriod, Collections.emptyMap())
-                .getOrDefault(nmId, new CampaignStatisticsAggregator.AdvertisingStats(0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO));
+                .getOrDefault(nmId, new WbCampaignStatisticsAggregator.AdvertisingStats(0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO));
         Object currentValue = calculateAdvertisingMetricValue(
                 metricName,
                 currentStats,
@@ -368,7 +368,7 @@ public class AnalyticsService {
 
     private Object calculateAdvertisingMetricValue(
             String metricName,
-            CampaignStatisticsAggregator.AdvertisingStats stats,
+            WbCampaignStatisticsAggregator.AdvertisingStats stats,
             PeriodDto period,
             Long nmId,
             Map<PeriodDto, Map<Long, BigDecimal>> funnelOrdersAmountByPeriodByArticle
@@ -389,12 +389,12 @@ public class AnalyticsService {
     }
 
     private Map<PeriodDto, Map<Long, BigDecimal>> preloadFunnelOrdersAmountByArticle(
-            List<ProductCard> cards,
+            List<WbProductCard> cards,
             Long cabinetId,
             List<PeriodDto> periods
     ) {
         List<Long> nmIds = cards.stream()
-                .map(ProductCard::getNmId)
+                .map(WbProductCard::getNmId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
@@ -404,7 +404,7 @@ public class AnalyticsService {
 
         Map<PeriodDto, Map<Long, BigDecimal>> result = new HashMap<>();
         for (PeriodDto period : periods) {
-            List<ProductCardAnalytics> analytics = cabinetId != null
+            List<WbProductCardAnalytics> analytics = cabinetId != null
                     ? analyticsRepository.findByCabinet_IdAndProductCardNmIdInAndDateBetween(
                     cabinetId,
                     nmIds,
@@ -417,7 +417,7 @@ public class AnalyticsService {
                     period.getDateTo()
             );
             Map<Long, BigDecimal> ordersAmountByNmId = new HashMap<>();
-            for (ProductCardAnalytics item : analytics) {
+            for (WbProductCardAnalytics item : analytics) {
                 if (item.getProductCard() == null || item.getProductCard().getNmId() == null) {
                     continue;
                 }
@@ -430,7 +430,7 @@ public class AnalyticsService {
         return result;
     }
 
-    private Object calculateAdvertisingMetricValue(String metricName, CampaignStatisticsAggregator.AdvertisingStats stats) {
+    private Object calculateAdvertisingMetricValue(String metricName, WbCampaignStatisticsAggregator.AdvertisingStats stats) {
         return switch (metricName) {
             case MetricNames.VIEWS -> stats.views();
             case MetricNames.CLICKS -> stats.clicks();
@@ -481,9 +481,9 @@ public class AnalyticsService {
             return null;
         }
 
-        CampaignStatisticsAggregator.AdvertisingStats currentStats = 
+        WbCampaignStatisticsAggregator.AdvertisingStats currentStats = 
                 campaignStatisticsAggregator.aggregateStatsForCampaign(campaignId, period);
-        CampaignStatisticsAggregator.AdvertisingStats previousStats = 
+        WbCampaignStatisticsAggregator.AdvertisingStats previousStats = 
                 campaignStatisticsAggregator.aggregateStatsForCampaign(campaignId, previousPeriod);
 
         Object currentValue = calculateAdvertisingMetricValue(metricName, currentStats);
@@ -507,21 +507,21 @@ public class AnalyticsService {
                metricName.equals(MetricNames.DRR);
     }
     
-    private Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> preloadAdvertisingStats(
+    private Map<PeriodDto, WbCampaignStatisticsAggregator.AdvertisingStats> preloadAdvertisingStats(
             Long sellerId,
             Long cabinetId,
             List<PeriodDto> periods
     ) {
-        Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> cache = new HashMap<>();
-        List<PromotionCampaign> campaigns = cabinetId != null
+        Map<PeriodDto, WbCampaignStatisticsAggregator.AdvertisingStats> cache = new HashMap<>();
+        List<WbPromotionCampaign> campaigns = cabinetId != null
                 ? campaignRepository.findByCabinet_Id(cabinetId)
                 : campaignRepository.findByCabinet_User_Id(sellerId);
         List<Long> campaignIds = campaigns.stream()
-                .map(PromotionCampaign::getAdvertId)
+                .map(WbPromotionCampaign::getAdvertId)
                 .collect(Collectors.toList());
 
         for (PeriodDto period : periods) {
-            CampaignStatisticsAggregator.AdvertisingStats stats =
+            WbCampaignStatisticsAggregator.AdvertisingStats stats =
                     campaignStatisticsAggregator.aggregateStats(campaignIds, period);
             cache.put(period, stats);
         }
@@ -542,19 +542,19 @@ public class AnalyticsService {
                                          LocalDate campaignDateFrom, LocalDate campaignDateTo,
                                          LocalDate dailyDataDateFrom, LocalDate dailyDataDateTo,
                                          Long dailyDataCampaignAdvertId) {
-        ProductCard card = findCardBySeller(nmId, seller.getId(), cabinetId);
+        WbProductCard card = findCardBySeller(nmId, seller.getId(), cabinetId);
         Long cardCabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
 
         List<DailyDataDto> dailyData = getDailyData(nmId, cardCabinetId, dailyDataDateFrom, dailyDataDateTo, dailyDataCampaignAdvertId);
-        List<PromotionParticipation> participations = cardCabinetId != null
+        List<WbPromotionParticipation> participations = cardCabinetId != null
                 ? promotionParticipationRepository.findByCabinet_IdAndNmId(cardCabinetId, nmId)
                 : Collections.emptyList();
         List<String> wbPromotionNames = participations.stream()
-                .map(PromotionParticipation::getWbPromotionName)
+                .map(WbPromotionParticipation::getWbPromotionName)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
         List<String> wbPromotionTypes = participations.stream()
-                .map(PromotionParticipation::getWbPromotionType)
+                .map(WbPromotionParticipation::getWbPromotionType)
                 .map(t -> t != null ? t : "")
                 .collect(Collectors.toList());
         Boolean inWbPromotion = !wbPromotionNames.isEmpty();
@@ -587,7 +587,7 @@ public class AnalyticsService {
     /**
      * Товары «в связке» — другие артикулы с тем же IMT ID в том же кабинете, без текущего nmId.
      */
-    private List<ArticleSummaryDto> getBundleProducts(ProductCard card, Long cardCabinetId, boolean itemRatingSupported) {
+    private List<ArticleSummaryDto> getBundleProducts(WbProductCard card, Long cardCabinetId, boolean itemRatingSupported) {
         if (card.getImtId() == null) {
             return java.util.Collections.emptyList();
         }
@@ -596,7 +596,7 @@ public class AnalyticsService {
         if (cabinetId == null) {
             return java.util.Collections.emptyList();
         }
-        List<ProductCard> sameImt = productCardRepository.findByImtIdAndCabinet_Id(card.getImtId(), cabinetId);
+        List<WbProductCard> sameImt = productCardRepository.findByImtIdAndCabinet_Id(card.getImtId(), cabinetId);
         return sameImt.stream()
                 .filter(c -> !c.getNmId().equals(card.getNmId()))
                 .map(c -> mapToArticleSummary(c, itemRatingSupported))
@@ -624,26 +624,26 @@ public class AnalyticsService {
         }
     }
 
-    private List<ProductCard> getVisibleCards(Long sellerId, Long cabinetId, List<Long> excludedNmIds) {
-        List<ProductCard> allCards = cabinetId != null
+    private List<WbProductCard> getVisibleCards(Long sellerId, Long cabinetId, List<Long> excludedNmIds) {
+        List<WbProductCard> allCards = cabinetId != null
                 ? productCardRepository.findByCabinet_Id(cabinetId)
                 : productCardRepository.findByCabinet_User_Id(sellerId);
-        return ProductCardFilter.filterVisibleCards(allCards, excludedNmIds).stream()
+        return WbProductCardFilter.filterVisibleCards(allCards, excludedNmIds).stream()
                 .collect(Collectors.toList());
     }
 
     /**
      * Фильтры каталога артикулов: фото, приоритет, участие в незавершённых РК.
      */
-    private List<ProductCard> applyCatalogFilters(
-            List<ProductCard> cards,
+    private List<WbProductCard> applyCatalogFilters(
+            List<WbProductCard> cards,
             Long sellerId,
             Long cabinetId,
             Boolean onlyWithPhoto,
             Boolean onlyPriority,
             Boolean onlyInAdvertising
     ) {
-        List<ProductCard> result = cards;
+        List<WbProductCard> result = cards;
         if (Boolean.TRUE.equals(onlyWithPhoto)) {
             result = result.stream()
                     .filter(this::cardHasAnyPhoto)
@@ -674,15 +674,15 @@ public class AnalyticsService {
     }
 
     private void sortProductCards(
-            List<ProductCard> cards,
+            List<WbProductCard> cards,
             ArticleSummarySortField sortBy,
             Sort.Direction sortDir
     ) {
         ArticleSummarySortField effectiveSortBy = sortBy != null ? sortBy : ArticleSummarySortField.WB_CREATED_AT;
         Sort.Direction effectiveSortDir = sortDir != null ? sortDir : Sort.Direction.DESC;
-        Comparator<ProductCard> comparator = switch (effectiveSortBy) {
+        Comparator<WbProductCard> comparator = switch (effectiveSortBy) {
             case WB_CREATED_AT -> Comparator.comparing(
-                    ProductCard::getWbCreatedAt,
+                    WbProductCard::getWbCreatedAt,
                     Comparator.nullsLast(Comparator.naturalOrder())
             );
         };
@@ -693,14 +693,14 @@ public class AnalyticsService {
     }
 
     private Map<Integer, AggregatedMetricsDto> calculateAggregatedMetrics(
-            List<ProductCard> cards,
+            List<WbProductCard> cards,
             List<PeriodDto> periods,
             Long sellerId,
             Long cabinetId
     ) {
         Map<Integer, AggregatedMetricsDto> result = new HashMap<>();
         Set<Long> nmIdsFilter = cards.stream()
-                .map(ProductCard::getNmId)
+                .map(WbProductCard::getNmId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
 
@@ -715,12 +715,12 @@ public class AnalyticsService {
     }
 
     private ArticleMetricDto calculateArticleMetric(
-            ProductCard card,
+            WbProductCard card,
             String metricName,
             List<PeriodDto> periods,
             Long sellerId,
             Long cabinetId,
-            Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
+            Map<PeriodDto, WbCampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
         List<PeriodMetricValueDto> periodValues = periods.stream()
                 .map(period -> calculatePeriodMetricValue(card, metricName, period, periods, sellerId, cabinetId, advertisingStatsCache))
@@ -734,13 +734,13 @@ public class AnalyticsService {
     }
 
     private PeriodMetricValueDto calculatePeriodMetricValue(
-            ProductCard card,
+            WbProductCard card,
             String metricName,
             PeriodDto period,
             List<PeriodDto> allPeriods,
             Long sellerId,
             Long cabinetId,
-            Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
+            Map<PeriodDto, WbCampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
         Object value = metricValueCalculator.calculateValue(card, metricName, period, sellerId, cabinetId, advertisingStatsCache);
         BigDecimal changePercent = calculateChangePercent(card, metricName, period, allPeriods, sellerId, cabinetId, value, advertisingStatsCache);
@@ -753,14 +753,14 @@ public class AnalyticsService {
     }
 
     private BigDecimal calculateChangePercent(
-            ProductCard card,
+            WbProductCard card,
             String metricName,
             PeriodDto period,
             List<PeriodDto> allPeriodsSortedByDate,
             Long sellerId,
             Long cabinetId,
             Object currentValue,
-            Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
+            Map<PeriodDto, WbCampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
         if (currentValue == null) {
             return null;
@@ -835,8 +835,8 @@ public class AnalyticsService {
         };
     }
 
-    private List<MetricDto> calculateAllMetrics(ProductCard card, List<PeriodDto> periods, Long sellerId, Long cabinetId) {
-        Map<PeriodDto, CampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache =
+    private List<MetricDto> calculateAllMetrics(WbProductCard card, List<PeriodDto> periods, Long sellerId, Long cabinetId) {
+        Map<PeriodDto, WbCampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache =
                 preloadAdvertisingStats(sellerId, cabinetId, periods);
 
         List<MetricDto> metrics = new ArrayList<>();
@@ -870,23 +870,23 @@ public class AnalyticsService {
      * Одна запись цены на день для таблицы аналитики: при нескольких строках (размеры / агрегат)
      * предпочитаем вариант с заполненным СПП, иначе прежняя логика (без размера, затем любая).
      */
-    private static ProductPriceHistory pickRepresentativePriceRow(List<ProductPriceHistory> prices) {
+    private static WbProductPriceHistory pickRepresentativePriceRow(List<WbProductPriceHistory> prices) {
         if (prices == null || prices.isEmpty()) {
             throw new IllegalArgumentException("prices must be non-empty");
         }
-        Optional<ProductPriceHistory> consolidatedWithSpp = prices.stream()
+        Optional<WbProductPriceHistory> consolidatedWithSpp = prices.stream()
                 .filter(p -> p.getSizeId() == null && p.getSppDiscount() != null)
                 .findFirst();
         if (consolidatedWithSpp.isPresent()) {
             return consolidatedWithSpp.get();
         }
-        Optional<ProductPriceHistory> anyWithSpp = prices.stream()
+        Optional<WbProductPriceHistory> anyWithSpp = prices.stream()
                 .filter(p -> p.getSppDiscount() != null)
                 .findFirst();
         if (anyWithSpp.isPresent()) {
             return anyWithSpp.get();
         }
-        Optional<ProductPriceHistory> withoutSize = prices.stream()
+        Optional<WbProductPriceHistory> withoutSize = prices.stream()
                 .filter(p -> p.getSizeId() == null)
                 .findFirst();
         return withoutSize.orElseGet(() -> prices.get(0));
@@ -901,21 +901,21 @@ public class AnalyticsService {
         LocalDate startDate = range.startDate();
         LocalDate endDate = range.endDate();
 
-        List<ProductCardAnalytics> funnelData = cabinetId != null
+        List<WbProductCardAnalytics> funnelData = cabinetId != null
                 ? analyticsRepository.findByCabinet_IdAndProductCardNmIdAndDateBetween(cabinetId, nmId, startDate, endDate)
                 : analyticsRepository.findByProductCardNmIdAndDateBetween(nmId, startDate, endDate);
 
-        List<PromotionCampaignStatistics> advertisingData = resolveAdvertisingStatsForDailyData(
+        List<WbPromotionCampaignStatistics> advertisingData = resolveAdvertisingStatsForDailyData(
                 nmId, cabinetId, startDate, endDate, campaignAdvertId);
 
-        List<ProductPriceHistory> priceData = cabinetId != null
+        List<WbProductPriceHistory> priceData = cabinetId != null
                 ? priceHistoryRepository.findByNmIdAndDateBetweenAndCabinet_Id(nmId, startDate, endDate, cabinetId)
                 : priceHistoryRepository.findByNmIdAndDateBetween(nmId, startDate, endDate);
         
         // Группируем рекламные данные по датам
         Map<LocalDate, AdvertisingDailyStats> advertisingByDate = advertisingData.stream()
                 .collect(Collectors.groupingBy(
-                        PromotionCampaignStatistics::getDate,
+                        WbPromotionCampaignStatistics::getDate,
                         Collectors.collectingAndThen(
                                 Collectors.toList(),
                                 stats -> aggregateAdvertisingStats(stats)
@@ -923,9 +923,9 @@ public class AnalyticsService {
                 ));
         
         // Группируем данные ценообразования по датам (одна строка на день для таблицы)
-        Map<LocalDate, ProductPriceHistory> priceByDate = priceData.stream()
+        Map<LocalDate, WbProductPriceHistory> priceByDate = priceData.stream()
                 .collect(Collectors.groupingBy(
-                        ProductPriceHistory::getDate,
+                        WbProductPriceHistory::getDate,
                         Collectors.collectingAndThen(
                                 Collectors.toList(),
                                 AnalyticsService::pickRepresentativePriceRow
@@ -933,9 +933,9 @@ public class AnalyticsService {
                 ));
 
         // Создаем мапу для быстрого поиска данных воронки
-        Map<LocalDate, ProductCardAnalytics> funnelByDate = funnelData.stream()
+        Map<LocalDate, WbProductCardAnalytics> funnelByDate = funnelData.stream()
                 .collect(Collectors.toMap(
-                        ProductCardAnalytics::getDate,
+                        WbProductCardAnalytics::getDate,
                         a -> a,
                         (a1, a2) -> a1 // Если есть дубликаты, берем первый
                 ));
@@ -951,7 +951,7 @@ public class AnalyticsService {
         // Собираем результат
         return allDates.stream()
                 .map(date -> {
-                    ProductCardAnalytics funnel = funnelByDate.get(date);
+                    WbProductCardAnalytics funnel = funnelByDate.get(date);
                     AdvertisingDailyStats advertising = advertisingByDate.get(date);
                     
                     DailyDataDto.DailyDataDtoBuilder builder = DailyDataDto.builder()
@@ -985,7 +985,7 @@ public class AnalyticsService {
                         }
                     }
                     
-                    ProductPriceHistory price = priceByDate.get(date);
+                    WbProductPriceHistory price = priceByDate.get(date);
                     if (price != null) {
                         builder.priceBeforeDiscount(price.getPrice())
                                 .sellerDiscount(price.getDiscount())
@@ -1050,7 +1050,7 @@ public class AnalyticsService {
     /**
      * Рекламная статистика для {@code dailyData}: по всем РК артикула или только по указанной кампании кабинета.
      */
-    private List<PromotionCampaignStatistics> resolveAdvertisingStatsForDailyData(
+    private List<WbPromotionCampaignStatistics> resolveAdvertisingStatsForDailyData(
             Long nmId,
             Long cabinetId,
             LocalDate startDate,
@@ -1069,14 +1069,14 @@ public class AnalyticsService {
                 .orElse(Collections.emptyList());
     }
 
-    private AdvertisingDailyStats aggregateAdvertisingStats(List<PromotionCampaignStatistics> stats) {
+    private AdvertisingDailyStats aggregateAdvertisingStats(List<WbPromotionCampaignStatistics> stats) {
         int views = 0;
         int clicks = 0;
         BigDecimal sum = BigDecimal.ZERO;
         int orders = 0;
         BigDecimal ordersSum = BigDecimal.ZERO;
         
-        for (PromotionCampaignStatistics stat : stats) {
+        for (WbPromotionCampaignStatistics stat : stats) {
             if (stat.getViews() != null) views += stat.getViews();
             if (stat.getClicks() != null) clicks += stat.getClicks();
             if (stat.getSum() != null) sum = sum.add(stat.getSum());
@@ -1105,12 +1105,12 @@ public class AnalyticsService {
     ) {}
 
     private List<CampaignDto> getCampaigns(Long nmId, Long cabinetId, LocalDate campaignDateFrom, LocalDate campaignDateTo) {
-        List<CampaignArticle> campaignArticles = campaignArticleRepository.findByNmId(nmId);
+        List<WbCampaignArticle> campaignArticles = campaignArticleRepository.findByNmId(nmId);
 
-        List<PromotionCampaign> campaigns = campaignArticles.stream()
-                .map(CampaignArticle::getCampaign)
+        List<WbPromotionCampaign> campaigns = campaignArticles.stream()
+                .map(WbCampaignArticle::getCampaign)
                 .filter(Objects::nonNull)
-                .filter(campaign -> campaign.getStatus() != CampaignStatus.FINISHED)
+                .filter(campaign -> campaign.getStatus() != WbCampaignStatus.FINISHED)
                 .filter(campaign -> cabinetId == null || (campaign.getCabinet() != null && campaign.getCabinet().getId().equals(cabinetId)))
                 .distinct()
                 .collect(Collectors.toList());
@@ -1123,15 +1123,15 @@ public class AnalyticsService {
         AnalyticsDateRange metricsRange = withMetrics
                 ? resolveAnalyticsDateRange(campaignDateFrom, campaignDateTo)
                 : null;
-        Map<Long, List<PromotionCampaignStatistics>> statsByCampaign = new HashMap<>();
+        Map<Long, List<WbPromotionCampaignStatistics>> statsByCampaign = new HashMap<>();
         if (withMetrics && metricsRange != null) {
-            List<Long> campaignIds = campaigns.stream().map(PromotionCampaign::getAdvertId).collect(Collectors.toList());
-            List<PromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
+            List<Long> campaignIds = campaigns.stream().map(WbPromotionCampaign::getAdvertId).collect(Collectors.toList());
+            List<WbPromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
                     campaignIds, metricsRange.startDate(), metricsRange.endDate());
             statsByCampaign = allStats.stream().collect(Collectors.groupingBy(s -> s.getCampaign().getAdvertId()));
         }
 
-        final Map<Long, List<PromotionCampaignStatistics>> statsByCampaignFinal = statsByCampaign;
+        final Map<Long, List<WbPromotionCampaignStatistics>> statsByCampaignFinal = statsByCampaign;
         final Set<Long> scopeNmIds = Set.of(nmId);
         return campaigns.stream()
                 .map(c -> buildCampaignDto(c, scopeNmIds,
@@ -1144,7 +1144,7 @@ public class AnalyticsService {
      * Получает остатки товара на складах.
      */
     private List<StockDto> getStocks(Long nmId, Long cabinetId) {
-        List<ProductStock> stocks = cabinetId != null
+        List<WbProductStock> stocks = cabinetId != null
                 ? stockRepository.findByNmIdAndCabinet_Id(nmId, cabinetId)
                 : stockRepository.findByNmId(nmId);
         
@@ -1155,15 +1155,15 @@ public class AnalyticsService {
         // Группируем по складам и суммируем количество
         Map<Long, StockAggregate> stockByWarehouse = stocks.stream()
                 .collect(Collectors.groupingBy(
-                        ProductStock::getWarehouseId,
+                        WbProductStock::getWarehouseId,
                         Collectors.collectingAndThen(
                                 Collectors.toList(),
                                 stockList -> {
                                     int totalAmount = stockList.stream()
-                                            .mapToInt(ProductStock::getAmount)
+                                            .mapToInt(WbProductStock::getAmount)
                                             .sum();
                                     LocalDateTime latestUpdate = stockList.stream()
-                                            .map(ProductStock::getUpdatedAt)
+                                            .map(WbProductStock::getUpdatedAt)
                                             .max(LocalDateTime::compareTo)
                                             .orElse(null);
                                     return new StockAggregate(totalAmount, latestUpdate);
@@ -1208,25 +1208,25 @@ public class AnalyticsService {
         if (cabinetId == null) {
             return Collections.emptyList();
         }
-        List<SellerWarehouse> warehouses = sellerWarehouseRepository.findByCabinet_Id(cabinetId).stream()
+        List<WbSellerWarehouse> warehouses = sellerWarehouseRepository.findByCabinet_Id(cabinetId).stream()
                 .filter(warehouse -> !Boolean.TRUE.equals(warehouse.getIsDeleting()))
                 .toList();
         if (warehouses.isEmpty()) {
             return Collections.emptyList();
         }
 
-        List<ProductFbsStock> stocks = fbsStockRepository.findByNmIdAndCabinet_Id(nmId, cabinetId);
+        List<WbProductFbsStock> stocks = fbsStockRepository.findByNmIdAndCabinet_Id(nmId, cabinetId);
         Map<Long, StockAggregate> stockByWarehouse = stocks.stream()
                 .collect(Collectors.groupingBy(
-                        ProductFbsStock::getWarehouseId,
+                        WbProductFbsStock::getWarehouseId,
                         Collectors.collectingAndThen(
                                 Collectors.toList(),
                                 stockList -> {
                                     int totalAmount = stockList.stream()
-                                            .mapToInt(ProductFbsStock::getAmount)
+                                            .mapToInt(WbProductFbsStock::getAmount)
                                             .sum();
                                     LocalDateTime latestUpdate = stockList.stream()
-                                            .map(ProductFbsStock::getUpdatedAt)
+                                            .map(WbProductFbsStock::getUpdatedAt)
                                             .max(LocalDateTime::compareTo)
                                             .orElse(null);
                                     return new StockAggregate(totalAmount, latestUpdate);
@@ -1293,9 +1293,9 @@ public class AnalyticsService {
      * DTO кампании с метриками за период.
      */
     private CampaignDto buildCampaignDto(
-            PromotionCampaign c,
+            WbPromotionCampaign c,
             Set<Long> scopeNmIds,
-            List<PromotionCampaignStatistics> campaignStats,
+            List<WbPromotionCampaignStatistics> campaignStats,
             boolean withMetrics,
             Integer articlesCount,
             BidderStatus bidderStatus
@@ -1326,7 +1326,7 @@ public class AnalyticsService {
     private void applyCampaignPeriodMetrics(
             CampaignDto.CampaignDtoBuilder builder,
             Set<Long> scopeNmIds,
-            List<PromotionCampaignStatistics> campaignStats
+            List<WbPromotionCampaignStatistics> campaignStats
     ) {
         int views = 0;
         int clicks = 0;
@@ -1334,7 +1334,7 @@ public class AnalyticsService {
         int orders = 0;
         BigDecimal sum = BigDecimal.ZERO;
 
-        for (PromotionCampaignStatistics s : campaignStats) {
+        for (WbPromotionCampaignStatistics s : campaignStats) {
             if (!scopeNmIds.isEmpty() && !scopeNmIds.contains(s.getNmId())) {
                 continue;
             }
@@ -1361,7 +1361,7 @@ public class AnalyticsService {
                 .orders(orders > 0 ? orders : null);
     }
 
-    private static LocalDateTime resolveCampaignUpdatedAt(PromotionCampaign c) {
+    private static LocalDateTime resolveCampaignUpdatedAt(WbPromotionCampaign c) {
         if (c.getChangeTime() != null) {
             return c.getChangeTime();
         }
@@ -1387,34 +1387,34 @@ public class AnalyticsService {
         LocalDate from = range.startDate();
         LocalDate to = range.endDate();
 
-        List<PromotionCampaign> campaigns = campaignRepository.findByCabinet_Id(cabinetId).stream()
-                .filter(c -> c.getStatus() != CampaignStatus.FINISHED)
+        List<WbPromotionCampaign> campaigns = campaignRepository.findByCabinet_Id(cabinetId).stream()
+                .filter(c -> c.getStatus() != WbCampaignStatus.FINISHED)
                 .collect(Collectors.toList());
         if (campaigns.isEmpty()) {
             return Collections.emptyList();
         }
-        List<Long> campaignIds = campaigns.stream().map(PromotionCampaign::getAdvertId).collect(Collectors.toList());
-        List<PromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
+        List<Long> campaignIds = campaigns.stream().map(WbPromotionCampaign::getAdvertId).collect(Collectors.toList());
+        List<WbPromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
                 campaignIds, from, to);
-        Map<Long, List<PromotionCampaignStatistics>> statsByCampaign = allStats.stream()
+        Map<Long, List<WbPromotionCampaignStatistics>> statsByCampaign = allStats.stream()
                 .collect(Collectors.groupingBy(s -> s.getCampaign().getAdvertId()));
 
         Map<Long, Set<Long>> nmIdsByCampaign = campaignArticleRepository.findByCampaignIdIn(campaignIds).stream()
                 .collect(Collectors.groupingBy(
-                        CampaignArticle::getCampaignId,
-                        Collectors.mapping(CampaignArticle::getNmId, Collectors.toSet())
+                        WbCampaignArticle::getCampaignId,
+                        Collectors.mapping(WbCampaignArticle::getNmId, Collectors.toSet())
                 ));
 
         List<Object[]> articleCounts = campaignArticleRepository.countByCampaignIdIn(campaignIds);
         Map<Long, Integer> articlesCountByCampaign = articleCounts.stream()
                 .collect(Collectors.toMap(row -> (Long) row[0], row -> ((Number) row[1]).intValue()));
 
-        Map<Long, CampaignManagementState> statesByCampaignId = campaignManagementStateRepository.findByCabinetId(cabinetId)
+        Map<Long, WbCampaignManagementState> statesByCampaignId = campaignManagementStateRepository.findByCabinetId(cabinetId)
                 .stream()
-                .collect(Collectors.toMap(CampaignManagementState::getCampaignId, s -> s, (a, b) -> a));
-        Map<Long, List<CampaignScheduleSlot>> slotsByCampaignId = campaignScheduleSlotRepository.findByCabinetId(cabinetId)
+                .collect(Collectors.toMap(WbCampaignManagementState::getCampaignId, s -> s, (a, b) -> a));
+        Map<Long, List<WbCampaignScheduleSlot>> slotsByCampaignId = campaignScheduleSlotRepository.findByCabinetId(cabinetId)
                 .stream()
-                .collect(Collectors.groupingBy(CampaignScheduleSlot::getCampaignId));
+                .collect(Collectors.groupingBy(WbCampaignScheduleSlot::getCampaignId));
         Map<Long, BidderStatus> bidderStatuses = bidderStatusResolver.resolveForCabinet(
                 cabinetId, seller, campaigns, statesByCampaignId, slotsByCampaignId);
 
@@ -1424,7 +1424,7 @@ public class AnalyticsService {
                 .map(c -> {
                     Long advertId = c.getAdvertId();
                     Set<Long> scopeNmIds = nmIdsByCampaign.getOrDefault(advertId, Collections.emptySet());
-                    List<PromotionCampaignStatistics> stats = statsByCampaign.getOrDefault(advertId, Collections.emptyList());
+                    List<WbPromotionCampaignStatistics> stats = statsByCampaign.getOrDefault(advertId, Collections.emptyList());
                     Integer articlesCount = articlesCountByCampaign.getOrDefault(advertId, 0);
                     BidderStatus bidderStatus = bidderStatuses.get(advertId);
                     return buildCampaignDto(c, scopeNmIds, stats, true, articlesCount, bidderStatus);
@@ -1438,7 +1438,7 @@ public class AnalyticsService {
      */
     @Transactional(readOnly = true)
     public CampaignDetailDto getCampaignDetail(Long campaignId, Long cabinetId, Long sellerId) {
-        PromotionCampaign campaign = resolveCampaignForDetail(campaignId, cabinetId, sellerId);
+        WbPromotionCampaign campaign = resolveCampaignForDetail(campaignId, cabinetId, sellerId);
         Long cabinetIdForArticles = cabinetId;
         if (campaign != null && campaign.getCabinet() != null) {
             cabinetIdForArticles = campaign.getCabinet().getId();
@@ -1450,9 +1450,9 @@ public class AnalyticsService {
             return null;
         }
         final Long finalCabinetId = cabinetIdForArticles;
-        List<CampaignArticle> campaignArticles = campaignArticleRepository.findByCampaignId(campaign.getAdvertId());
+        List<WbCampaignArticle> campaignArticles = campaignArticleRepository.findByCampaignId(campaign.getAdvertId());
         List<Long> nmIds = campaignArticles.stream()
-                .map(CampaignArticle::getNmId)
+                .map(WbCampaignArticle::getNmId)
                 .distinct()
                 .collect(Collectors.toList());
         boolean itemRatingSupported = isItemRatingSupported(null, finalCabinetId);
@@ -1497,7 +1497,7 @@ public class AnalyticsService {
             Integer page,
             Integer size
     ) {
-        PromotionCampaign campaign = resolveCampaignForDetail(campaignId, cabinetId, sellerId);
+        WbPromotionCampaign campaign = resolveCampaignForDetail(campaignId, cabinetId, sellerId);
         if (campaign == null) {
             return null;
         }
@@ -1521,8 +1521,8 @@ public class AnalyticsService {
         );
     }
 
-    private PromotionCampaign resolveCampaignForDetail(Long campaignId, Long cabinetId, Long sellerId) {
-        PromotionCampaign campaign = null;
+    private WbPromotionCampaign resolveCampaignForDetail(Long campaignId, Long cabinetId, Long sellerId) {
+        WbPromotionCampaign campaign = null;
         if (cabinetId != null) {
             campaign = campaignRepository.findByAdvertIdAndCabinet_Id(campaignId, cabinetId).orElse(null);
         }
@@ -1557,23 +1557,23 @@ public class AnalyticsService {
                     .orElseThrow(() -> new IllegalArgumentException("Склад не найден: " + warehouseName));
         }
 
-        List<ProductStock> stocks = cabinetId != null
+        List<WbProductStock> stocks = cabinetId != null
                 ? stockRepository.findByNmIdAndWarehouseIdAndCabinet_Id(nmId, resolvedWarehouseId, cabinetId)
                 : stockRepository.findByNmIdAndWarehouseId(nmId, resolvedWarehouseId);
 
-        List<ProductBarcode> barcodes = cabinetId != null
+        List<WbProductBarcode> barcodes = cabinetId != null
                 ? barcodeRepository.findByNmIdAndCabinet_Id(nmId, cabinetId)
                 : barcodeRepository.findByNmId(nmId);
-        Map<String, ProductBarcode> barcodeMap = barcodes.stream()
+        Map<String, WbProductBarcode> barcodeMap = barcodes.stream()
                 .collect(Collectors.toMap(
-                        ProductBarcode::getBarcode,
+                        WbProductBarcode::getBarcode,
                         b -> b,
                         (existing, replacement) -> existing
                 ));
 
         Map<String, StockSizeAggregate> allSizes = seedSizesFromBarcodes(barcodeMap.values());
-        for (ProductStock stock : stocks) {
-            ProductBarcode barcode = barcodeMap.get(stock.getBarcode());
+        for (WbProductStock stock : stocks) {
+            WbProductBarcode barcode = barcodeMap.get(stock.getBarcode());
             if (barcode == null) {
                 continue;
             }
@@ -1599,24 +1599,24 @@ public class AnalyticsService {
         if (resolvedWarehouseId == null) {
             resolvedWarehouseId = sellerWarehouseRepository.findByCabinet_Id(cabinetId).stream()
                     .filter(w -> w.getName().equals(warehouseName))
-                    .map(SellerWarehouse::getWarehouseId)
+                    .map(WbSellerWarehouse::getWarehouseId)
                     .findFirst()
                     .orElseThrow(() -> new IllegalArgumentException("Склад продавца не найден: " + warehouseName));
         }
 
-        List<ProductFbsStock> stocks = fbsStockRepository.findByNmIdAndCabinet_IdAndWarehouseId(
+        List<WbProductFbsStock> stocks = fbsStockRepository.findByNmIdAndCabinet_IdAndWarehouseId(
                 nmId, cabinetId, resolvedWarehouseId);
-        List<ProductBarcode> barcodes = barcodeRepository.findByNmIdAndCabinet_Id(nmId, cabinetId);
-        Map<Long, ProductBarcode> barcodeByChrtId = new HashMap<>();
-        for (ProductBarcode barcode : barcodes) {
+        List<WbProductBarcode> barcodes = barcodeRepository.findByNmIdAndCabinet_Id(nmId, cabinetId);
+        Map<Long, WbProductBarcode> barcodeByChrtId = new HashMap<>();
+        for (WbProductBarcode barcode : barcodes) {
             if (barcode.getChrtId() != null) {
                 barcodeByChrtId.putIfAbsent(barcode.getChrtId(), barcode);
             }
         }
 
         Map<String, StockSizeAggregate> allSizes = seedSizesFromBarcodes(barcodes);
-        for (ProductFbsStock stock : stocks) {
-            ProductBarcode barcode = barcodeByChrtId.get(stock.getChrtId());
+        for (WbProductFbsStock stock : stocks) {
+            WbProductBarcode barcode = barcodeByChrtId.get(stock.getChrtId());
             if (barcode == null) {
                 continue;
             }
@@ -1625,9 +1625,9 @@ public class AnalyticsService {
         return toStockSizeDtos(allSizes);
     }
 
-    private Map<String, StockSizeAggregate> seedSizesFromBarcodes(Iterable<ProductBarcode> barcodes) {
+    private Map<String, StockSizeAggregate> seedSizesFromBarcodes(Iterable<WbProductBarcode> barcodes) {
         Map<String, StockSizeAggregate> allSizes = new HashMap<>();
-        for (ProductBarcode barcode : barcodes) {
+        for (WbProductBarcode barcode : barcodes) {
             String sizeKey = sizeKey(barcode);
             if (!allSizes.containsKey(sizeKey)) {
                 allSizes.put(sizeKey, new StockSizeAggregate(barcode.getTechSize(), barcode.getWbSize(), 0));
@@ -1636,7 +1636,7 @@ public class AnalyticsService {
         return allSizes;
     }
 
-    private void addSizeAmount(Map<String, StockSizeAggregate> allSizes, ProductBarcode barcode, int amount) {
+    private void addSizeAmount(Map<String, StockSizeAggregate> allSizes, WbProductBarcode barcode, int amount) {
         String sizeKey = sizeKey(barcode);
         StockSizeAggregate agg = allSizes.get(sizeKey);
         if (agg != null) {
@@ -1646,7 +1646,7 @@ public class AnalyticsService {
         }
     }
 
-    private static String sizeKey(ProductBarcode barcode) {
+    private static String sizeKey(WbProductBarcode barcode) {
         if (barcode.getWbSize() != null && !barcode.getWbSize().isEmpty()) {
             return barcode.getWbSize();
         }
@@ -1701,12 +1701,12 @@ public class AnalyticsService {
         }
     }
 
-    public ProductCard findCardBySeller(Long nmId, Long sellerId) {
+    public WbProductCard findCardBySeller(Long nmId, Long sellerId) {
         return findCardBySeller(nmId, sellerId, null);
     }
 
-    public ProductCard findCardBySeller(Long nmId, Long sellerId, Long cabinetId) {
-        ProductCard card = (cabinetId != null
+    public WbProductCard findCardBySeller(Long nmId, Long sellerId, Long cabinetId) {
+        WbProductCard card = (cabinetId != null
                 ? productCardRepository.findByNmIdAndCabinet_Id(nmId, cabinetId)
                 : productCardRepository.findByNmId(nmId))
                 .orElseThrow(() -> new UserException("Артикул не найден: " + nmId, HttpStatus.NOT_FOUND));
@@ -1722,23 +1722,23 @@ public class AnalyticsService {
 
     @Transactional
     public void updateArticlePriority(User seller, Long cabinetId, Long nmId, boolean isPriority) {
-        ProductCard card = findCardBySeller(nmId, seller.getId(), cabinetId);
+        WbProductCard card = findCardBySeller(nmId, seller.getId(), cabinetId);
         card.setIsPriority(isPriority);
         productCardRepository.save(card);
     }
 
-    private List<ArticleSummaryDto> mapToArticleSummaries(List<ProductCard> cards, boolean itemRatingSupported) {
+    private List<ArticleSummaryDto> mapToArticleSummaries(List<WbProductCard> cards, boolean itemRatingSupported) {
         return cards.stream()
                 .map(card -> mapToArticleSummary(card, itemRatingSupported))
                 .collect(Collectors.toList());
     }
 
-    private boolean cardHasAnyPhoto(ProductCard card) {
+    private boolean cardHasAnyPhoto(WbProductCard card) {
         return (card.getPhotoTm() != null && !card.getPhotoTm().isBlank())
                 || (card.getPhotoC246x328() != null && !card.getPhotoC246x328().isBlank());
     }
 
-    private ArticleSummaryDto mapToArticleSummary(ProductCard card, boolean itemRatingSupported) {
+    private ArticleSummaryDto mapToArticleSummary(WbProductCard card, boolean itemRatingSupported) {
         return ArticleSummaryDto.builder()
                 .nmId(card.getNmId())
                 .title(card.getTitle())
@@ -1753,7 +1753,7 @@ public class AnalyticsService {
                 .build();
     }
 
-    private ArticleDetailDto mapToArticleDetail(ProductCard card, boolean itemRatingSupported) {
+    private ArticleDetailDto mapToArticleDetail(WbProductCard card, boolean itemRatingSupported) {
         return ArticleDetailDto.builder()
                 .nmId(card.getNmId())
                 .imtId(card.getImtId())

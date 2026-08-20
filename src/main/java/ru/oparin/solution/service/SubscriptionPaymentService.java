@@ -47,7 +47,7 @@ public class SubscriptionPaymentService {
     private final SubscriptionProperties subscriptionProperties;
     private final TochkaProperties tochkaProperties;
     private final TochkaAcquiringService tochkaAcquiringService;
-    private final AbTestQuotaService abTestQuotaService;
+    private final WbAbTestQuotaService abTestQuotaService;
     private final ObjectMapper objectMapper;
 
     @Value("${app.brand-name:Clicki}")

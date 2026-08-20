@@ -8,10 +8,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.analytics.*;
 import ru.oparin.solution.model.CabinetAccessSection;
-import ru.oparin.solution.model.ProductCard;
+import ru.oparin.solution.model.WbProductCard;
 import ru.oparin.solution.service.AnalyticsService;
-import ru.oparin.solution.service.ArticleGoalService;
 import ru.oparin.solution.service.SellerContextService;
+import ru.oparin.solution.service.WbArticleGoalService;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -27,7 +27,7 @@ public class AnalyticsController {
 
     private final AnalyticsService analyticsService;
     private final SellerContextService sellerContextService;
-    private final ArticleGoalService articleGoalService;
+    private final WbArticleGoalService articleGoalService;
 
     /**
      * Получает список артикулов кабинета/продавца (только справочная информация для фильтра).
@@ -243,7 +243,7 @@ public class AnalyticsController {
                 CabinetAccessSection.PRODUCTS
         );
 
-        ProductCard card = analyticsService.findCardBySeller(nmId, context.user().getId());
+        WbProductCard card = analyticsService.findCardBySeller(nmId, context.user().getId());
         Long resolvedCabinetId = context.cabinetId() != null
                 ? context.cabinetId()
                 : (card.getCabinet() != null ? card.getCabinet().getId() : null);

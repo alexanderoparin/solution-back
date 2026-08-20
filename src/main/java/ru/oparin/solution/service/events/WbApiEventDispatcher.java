@@ -15,9 +15,9 @@ import ru.oparin.solution.config.WbEventsProperties;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.model.WbApiEventType;
-import ru.oparin.solution.repository.ProductCardRepository;
-import ru.oparin.solution.service.events.payload.AnalyticsSalesFunnelPayload;
-import ru.oparin.solution.service.events.payload.StocksByNmIdPayload;
+import ru.oparin.solution.repository.WbProductCardRepository;
+import ru.oparin.solution.service.events.payload.WbAnalyticsSalesFunnelPayload;
+import ru.oparin.solution.service.events.payload.WbStocksByNmIdPayload;
 import ru.oparin.solution.service.wb.WbApiEventAttemptContext;
 
 import java.time.LocalDateTime;
@@ -34,7 +34,7 @@ public class WbApiEventDispatcher {
     private final WbEventRateLimitService rateLimitService;
     private final ApplicationContext applicationContext;
     private final WbEventsProperties wbEventsProperties;
-    private final ProductCardRepository productCardRepository;
+    private final WbProductCardRepository productCardRepository;
     @Qualifier("cabinetUpdateExecutor")
     private final ThreadPoolTaskExecutor cabinetUpdateExecutor;
 
@@ -259,11 +259,11 @@ public class WbApiEventDispatcher {
     private Long extractNmId(WbApiEvent event) {
         try {
             if (event.getEventType() == WbApiEventType.ANALYTICS_SALES_FUNNEL_NMID) {
-                AnalyticsSalesFunnelPayload payload = eventService.readPayload(event, AnalyticsSalesFunnelPayload.class);
+                WbAnalyticsSalesFunnelPayload payload = eventService.readPayload(event, WbAnalyticsSalesFunnelPayload.class);
                 return payload.nmId();
             }
             if (event.getEventType() == WbApiEventType.STOCKS_BY_NMID) {
-                StocksByNmIdPayload payload = eventService.readPayload(event, StocksByNmIdPayload.class);
+                WbStocksByNmIdPayload payload = eventService.readPayload(event, WbStocksByNmIdPayload.class);
                 return payload.nmId();
             }
         } catch (Exception e) {

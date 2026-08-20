@@ -14,7 +14,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.ManagedCabinetSortField;
 import ru.oparin.solution.dto.cabinet.*;
-import ru.oparin.solution.dto.wb.SellerInfoResponse;
+import ru.oparin.solution.dto.wb.WbSellerInfoResponse;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetAccessGrantRepository;
@@ -356,14 +356,14 @@ public class CabinetService {
         cabinetDeletionService.deleteStepPriceHistory(cabinetId);
         cabinetDeletionService.deleteStepStocks(cabinetId);
         cabinetDeletionService.deleteStepFbsStocks(cabinetId);
-        cabinetDeletionService.deleteStepSellerWarehouses(cabinetId);
+        cabinetDeletionService.deleteStepWbSellerWarehouses(cabinetId);
         cabinetDeletionService.deleteStepBarcodes(cabinetId);
         cabinetDeletionService.deleteStepCardAnalytics(cabinetId);
         cabinetDeletionService.deleteStepProductCards(cabinetId);
         cabinetDeletionService.deleteStepArticleNoteFiles(cabinetId);
         cabinetDeletionService.deleteStepArticleNotes(cabinetId);
-        cabinetDeletionService.deleteStepCampaignNoteFiles(cabinetId);
-        cabinetDeletionService.deleteStepCampaignNotes(cabinetId);
+        cabinetDeletionService.deleteStepWbCampaignNoteFiles(cabinetId);
+        cabinetDeletionService.deleteStepWbCampaignNotes(cabinetId);
         log.info("[Удаление кабинета]   Запись кабинета");
         deleteCabinet(cabinet);
 
@@ -483,7 +483,7 @@ public class CabinetService {
 
     private String resolveCabinetNameFromWb(String apiKey) {
         try {
-            SellerInfoResponse sellerInfo = wbCommonApiClient.getSellerInfo(apiKey);
+            WbSellerInfoResponse sellerInfo = wbCommonApiClient.getSellerInfo(apiKey);
             String nameFromWb = normalizeName(firstNotBlank(sellerInfo.getName(), sellerInfo.getTradeMark()));
             if (nameFromWb != null) {
                 return nameFromWb;

@@ -1,0 +1,164 @@
+package ru.oparin.solution.service.sync;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import ru.oparin.solution.dto.wb.WbSaleFunnelResponse;
+import ru.oparin.solution.model.WbProductCard;
+import ru.oparin.solution.model.WbProductCardAnalytics;
+import ru.oparin.solution.repository.WbProductCardAnalyticsRepository;
+import ru.oparin.solution.service.wb.WbAnalyticsApiClient;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Загрузка и сохранение аналитики воронки продаж по карточкам товаров из WB API.
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class WbProductCardAnalyticsLoadService {
+
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private final WbProductCardAnalyticsRepository analyticsRepository;
+    private final WbAnalyticsApiClient analyticsApiClient;
+
+    /**
+     * Загружает аналитику за период для всех карточек.
+     *
+     * @return количество успешных загрузок и ошибок
+     */
+    public ProcessingResult loadAnalyticsForAllCards(
+            List<WbProductCard> cards,
+            String apiKey,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+        int successCount = 0;
+        int errorCount = 0;
+
+        for (WbProductCard card : cards) {
+            try {
+                loadAnalyticsForCard(card, apiKey, dateFrom, dateTo);
+                successCount++;
+            } catch (Exception e) {
+                log.error("Ошибка при загрузке аналитики для карточки nmID {}: {}", card.getNmId(), e.getMessage());
+                errorCount++;
+            }
+        }
+
+        return new ProcessingResult(successCount, errorCount);
+    }
+
+    public void loadAnalyticsForCard(WbProductCard card, String apiKey, LocalDate dateFrom, LocalDate dateTo) {
+        WbSaleFunnelResponse analyticsResponse = fetchAnalytics(apiKey, card.getNmId(), dateFrom, dateTo);
+
+        if (analyticsResponse == null || analyticsResponse.getData() == null) {
+            log.warn("Аналитика для карточки nmID {} не получена", card.getNmId());
+            return;
+        }
+
+        saveAnalyticsData(card, analyticsResponse, dateFrom, dateTo);
+    }
+
+    private WbSaleFunnelResponse fetchAnalytics(String apiKey, Long nmId, LocalDate dateFrom, LocalDate dateTo) {
+        String dateFromStr = dateFrom.format(DATE_FORMATTER);
+        String dateToStr = dateTo.format(DATE_FORMATTER);
+        return analyticsApiClient.getSaleFunnelProduct(apiKey, nmId, dateFromStr, dateToStr);
+    }
+
+    private void saveAnalyticsData(
+            WbProductCard card,
+            WbSaleFunnelResponse analyticsResponse,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+        int savedCount = 0;
+        int updatedCount = 0;
+        List<AnalyticsSaveItem> itemsToSave = new ArrayList<>();
+
+        for (WbSaleFunnelResponse.DailyData dailyData : analyticsResponse.getData()) {
+            if (dailyData == null || dailyData.getDt() == null) continue;
+            if (!card.getNmId().equals(dailyData.getNmId())) continue;
+
+            try {
+                LocalDate date = LocalDate.parse(dailyData.getDt(), DATE_FORMATTER);
+                if (!isDateInRange(date, dateFrom, dateTo)) continue;
+                itemsToSave.add(new AnalyticsSaveItem(card, dailyData, date));
+            } catch (Exception e) {
+                log.error("Ошибка при подготовке аналитики для карточки nmID {} за дату {}: {}",
+                        card.getNmId(), dailyData.getDt(), e.getMessage());
+            }
+        }
+
+        if (!itemsToSave.isEmpty()) {
+            SaveBatchResult batchResult = saveAnalyticsBatch(itemsToSave);
+            savedCount = batchResult.savedCount();
+            updatedCount = batchResult.updatedCount();
+        }
+
+        log.info("Аналитика для карточки nmID {}: создано {}, обновлено {}",
+                card.getNmId(), savedCount, updatedCount);
+    }
+
+    @Transactional
+    protected SaveBatchResult saveAnalyticsBatch(List<AnalyticsSaveItem> items) {
+        int savedCount = 0;
+        int updatedCount = 0;
+
+        for (AnalyticsSaveItem item : items) {
+            try {
+                boolean isNew = saveOrUpdateAnalytics(item.card(), item.dailyData(), item.date());
+                if (isNew) savedCount++;
+                else updatedCount++;
+            } catch (Exception e) {
+                log.error("Ошибка при сохранении аналитики для карточки nmID {} за дату {}: {}",
+                        item.card().getNmId(), item.date(), e.getMessage());
+            }
+        }
+        return new SaveBatchResult(savedCount, updatedCount);
+    }
+
+    private boolean saveOrUpdateAnalytics(WbProductCard card, WbSaleFunnelResponse.DailyData dailyData, LocalDate date) {
+        Long cabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
+        Optional<WbProductCardAnalytics> existing = cabinetId != null
+                ? analyticsRepository.findByProductCardNmIdAndDateAndCabinet_Id(card.getNmId(), date, cabinetId)
+                : analyticsRepository.findByProductCardNmIdAndDate(card.getNmId(), date);
+
+        WbProductCardAnalytics analytics = existing.orElseGet(() -> {
+            WbProductCardAnalytics newAnalytics = new WbProductCardAnalytics();
+            newAnalytics.setProductCard(card);
+            newAnalytics.setDate(date);
+            if (card.getCabinet() != null) {
+                newAnalytics.setCabinet(card.getCabinet());
+            }
+            return newAnalytics;
+        });
+        if (card.getCabinet() != null && analytics.getCabinet() == null) {
+            analytics.setCabinet(card.getCabinet());
+        }
+
+        analytics.setOpenCard(dailyData.getOpenCardCount());
+        analytics.setAddToCart(dailyData.getAddToCartCount());
+        analytics.setOrders(dailyData.getOrdersCount());
+        analytics.setOrdersSum(dailyData.getOrdersSumRub());
+        analyticsRepository.save(analytics);
+
+        return existing.isEmpty();
+    }
+
+    private boolean isDateInRange(LocalDate date, LocalDate dateFrom, LocalDate dateTo) {
+        return !date.isBefore(dateFrom) && !date.isAfter(dateTo);
+    }
+
+    public record ProcessingResult(int successCount, int errorCount) {}
+
+    private record AnalyticsSaveItem(WbProductCard card, WbSaleFunnelResponse.DailyData dailyData, LocalDate date) {}
+
+    private record SaveBatchResult(int savedCount, int updatedCount) {}
+}

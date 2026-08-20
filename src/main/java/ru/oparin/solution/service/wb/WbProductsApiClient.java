@@ -5,8 +5,8 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
-import ru.oparin.solution.dto.wb.ProductPricesRequest;
-import ru.oparin.solution.dto.wb.ProductPricesResponse;
+import ru.oparin.solution.dto.wb.WbProductPricesRequest;
+import ru.oparin.solution.dto.wb.WbProductPricesResponse;
 import ru.oparin.solution.model.WbApiEventType;
 
 /**
@@ -26,10 +26,10 @@ public class WbProductsApiClient extends AbstractWbApiClient {
     /**
      * Получение цен и скидок товаров по артикулам. Ретраи при таймауте/ошибке соединения/DNS — в базовом клиенте.
      */
-    public ProductPricesResponse getProductPrices(String apiKey, ProductPricesRequest request) {
+    public WbProductPricesResponse getProductPrices(String apiKey, WbProductPricesRequest request) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<ProductPricesRequest> entity = new HttpEntity<>(request, headers);
+        HttpEntity<WbProductPricesRequest> entity = new HttpEntity<>(request, headers);
         String url = WbApiEventType.PRICES_CABINET_WITH_SPP.getDefaultUrl();
         logWbApiCall(url, "цены и скидки товаров");
 
@@ -44,9 +44,9 @@ public class WbProductsApiClient extends AbstractWbApiClient {
 
                 validateResponse(response);
 
-                ProductPricesResponse pricesResponse = objectMapper.readValue(
+                WbProductPricesResponse pricesResponse = objectMapper.readValue(
                         response.getBody(),
-                        ProductPricesResponse.class
+                        WbProductPricesResponse.class
                 );
 
                 if (pricesResponse.getError() != null && pricesResponse.getError()) {

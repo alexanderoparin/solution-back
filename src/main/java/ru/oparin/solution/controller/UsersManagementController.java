@@ -21,11 +21,11 @@ import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.CabinetService;
-import ru.oparin.solution.service.ProductCardAnalyticsService;
 import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.WbApiKeyService;
+import ru.oparin.solution.service.WbProductCardAnalyticsService;
 import ru.oparin.solution.service.events.WbApiEventService;
-import ru.oparin.solution.service.events.payload.MainStepPayload;
+import ru.oparin.solution.service.events.payload.WbMainStepPayload;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -48,7 +48,7 @@ public class UsersManagementController {
     private final CabinetService cabinetService;
     private final WbApiKeyService wbApiKeyService;
     private final AnalyticsScheduler analyticsScheduler;
-    private final ProductCardAnalyticsService productCardAnalyticsService;
+    private final WbProductCardAnalyticsService productCardAnalyticsService;
     private final WbApiEventService wbApiEventService;
 
     /**
@@ -419,7 +419,7 @@ public class UsersManagementController {
             return forbiddenMessageResponse(MESSAGE_ADMIN_ONLY);
         }
         LocalDate d = LocalDate.now();
-        MainStepPayload payload = MainStepPayload.builder()
+        WbMainStepPayload payload = WbMainStepPayload.builder()
                 .dateFrom(d)
                 .dateTo(d)
                 .includeStocks(false)
@@ -445,7 +445,7 @@ public class UsersManagementController {
             return forbiddenMessageResponse(MESSAGE_ADMIN_ONLY);
         }
         LocalDate d = LocalDate.now();
-        MainStepPayload payload = MainStepPayload.builder()
+        WbMainStepPayload payload = WbMainStepPayload.builder()
                 .dateFrom(d)
                 .dateTo(d)
                 .includeStocks(false)

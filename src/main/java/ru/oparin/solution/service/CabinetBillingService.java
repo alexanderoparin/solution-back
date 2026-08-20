@@ -4,10 +4,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.oparin.solution.dto.AbTestQuotaDto;
 import ru.oparin.solution.dto.CabinetBillingStatusDto;
 import ru.oparin.solution.dto.CabinetBillingStatusDto.MainTariffDto;
 import ru.oparin.solution.dto.CabinetBillingStatusDto.ServiceStatusDto;
+import ru.oparin.solution.dto.WbAbTestQuotaDto;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
@@ -34,7 +34,7 @@ public class CabinetBillingService {
     private final PlanRepository planRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final CabinetEntitlementService entitlementService;
-    private final AbTestQuotaService abTestQuotaService;
+    private final WbAbTestQuotaService abTestQuotaService;
     private final SubscriptionPaymentService subscriptionPaymentService;
 
     /**
@@ -173,7 +173,7 @@ public class CabinetBillingService {
      * Также создаёт/обновляет запись услуги в {@code subscriptions} (kind AB_PACK).
      */
     @Transactional
-    public AbTestQuotaDto activateAbFreeQuota(User actor, Long cabinetId) {
+    public WbAbTestQuotaDto activateAbFreeQuota(User actor, Long cabinetId) {
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
         boolean canManage = actor != null
@@ -182,7 +182,7 @@ public class CabinetBillingService {
         if (!canManage) {
             throw new UserException("Только владелец кабинета может подключить услугу", HttpStatus.FORBIDDEN);
         }
-        AbTestQuotaDto quota = abTestQuotaService.activateFreeQuota(cabinet);
+        WbAbTestQuotaDto quota = abTestQuotaService.activateFreeQuota(cabinet);
         Plan freePack = planRepository.findByCode(PlanCodes.AB_PACK_FREE)
                 .orElseThrow(() -> new UserException(
                         "План ab_pack_free не найден — примените миграцию 084",

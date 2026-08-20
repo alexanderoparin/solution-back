@@ -3,8 +3,8 @@ package ru.oparin.solution.service.sync;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import ru.oparin.solution.dto.wb.CardsListRequest;
-import ru.oparin.solution.dto.wb.CardsListResponse;
+import ru.oparin.solution.dto.wb.WbCardsListRequest;
+import ru.oparin.solution.dto.wb.WbCardsListResponse;
 import ru.oparin.solution.service.wb.WbContentApiClient;
 
 import java.util.ArrayList;
@@ -25,9 +25,9 @@ public class WbCardsSyncService {
     /**
      * Загружает все карточки товаров селлера с пагинацией (лимит WB: 100 запросов в минуту).
      */
-    public CardsListResponse fetchAllCards(String apiKey) {
-        CardsListRequest initialRequest = createInitialCardsRequest();
-        CardsListResponse response = contentApiClient.getCardsList(apiKey, initialRequest);
+    public WbCardsListResponse fetchAllCards(String apiKey) {
+        WbCardsListRequest initialRequest = createInitialCardsRequest();
+        WbCardsListResponse response = contentApiClient.getCardsList(apiKey, initialRequest);
 
         if (response.getCards() == null) {
             response.setCards(new ArrayList<>());
@@ -41,8 +41,8 @@ public class WbCardsSyncService {
         while (hasMoreCards(response, totalReceived)) {
             pageNumber++;
 
-            CardsListRequest nextRequest = createNextPageRequest(response);
-            CardsListResponse nextResponse = contentApiClient.getCardsList(apiKey, nextRequest);
+            WbCardsListRequest nextRequest = createNextPageRequest(response);
+            WbCardsListResponse nextResponse = contentApiClient.getCardsList(apiKey, nextRequest);
 
             if (nextResponse.getCards() == null || nextResponse.getCards().isEmpty()) {
                 log.info("Страница {}: пустой ответ, завершаем пагинацию", pageNumber);
@@ -68,23 +68,23 @@ public class WbCardsSyncService {
         return response;
     }
 
-    private CardsListRequest createInitialCardsRequest() {
-        CardsListRequest.Cursor cursor = CardsListRequest.Cursor.builder()
+    private WbCardsListRequest createInitialCardsRequest() {
+        WbCardsListRequest.Cursor cursor = WbCardsListRequest.Cursor.builder()
                 .limit(CARDS_PAGE_LIMIT)
                 .build();
-        CardsListRequest.Filter filter = CardsListRequest.Filter.builder()
+        WbCardsListRequest.Filter filter = WbCardsListRequest.Filter.builder()
                 .withPhoto(WITH_PHOTO_ALL)
                 .build();
-        CardsListRequest.Settings settings = CardsListRequest.Settings.builder()
+        WbCardsListRequest.Settings settings = WbCardsListRequest.Settings.builder()
                 .cursor(cursor)
                 .filter(filter)
                 .build();
-        return CardsListRequest.builder()
+        return WbCardsListRequest.builder()
                 .settings(settings)
                 .build();
     }
 
-    private boolean hasMoreCards(CardsListResponse response, int totalReceived) {
+    private boolean hasMoreCards(WbCardsListResponse response, int totalReceived) {
         if (response.getCursor() == null || response.getCursor().getTotal() == null) {
             log.debug("hasMoreCards: cursor или total отсутствует, завершаем пагинацию");
             return false;
@@ -96,26 +96,26 @@ public class WbCardsSyncService {
         return shouldContinue;
     }
 
-    private CardsListRequest createNextPageRequest(CardsListResponse response) {
+    private WbCardsListRequest createNextPageRequest(WbCardsListResponse response) {
         if (response.getCursor() == null) {
             throw new IllegalStateException("Cursor отсутствует в ответе для создания следующего запроса");
         }
-        CardsListResponse.Cursor cursor = response.getCursor();
+        WbCardsListResponse.Cursor cursor = response.getCursor();
         log.debug("Создание запроса следующей страницы: nmID={}, updatedAt={}", cursor.getNmID(), cursor.getUpdatedAt());
 
-        CardsListRequest.Cursor nextCursor = CardsListRequest.Cursor.builder()
+        WbCardsListRequest.Cursor nextCursor = WbCardsListRequest.Cursor.builder()
                 .limit(CARDS_PAGE_LIMIT)
                 .nmID(cursor.getNmID())
                 .updatedAt(cursor.getUpdatedAt())
                 .build();
-        CardsListRequest.Filter filter = CardsListRequest.Filter.builder()
+        WbCardsListRequest.Filter filter = WbCardsListRequest.Filter.builder()
                 .withPhoto(WITH_PHOTO_ALL)
                 .build();
-        CardsListRequest.Settings nextSettings = CardsListRequest.Settings.builder()
+        WbCardsListRequest.Settings nextSettings = WbCardsListRequest.Settings.builder()
                 .cursor(nextCursor)
                 .filter(filter)
                 .build();
-        return CardsListRequest.builder()
+        return WbCardsListRequest.builder()
                 .settings(nextSettings)
                 .build();
     }

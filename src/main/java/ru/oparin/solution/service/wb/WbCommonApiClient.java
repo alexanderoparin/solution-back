@@ -8,7 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
-import ru.oparin.solution.dto.wb.SellerInfoResponse;
+import ru.oparin.solution.dto.wb.WbSellerInfoResponse;
 import ru.oparin.solution.model.WbApiEventType;
 
 /**
@@ -34,11 +34,11 @@ public class WbCommonApiClient extends AbstractWbApiClient {
      * Получение информации о продавце.
      * При таймауте или ошибке соединения выполняются ретраи.
      */
-    public SellerInfoResponse getSellerInfo(String apiKey) {
+    public WbSellerInfoResponse getSellerInfo(String apiKey) {
         return executeWithConnectionRetry("информация о продавце", () -> getSellerInfoOnce(apiKey));
     }
 
-    private SellerInfoResponse getSellerInfoOnce(String apiKey) {
+    private WbSellerInfoResponse getSellerInfoOnce(String apiKey) {
         HttpHeaders headers = createAuthHeaders(apiKey);
         HttpEntity<String> entity = new HttpEntity<>(headers);
 
@@ -46,16 +46,16 @@ public class WbCommonApiClient extends AbstractWbApiClient {
         log.info("WB API seller-info: запрос GET {}, Authorization={}", SELLER_INFO_URL, maskTokenForLog(apiKey));
 
         try {
-            ResponseEntity<SellerInfoResponse> response = restTemplate.exchange(
+            ResponseEntity<WbSellerInfoResponse> response = restTemplate.exchange(
                     SELLER_INFO_URL,
                     HttpMethod.GET,
                     entity,
-                    SellerInfoResponse.class
+                    WbSellerInfoResponse.class
             );
             if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
                 throw new RestClientException("Неожиданный ответ от WB API: " + response.getStatusCode());
             }
-            logSellerInfoResponse(response.getStatusCode().value(), response.getBody());
+            logWbSellerInfoResponse(response.getStatusCode().value(), response.getBody());
             return response.getBody();
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
@@ -73,7 +73,7 @@ public class WbCommonApiClient extends AbstractWbApiClient {
         }
     }
 
-    private void logSellerInfoResponse(int httpStatus, SellerInfoResponse body) {
+    private void logWbSellerInfoResponse(int httpStatus, WbSellerInfoResponse body) {
         try {
             String json = objectMapper.writeValueAsString(body);
             log.info("WB API seller-info: ответ HTTP {}, тело: {}", httpStatus, truncateForLog(json));

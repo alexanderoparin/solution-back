@@ -7,8 +7,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.CampaignManagementState;
-import ru.oparin.solution.repository.CampaignManagementStateRepository;
+import ru.oparin.solution.model.WbCampaignManagementState;
+import ru.oparin.solution.repository.WbCampaignManagementStateRepository;
 import ru.oparin.solution.service.CabinetService;
 
 /**
@@ -20,8 +20,8 @@ import ru.oparin.solution.service.CabinetService;
 public class CabinetBudgetLeaderPollExecutor {
 
     private final CabinetService cabinetService;
-    private final CampaignManagementStateRepository stateRepository;
-    private final CampaignBudgetFetchService budgetFetchService;
+    private final WbCampaignManagementStateRepository stateRepository;
+    private final WbCampaignBudgetFetchService budgetFetchService;
 
     @Lazy
     @Autowired
@@ -43,7 +43,7 @@ public class CabinetBudgetLeaderPollExecutor {
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public LeaderPollContext loadLeaderContext(Long cabinetId, Long advertId) {
         Cabinet cabinet = cabinetService.findById(cabinetId).orElse(null);
-        CampaignManagementState state = stateRepository.findById(advertId).orElse(null);
+        WbCampaignManagementState state = stateRepository.findById(advertId).orElse(null);
         if (cabinet == null || state == null) {
             return null;
         }
@@ -51,13 +51,13 @@ public class CabinetBudgetLeaderPollExecutor {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void persistLeaderState(CampaignManagementState state) {
+    public void persistLeaderState(WbCampaignManagementState state) {
         stateRepository.save(state);
     }
 
     /**
      * Контекст лидера после короткой read-only транзакции (далее сущность может быть detached).
      */
-    public record LeaderPollContext(Cabinet cabinet, CampaignManagementState state) {
+    public record LeaderPollContext(Cabinet cabinet, WbCampaignManagementState state) {
     }
 }

@@ -10,9 +10,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.*;
-import ru.oparin.solution.dto.CabinetBillingOverviewDto.AbTestsOverviewDto;
 import ru.oparin.solution.dto.CabinetBillingOverviewDto.CampaignOverviewDto;
 import ru.oparin.solution.dto.CabinetBillingOverviewDto.MainTariffOverviewDto;
+import ru.oparin.solution.dto.CabinetBillingOverviewDto.WbAbTestsOverviewDto;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.*;
@@ -37,9 +37,9 @@ public class AdminSubscriptionService {
     private final SubscriptionRepository subscriptionRepository;
     private final PaymentRepository paymentRepository;
     private final CabinetRepository cabinetRepository;
-    private final CabinetAbTestQuotaRepository quotaRepository;
+    private final WbCabinetAbTestQuotaRepository quotaRepository;
     private final SubscriptionPaymentService subscriptionPaymentService;
-    private final AbTestQuotaService abTestQuotaService;
+    private final WbAbTestQuotaService abTestQuotaService;
 
     /**
      * Постраничный обзор тарифов и услуг кабинетов для админки.
@@ -173,8 +173,8 @@ public class AdminSubscriptionService {
             }
         }
 
-        Map<Long, CabinetAbTestQuota> quotaByCabinet = quotaRepository.findByCabinetIdIn(ids).stream()
-                .collect(Collectors.toMap(CabinetAbTestQuota::getCabinetId, q -> q, (a, b) -> a));
+        Map<Long, WbCabinetAbTestQuota> quotaByCabinet = quotaRepository.findByCabinetIdIn(ids).stream()
+                .collect(Collectors.toMap(WbCabinetAbTestQuota::getCabinetId, q -> q, (a, b) -> a));
 
         List<CabinetBillingOverviewDto> rows = new ArrayList<>(cabinets.size());
         for (Cabinet cabinet : cabinets) {
@@ -188,7 +188,7 @@ public class AdminSubscriptionService {
             Cabinet cabinet,
             Subscription main,
             Subscription campaign,
-            CabinetAbTestQuota quota
+            WbCabinetAbTestQuota quota
     ) {
         User owner = cabinet.getUser();
         boolean agency = owner != null && Boolean.TRUE.equals(owner.getAgencyManaged());
@@ -250,7 +250,7 @@ public class AdminSubscriptionService {
 
         boolean activated = quota != null && Boolean.TRUE.equals(quota.getActivated());
         Integer remaining = quota != null ? quota.getRemaining() : null;
-        AbTestsOverviewDto abDto = AbTestsOverviewDto.builder()
+        WbAbTestsOverviewDto abDto = WbAbTestsOverviewDto.builder()
                 .connected(unlimited || activated)
                 .activated(activated)
                 .remaining(unlimited ? null : remaining)

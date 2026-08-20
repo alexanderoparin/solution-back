@@ -7,10 +7,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.wb.*;
-import ru.oparin.solution.service.CardsListRequestBuilder;
-import ru.oparin.solution.service.ProductCardService;
-import ru.oparin.solution.service.ProductStocksService;
 import ru.oparin.solution.service.SellerContextService;
+import ru.oparin.solution.service.WbCardsListRequestBuilder;
+import ru.oparin.solution.service.WbProductCardService;
+import ru.oparin.solution.service.WbProductStocksService;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.wb.WbCommonApiClient;
 import ru.oparin.solution.service.wb.WbContentApiClient;
@@ -29,19 +29,19 @@ public class WbApiController {
     private final WbContentApiClient contentApiClient;
     private final WbCommonApiClient commonApiClient;
     private final SellerContextService sellerContextService;
-    private final ProductCardService productCardService;
+    private final WbProductCardService productCardService;
     private final WbApiEventService wbApiEventService;
-    private final ProductStocksService stocksService;
+    private final WbProductStocksService stocksService;
 
     @PostMapping("/cards/list")
-    public ResponseEntity<CardsListResponse> getCardsList(
-            @Valid @RequestBody(required = false) CardsListRequest request,
+    public ResponseEntity<WbCardsListResponse> getCardsList(
+            @Valid @RequestBody(required = false) WbCardsListRequest request,
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
-        CardsListRequest requestWithDefaults = CardsListRequestBuilder.withDefaults(request);
-        CardsListResponse response = contentApiClient.getCardsList(context.apiKey(), requestWithDefaults);
+        WbCardsListRequest requestWithDefaults = WbCardsListRequestBuilder.withDefaults(request);
+        WbCardsListResponse response = contentApiClient.getCardsList(context.apiKey(), requestWithDefaults);
         
         productCardService.saveOrUpdateCards(response, context.user());
         
@@ -49,56 +49,56 @@ public class WbApiController {
     }
 
     @GetMapping("/cards/search")
-    public ResponseEntity<CardsListResponse> searchCardsByVendorCode(
+    public ResponseEntity<WbCardsListResponse> searchCardsByVendorCode(
             @RequestParam String vendorCode,
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
-        CardsListRequest searchRequest = CardsListRequestBuilder.createSearchRequest(vendorCode);
-        CardsListResponse response = contentApiClient.getCardsList(context.apiKey(), searchRequest);
+        WbCardsListRequest searchRequest = WbCardsListRequestBuilder.createSearchRequest(vendorCode);
+        WbCardsListResponse response = contentApiClient.getCardsList(context.apiKey(), searchRequest);
         
         return ResponseEntity.ok(response);
     }
 
     @GetMapping("/ping")
-    public ResponseEntity<PingResponse> ping(
+    public ResponseEntity<WbPingResponse> ping(
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
-        PingResponse response = contentApiClient.ping(context.apiKey());
+        WbPingResponse response = contentApiClient.ping(context.apiKey());
         
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/cards/trash")
-    public ResponseEntity<CardsListResponse> getCardsTrash(
-            @Valid @RequestBody(required = false) CardsListRequest request,
+    public ResponseEntity<WbCardsListResponse> getCardsTrash(
+            @Valid @RequestBody(required = false) WbCardsListRequest request,
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
-        CardsListRequest requestWithDefaults = CardsListRequestBuilder.withDefaults(request);
-        CardsListResponse response = contentApiClient.getCardsTrash(context.apiKey(), requestWithDefaults);
+        WbCardsListRequest requestWithDefaults = WbCardsListRequestBuilder.withDefaults(request);
+        WbCardsListResponse response = contentApiClient.getCardsTrash(context.apiKey(), requestWithDefaults);
         
         return ResponseEntity.ok(response);
     }
 
     @GetMapping("/seller-info")
-    public ResponseEntity<SellerInfoResponse> getSellerInfo(
+    public ResponseEntity<WbSellerInfoResponse> getSellerInfo(
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(authentication, null, cabinetId, ru.oparin.solution.model.CabinetAccessSection.PRODUCTS);
-        SellerInfoResponse response = commonApiClient.getSellerInfo(context.apiKey());
+        WbSellerInfoResponse response = commonApiClient.getSellerInfo(context.apiKey());
         
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/cards/update-analytics")
     public ResponseEntity<Map<String, String>> updateCardsAndLoadAnalytics(
-            @Valid @RequestBody AnalyticsRequest request,
+            @Valid @RequestBody WbAnalyticsRequest request,
             @RequestParam(required = false) Long cabinetId,
             Authentication authentication
     ) {

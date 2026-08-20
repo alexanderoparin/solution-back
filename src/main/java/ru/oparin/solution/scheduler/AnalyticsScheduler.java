@@ -14,7 +14,7 @@ import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.CabinetUpdateErrorService;
-import ru.oparin.solution.service.FullUpdateOrchestrator;
+import ru.oparin.solution.service.WbFullUpdateOrchestrator;
 import ru.oparin.solution.service.events.WbApiEventService;
 
 import java.time.LocalDate;
@@ -30,7 +30,7 @@ import java.util.List;
 public class AnalyticsScheduler {
 
     private final CabinetService cabinetService;
-    private final FullUpdateOrchestrator fullUpdateOrchestrator;
+    private final WbFullUpdateOrchestrator fullUpdateOrchestrator;
     private final CabinetUpdateErrorService cabinetUpdateErrorService;
     private final WbApiEventService wbApiEventService;
 

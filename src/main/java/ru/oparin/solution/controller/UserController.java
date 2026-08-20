@@ -19,7 +19,7 @@ import ru.oparin.solution.repository.PaymentRepository;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.*;
-import ru.oparin.solution.service.campaign.CampaignManageAccessService;
+import ru.oparin.solution.service.campaign.WbCampaignManageAccessService;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -39,7 +39,7 @@ public class UserController {
     private final WbApiKeyService wbApiKeyService;
     private final AnalyticsScheduler analyticsScheduler;
     private final SubscriptionAccessService subscriptionAccessService;
-    private final CampaignManageAccessService campaignManageAccessService;
+    private final WbCampaignManageAccessService campaignManageAccessService;
     private final SubscriptionProperties subscriptionProperties;
     private final EmailConfirmationService emailConfirmationService;
     private final PaymentRepository paymentRepository;

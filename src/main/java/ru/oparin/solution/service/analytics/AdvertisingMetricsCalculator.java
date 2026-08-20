@@ -4,8 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.dto.analytics.AggregatedMetricsDto;
 import ru.oparin.solution.dto.analytics.PeriodDto;
-import ru.oparin.solution.model.PromotionCampaign;
-import ru.oparin.solution.repository.PromotionCampaignRepository;
+import ru.oparin.solution.model.WbPromotionCampaign;
+import ru.oparin.solution.repository.WbPromotionCampaignRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -20,8 +20,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class AdvertisingMetricsCalculator {
 
-    private final PromotionCampaignRepository campaignRepository;
-    private final CampaignStatisticsAggregator statisticsAggregator;
+    private final WbPromotionCampaignRepository campaignRepository;
+    private final WbCampaignStatisticsAggregator statisticsAggregator;
 
     /**
      * Рассчитывает метрики рекламы для периода (при cabinetId != null — только кампании кабинета).
@@ -47,9 +47,9 @@ public class AdvertisingMetricsCalculator {
             Set<Long> nmIdsFilter
     ) {
         List<Long> campaignIds = getCampaignIds(sellerId, cabinetId);
-        CampaignStatisticsAggregator.AdvertisingStats stats;
+        WbCampaignStatisticsAggregator.AdvertisingStats stats;
         if (nmIdsFilter != null && !nmIdsFilter.isEmpty()) {
-            Map<Long, CampaignStatisticsAggregator.AdvertisingStats> byArticle =
+            Map<Long, WbCampaignStatisticsAggregator.AdvertisingStats> byArticle =
                     statisticsAggregator.aggregateStatsByArticle(campaignIds, period);
             int views = 0;
             int clicks = 0;
@@ -57,7 +57,7 @@ public class AdvertisingMetricsCalculator {
             int orders = 0;
             BigDecimal ordersSum = BigDecimal.ZERO;
             for (Long nmId : nmIdsFilter) {
-                CampaignStatisticsAggregator.AdvertisingStats s = byArticle.get(nmId);
+                WbCampaignStatisticsAggregator.AdvertisingStats s = byArticle.get(nmId);
                 if (s != null) {
                     views += s.views();
                     clicks += s.clicks();
@@ -66,7 +66,7 @@ public class AdvertisingMetricsCalculator {
                     ordersSum = ordersSum.add(s.ordersSum());
                 }
             }
-            stats = new CampaignStatisticsAggregator.AdvertisingStats(views, clicks, sum, orders, ordersSum);
+            stats = new WbCampaignStatisticsAggregator.AdvertisingStats(views, clicks, sum, orders, ordersSum);
         } else {
             stats = statisticsAggregator.aggregateStats(campaignIds, period);
         }
@@ -94,11 +94,11 @@ public class AdvertisingMetricsCalculator {
     }
 
     private List<Long> getCampaignIds(Long sellerId, Long cabinetId) {
-        List<PromotionCampaign> campaigns = cabinetId != null
+        List<WbPromotionCampaign> campaigns = cabinetId != null
                 ? campaignRepository.findByCabinet_Id(cabinetId)
                 : campaignRepository.findByCabinet_User_Id(sellerId);
         return campaigns.stream()
-                .map(PromotionCampaign::getAdvertId)
+                .map(WbPromotionCampaign::getAdvertId)
                 .toList();
     }
 
@@ -110,7 +110,7 @@ public class AdvertisingMetricsCalculator {
      */
     private void setBasicMetrics(
             AggregatedMetricsDto metrics,
-            CampaignStatisticsAggregator.AdvertisingStats stats
+            WbCampaignStatisticsAggregator.AdvertisingStats stats
     ) {
         metrics.setViews(stats.views());
         metrics.setClicks(stats.clicks());
@@ -125,7 +125,7 @@ public class AdvertisingMetricsCalculator {
      */
     private void calculateDerivedMetrics(
             AggregatedMetricsDto metrics,
-            CampaignStatisticsAggregator.AdvertisingStats stats
+            WbCampaignStatisticsAggregator.AdvertisingStats stats
     ) {
         calculateCpc(metrics, stats);
         calculateCtr(metrics, stats);
@@ -142,7 +142,7 @@ public class AdvertisingMetricsCalculator {
      */
     private void calculateCpc(
             AggregatedMetricsDto metrics,
-            CampaignStatisticsAggregator.AdvertisingStats stats
+            WbCampaignStatisticsAggregator.AdvertisingStats stats
     ) {
         if (stats.clicks() > 0) {
             BigDecimal cpc = MathUtils.divideSafely(stats.sum(), stats.clicks());
@@ -159,7 +159,7 @@ public class AdvertisingMetricsCalculator {
      */
     private void calculateCtr(
             AggregatedMetricsDto metrics,
-            CampaignStatisticsAggregator.AdvertisingStats stats
+            WbCampaignStatisticsAggregator.AdvertisingStats stats
     ) {
         if (stats.views() > 0) {
             BigDecimal ctr = MathUtils.calculatePercentage(stats.clicks(), stats.views());
@@ -176,7 +176,7 @@ public class AdvertisingMetricsCalculator {
      */
     private void calculateCpo(
             AggregatedMetricsDto metrics,
-            CampaignStatisticsAggregator.AdvertisingStats stats
+            WbCampaignStatisticsAggregator.AdvertisingStats stats
     ) {
         if (stats.orders() > 0) {
             BigDecimal cpo = MathUtils.divideSafely(stats.sum(), stats.orders());
@@ -193,7 +193,7 @@ public class AdvertisingMetricsCalculator {
      */
     private void calculateDrr(
             AggregatedMetricsDto metrics,
-            CampaignStatisticsAggregator.AdvertisingStats stats
+            WbCampaignStatisticsAggregator.AdvertisingStats stats
     ) {
         if (MathUtils.isPositive(stats.ordersSum()) && MathUtils.isPositive(stats.sum())) {
             BigDecimal drr = MathUtils.calculatePercentage(stats.sum(), stats.ordersSum());

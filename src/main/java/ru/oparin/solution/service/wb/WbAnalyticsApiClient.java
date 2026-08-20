@@ -50,15 +50,15 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
      * @param offset смещение пагинации
      * @return ответ с data.items
      */
-    public ItemRatingResponse postItemRating(String apiKey, int offset) {
+    public WbItemRatingResponse postItemRating(String apiKey, int offset) {
         String fullUrl = WbApiEventType.ANALYTICS_ITEM_RATING_CABINET.getDefaultUrl();
         logWbApiCall(fullUrl, "оценка товара item-rating", null);
 
         LocalDate yesterday = LocalDate.now().minusDays(1);
         String date = yesterday.format(DateTimeFormatter.ISO_LOCAL_DATE);
-        ItemRatingRequest request = ItemRatingRequest.builder()
-                .currentPeriod(ItemRatingRequest.Period.builder().start(date).end(date).build())
-                .orderBy(ItemRatingRequest.OrderBy.builder().field("feedbackRating").mode("desc").build())
+        WbItemRatingRequest request = WbItemRatingRequest.builder()
+                .currentPeriod(WbItemRatingRequest.Period.builder().start(date).end(date).build())
+                .orderBy(WbItemRatingRequest.OrderBy.builder().field("feedbackRating").mode("desc").build())
                 .limit(ITEM_RATING_PAGE_LIMIT)
                 .offset(offset)
                 .build();
@@ -79,7 +79,7 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
                             "оценка товара item-rating"
                     )
             );
-            return objectMapper.readValue(response.getBody(), ItemRatingResponse.class);
+            return objectMapper.readValue(response.getBody(), WbItemRatingResponse.class);
         } catch (HttpClientErrorException e) {
             throwIf401ScopeNotAllowed(e);
             logWbApiError("оценка товара WB item-rating offset=" + offset, e);
@@ -95,7 +95,7 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
     /**
      * Пауза между страницами item-rating в legacy-синхронизации (один поток).
      */
-    public void delayBetweenItemRatingRequests(String apiKey) {
+    public void delayBetweenWbItemRatingRequests(String apiKey) {
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
         long ms = Math.max(1L, WbApiEventType.ANALYTICS_ITEM_RATING_CABINET.getRequestDelayMs(tokenType));
         try {
@@ -109,7 +109,7 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
     /**
      * Получение аналитики воронки продаж по карточке товара.
      */
-    public SaleFunnelResponse getSaleFunnelProduct(String apiKey, Long nmId, String dateFrom, String dateTo) {
+    public WbSaleFunnelResponse getSaleFunnelProduct(String apiKey, Long nmId, String dateFrom, String dateTo) {
         String fullUrl = WbApiEventType.ANALYTICS_SALES_FUNNEL_NMID.getDefaultUrl();
         logWbApiCall(fullUrl, "воронка продаж по карточке", nmId);
 
@@ -122,7 +122,7 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
             log.warn("Период выходит за пределы допустимого API (макс. последние 7 дней). Обрезаем до {} - {} nmID={}",
                     validatedFromDate, validatedToDate, nmId);
         }
-        SaleFunnelHistoryRequest request = buildAnalyticsRequest(nmId, validatedFromDate, validatedToDate);
+        WbSaleFunnelHistoryRequest request = buildWbAnalyticsRequest(nmId, validatedFromDate, validatedToDate);
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
         int maxRetries429 = tokenType == CabinetTokenType.PERSONAL ? maxRetries429Personal : maxRetries429Basic;
         long retryDelayMs429 = WbApiEventType.ANALYTICS_SALES_FUNNEL_NMID.getRequestDelayMs(tokenType);
@@ -176,7 +176,7 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
         return toDate;
     }
 
-    private SaleFunnelHistoryRequest buildAnalyticsRequest(Long nmId, LocalDate fromDate, LocalDate toDate) {
+    private WbSaleFunnelHistoryRequest buildWbAnalyticsRequest(Long nmId, LocalDate fromDate, LocalDate toDate) {
         // API позволяет получать данные максимум за неделю (7 дней включая обе даты)
         // ChronoUnit.DAYS.between не включает обе даты, поэтому для 7 дней включая обе даты нужно daysBetween <= 6
         long daysBetween = ChronoUnit.DAYS.between(fromDate, toDate);
@@ -188,12 +188,12 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
             fromDate = toDate.minusDays(MAX_ANALYTICS_PERIOD_DAYS - 1);
         }
         
-        SaleFunnelHistoryRequest.Period period = SaleFunnelHistoryRequest.Period.builder()
+        WbSaleFunnelHistoryRequest.Period period = WbSaleFunnelHistoryRequest.Period.builder()
                 .start(fromDate.format(DateTimeFormatter.ISO_LOCAL_DATE))
                 .end(toDate.format(DateTimeFormatter.ISO_LOCAL_DATE))
                 .build();
         
-        return SaleFunnelHistoryRequest.builder()
+        return WbSaleFunnelHistoryRequest.builder()
                 .selectedPeriod(period)
                 .nmIds(List.of(nmId))
                 .skipDeletedNm(false)
@@ -201,17 +201,17 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
                 .build();
     }
 
-    private SaleFunnelResponse parseAnalyticsResponse(ResponseEntity<String> response, Long nmId) {
+    private WbSaleFunnelResponse parseAnalyticsResponse(ResponseEntity<String> response, Long nmId) {
         try {
-            List<SaleFunnelHistoryResponse> historyResponses = objectMapper.readValue(
+            List<WbSaleFunnelHistoryResponse> historyResponses = objectMapper.readValue(
                     response.getBody(),
                     objectMapper.getTypeFactory().constructCollectionType(
                             List.class, 
-                            SaleFunnelHistoryResponse.class
+                            WbSaleFunnelHistoryResponse.class
                     )
             );
             
-            return convertToSaleFunnelResponse(historyResponses, nmId);
+            return convertToWbSaleFunnelResponse(historyResponses, nmId);
                     
         } catch (Exception e) {
             log.error("Ошибка при парсинге ответа аналитики для nmID {}: {}", nmId, e.getMessage());
@@ -219,13 +219,13 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
         }
     }
 
-    private SaleFunnelResponse convertToSaleFunnelResponse(
-            List<SaleFunnelHistoryResponse> historyResponses, 
+    private WbSaleFunnelResponse convertToWbSaleFunnelResponse(
+            List<WbSaleFunnelHistoryResponse> historyResponses, 
             Long nmId
     ) {
-        List<SaleFunnelResponse.DailyData> dailyDataList = new ArrayList<>();
+        List<WbSaleFunnelResponse.DailyData> dailyDataList = new ArrayList<>();
         
-        for (SaleFunnelHistoryResponse response : historyResponses) {
+        for (WbSaleFunnelHistoryResponse response : historyResponses) {
             if (response == null || response.getProduct() == null || response.getHistory() == null) {
                 continue;
             }
@@ -234,12 +234,12 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
                 continue;
             }
             
-            for (SaleFunnelHistoryResponse.HistoryItem item : response.getHistory()) {
+            for (WbSaleFunnelHistoryResponse.HistoryItem item : response.getHistory()) {
                 if (item == null || item.getDate() == null) {
                     continue;
                 }
                 
-                SaleFunnelResponse.DailyData dailyData = SaleFunnelResponse.DailyData.builder()
+                WbSaleFunnelResponse.DailyData dailyData = WbSaleFunnelResponse.DailyData.builder()
                         .nmId(response.getProduct().getNmId())
                         .dt(item.getDate())
                         .openCardCount(item.getOpenCount())
@@ -254,7 +254,7 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
             }
         }
         
-        return SaleFunnelResponse.builder()
+        return WbSaleFunnelResponse.builder()
                 .data(dailyDataList)
                 .build();
     }

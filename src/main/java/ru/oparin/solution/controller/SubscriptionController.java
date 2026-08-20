@@ -132,7 +132,7 @@ public class SubscriptionController {
      * Явно подключает бесплатный пакет А/Б тестов для кабинета (план ab_pack_free).
      */
     @PostMapping("/cabinet/{cabinetId}/ab-tests/activate-free")
-    public ResponseEntity<AbTestQuotaDto> activateAbFreeQuota(
+    public ResponseEntity<WbAbTestQuotaDto> activateAbFreeQuota(
             @PathVariable Long cabinetId,
             Authentication authentication
     ) {

@@ -4,9 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import ru.oparin.solution.repository.AbTestVariantRepository;
-import ru.oparin.solution.repository.ArticleNoteFileRepository;
-import ru.oparin.solution.repository.CampaignNoteFileRepository;
+import ru.oparin.solution.repository.WbAbTestVariantRepository;
+import ru.oparin.solution.repository.WbArticleNoteFileRepository;
+import ru.oparin.solution.repository.WbCampaignNoteFileRepository;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -26,9 +26,9 @@ import java.util.stream.Stream;
 @Slf4j
 public class UploadsCleanupService {
 
-    private final ArticleNoteFileRepository articleNoteFileRepository;
-    private final CampaignNoteFileRepository campaignNoteFileRepository;
-    private final AbTestVariantRepository abTestVariantRepository;
+    private final WbArticleNoteFileRepository articleNoteFileRepository;
+    private final WbCampaignNoteFileRepository campaignNoteFileRepository;
+    private final WbAbTestVariantRepository abTestVariantRepository;
 
     @Value("${app.uploads.directory}")
     private String uploadsDirectory;
@@ -37,7 +37,7 @@ public class UploadsCleanupService {
     private int orphanMinAgeHours;
 
     /**
-     * Удаляет с диска файлы из каталога загрузок, которых нет в {@code article_note_files} и {@code campaign_note_files}.
+     * Удаляет с диска файлы из каталога загрузок, которых нет в {@code wb_article_note_files} и {@code campaign_note_files}.
      *
      * @return количество удалённых файлов
      */

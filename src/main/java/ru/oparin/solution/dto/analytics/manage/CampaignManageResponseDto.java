@@ -25,5 +25,5 @@ public class CampaignManageResponseDto {
     /** Автозапуск по расписанию включён (не нажата «Остановить»). */
     private boolean scheduleEnabled;
     private CampaignAutoBudgetDto autoBudget;
-    private List<CampaignScheduleSlotDto> slots;
+    private List<WbCampaignScheduleSlotDto> slots;
 }

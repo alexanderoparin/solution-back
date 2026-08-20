@@ -4,9 +4,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.dto.analytics.AggregatedMetricsDto;
 import ru.oparin.solution.dto.analytics.PeriodDto;
-import ru.oparin.solution.model.ProductCard;
-import ru.oparin.solution.model.ProductCardAnalytics;
-import ru.oparin.solution.repository.ProductCardAnalyticsRepository;
+import ru.oparin.solution.model.WbProductCard;
+import ru.oparin.solution.model.WbProductCardAnalytics;
+import ru.oparin.solution.repository.WbProductCardAnalyticsRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -18,14 +18,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class FunnelMetricsCalculator {
 
-    private final ProductCardAnalyticsRepository analyticsRepository;
+    private final WbProductCardAnalyticsRepository analyticsRepository;
 
     /**
      * Рассчитывает метрики воронки для периода.
      */
     public void calculateFunnelMetrics(
             AggregatedMetricsDto metrics,
-            List<ProductCard> cards,
+            List<WbProductCard> cards,
             PeriodDto period
     ) {
         FunnelTotals totals = aggregateFunnelData(cards, period);
@@ -33,15 +33,15 @@ public class FunnelMetricsCalculator {
         calculateConversions(metrics, totals);
     }
 
-    private FunnelTotals aggregateFunnelData(List<ProductCard> cards, PeriodDto period) {
+    private FunnelTotals aggregateFunnelData(List<WbProductCard> cards, PeriodDto period) {
         int transitions = 0;
         int cart = 0;
         int orders = 0;
         BigDecimal ordersAmount = BigDecimal.ZERO;
 
-        for (ProductCard card : cards) {
+        for (WbProductCard card : cards) {
             Long cabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
-            List<ProductCardAnalytics> analytics = getCardAnalytics(card.getNmId(), cabinetId, period);
+            List<WbProductCardAnalytics> analytics = getCardAnalytics(card.getNmId(), cabinetId, period);
             FunnelTotals cardTotals = aggregateCardAnalytics(analytics);
             
             transitions += cardTotals.transitions();
@@ -53,7 +53,7 @@ public class FunnelMetricsCalculator {
         return new FunnelTotals(transitions, cart, orders, ordersAmount);
     }
 
-    private List<ProductCardAnalytics> getCardAnalytics(Long nmId, Long cabinetId, PeriodDto period) {
+    private List<WbProductCardAnalytics> getCardAnalytics(Long nmId, Long cabinetId, PeriodDto period) {
         if (cabinetId != null) {
             return analyticsRepository.findByCabinet_IdAndProductCardNmIdAndDateBetween(
                     cabinetId, nmId, period.getDateFrom(), period.getDateTo());
@@ -62,13 +62,13 @@ public class FunnelMetricsCalculator {
                 nmId, period.getDateFrom(), period.getDateTo());
     }
 
-    private FunnelTotals aggregateCardAnalytics(List<ProductCardAnalytics> analytics) {
+    private FunnelTotals aggregateCardAnalytics(List<WbProductCardAnalytics> analytics) {
         int transitions = 0;
         int cart = 0;
         int orders = 0;
         BigDecimal ordersAmount = BigDecimal.ZERO;
 
-        for (ProductCardAnalytics analyticsItem : analytics) {
+        for (WbProductCardAnalytics analyticsItem : analytics) {
             transitions += MathUtils.getValueOrZero(analyticsItem.getOpenCard());
             cart += MathUtils.getValueOrZero(analyticsItem.getAddToCart());
             orders += MathUtils.getValueOrZero(analyticsItem.getOrders());

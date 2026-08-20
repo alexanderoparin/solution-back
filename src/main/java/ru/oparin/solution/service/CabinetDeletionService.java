@@ -7,8 +7,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import ru.oparin.solution.model.ArticleNoteFile;
-import ru.oparin.solution.model.CampaignNoteFile;
+import ru.oparin.solution.model.WbArticleNoteFile;
+import ru.oparin.solution.model.WbCampaignNoteFile;
 import ru.oparin.solution.repository.*;
 
 import java.io.IOException;
@@ -28,21 +28,21 @@ public class CabinetDeletionService {
 
     private static final int BATCH_SIZE = 50;
 
-    private final PromotionCampaignStatisticsRepository promotionCampaignStatisticsRepository;
-    private final PromotionNormQueryStatisticsRepository promotionNormQueryStatisticsRepository;
-    private final CampaignArticleRepository campaignArticleRepository;
-    private final PromotionCampaignRepository promotionCampaignRepository;
-    private final ProductPriceHistoryRepository productPriceHistoryRepository;
-    private final ProductStockRepository productStockRepository;
-    private final ProductFbsStockRepository productFbsStockRepository;
-    private final SellerWarehouseRepository sellerWarehouseRepository;
-    private final ProductBarcodeRepository productBarcodeRepository;
-    private final ProductCardAnalyticsRepository productCardAnalyticsRepository;
-    private final ProductCardRepository productCardRepository;
-    private final ArticleNoteRepository articleNoteRepository;
-    private final ArticleNoteFileRepository articleNoteFileRepository;
-    private final CampaignNoteRepository campaignNoteRepository;
-    private final CampaignNoteFileRepository campaignNoteFileRepository;
+    private final WbPromotionCampaignStatisticsRepository promotionCampaignStatisticsRepository;
+    private final WbPromotionNormQueryStatisticsRepository promotionNormQueryStatisticsRepository;
+    private final WbCampaignArticleRepository campaignArticleRepository;
+    private final WbPromotionCampaignRepository promotionCampaignRepository;
+    private final WbProductPriceHistoryRepository productPriceHistoryRepository;
+    private final WbProductStockRepository productStockRepository;
+    private final WbProductFbsStockRepository productFbsStockRepository;
+    private final WbSellerWarehouseRepository sellerWarehouseRepository;
+    private final WbProductBarcodeRepository productBarcodeRepository;
+    private final WbProductCardAnalyticsRepository productCardAnalyticsRepository;
+    private final WbProductCardRepository productCardRepository;
+    private final WbArticleNoteRepository articleNoteRepository;
+    private final WbArticleNoteFileRepository articleNoteFileRepository;
+    private final WbCampaignNoteRepository campaignNoteRepository;
+    private final WbCampaignNoteFileRepository campaignNoteFileRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void deleteStepStatisticsAndArticles(Long cabinetId) {
@@ -86,7 +86,7 @@ public class CabinetDeletionService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void deleteStepSellerWarehouses(Long cabinetId) {
+    public void deleteStepWbSellerWarehouses(Long cabinetId) {
         deleteByIdBatches("Склады продавца",
                 () -> sellerWarehouseRepository.findIdByCabinet_Id(cabinetId, PageRequest.of(0, BATCH_SIZE)),
                 sellerWarehouseRepository::deleteAllById);
@@ -114,17 +114,17 @@ public class CabinetDeletionService {
     }
 
     /**
-     * Сначала удаляем файлы заметок по артикулам с диска и строки в article_note_files,
+     * Сначала удаляем файлы заметок по артикулам с диска и строки в wb_article_note_files,
      * иначе при удалении заметок останутся сироты на диске.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void deleteStepArticleNoteFiles(Long cabinetId) {
         while (true) {
-            Page<ArticleNoteFile> page = articleNoteFileRepository.findByNote_CabinetId(cabinetId, PageRequest.of(0, BATCH_SIZE));
+            Page<WbArticleNoteFile> page = articleNoteFileRepository.findByNote_CabinetId(cabinetId, PageRequest.of(0, BATCH_SIZE));
             if (page.isEmpty()) {
                 break;
             }
-            for (ArticleNoteFile file : page.getContent()) {
+            for (WbArticleNoteFile file : page.getContent()) {
                 deleteNoteFileFromDisk(file.getFilePath());
             }
             articleNoteFileRepository.deleteAll(page.getContent());
@@ -143,13 +143,13 @@ public class CabinetDeletionService {
      * Сначала удаляем файлы заметок РК с диска и строки в campaign_note_files, иначе при удалении заметок останутся сироты на диске.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void deleteStepCampaignNoteFiles(Long cabinetId) {
+    public void deleteStepWbCampaignNoteFiles(Long cabinetId) {
         while (true) {
-            Page<CampaignNoteFile> page = campaignNoteFileRepository.findByNote_CabinetId(cabinetId, PageRequest.of(0, BATCH_SIZE));
+            Page<WbCampaignNoteFile> page = campaignNoteFileRepository.findByNote_CabinetId(cabinetId, PageRequest.of(0, BATCH_SIZE));
             if (page.isEmpty()) {
                 break;
             }
-            for (CampaignNoteFile f : page.getContent()) {
+            for (WbCampaignNoteFile f : page.getContent()) {
                 deleteNoteFileFromDisk(f.getFilePath());
             }
             campaignNoteFileRepository.deleteAll(page.getContent());
@@ -169,7 +169,7 @@ public class CabinetDeletionService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void deleteStepCampaignNotes(Long cabinetId) {
+    public void deleteStepWbCampaignNotes(Long cabinetId) {
         deleteByIdBatches("Заметки по РК",
                 () -> campaignNoteRepository.findIdByCabinetId(cabinetId, PageRequest.of(0, BATCH_SIZE)),
                 campaignNoteRepository::deleteAllById);
