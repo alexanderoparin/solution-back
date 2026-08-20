@@ -3,8 +3,6 @@ package ru.oparin.solution.service.campaign;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.analytics.PromotionControlCapabilitiesDto;
 import ru.oparin.solution.dto.analytics.ScheduleControlAttemptResult;
 import ru.oparin.solution.model.*;
@@ -19,7 +17,8 @@ import java.time.ZonedDateTime;
 import java.util.Optional;
 
 /**
- * Обработка одной РК в планировщике расписания — отдельная транзакция на кампанию.
+ * Обработка одной РК в планировщике расписания.
+ * HTTP к WB не оборачивается длинной транзакцией БД.
  */
 @Service
 @RequiredArgsConstructor
@@ -42,9 +41,10 @@ public class CampaignScheduleProcessor {
     private final CampaignStartBudgetGuard startBudgetGuard;
 
     /**
-     * Тик планировщика для одной кампании; коммит независим от других кампаний.
+     * Тик планировщика для одной кампании.
+     * Без внешней длинной транзакции: HTTP к WB (бюджет / start / pause) не должен удерживать Hikari.
+     * Сохранения идут короткими транзакциями репозиториев / вложенных сервисов.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void processCampaign(Long advertId, Long cabinetId, ZonedDateTime now) {
         CampaignManagementState state = stateRepository.findById(advertId).orElse(null);
         if (state == null || !state.isScheduleEnabled()) {

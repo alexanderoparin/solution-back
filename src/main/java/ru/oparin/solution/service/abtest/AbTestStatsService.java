@@ -2,7 +2,10 @@ package ru.oparin.solution.service.abtest;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.wb.PromotionFullStatsRequest;
 import ru.oparin.solution.dto.wb.PromotionFullStatsResponse;
@@ -23,6 +26,7 @@ import java.util.Map;
 
 /**
  * Сбор статистики А/Б-тестов: дельты fullstats → активный вариант.
+ * HTTP к WB выполняется вне транзакции БД.
  */
 @Service
 @RequiredArgsConstructor
@@ -39,10 +43,13 @@ public class AbTestStatsService {
     private final WbPromotionApiClient promotionApiClient;
     private final AbTestService abTestService;
 
+    @Lazy
+    @Autowired
+    private AbTestStatsService self;
+
     /**
-     * Обновить статистику по всем активным тестам кабинета / всем тестам.
+     * Обновить статистику по всем активным тестам.
      */
-    @Transactional
     public void pollAllEnabled() {
         List<AbTest> tests = abTestRepository.findByStatus(AbTestStatus.ENABLED);
         for (AbTest test : tests) {
@@ -56,38 +63,80 @@ public class AbTestStatsService {
 
     /**
      * Опрос fullstats и атрибуция дельт активному варианту.
+     * Запрос к WB — вне транзакции; сохранение — в короткой {@code REQUIRES_NEW}.
      */
-    @Transactional
     public void pollOne(AbTest test) {
-        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(test.getCabinetId());
-        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+        PollPrep prep = self.preparePoll(test.getId());
+        if (prep == null) {
             return;
         }
-        // Базовый токен: fullstats не чаще 1 раза в час — иначе 429.
+
+        PromotionFullStatsRequest request = PromotionFullStatsRequest.builder()
+                .advertId(prep.advertIds())
+                .dateFrom(prep.dateFrom().format(DAY))
+                .dateTo(prep.dateTo().format(DAY))
+                .build();
+
+        PromotionFullStatsResponse response = promotionApiClient.getPromotionFullStats(prep.apiKey(), request);
+        Map<Long, MetricAgg> byAdvert = aggregateByAdvertAndNm(response, prep.nmId());
+        self.persistPollResult(prep.abTestId(), prep.activeVariantId(), prep.nmId(), prep.advertIds(), byAdvert);
+    }
+
+    /**
+     * Загружает данные для опроса; без HTTP.
+     *
+     * @return null если опрос сейчас не нужен
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public PollPrep preparePoll(Long abTestId) {
+        AbTest test = abTestRepository.findById(abTestId).orElse(null);
+        if (test == null || test.getStatus() != AbTestStatus.ENABLED) {
+            return null;
+        }
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(test.getCabinetId());
+        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+            return null;
+        }
         if (!CabinetTokenType.effective(cabinet.getTokenType()).supportsFrequentFullstats()) {
             if (test.getLastStatsAt() != null
                     && test.getLastStatsAt().isAfter(LocalDateTime.now().minusMinutes(55))) {
-                return;
+                return null;
             }
         }
         List<AbTestCampaign> campaigns = abTestCampaignRepository.findByAbTestId(test.getId());
         if (campaigns.isEmpty() || test.getActiveVariantId() == null) {
-            return;
+            return null;
         }
         List<Long> advertIds = campaigns.stream().map(AbTestCampaign::getAdvertId).toList();
         LocalDate from = test.getStartedAt() != null ? test.getStartedAt().toLocalDate() : LocalDate.now().minusDays(7);
         LocalDate to = LocalDate.now();
+        return new PollPrep(
+                test.getId(),
+                test.getNmId(),
+                test.getActiveVariantId(),
+                cabinet.getApiKey(),
+                advertIds,
+                from,
+                to
+        );
+    }
 
-        PromotionFullStatsRequest request = PromotionFullStatsRequest.builder()
-                .advertId(advertIds)
-                .dateFrom(from.format(DAY))
-                .dateTo(to.format(DAY))
-                .build();
-
-        PromotionFullStatsResponse response = promotionApiClient.getPromotionFullStats(cabinet.getApiKey(), request);
-        Map<Long, MetricAgg> byAdvert = aggregateByAdvertAndNm(response, test.getNmId());
-
-        AbTestVariant active = abTestVariantRepository.findById(test.getActiveVariantId()).orElse(null);
+    /**
+     * Сохраняет snapshots и дельты по уже полученному ответу WB.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void persistPollResult(
+            Long abTestId,
+            Long activeVariantId,
+            Long nmId,
+            List<Long> campaignAdvertIds,
+            Map<Long, MetricAgg> byAdvert
+    ) {
+        AbTest test = abTestRepository.findById(abTestId).orElse(null);
+        if (test == null) {
+            return;
+        }
+        AbTestVariant active = abTestVariantRepository.findById(activeVariantId).orElse(null);
         if (active == null) {
             return;
         }
@@ -98,10 +147,10 @@ public class AbTestStatsService {
         long deltaOrders = 0;
         boolean anyExistingSnapshot = false;
 
-        for (AbTestCampaign link : campaigns) {
-            MetricAgg current = byAdvert.getOrDefault(link.getAdvertId(), MetricAgg.ZERO);
+        for (Long advertId : campaignAdvertIds) {
+            MetricAgg current = byAdvert.getOrDefault(advertId, MetricAgg.ZERO);
             AbTestStatsSnapshot snapshot = snapshotRepository
-                    .findByAbTestIdAndAdvertIdAndNmId(test.getId(), link.getAdvertId(), test.getNmId())
+                    .findByAbTestIdAndAdvertIdAndNmId(abTestId, advertId, nmId)
                     .orElse(null);
 
             boolean isAnchor = snapshot == null;
@@ -115,9 +164,9 @@ public class AbTestStatsService {
 
             if (snapshot == null) {
                 snapshot = AbTestStatsSnapshot.builder()
-                        .abTestId(test.getId())
-                        .advertId(link.getAdvertId())
-                        .nmId(test.getNmId())
+                        .abTestId(abTestId)
+                        .advertId(advertId)
+                        .nmId(nmId)
                         .build();
             }
             snapshot.setViews(current.views());
@@ -128,8 +177,6 @@ public class AbTestStatsService {
             snapshotRepository.save(snapshot);
         }
 
-        // Первый опрос после старта/новой РК — только якорь snapshot, без начисления
-        // (иначе весь накопленный день уйдёт на первый активный вариант).
         if (anyExistingSnapshot
                 && (deltaViews > 0 || deltaClicks > 0 || deltaAtbs > 0 || deltaOrders > 0)) {
             active.setViews(active.getViews() + deltaViews);
@@ -184,7 +231,21 @@ public class AbTestStatsService {
         return v != null ? v : 0;
     }
 
-    private record MetricAgg(int views, int clicks, int atbs, int orders) {
+    /**
+     * Данные для HTTP-запроса fullstats (без сущностей JPA).
+     */
+    public record PollPrep(
+            Long abTestId,
+            Long nmId,
+            Long activeVariantId,
+            String apiKey,
+            List<Long> advertIds,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+    }
+
+    public record MetricAgg(int views, int clicks, int atbs, int orders) {
         static final MetricAgg ZERO = new MetricAgg(0, 0, 0, 0);
     }
 }

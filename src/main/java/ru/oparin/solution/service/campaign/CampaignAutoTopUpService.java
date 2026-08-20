@@ -3,8 +3,6 @@ package ru.oparin.solution.service.campaign;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.analytics.PromotionControlCapabilitiesDto;
 import ru.oparin.solution.dto.wb.PromotionBudgetDepositRequest;
 import ru.oparin.solution.dto.wb.PromotionBudgetResponse;
@@ -21,8 +19,8 @@ import java.time.ZoneId;
 import java.util.Optional;
 
 /**
- * Автопополнение бюджета РК в отдельной транзакции: после успешного deposit учёт фиксируется
- * независимо от ошибок start/pause в основном тике планировщика.
+ * Автопополнение бюджета РК. HTTP к WB выполняется без внешней длинной транзакции,
+ * чтобы не удерживать соединение Hikari на время deposit/budget.
  */
 @Service
 @RequiredArgsConstructor
@@ -45,7 +43,6 @@ public class CampaignAutoTopUpService {
      *
      * @return сумма пополнения в рублях, если deposit выполнен
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<Integer> tryTopUpInNewTransaction(Long advertId, Long cabinetId, Cabinet cabinet) {
         PromotionControlCapabilitiesDto capabilities = promotionControlWriteService.getCapabilities(cabinet);
         if (!capabilities.canControl()) {
@@ -75,11 +72,14 @@ public class CampaignAutoTopUpService {
         LocalDate today = LocalDate.now(ZONE);
         resetTopUpCounterIfNewDay(state, today);
         if (settings.getMaxTopUpsPerDay() != null && state.getTopUpsTodayCount() >= settings.getMaxTopUpsPerDay()) {
+            stateRepository.save(state);
             return Optional.empty();
         }
 
+        // Без внешней @Transactional: HTTP budget не держит соединение БД.
         Optional<Integer> budgetTotal = budgetFetchService.fetchBudgetForDecision(cabinet, advertId, state);
         if (budgetTotal.isEmpty()) {
+            stateRepository.save(state);
             return Optional.empty();
         }
         if (budgetTotal.get() >= settings.getThresholdRub()) {
@@ -95,6 +95,7 @@ public class CampaignAutoTopUpService {
                     .type(settings.getSourceType() != null ? settings.getSourceType() : 1)
                     .returnBudget(true)
                     .build();
+            // HTTP deposit вне длинной TX.
             PromotionBudgetResponse depositResponse = promotionApiClient.depositCampaignBudget(
                     cabinet.getApiKey(), advertId, req);
             int budgetAfterTopUp = budgetFetchService.resolveBudgetAfterTopUp(
