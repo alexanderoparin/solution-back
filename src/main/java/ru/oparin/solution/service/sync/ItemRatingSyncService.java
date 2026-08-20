@@ -2,6 +2,8 @@ package ru.oparin.solution.service.sync;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,12 +42,19 @@ public class ItemRatingSyncService {
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final WbApiEventService wbApiEventService;
 
+    /**
+     * self-proxy, чтобы {@code @Transactional} на сохранении не обходился самовызовом.
+     */
+    @Lazy
+    @Autowired
+    private ItemRatingSyncService self;
+
     public record ItemRatingStepProcessingResult(boolean completedRun) {}
 
     /**
      * Обрабатывает один шаг (одну страницу) синхронизации рейтинга.
+     * HTTP к WB выполняется вне транзакции, чтобы не держать соединение с БД во время ожидания ответа.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ItemRatingStepProcessingResult processStepInNewTransaction(
             Cabinet cabinet,
             String apiKey,
@@ -60,6 +69,19 @@ public class ItemRatingSyncService {
         log.info("Страница item-rating получена: cabinetId={}, offset={}, pageSize={}",
                 cabinet.getId(), step.offset(), page.size());
 
+        return self.persistStepPage(cabinet, step, triggerSource, page);
+    }
+
+    /**
+     * Сохраняет страницу item-rating и ставит следующий шаг в очередь при необходимости.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ItemRatingStepProcessingResult persistStepPage(
+            Cabinet cabinet,
+            ItemRatingSyncStepPayload step,
+            String triggerSource,
+            List<ItemRatingCard> page
+    ) {
         applyPageToProductCards(cabinet.getId(), page, step.syncStartedAt());
 
         if (page.size() >= PAGE_LIMIT) {
@@ -86,12 +108,10 @@ public class ItemRatingSyncService {
     /**
      * Legacy-синхронизация в одном потоке (все страницы подряд с паузой).
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void syncForCabinetInNewTransaction(Cabinet cabinet, String apiKey) {
         syncForCabinet(cabinet, apiKey);
     }
 
-    @Transactional
     public void syncForCabinet(Cabinet cabinet, String apiKey) {
         if (!CabinetTokenType.effective(cabinet.getTokenType()).supportsItemRating()) {
             log.info("Legacy-синхронизация item-rating пропущена для кабинета {}: базовый токен WB", cabinet.getId());
@@ -105,7 +125,7 @@ public class ItemRatingSyncService {
         while (hasMore) {
             ItemRatingResponse response = analyticsApiClient.postItemRating(apiKey, offset);
             List<ItemRatingCard> page = response.resolveItems();
-            applyPageToProductCards(cabinetId, page, syncStartedAt);
+            self.persistLegacyPage(cabinetId, page, syncStartedAt);
 
             if (page.size() < PAGE_LIMIT) {
                 hasMore = false;
@@ -115,9 +135,19 @@ public class ItemRatingSyncService {
             }
         }
 
+        self.finalizeLegacyRun(cabinetId, syncStartedAt);
+        log.info("Legacy-синхронизация item-rating завершена: cabinetId={}", cabinetId);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void persistLegacyPage(Long cabinetId, List<ItemRatingCard> page, LocalDateTime syncStartedAt) {
+        applyPageToProductCards(cabinetId, page, syncStartedAt);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void finalizeLegacyRun(Long cabinetId, LocalDateTime syncStartedAt) {
         finalizeRatings(cabinetId, syncStartedAt);
         cabinetScopeStatusService.recordSuccess(cabinetId, WbApiCategory.ANALYTICS);
-        log.info("Legacy-синхронизация item-rating завершена: cabinetId={}", cabinetId);
     }
 
     private void applyPageToProductCards(Long cabinetId, List<ItemRatingCard> page, LocalDateTime syncStartedAt) {

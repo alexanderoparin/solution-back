@@ -11,6 +11,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Sort.Order;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.oparin.solution.config.WbEventsProperties;
 import ru.oparin.solution.dto.*;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
@@ -95,6 +96,7 @@ public class WbApiEventService {
     private final ProductCardService productCardService;
     private final PromotionCampaignSyncService promotionCampaignSyncService;
     private final ObjectMapper objectMapper;
+    private final WbEventsProperties wbEventsProperties;
 
     @Transactional
     public void enqueueInitialContentEvent(Long cabinetId, LocalDate dateFrom, LocalDate dateTo, boolean includeStocks, String triggerSource) {
@@ -865,7 +867,7 @@ public class WbApiEventService {
         Map<Long, WbApiEvent> byId = eventRepository.findAllByIdInWithCabinet(ids).stream()
                 .collect(Collectors.toMap(WbApiEvent::getId, e -> e, (a, b) -> a));
         // Глобальный порядок для пула: выше priority раньше, затем FIFO по nextAttemptAt/id.
-        return ids.stream()
+        List<WbApiEvent> sorted = ids.stream()
                 .map(byId::get)
                 .filter(Objects::nonNull)
                 .sorted(Comparator
@@ -873,6 +875,11 @@ public class WbApiEventService {
                         .thenComparing(WbApiEvent::getNextAttemptAt, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(WbApiEvent::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
+        int batchSize = Math.max(1, wbEventsProperties.getPollBatchSize());
+        if (sorted.size() <= batchSize) {
+            return sorted;
+        }
+        return sorted.subList(0, batchSize);
     }
 
     @Transactional

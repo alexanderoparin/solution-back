@@ -33,8 +33,8 @@ spring:
       idle-timeout: 240000  # 4 минуты
       # Минимум соединений в пуле.
       minimum-idle: 5
-      # Максимум соединений в пуле.
-      maximum-pool-size: 20
+      # Максимум соединений в пуле (WB-события + HTTP; при нехватке API висит в pending).
+      maximum-pool-size: 35
       # Простой health-check соединения.
       connection-test-query: SELECT 1
       # Таймаут валидации.
@@ -99,6 +99,7 @@ app:
     stuck-check-delay-ms: 16000
     running-timeout-minutes: 15
     event-await-timeout-seconds: 60
+    poll-batch-size: 18 # сколько событий обработается за одну выгрузку
   uploads:
     directory: /app/uploads
     max-file-size: 31457280  # 30 MB по умолчанию

@@ -33,4 +33,10 @@ public class WbEventsProperties {
      * Должен быть чуть больше {@code wb.http.read-timeout-ms} (запас на rate-limit defer без HTTP).
      */
     private int eventAwaitTimeoutSeconds;
+
+    /**
+     * Максимум due-событий за один poll. Без лимита при большой очереди poll монopolizирует
+     * пул БД и планировщик, HTTP-запросы начинают висеть в ожидании соединений.
+     */
+    private int pollBatchSize;
 }

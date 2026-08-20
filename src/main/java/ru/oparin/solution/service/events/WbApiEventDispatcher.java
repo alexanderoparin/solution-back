@@ -166,8 +166,13 @@ public class WbApiEventDispatcher {
             int queueTotal
     ) {
         String eventLabel = formatEventForLog(event, queueIndex, queueTotal);
+        int awaitSeconds = Math.max(1, wbEventsProperties.getEventAwaitTimeoutSeconds());
         try {
-            return future.get();
+            return future.get(awaitSeconds, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            log.warn("WB events poll: таймаут ожидания async-события {} с: {}", awaitSeconds, eventLabel);
+            future.cancel(true);
+            return EventExecutionOutcome.TIMEOUT;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("WB events poll: поток прерван при ожидании async-события: {}", eventLabel);
