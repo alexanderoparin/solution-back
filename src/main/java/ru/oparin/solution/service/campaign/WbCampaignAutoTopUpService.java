@@ -96,10 +96,12 @@ public class WbCampaignAutoTopUpService {
                     .type(settings.getSourceType() != null ? settings.getSourceType() : 1)
                     .returnBudget(true)
                     .build();
-            WbPromotionDepositCashbackSupport.applyFromCache(
-                    req,
-                    balanceCacheService.findCache(cabinetId).orElse(null)
-            );
+            if (settings.isUsePromoCashback()) {
+                WbPromotionDepositCashbackSupport.applyFromCache(
+                        req,
+                        balanceCacheService.findCache(cabinetId).orElse(null)
+                );
+            }
             // HTTP deposit вне длинной TX.
             WbPromotionBudgetResponse depositResponse = promotionApiClient.depositCampaignBudget(
                     cabinet.getApiKey(), advertId, req);

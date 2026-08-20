@@ -22,4 +22,10 @@ public class CampaignManualTopUpRequestDto {
     /** Источник средств WB: 0 — счёт, 1 — баланс, 3 — бонусы. */
     @NotNull(message = "Укажите источник пополнения")
     private Integer sourceType;
+
+    /**
+     * Использовать промо-бонусы (cashbacks) при type 0/1.
+     * null = true (совместимость со старыми клиентами).
+     */
+    private Boolean usePromoCashback;
 }

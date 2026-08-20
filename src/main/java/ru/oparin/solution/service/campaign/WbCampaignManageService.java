@@ -94,6 +94,7 @@ public class WbCampaignManageService {
         settings.setEnabled(request.isEnabled());
         settings.setTopUpAmount(request.getTopUpAmount());
         settings.setSourceType(request.getSourceType());
+        settings.setUsePromoCashback(request.getUsePromoCashback() == null || request.getUsePromoCashback());
         settings.setThresholdRub(request.getThresholdRub());
         settings.setMaxTopUpsPerDay(request.getMaxTopUpsPerDay());
         settings.setLocked(true);
@@ -167,10 +168,13 @@ public class WbCampaignManageService {
                 .type(request.getSourceType())
                 .returnBudget(true)
                 .build();
-        WbPromotionDepositCashbackSupport.applyFromCache(
-                depositRequest,
-                balanceCacheService.findCache(cabinetId).orElse(null)
-        );
+        boolean usePromo = request.getUsePromoCashback() == null || request.getUsePromoCashback();
+        if (usePromo) {
+            WbPromotionDepositCashbackSupport.applyFromCache(
+                    depositRequest,
+                    balanceCacheService.findCache(cabinetId).orElse(null)
+            );
+        }
         WbPromotionBudgetResponse depositResponse;
         try {
             depositResponse = promotionApiClient.depositCampaignBudget(cabinet.getApiKey(), advertId, depositRequest);
@@ -588,6 +592,7 @@ public class WbCampaignManageService {
                         .campaignId(advertId)
                         .cabinetId(cabinetId)
                         .enabled(false)
+                        .usePromoCashback(true)
                         .locked(false)
                         .build());
     }
@@ -611,6 +616,7 @@ public class WbCampaignManageService {
                         .campaignId(advertId)
                         .cabinetId(cabinetId)
                         .enabled(false)
+                        .usePromoCashback(true)
                         .locked(false)
                         .build()));
     }
@@ -639,6 +645,7 @@ public class WbCampaignManageService {
                 .enabled(s.isEnabled())
                 .topUpAmount(s.getTopUpAmount())
                 .sourceType(s.getSourceType())
+                .usePromoCashback(s.isUsePromoCashback())
                 .thresholdRub(s.getThresholdRub())
                 .maxTopUpsPerDay(s.getMaxTopUpsPerDay())
                 .locked(s.isLocked())
