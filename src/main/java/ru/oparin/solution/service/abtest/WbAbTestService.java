@@ -407,7 +407,7 @@ public class WbAbTestService {
         if (test.getStatus() != WbAbTestStatus.ENABLED) {
             return;
         }
-        List<WbAbTestVariant> variants = abTestVariantRepository.findByWbAbTestIdOrderBySortOrderAsc(test.getId());
+        List<WbAbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
         WbAbTestVariant target;
         if (test.getFinishAction() == WbAbTestFinishAction.KEEP_WINNER) {
             List<WbAbTestVariant> pool = variants.stream().filter(v -> !v.isPaused()).toList();
@@ -444,7 +444,7 @@ public class WbAbTestService {
      */
     @Transactional
     public void enqueueRotateToNext(WbAbTest test, String reason) {
-        List<WbAbTestVariant> variants = abTestVariantRepository.findByWbAbTestIdOrderBySortOrderAsc(test.getId());
+        List<WbAbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
         List<WbAbTestVariant> activePool = variants.stream().filter(v -> !v.isPaused()).toList();
         if (activePool.size() < 2) {
             return;
@@ -484,13 +484,13 @@ public class WbAbTestService {
         if (test.getStatus() != WbAbTestStatus.ENABLED) {
             throw new IllegalArgumentException("Пауза варианта доступна только для включённого теста");
         }
-        WbAbTestVariant variant = abTestVariantRepository.findByIdAndWbAbTestId(variantId, testId)
+        WbAbTestVariant variant = abTestVariantRepository.findByIdAndAbTestId(variantId, testId)
                 .orElseThrow(() -> new IllegalArgumentException("Вариант не найден"));
         if (variant.isPaused() == paused) {
             return toDto(test);
         }
         if (paused) {
-            long remainingActive = abTestVariantRepository.findByWbAbTestIdOrderBySortOrderAsc(testId).stream()
+            long remainingActive = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(testId).stream()
                     .filter(v -> !v.isPaused() && !v.getId().equals(variantId))
                     .count();
             if (remainingActive < 1) {
@@ -547,7 +547,7 @@ public class WbAbTestService {
     }
 
     private void executeResolveCardStep(Cabinet cabinet, WbAbTest test, String triggerSource) {
-        List<WbAbTestVariant> variants = abTestVariantRepository.findByWbAbTestIdOrderBySortOrderAsc(test.getId());
+        List<WbAbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
         WbAbTestVariant control = variants.stream().filter(WbAbTestVariant::isControl).findFirst()
                 .orElseThrow(() -> new IllegalStateException("Нет control-варианта"));
 
@@ -579,7 +579,7 @@ public class WbAbTestService {
      * Если старт уже успел загрузить варианты (флаг {@code wbUploaded}) — откатываем галерею.
      */
     private void continueStartWithoutOverwritingGallery(Long cabinetId, Long abTestId, String triggerSource) {
-        List<WbAbTestVariant> variants = abTestVariantRepository.findByWbAbTestIdOrderBySortOrderAsc(abTestId);
+        List<WbAbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(abTestId);
         boolean galleryTouched = variants.stream().anyMatch(v -> !v.isControl() && v.isWbUploaded());
         WbAbTestStartStep next = galleryTouched ? WbAbTestStartStep.RESTORE_GALLERY : WbAbTestStartStep.APPLY_CONTROL;
         wbApiEventService.enqueueNextWbAbTestStartStep(
@@ -614,7 +614,7 @@ public class WbAbTestService {
     }
 
     private void executeApplyControlStep(Cabinet cabinet, WbAbTest test, String triggerSource) {
-        List<WbAbTestVariant> variants = abTestVariantRepository.findByWbAbTestIdOrderBySortOrderAsc(test.getId());
+        List<WbAbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
         WbAbTestVariant control = variants.stream().filter(WbAbTestVariant::isControl).findFirst()
                 .orElseThrow(() -> new IllegalStateException("Нет control-варианта"));
         applyMainPhoto(cabinet.getApiKey(), test, control);
@@ -646,7 +646,7 @@ public class WbAbTestService {
         }
         Cabinet cabinet = cabinetRepository.findById(test.getCabinetId())
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
-        WbAbTestVariant variant = abTestVariantRepository.findByIdAndWbAbTestId(variantId, abTestId)
+        WbAbTestVariant variant = abTestVariantRepository.findByIdAndAbTestId(variantId, abTestId)
                 .orElseThrow(() -> new IllegalArgumentException("Вариант не найден"));
 
         applyMainPhoto(cabinet.getApiKey(), test, variant);
@@ -656,7 +656,7 @@ public class WbAbTestService {
         test.setLastWbError(null);
 
         if (finishAfterApply) {
-            List<WbAbTestVariant> variants = abTestVariantRepository.findByWbAbTestIdOrderBySortOrderAsc(test.getId());
+            List<WbAbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
             test.setStatus(WbAbTestStatus.DISABLED);
             test.setFinishedAt(LocalDateTime.now());
             updateInsight(test, variants);
@@ -737,7 +737,7 @@ public class WbAbTestService {
      */
     @Transactional
     public void refreshInsight(WbAbTest test) {
-        List<WbAbTestVariant> variants = abTestVariantRepository.findByWbAbTestIdOrderBySortOrderAsc(test.getId());
+        List<WbAbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
         updateInsight(test, variants);
         abTestRepository.save(test);
     }
@@ -1124,7 +1124,7 @@ public class WbAbTestService {
     @Transactional(readOnly = true)
     public Path resolveVariantImagePath(Long cabinetId, Long testId, Long variantId) {
         requireTest(cabinetId, testId);
-        WbAbTestVariant variant = abTestVariantRepository.findByIdAndWbAbTestId(variantId, testId)
+        WbAbTestVariant variant = abTestVariantRepository.findByIdAndAbTestId(variantId, testId)
                 .orElseThrow(() -> new IllegalArgumentException("Вариант не найден"));
         if (variant.getStoredFileName() == null || variant.getStoredFileName().isBlank()) {
             throw new IllegalArgumentException("У варианта нет локального файла");
@@ -1311,8 +1311,8 @@ public class WbAbTestService {
     }
 
     private WbAbTestDto toDto(WbAbTest test) {
-        List<WbAbTestVariant> variants = abTestVariantRepository.findByWbAbTestIdOrderBySortOrderAsc(test.getId());
-        List<Long> advertIds = abTestCampaignRepository.findByWbAbTestId(test.getId()).stream()
+        List<WbAbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
+        List<Long> advertIds = abTestCampaignRepository.findByAbTestId(test.getId()).stream()
                 .map(WbAbTestCampaign::getAdvertId)
                 .collect(Collectors.toList());
         long totalViews = variants.stream().mapToLong(WbAbTestVariant::getViews).sum();

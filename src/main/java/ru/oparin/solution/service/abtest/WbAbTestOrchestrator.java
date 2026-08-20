@@ -82,7 +82,7 @@ public class WbAbTestOrchestrator {
         if (test.getStopMode() != WbAbTestStopMode.TRUST_US) {
             return false;
         }
-        List<WbAbTestVariant> variants = abTestVariantRepository.findByWbAbTestIdOrderBySortOrderAsc(test.getId());
+        List<WbAbTestVariant> variants = abTestVariantRepository.findByAbTestIdOrderBySortOrderAsc(test.getId());
         return abTestService.shouldAutoStopTrustUs(test, variants);
     }
 

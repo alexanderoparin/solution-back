@@ -12,11 +12,11 @@ import java.util.Optional;
  */
 public interface WbAbTestVariantRepository extends JpaRepository<WbAbTestVariant, Long> {
 
-    List<WbAbTestVariant> findByWbAbTestIdOrderBySortOrderAsc(Long abTestId);
+    List<WbAbTestVariant> findByAbTestIdOrderBySortOrderAsc(Long abTestId);
 
-    Optional<WbAbTestVariant> findByIdAndWbAbTestId(Long id, Long abTestId);
+    Optional<WbAbTestVariant> findByIdAndAbTestId(Long id, Long abTestId);
 
-    void deleteByWbAbTestId(Long abTestId);
+    void deleteByAbTestId(Long abTestId);
 
     @Query("SELECT v.storedFileName FROM WbAbTestVariant v WHERE v.storedFileName IS NOT NULL")
     List<String> findAllStoredFileNames();

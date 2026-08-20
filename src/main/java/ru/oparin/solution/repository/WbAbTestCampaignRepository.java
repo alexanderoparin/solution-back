@@ -10,7 +10,7 @@ import java.util.List;
  */
 public interface WbAbTestCampaignRepository extends JpaRepository<WbAbTestCampaign, Long> {
 
-    List<WbAbTestCampaign> findByWbAbTestId(Long abTestId);
+    List<WbAbTestCampaign> findByAbTestId(Long abTestId);
 
-    void deleteByWbAbTestId(Long abTestId);
+    void deleteByAbTestId(Long abTestId);
 }

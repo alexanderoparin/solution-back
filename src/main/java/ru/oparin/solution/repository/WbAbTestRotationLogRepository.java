@@ -10,5 +10,5 @@ import java.util.List;
  */
 public interface WbAbTestRotationLogRepository extends JpaRepository<WbAbTestRotationLog, Long> {
 
-    List<WbAbTestRotationLog> findByWbAbTestIdOrderBySwitchedAtDesc(Long abTestId);
+    List<WbAbTestRotationLog> findByAbTestIdOrderBySwitchedAtDesc(Long abTestId);
 }

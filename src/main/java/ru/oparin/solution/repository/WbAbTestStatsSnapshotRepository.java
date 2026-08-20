@@ -11,9 +11,9 @@ import java.util.Optional;
  */
 public interface WbAbTestStatsSnapshotRepository extends JpaRepository<WbAbTestStatsSnapshot, Long> {
 
-    List<WbAbTestStatsSnapshot> findByWbAbTestId(Long abTestId);
+    List<WbAbTestStatsSnapshot> findByAbTestId(Long abTestId);
 
-    Optional<WbAbTestStatsSnapshot> findByWbAbTestIdAndAdvertIdAndNmId(Long abTestId, Long advertId, Long nmId);
+    Optional<WbAbTestStatsSnapshot> findByAbTestIdAndAdvertIdAndNmId(Long abTestId, Long advertId, Long nmId);
 
-    void deleteByWbAbTestId(Long abTestId);
+    void deleteByAbTestId(Long abTestId);
 }

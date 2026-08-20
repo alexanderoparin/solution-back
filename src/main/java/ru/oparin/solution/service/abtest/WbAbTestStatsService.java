@@ -103,7 +103,7 @@ public class WbAbTestStatsService {
                 return null;
             }
         }
-        List<WbAbTestCampaign> campaigns = abTestCampaignRepository.findByWbAbTestId(test.getId());
+        List<WbAbTestCampaign> campaigns = abTestCampaignRepository.findByAbTestId(test.getId());
         if (campaigns.isEmpty() || test.getActiveVariantId() == null) {
             return null;
         }
@@ -150,7 +150,7 @@ public class WbAbTestStatsService {
         for (Long advertId : campaignAdvertIds) {
             MetricAgg current = byAdvert.getOrDefault(advertId, MetricAgg.ZERO);
             WbAbTestStatsSnapshot snapshot = snapshotRepository
-                    .findByWbAbTestIdAndAdvertIdAndNmId(abTestId, advertId, nmId)
+                    .findByAbTestIdAndAdvertIdAndNmId(abTestId, advertId, nmId)
                     .orElse(null);
 
             boolean isAnchor = snapshot == null;
