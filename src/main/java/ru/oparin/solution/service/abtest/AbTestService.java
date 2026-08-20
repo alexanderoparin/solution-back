@@ -5,7 +5,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -111,6 +113,13 @@ public class AbTestService {
 
     @Value("${app.ab-test.leader-relative-lift:0.10}")
     private double leaderRelativeLift;
+
+    /**
+     * self-proxy: путь к файлу в короткой TX, сжатие JPEG — вне транзакции.
+     */
+    @Lazy
+    @Autowired
+    private AbTestService self;
 
     /**
      * Список тестов кабинета.
@@ -1132,11 +1141,19 @@ public class AbTestService {
     }
 
     /**
-     * Лёгкое JPEG-превью для UI (кэш рядом с оригиналом). Оригинал не трогаем — он нужен для media/file на WB.
+     * Лёгкое JPEG-превью для UI (кэш рядом с оригиналом).
+     * Поиск файла в БД — короткая TX; ImageIO/сжатие — вне транзакции (иначе при списке А/Б
+     * десятки запросов держат Hikari на время декода больших фото и сайт зависает).
      */
-    @Transactional(readOnly = true)
     public Path resolveVariantUiPreviewPath(Long cabinetId, Long testId, Long variantId) {
-        Path original = resolveVariantImagePath(cabinetId, testId, variantId);
+        Path original = self.resolveVariantImagePath(cabinetId, testId, variantId);
+        return ensureUiPreviewJpeg(original);
+    }
+
+    /**
+     * Возвращает кэш UI-превью или строит его; без обращения к БД.
+     */
+    public Path ensureUiPreviewJpeg(Path original) {
         Path preview = original.resolveSibling(original.getFileName().toString() + ".ui.jpg");
         try {
             if (Files.isRegularFile(preview)

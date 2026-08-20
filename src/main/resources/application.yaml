@@ -45,6 +45,8 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+    # Иначе сессия/соединение БД держатся на весь HTTP-запрос (в т.ч. стрим картинок А/Б) — сайт зависает.
+    open-in-view: false
     show-sql: ${show_sql:false}
     properties:
       hibernate:
@@ -99,7 +101,7 @@ app:
     stuck-check-delay-ms: 16000
     running-timeout-minutes: 15
     event-await-timeout-seconds: 60
-    poll-batch-size: 30 # сколько событий обработается за одну выгрузку
+    poll-batch-size: 50 # сколько событий обработается за одну выгрузку
   uploads:
     directory: /app/uploads
     max-file-size: 31457280  # 30 MB по умолчанию
