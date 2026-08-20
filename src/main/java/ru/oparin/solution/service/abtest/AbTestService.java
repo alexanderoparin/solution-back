@@ -1154,7 +1154,8 @@ public class AbTestService {
      * Возвращает кэш UI-превью или строит его; без обращения к БД.
      */
     public Path ensureUiPreviewJpeg(Path original) {
-        Path preview = original.resolveSibling(original.getFileName().toString() + ".ui.jpg");
+        // .ui2.jpg — новый кэш с учётом EXIF Orientation (старые .ui.jpg могли быть «на боку»).
+        Path preview = original.resolveSibling(original.getFileName().toString() + ".ui2.jpg");
         try {
             if (Files.isRegularFile(preview)
                     && Files.getLastModifiedTime(preview).compareTo(Files.getLastModifiedTime(original)) >= 0
@@ -1174,14 +1175,17 @@ public class AbTestService {
 
     /**
      * Пишет JPEG-превью с длинной стороной ≤ {@link #UI_PREVIEW_MAX_SIDE}.
+     * Учитывает EXIF Orientation: телефоны часто хранят пиксели «лёжа», а поворот — в метаданных;
+     * {@link ImageIO#read} ориентацию не применяет, без этого превью в UI оказывается на боку.
      *
      * @return false если исходник не удалось декодировать
      */
     private boolean writeUiPreviewJpeg(Path original, Path preview) throws IOException {
-        BufferedImage source = ImageIO.read(original.toFile());
-        if (source == null) {
+        BufferedImage decoded = ImageIO.read(original.toFile());
+        if (decoded == null) {
             return false;
         }
+        BufferedImage source = applyExifOrientation(decoded, readExifOrientation(original));
         int srcW = source.getWidth();
         int srcH = source.getHeight();
         if (srcW <= 0 || srcH <= 0) {
@@ -1229,6 +1233,76 @@ public class AbTestService {
             writer.dispose();
             Files.deleteIfExists(temp);
         }
+    }
+
+    /**
+     * Читает EXIF Orientation (1..8). При ошибке/отсутствии — 1 (без поворота).
+     */
+    private static int readExifOrientation(Path file) {
+        try {
+            com.drew.metadata.Metadata metadata = com.drew.imaging.ImageMetadataReader.readMetadata(file.toFile());
+            com.drew.metadata.exif.ExifIFD0Directory directory =
+                    metadata.getFirstDirectoryOfType(com.drew.metadata.exif.ExifIFD0Directory.class);
+            if (directory != null && directory.containsTag(com.drew.metadata.exif.ExifIFD0Directory.TAG_ORIENTATION)) {
+                int orientation = directory.getInt(com.drew.metadata.exif.ExifIFD0Directory.TAG_ORIENTATION);
+                if (orientation >= 1 && orientation <= 8) {
+                    return orientation;
+                }
+            }
+        } catch (Exception ignored) {
+            // нет EXIF / не JPEG — считаем, что пиксели уже в нужной ориентации
+        }
+        return 1;
+    }
+
+    /**
+     * Приводит пиксели к «нормальному» виду по EXIF Orientation (тег сбрасывается при перекодировании).
+     */
+    private static BufferedImage applyExifOrientation(BufferedImage source, int orientation) {
+        if (orientation <= 1 || orientation > 8) {
+            return source;
+        }
+        int w = source.getWidth();
+        int h = source.getHeight();
+        boolean swap = orientation >= 5;
+        int outW = swap ? h : w;
+        int outH = swap ? w : h;
+        BufferedImage out = new BufferedImage(outW, outH, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = out.createGraphics();
+        try {
+            g.setColor(Color.WHITE);
+            g.fillRect(0, 0, outW, outH);
+            switch (orientation) {
+                case 2 -> { // mirror horizontal
+                    g.transform(new java.awt.geom.AffineTransform(-1, 0, 0, 1, w, 0));
+                }
+                case 3 -> { // 180
+                    g.transform(new java.awt.geom.AffineTransform(-1, 0, 0, -1, w, h));
+                }
+                case 4 -> { // mirror vertical
+                    g.transform(new java.awt.geom.AffineTransform(1, 0, 0, -1, 0, h));
+                }
+                case 5 -> { // mirror horizontal + rotate 270 CW
+                    g.transform(new java.awt.geom.AffineTransform(0, 1, 1, 0, 0, 0));
+                }
+                case 6 -> { // rotate 90 CW
+                    g.transform(new java.awt.geom.AffineTransform(0, 1, -1, 0, h, 0));
+                }
+                case 7 -> { // mirror horizontal + rotate 90 CW
+                    g.transform(new java.awt.geom.AffineTransform(0, -1, -1, 0, h, w));
+                }
+                case 8 -> { // rotate 270 CW / 90 CCW
+                    g.transform(new java.awt.geom.AffineTransform(0, -1, 1, 0, 0, w));
+                }
+                default -> {
+                    return source;
+                }
+            }
+            g.drawImage(source, 0, 0, null);
+        } finally {
+            g.dispose();
+        }
+        return out;
     }
 
     private AbTest requireTest(Long cabinetId, Long testId) {
