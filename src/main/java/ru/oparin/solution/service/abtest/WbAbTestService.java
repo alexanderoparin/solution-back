@@ -1163,7 +1163,10 @@ public class WbAbTestService {
                 return preview;
             }
             if (!writeUiPreviewJpeg(original, preview)) {
-                log.warn("Не удалось сжать превью А/Б {}, отдаём оригинал", original.getFileName());
+                log.warn(
+                        "Не удалось сжать превью А/Б {} (ImageIO не декодировал файл; для webp нужен imageio-webp), отдаём оригинал",
+                        original.getFileName()
+                );
                 return original;
             }
             return preview;
