@@ -2,6 +2,7 @@ package ru.oparin.solution.dto.cabinet;
 
 import lombok.Builder;
 import ru.oparin.solution.model.CabinetAccessSection;
+import ru.oparin.solution.model.MarketplaceType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -10,6 +11,7 @@ import java.util.List;
 public record GrantedCabinetRowDto(
         Long id,
         String name,
+        MarketplaceType marketplaceType,
         LocalDateTime accessFrom,
         LocalDateTime accessUntil,
         LocalDateTime lastValidatedAt,

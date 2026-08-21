@@ -2,6 +2,7 @@ package ru.oparin.solution.dto.cabinet;
 
 import lombok.*;
 import ru.oparin.solution.model.CabinetTokenType;
+import ru.oparin.solution.model.MarketplaceType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -18,6 +19,8 @@ public class CabinetDto {
 
     private Long id;
     private String name;
+    /** Маркетплейс кабинета (WB | OZON). */
+    private MarketplaceType marketplaceType;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

@@ -9,8 +9,9 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.LocalDateTime;
 
 /**
- * Кабинет продавца. Объединяет данные кабинета и WB API ключ (один ключ на кабинет).
- * У одного пользователя (SELLER) может быть несколько кабинетов.
+ * Кабинет продавца на одном маркетплейсе ({@link MarketplaceType}).
+ * Для WB хранит API-ключ; для Ozon — отдельные credentials (добавятся позже).
+ * У одного пользователя может быть несколько кабинетов (в т.ч. с одинаковым именем на разных МП).
  */
 @Entity
 @Table(name = "cabinets", schema = "solution")
@@ -34,6 +35,14 @@ public class Cabinet {
     private User user;
 
     /**
+     * Маркетплейс кабинета. Задаётся при создании, не меняется.
+     */
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "marketplace_type", nullable = false, length = 16, updatable = false)
+    private MarketplaceType marketplaceType = MarketplaceType.WB;
+
+    /**
      * Название кабинета (обязательное, задаётся при создании, можно редактировать).
      */
     @Column(name = "name", nullable = false, length = 255)
@@ -41,6 +50,7 @@ public class Cabinet {
 
     /**
      * WB API ключ Wildberries. Кабинет может существовать без ключа (null).
+     * Для Ozon-кабинетов не используется (отдельные поля credentials — позже).
      */
     @Column(name = "api_key", length = 500)
     private String apiKey;

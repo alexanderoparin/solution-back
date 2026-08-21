@@ -17,6 +17,7 @@ import ru.oparin.solution.config.SubscriptionProperties;
 import ru.oparin.solution.dto.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.MarketplaceType;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.SubscriptionRepository;
@@ -200,6 +201,7 @@ public class UserService {
                 .orElseThrow(() -> new UserException("Пользователь не найден: " + userId, HttpStatus.NOT_FOUND));
         Cabinet cabinet = Cabinet.builder()
                 .user(user)
+                .marketplaceType(MarketplaceType.WB)
                 .name("Основной кабинет")
                 .build();
         cabinet = cabinetService.save(cabinet);

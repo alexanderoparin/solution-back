@@ -2,6 +2,7 @@ package ru.oparin.solution.dto.cabinet;
 
 import lombok.*;
 import ru.oparin.solution.model.CabinetTokenType;
+import ru.oparin.solution.model.MarketplaceType;
 
 import java.time.LocalDateTime;
 
@@ -19,6 +20,8 @@ public class WorkContextCabinetDto {
     private Long sellerId;
     private String cabinetName;
     private String sellerEmail;
+    /** Маркетплейс кабинета (WB | OZON). */
+    private MarketplaceType marketplaceType;
     private LocalDateTime lastDataUpdateAt;
     private LocalDateTime lastDataUpdateRequestedAt;
     /** Тип токена WB API кабинета (для UI: рейтинг item-rating только при PERSONAL). */

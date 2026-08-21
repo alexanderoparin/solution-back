@@ -191,6 +191,7 @@ public class CabinetService {
                         .sellerId(c.getUser().getId())
                         .cabinetName(c.getName())
                         .sellerEmail(c.getUser().getEmail())
+                        .marketplaceType(c.getMarketplaceType() != null ? c.getMarketplaceType() : MarketplaceType.WB)
                         .lastDataUpdateAt(c.getLastDataUpdateAt())
                         .lastDataUpdateRequestedAt(c.getLastDataUpdateRequestedAt())
                         .tokenType(CabinetTokenType.effective(c.getTokenType()))
@@ -268,6 +269,7 @@ public class CabinetService {
 
         Cabinet cabinet = Cabinet.builder()
                 .user(user)
+                .marketplaceType(MarketplaceType.WB)
                 .name(cabinetName)
                 .apiKey(trimmedApiKey)
                 .tokenType(request.getTokenType())
@@ -600,6 +602,7 @@ public class CabinetService {
         return CabinetDto.builder()
                 .id(cabinet.getId())
                 .name(cabinet.getName())
+                .marketplaceType(cabinet.getMarketplaceType() != null ? cabinet.getMarketplaceType() : MarketplaceType.WB)
                 .createdAt(cabinet.getCreatedAt())
                 .updatedAt(cabinet.getUpdatedAt())
                 .lastDataUpdateAt(cabinet.getLastDataUpdateAt())
