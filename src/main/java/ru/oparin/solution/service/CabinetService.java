@@ -22,6 +22,7 @@ import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.SellerManagerAccessRepository;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.repository.spec.CabinetManagedSpecifications;
+import ru.oparin.solution.service.ozon.OzonSellerApiClient;
 import ru.oparin.solution.service.wb.Wb429RateLimitHeadersLogger;
 import ru.oparin.solution.service.wb.WbCommonApiClient;
 
@@ -42,6 +43,8 @@ public class CabinetService {
     private static final String CABINET_NOT_SELLER_OWNED = "Кабинет не принадлежит селлеру";
     private static final String SELLER_ONLY_CREATE = "Только продавец может создавать кабинеты";
     private static final String WB_SELLER_INFO_ERROR = "Не удалось получить данные о продавце WB. Проверьте API-токен.";
+    private static final String OZON_SELLER_INFO_ERROR =
+            "Не удалось проверить доступ к Ozon Seller API. Проверьте Client-Id и Api-Key.";
     private static final String API_KEY_ALREADY_USED =
             "Этот API-ключ Wildberries уже привязан к другому кабинету в системе. "
                     + "Откройте существующий кабинет или укажите другой токен.";
@@ -54,6 +57,7 @@ public class CabinetService {
     private final CabinetDeletionService cabinetDeletionService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final WbCommonApiClient wbCommonApiClient;
+    private final OzonSellerApiClient ozonSellerApiClient;
     private final CabinetBillingService cabinetBillingService;
     private final SellerManagerAccessRepository sellerManagerAccessRepository;
 
@@ -307,6 +311,9 @@ public class CabinetService {
         }
 
         String clientId = request.getOzonClientId().trim();
+        if (!clientId.matches("\\d+")) {
+            throw new UserException("Client-Id Ozon должен быть положительным числом", HttpStatus.BAD_REQUEST);
+        }
         String apiKey = request.getApiKey().trim();
         String trimmedName = request.getName() != null ? request.getName().trim() : null;
         if (trimmedName == null || trimmedName.isBlank()) {
@@ -314,6 +321,7 @@ public class CabinetService {
         }
         String cabinetName = normalizeName(trimmedName);
 
+        assertOzonSellerInfoOrThrow(clientId, apiKey);
         assertApiKeyNotUsedByAnotherCabinet(null, apiKey);
 
         Cabinet cabinet = Cabinet.builder()
@@ -539,6 +547,38 @@ public class CabinetService {
         } catch (RestClientException e) {
             throw new UserException(WB_SELLER_INFO_ERROR, HttpStatus.BAD_REQUEST);
         }
+    }
+
+    /**
+     * Проверяет Client-Id + Api-Key через Ozon Seller API до сохранения кабинета.
+     */
+    private void assertOzonSellerInfoOrThrow(String clientId, String apiKey) {
+        try {
+            ozonSellerApiClient.getSellerInfo(clientId, apiKey);
+        } catch (HttpClientErrorException e) {
+            throw ozonSellerInfoHttpException(e);
+        } catch (RestClientException e) {
+            throw new UserException(OZON_SELLER_INFO_ERROR, HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private UserException ozonSellerInfoHttpException(HttpClientErrorException e) {
+        int status = e.getStatusCode().value();
+        // Ozon: невалидный Api-Key часто отдаёт 404; неверный Client-Id — 400.
+        if (status == HttpStatus.UNAUTHORIZED.value()
+                || status == HttpStatus.FORBIDDEN.value()
+                || status == HttpStatus.NOT_FOUND.value()
+                || status == HttpStatus.BAD_REQUEST.value()) {
+            return new UserException(
+                    "Client-Id или Api-Key Ozon невалидны. Проверьте данные в кабинете продавца.",
+                    HttpStatus.BAD_REQUEST);
+        }
+        if (status == HttpStatus.TOO_MANY_REQUESTS.value()) {
+            return new UserException(
+                    "Превышен лимит запросов к Ozon API. Повторите попытку позже.",
+                    HttpStatus.TOO_MANY_REQUESTS);
+        }
+        return new UserException(OZON_SELLER_INFO_ERROR + " (HTTP " + status + ")", HttpStatus.BAD_REQUEST);
     }
 
     private String resolveCabinetNameFromWb(String apiKey) {
