@@ -220,6 +220,14 @@ public class CabinetService {
     }
 
     /**
+     * Кабинет по ID с JOIN FETCH user (для планировщиков / async без open-in-view).
+     */
+    @Transactional(readOnly = true)
+    public Optional<Cabinet> findByIdWithUser(Long cabinetId) {
+        return cabinetRepository.findByIdWithUser(cabinetId);
+    }
+
+    /**
      * Один кабинет по ID с проверкой, что он принадлежит пользователю.
      */
     @Transactional(readOnly = true)

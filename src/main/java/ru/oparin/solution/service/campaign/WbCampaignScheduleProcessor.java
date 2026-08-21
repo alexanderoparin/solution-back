@@ -51,7 +51,7 @@ public class WbCampaignScheduleProcessor {
             return;
         }
 
-        Cabinet cabinet = cabinetService.findById(cabinetId).orElse(null);
+        Cabinet cabinet = cabinetService.findByIdWithUser(cabinetId).orElse(null);
         if (cabinet == null || cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
             return;
         }

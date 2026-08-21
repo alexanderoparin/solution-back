@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 
@@ -55,7 +56,8 @@ public interface UserRepository extends JpaRepository<User, Long>, UserManagemen
      *
      * @return число обновлённых строк (0/1)
      */
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
     @Query("""
             update User u
             set u.lastSeenAt = :seenAt

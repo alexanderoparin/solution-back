@@ -22,16 +22,17 @@ public class UserActivityService {
     /**
      * Обновляет время последней активности пользователя не чаще одного раза за интервал.
      * Асинхронно, чтобы не блокировать HTTP-поток и не конкурировать за пул соединений с WB-событиями.
+     * {@code @Transactional} на том же методе, что и {@code @Async}: иначе self-invocation
+     * не открывает транзакцию и {@code @Modifying}-запрос падает с TransactionRequiredException.
      *
      * @param userId ID пользователя
      */
     @Async("taskExecutor")
-    public void touchLastSeenAt(Long userId) {
-        touchLastSeenAtSync(userId);
-    }
-
     @Transactional
-    void touchLastSeenAtSync(Long userId) {
+    public void touchLastSeenAt(Long userId) {
+        if (userId == null) {
+            return;
+        }
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime minAllowedPreviousSeenAt = now.minusMinutes(LAST_SEEN_UPDATE_INTERVAL_MINUTES);
         userRepository.touchLastSeenAtIfOlderThan(userId, now, minAllowedPreviousSeenAt);
