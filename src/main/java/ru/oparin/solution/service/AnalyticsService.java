@@ -1701,14 +1701,16 @@ public class AnalyticsService {
         }
     }
 
+    @Transactional(readOnly = true)
     public WbProductCard findCardBySeller(Long nmId, Long sellerId) {
         return findCardBySeller(nmId, sellerId, null);
     }
 
+    @Transactional(readOnly = true)
     public WbProductCard findCardBySeller(Long nmId, Long sellerId, Long cabinetId) {
         WbProductCard card = (cabinetId != null
-                ? productCardRepository.findByNmIdAndCabinet_Id(nmId, cabinetId)
-                : productCardRepository.findByNmId(nmId))
+                ? productCardRepository.findByNmIdAndCabinetIdWithCabinetAndUser(nmId, cabinetId)
+                : productCardRepository.findByNmIdWithCabinetAndUser(nmId))
                 .orElseThrow(() -> new UserException("Артикул не найден: " + nmId, HttpStatus.NOT_FOUND));
 
         if (card.getCabinet() == null

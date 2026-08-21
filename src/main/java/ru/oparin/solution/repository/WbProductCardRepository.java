@@ -42,6 +42,31 @@ public interface WbProductCardRepository extends JpaRepository<WbProductCard, Lo
      */
     Optional<WbProductCard> findByNmIdAndCabinet_Id(Long nmId, Long cabinetId);
 
+    /**
+     * Карточка с кабинетом и владельцем (для проверок доступа при open-in-view=false).
+     */
+    @Query("""
+            SELECT c FROM WbProductCard c
+            JOIN FETCH c.cabinet cab
+            JOIN FETCH cab.user
+            WHERE c.nmId = :nmId
+            """)
+    Optional<WbProductCard> findByNmIdWithCabinetAndUser(@Param("nmId") Long nmId);
+
+    /**
+     * Карточка по nmID и кабинету с владельцем.
+     */
+    @Query("""
+            SELECT c FROM WbProductCard c
+            JOIN FETCH c.cabinet cab
+            JOIN FETCH cab.user
+            WHERE c.nmId = :nmId AND cab.id = :cabinetId
+            """)
+    Optional<WbProductCard> findByNmIdAndCabinetIdWithCabinetAndUser(
+            @Param("nmId") Long nmId,
+            @Param("cabinetId") Long cabinetId
+    );
+
     @Query("SELECT c.nmId FROM WbProductCard c WHERE c.cabinet.id = :cabinetId AND c.nmId IN :nmIds AND c.isPriority = true")
     List<Long> findPriorityNmIdsByCabinetAndNmIdIn(@Param("cabinetId") Long cabinetId, @Param("nmIds") List<Long> nmIds);
 

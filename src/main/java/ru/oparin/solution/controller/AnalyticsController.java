@@ -243,7 +243,7 @@ public class AnalyticsController {
                 CabinetAccessSection.PRODUCTS
         );
 
-        WbProductCard card = analyticsService.findCardBySeller(nmId, context.user().getId());
+        WbProductCard card = analyticsService.findCardBySeller(nmId, context.user().getId(), context.cabinetId());
         Long resolvedCabinetId = context.cabinetId() != null
                 ? context.cabinetId()
                 : (card.getCabinet() != null ? card.getCabinet().getId() : null);
