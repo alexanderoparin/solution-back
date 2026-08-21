@@ -19,7 +19,6 @@ import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetAccessGrantRepository;
 import ru.oparin.solution.repository.CabinetRepository;
-import ru.oparin.solution.repository.SellerManagerAccessRepository;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.repository.spec.CabinetManagedSpecifications;
 import ru.oparin.solution.service.ozon.OzonSellerApiClient;
@@ -59,7 +58,6 @@ public class CabinetService {
     private final WbCommonApiClient wbCommonApiClient;
     private final OzonSellerApiClient ozonSellerApiClient;
     private final CabinetBillingService cabinetBillingService;
-    private final SellerManagerAccessRepository sellerManagerAccessRepository;
 
     /**
      * Список кабинетов пользователя (продавца), отсортированный по дате создания (новые первые).
@@ -138,19 +136,18 @@ public class CabinetService {
                     .build());
         }
 
-        List<Long> sellerIds = cabinets.stream()
-                .map(c -> c.getUser().getId())
-                .distinct()
+        List<Long> cabinetIds = cabinets.stream()
+                .map(Cabinet::getId)
                 .toList();
 
-        Map<Long, List<String>> managerEmailsBySellerId = fetchActiveManagerEmailsBySellerIds(sellerIds);
+        Map<Long, List<String>> managerEmailsByCabinetId = fetchActiveGrantEmailsByCabinetIds(cabinetIds);
 
         List<ManagedCabinetRowDto> rows = cabinets.stream()
                 .map(c -> ManagedCabinetRowDto.builder()
                         .sellerId(c.getUser().getId())
                         .sellerEmail(c.getUser().getEmail())
                         .agencyManaged(Boolean.TRUE.equals(c.getUser().getAgencyManaged()))
-                        .managerEmails(managerEmailsBySellerId.getOrDefault(c.getUser().getId(), List.of()))
+                        .managerEmails(managerEmailsByCabinetId.getOrDefault(c.getId(), List.of()))
                         .cabinet(toDto(c))
                         .build())
                 .toList();
@@ -158,20 +155,27 @@ public class CabinetService {
         return new PageImpl<>(rows, pageable, cabinetPage.getTotalElements());
     }
 
-    private Map<Long, List<String>> fetchActiveManagerEmailsBySellerIds(List<Long> sellerIds) {
-        if (sellerIds == null || sellerIds.isEmpty()) {
+    /**
+     * Email пользователей с активным доступом к кабинетам ({@code cabinet_access_grants}).
+     */
+    private Map<Long, List<String>> fetchActiveGrantEmailsByCabinetIds(List<Long> cabinetIds) {
+        if (cabinetIds == null || cabinetIds.isEmpty()) {
             return Map.of();
         }
         Map<Long, List<String>> result = new HashMap<>();
-        sellerManagerAccessRepository.findManagerEmailsBySellerIdsAndStatus(
-                sellerIds,
-                SellerManagerAccessStatus.ACTIVE
+        grantRepository.findActiveGranteeEmailsByCabinetIds(
+                cabinetIds,
+                CabinetAccessGrantStatus.ACTIVE,
+                LocalDateTime.now()
         ).forEach(row -> {
-            String email = row.getManagerEmail();
+            String email = row.getGranteeEmail();
             if (email == null || email.isBlank()) {
                 return;
             }
-            result.computeIfAbsent(row.getSellerId(), __ -> new ArrayList<>()).add(email);
+            List<String> emails = result.computeIfAbsent(row.getCabinetId(), __ -> new ArrayList<>());
+            if (!emails.contains(email)) {
+                emails.add(email);
+            }
         });
         return result;
     }

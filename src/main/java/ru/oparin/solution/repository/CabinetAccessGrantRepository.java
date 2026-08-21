@@ -7,6 +7,7 @@ import ru.oparin.solution.model.CabinetAccessGrant;
 import ru.oparin.solution.model.CabinetAccessGrantStatus;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,6 +29,23 @@ public interface CabinetAccessGrantRepository extends JpaRepository<CabinetAcces
             """)
     List<CabinetAccessGrant> findActiveGrantedForUser(
             @Param("userId") Long userId,
+            @Param("status") CabinetAccessGrantStatus status,
+            @Param("now") LocalDateTime now
+    );
+
+    /**
+     * Активные email'ы пользователей с доступом к кабинетам (для админского списка).
+     */
+    @Query("""
+            select g.cabinet.id as cabinetId, g.user.email as granteeEmail
+            from CabinetAccessGrant g
+            where g.status = :status
+              and g.cabinet.id in :cabinetIds
+              and (g.validUntil is null or g.validUntil > :now)
+            order by g.cabinet.id, g.user.email
+            """)
+    List<CabinetGrantEmailProjection> findActiveGranteeEmailsByCabinetIds(
+            @Param("cabinetIds") Collection<Long> cabinetIds,
             @Param("status") CabinetAccessGrantStatus status,
             @Param("now") LocalDateTime now
     );
