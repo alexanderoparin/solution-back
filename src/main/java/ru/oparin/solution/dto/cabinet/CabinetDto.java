@@ -49,6 +49,8 @@ public class CabinetDto {
     public static class ApiKeyInfo {
         private String apiKey;
         private CabinetTokenType tokenType;
+        /** Ozon Seller Client-Id (только для OZON). */
+        private String ozonClientId;
         private Boolean isValid;
         private LocalDateTime lastValidatedAt;
         private String validationError;

@@ -50,13 +50,20 @@ public class Cabinet {
 
     /**
      * WB API ключ Wildberries. Кабинет может существовать без ключа (null).
-     * Для Ozon-кабинетов не используется (отдельные поля credentials — позже).
+     * Для Ozon — Seller API Api-Key.
      */
     @Column(name = "api_key", length = 500)
     private String apiKey;
 
     /**
+     * Ozon Seller API Client-Id. Только для {@link MarketplaceType#OZON}.
+     */
+    @Column(name = "ozon_client_id", length = 64)
+    private String ozonClientId;
+
+    /**
      * Тип WB API токена кабинета.
+     * Для Ozon не используется (остаётся значение по умолчанию).
      */
     @Builder.Default
     @Enumerated(EnumType.STRING)

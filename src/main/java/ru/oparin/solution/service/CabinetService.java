@@ -253,6 +253,25 @@ public class CabinetService {
         if (user.getRole() != Role.USER && user.getRole() != Role.ADMIN) {
             throw new UserException(SELLER_ONLY_CREATE, HttpStatus.FORBIDDEN);
         }
+
+        MarketplaceType marketplaceType = request.getMarketplaceType() != null
+                ? request.getMarketplaceType()
+                : MarketplaceType.WB;
+
+        if (marketplaceType == MarketplaceType.OZON) {
+            return createOzonCabinet(user, request);
+        }
+        return createWbCabinet(user, request);
+    }
+
+    private CabinetDto createWbCabinet(User user, CreateCabinetRequest request) {
+        if (request.getApiKey() == null || request.getApiKey().isBlank()) {
+            throw new UserException("Укажите API-токен WB", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getTokenType() == null) {
+            throw new UserException("Укажите тип токена", HttpStatus.BAD_REQUEST);
+        }
+
         String trimmedApiKey = request.getApiKey().trim();
         String trimmedName = request.getName() != null ? request.getName().trim() : null;
         boolean hasName = trimmedName != null && !trimmedName.isBlank();
@@ -273,6 +292,36 @@ public class CabinetService {
                 .name(cabinetName)
                 .apiKey(trimmedApiKey)
                 .tokenType(request.getTokenType())
+                .build();
+        cabinet = cabinetRepository.save(cabinet);
+        cabinetBillingService.initializeCabinetBilling(cabinet);
+        return toDto(cabinet);
+    }
+
+    private CabinetDto createOzonCabinet(User user, CreateCabinetRequest request) {
+        if (request.getOzonClientId() == null || request.getOzonClientId().isBlank()) {
+            throw new UserException("Укажите Client-Id Ozon", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getApiKey() == null || request.getApiKey().isBlank()) {
+            throw new UserException("Укажите Api-Key Ozon", HttpStatus.BAD_REQUEST);
+        }
+
+        String clientId = request.getOzonClientId().trim();
+        String apiKey = request.getApiKey().trim();
+        String trimmedName = request.getName() != null ? request.getName().trim() : null;
+        String cabinetName = (trimmedName != null && !trimmedName.isBlank())
+                ? normalizeName(trimmedName)
+                : "Ozon";
+
+        assertApiKeyNotUsedByAnotherCabinet(null, apiKey);
+
+        Cabinet cabinet = Cabinet.builder()
+                .user(user)
+                .marketplaceType(MarketplaceType.OZON)
+                .name(cabinetName)
+                .apiKey(apiKey)
+                .ozonClientId(clientId)
+                .tokenType(CabinetTokenType.BASIC)
                 .build();
         cabinet = cabinetRepository.save(cabinet);
         cabinetBillingService.initializeCabinetBilling(cabinet);
@@ -614,12 +663,15 @@ public class CabinetService {
     }
 
     private CabinetDto.ApiKeyInfo toApiKeyInfo(Cabinet cabinet, boolean maskApiKey) {
-        if (cabinet.getApiKey() == null && cabinet.getIsValid() == null) {
+        boolean isOzon = cabinet.getMarketplaceType() == MarketplaceType.OZON;
+        if (cabinet.getApiKey() == null && cabinet.getIsValid() == null
+                && (!isOzon || cabinet.getOzonClientId() == null)) {
             return null;
         }
         return CabinetDto.ApiKeyInfo.builder()
                 .apiKey(maskApiKey ? maskApiKey(cabinet.getApiKey()) : cabinet.getApiKey())
-                .tokenType(cabinet.getTokenType())
+                .tokenType(isOzon ? null : cabinet.getTokenType())
+                .ozonClientId(cabinet.getOzonClientId())
                 .isValid(cabinet.getIsValid())
                 .lastValidatedAt(cabinet.getLastValidatedAt())
                 .validationError(cabinet.getValidationError())
