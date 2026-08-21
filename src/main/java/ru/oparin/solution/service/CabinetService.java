@@ -309,9 +309,10 @@ public class CabinetService {
         String clientId = request.getOzonClientId().trim();
         String apiKey = request.getApiKey().trim();
         String trimmedName = request.getName() != null ? request.getName().trim() : null;
-        String cabinetName = (trimmedName != null && !trimmedName.isBlank())
-                ? normalizeName(trimmedName)
-                : "Ozon";
+        if (trimmedName == null || trimmedName.isBlank()) {
+            throw new UserException("Укажите название кабинета", HttpStatus.BAD_REQUEST);
+        }
+        String cabinetName = normalizeName(trimmedName);
 
         assertApiKeyNotUsedByAnotherCabinet(null, apiKey);
 
