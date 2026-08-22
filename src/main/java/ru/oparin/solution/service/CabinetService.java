@@ -501,6 +501,13 @@ public class CabinetService {
     }
 
     /**
+     * Ozon-кабинеты с ключами для планировщика синхронизации.
+     */
+    public List<Cabinet> findOzonCabinetsWithApiKeyAndUser(Role role) {
+        return cabinetRepository.findOzonCabinetsWithApiKeyAndUser(role);
+    }
+
+    /**
      * Сохраняет кабинет (создание или обновление).
      */
     @Transactional

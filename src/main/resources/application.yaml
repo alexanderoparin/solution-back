@@ -102,6 +102,12 @@ app:
     running-timeout-minutes: 15
     event-await-timeout-seconds: 60
     poll-batch-size: 50 # сколько событий обработается за одну выгрузку
+  ozon-events:
+    poll-delay-ms: ${ozon_events_poll_delay_ms:5500}
+    stuck-check-delay-ms: 16000
+    running-timeout-minutes: 15
+    event-await-timeout-seconds: 60
+    poll-batch-size: 50
   uploads:
     directory: /app/uploads
     max-file-size: 31457280  # 30 MB по умолчанию

@@ -56,9 +56,27 @@ public interface CabinetRepository extends JpaRepository<Cabinet, Long>, JpaSpec
     Optional<Cabinet> findByIdWithUser(@Param("id") Long id);
 
     /**
-     * Все кабинеты с заданным API-ключом и активным продавцом (для планировщика загрузки данных).
-     * Загружает User (join fetch), чтобы обращение к cabinet.getUser() не требовало сессии в другом потоке.
+     * WB-кабинеты с API-ключом и активным продавцом (для планировщика WB sync).
      */
-    @Query("SELECT c FROM Cabinet c JOIN FETCH c.user u WHERE c.apiKey IS NOT NULL AND u.isActive = true AND u.role = :role ORDER BY c.id")
+    @Query("""
+            SELECT c FROM Cabinet c JOIN FETCH c.user u
+            WHERE c.apiKey IS NOT NULL AND c.apiKey <> ''
+              AND u.isActive = true AND u.role = :role
+              AND c.marketplaceType = ru.oparin.solution.model.MarketplaceType.WB
+            ORDER BY c.id
+            """)
     List<Cabinet> findCabinetsWithApiKeyAndUser(@Param("role") Role role);
+
+    /**
+     * Ozon-кабинеты с Client-Id + Api-Key и активным продавцом.
+     */
+    @Query("""
+            SELECT c FROM Cabinet c JOIN FETCH c.user u
+            WHERE c.apiKey IS NOT NULL AND c.apiKey <> ''
+              AND c.ozonClientId IS NOT NULL AND c.ozonClientId <> ''
+              AND u.isActive = true AND u.role = :role
+              AND c.marketplaceType = ru.oparin.solution.model.MarketplaceType.OZON
+            ORDER BY c.id
+            """)
+    List<Cabinet> findOzonCabinetsWithApiKeyAndUser(@Param("role") Role role);
 }

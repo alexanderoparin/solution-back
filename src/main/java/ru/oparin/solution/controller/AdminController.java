@@ -40,6 +40,7 @@ public class AdminController {
     private final AccountDeletionRequestService accountDeletionRequestService;
     private final UserService userService;
     private final WbApiEventService wbApiEventService;
+    private final MarketplaceSyncOrchestrator marketplaceSyncOrchestrator;
 
     public AdminController(CabinetService cabinetService,
                            AnalyticsScheduler analyticsScheduler,
@@ -49,7 +50,8 @@ public class AdminController {
                            AdminSubscriptionService adminSubscriptionService,
                            AccountDeletionRequestService accountDeletionRequestService,
                            UserService userService,
-                           WbApiEventService wbApiEventService) {
+                           WbApiEventService wbApiEventService,
+                           MarketplaceSyncOrchestrator marketplaceSyncOrchestrator) {
         this.cabinetService = cabinetService;
         this.analyticsScheduler = analyticsScheduler;
         this.taskExecutor = taskExecutor;
@@ -59,6 +61,7 @@ public class AdminController {
         this.accountDeletionRequestService = accountDeletionRequestService;
         this.userService = userService;
         this.wbApiEventService = wbApiEventService;
+        this.marketplaceSyncOrchestrator = marketplaceSyncOrchestrator;
     }
 
     /**
@@ -84,11 +87,12 @@ public class AdminController {
             throw new UserException("dateFrom не может быть позже dateTo", HttpStatus.BAD_REQUEST);
         }
 
-        wbApiEventService.enqueueInitialContentEvent(cabinet.getId(), from, to, false, "ADMIN_MANUAL_CABINET");
+        marketplaceSyncOrchestrator.enqueueCabinetUpdate(cabinet, from, to, false, "ADMIN_MANUAL_CABINET");
 
+        String marketplaceLabel = cabinet.getMarketplaceType() != null ? cabinet.getMarketplaceType().name() : "WB";
         return ResponseEntity.accepted()
                 .body(Map.of(
-                        "message", "Обновление поставлено в очередь событий WB API",
+                        "message", "Обновление поставлено в очередь (" + marketplaceLabel + ")",
                         "cabinetId", String.valueOf(cabinetId),
                         "dateFrom", from.toString(),
                         "dateTo", to.toString()

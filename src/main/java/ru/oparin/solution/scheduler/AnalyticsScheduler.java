@@ -12,9 +12,7 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetUpdateErrorScope;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.service.CabinetService;
-import ru.oparin.solution.service.CabinetUpdateErrorService;
-import ru.oparin.solution.service.WbFullUpdateOrchestrator;
+import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.events.WbApiEventService;
 
 import java.time.LocalDate;
@@ -31,6 +29,8 @@ public class AnalyticsScheduler {
 
     private final CabinetService cabinetService;
     private final WbFullUpdateOrchestrator fullUpdateOrchestrator;
+    private final OzonFullUpdateOrchestrator ozonFullUpdateOrchestrator;
+    private final MarketplaceSyncOrchestrator marketplaceSyncOrchestrator;
     private final CabinetUpdateErrorService cabinetUpdateErrorService;
     private final WbApiEventService wbApiEventService;
 
@@ -48,12 +48,14 @@ public class AnalyticsScheduler {
      */
     public void runNightlyFullAnalyticsUpdate() {
         fullUpdateOrchestrator.runFullUpdate(true);
+        ozonFullUpdateOrchestrator.runFullUpdate(true);
     }
 
 
     @Async("taskExecutor")
     public void runFullAnalyticsUpdateAsync(boolean includeStocks) {
         fullUpdateOrchestrator.runFullUpdate(includeStocks);
+        ozonFullUpdateOrchestrator.runFullUpdate(includeStocks);
     }
 
     /**
@@ -197,8 +199,8 @@ public class AnalyticsScheduler {
             }
             cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
             cabinetService.save(cabinet);
-            wbApiEventService.enqueueInitialContentEvent(
-                    cabinet.getId(),
+            marketplaceSyncOrchestrator.enqueueCabinetUpdate(
+                    cabinet,
                     period.from(),
                     period.to(),
                     includeStocks,
@@ -247,8 +249,8 @@ public class AnalyticsScheduler {
             cabinetService.save(cabinet);
 
             DateRange period = calculateLastTwoWeeksPeriod();
-            wbApiEventService.enqueueInitialContentEvent(
-                    cabinet.getId(),
+            marketplaceSyncOrchestrator.enqueueCabinetUpdate(
+                    cabinet,
                     period.from(),
                     period.to(),
                     false,
