@@ -436,6 +436,10 @@ public class CabinetService {
         cabinetDeletionService.deleteStepArticleNotes(cabinetId);
         cabinetDeletionService.deleteStepWbCampaignNoteFiles(cabinetId);
         cabinetDeletionService.deleteStepWbCampaignNotes(cabinetId);
+        cabinetDeletionService.deleteStepOzonApiEvents(cabinetId);
+        cabinetDeletionService.deleteStepOzonPriceHistory(cabinetId);
+        cabinetDeletionService.deleteStepOzonStocks(cabinetId);
+        cabinetDeletionService.deleteStepOzonProductCards(cabinetId);
         log.info("[Удаление кабинета]   Запись кабинета");
         deleteCabinet(cabinet);
 

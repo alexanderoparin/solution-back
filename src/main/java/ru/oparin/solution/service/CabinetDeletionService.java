@@ -43,6 +43,10 @@ public class CabinetDeletionService {
     private final WbArticleNoteFileRepository articleNoteFileRepository;
     private final WbCampaignNoteRepository campaignNoteRepository;
     private final WbCampaignNoteFileRepository campaignNoteFileRepository;
+    private final OzonApiEventRepository ozonApiEventRepository;
+    private final OzonProductPriceHistoryRepository ozonProductPriceHistoryRepository;
+    private final OzonProductStockRepository ozonProductStockRepository;
+    private final OzonProductCardRepository ozonProductCardRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void deleteStepStatisticsAndArticles(Long cabinetId) {
@@ -173,6 +177,34 @@ public class CabinetDeletionService {
         deleteByIdBatches("Заметки по РК",
                 () -> campaignNoteRepository.findIdByCabinetId(cabinetId, PageRequest.of(0, BATCH_SIZE)),
                 campaignNoteRepository::deleteAllById);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void deleteStepOzonApiEvents(Long cabinetId) {
+        deleteByIdBatches("События Ozon API",
+                () -> ozonApiEventRepository.findIdByCabinet_Id(cabinetId, PageRequest.of(0, BATCH_SIZE)),
+                ozonApiEventRepository::deleteAllById);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void deleteStepOzonPriceHistory(Long cabinetId) {
+        deleteByIdBatches("История цен Ozon",
+                () -> ozonProductPriceHistoryRepository.findIdByCabinet_Id(cabinetId, PageRequest.of(0, BATCH_SIZE)),
+                ozonProductPriceHistoryRepository::deleteAllById);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void deleteStepOzonStocks(Long cabinetId) {
+        deleteByIdBatches("Остатки Ozon",
+                () -> ozonProductStockRepository.findIdByCabinet_Id(cabinetId, PageRequest.of(0, BATCH_SIZE)),
+                ozonProductStockRepository::deleteAllById);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void deleteStepOzonProductCards(Long cabinetId) {
+        deleteByIdBatches("Карточки товаров Ozon",
+                () -> ozonProductCardRepository.findIdByCabinet_Id(cabinetId, PageRequest.of(0, BATCH_SIZE)),
+                ozonProductCardRepository::deleteAllById);
     }
 
     /**

@@ -2,6 +2,7 @@ package ru.oparin.solution.dto.analytics;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
+import ru.oparin.solution.model.MarketplaceType;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -17,9 +18,24 @@ import java.time.LocalDateTime;
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public class ArticleSummaryDto {
     /**
-     * Артикул WB (nmID).
+     * Артикул WB (nmID). Для Ozon дублирует {@link #productId} для совместимости фильтров.
      */
     private Long nmId;
+
+    /**
+     * Идентификатор товара Ozon (product_id). Только для Ozon-кабинетов.
+     */
+    private Long productId;
+
+    /**
+     * Артикул продавца Ozon (offer_id).
+     */
+    private String offerId;
+
+    /**
+     * Маркетплейс карточки (WB | OZON).
+     */
+    private MarketplaceType marketplaceType;
     
     /**
      * Название товара.

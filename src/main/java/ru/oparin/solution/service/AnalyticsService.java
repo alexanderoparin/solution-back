@@ -42,6 +42,8 @@ public class AnalyticsService {
     private static final int MAX_DAILY_DATA_SPAN_DAYS = 120;
 
     private final WbProductCardRepository productCardRepository;
+    private final OzonProductCardRepository ozonProductCardRepository;
+    private final CabinetService cabinetService;
     private final WbProductCardAnalyticsRepository analyticsRepository;
     private final WbPromotionCampaignRepository campaignRepository;
     private final WbCampaignArticleRepository campaignArticleRepository;
@@ -58,7 +60,6 @@ public class AnalyticsService {
     private final WbCampaignStatisticsAggregator campaignStatisticsAggregator;
     private final WbPromotionNormQueryStatisticsService normQueryStatisticsService;
     private final WbPromotionParticipationRepository promotionParticipationRepository;
-    private final CabinetService cabinetService;
     private final WbArticleGoalService articleGoalService;
     private final WbCampaignGoalService campaignGoalService;
     private final WbCampaignManagementStateRepository campaignManagementStateRepository;
@@ -155,6 +156,12 @@ public class AnalyticsService {
             Boolean onlyPriority,
             Boolean onlyInAdvertising
     ) {
+        if (cabinetId != null) {
+            Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+            if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+                return getOzonArticleList(cabinetId, onlyWithPhoto);
+            }
+        }
         List<WbProductCard> allCards = applyCatalogFilters(
                 getVisibleCards(seller.getId(), cabinetId, null),
                 seller.getId(),
@@ -165,6 +172,30 @@ public class AnalyticsService {
         );
         sortProductCards(allCards, ArticleSummarySortField.WB_CREATED_AT, Sort.Direction.DESC);
         return mapToArticleSummaries(allCards, isItemRatingSupported(seller.getId(), cabinetId));
+    }
+
+    private List<ArticleSummaryDto> getOzonArticleList(Long cabinetId, Boolean onlyWithPhoto) {
+        List<OzonProductCard> cards = ozonProductCardRepository.findByCabinet_IdOrderByProductIdAsc(cabinetId);
+        if (Boolean.TRUE.equals(onlyWithPhoto)) {
+            cards = cards.stream()
+                    .filter(card -> card.getPhotoUrl() != null && !card.getPhotoUrl().isBlank())
+                    .toList();
+        }
+        return cards.stream()
+                .map(this::mapOzonToArticleSummary)
+                .toList();
+    }
+
+    private ArticleSummaryDto mapOzonToArticleSummary(OzonProductCard card) {
+        return ArticleSummaryDto.builder()
+                .nmId(card.getProductId())
+                .productId(card.getProductId())
+                .offerId(card.getOfferId())
+                .marketplaceType(MarketplaceType.OZON)
+                .title(card.getTitle())
+                .vendorCode(card.getOfferId())
+                .photoTm(card.getPhotoUrl())
+                .build();
     }
 
     private List<WbProductCard> filterCardsBySearch(List<WbProductCard> cards, String searchLower) {
@@ -1743,6 +1774,7 @@ public class AnalyticsService {
     private ArticleSummaryDto mapToArticleSummary(WbProductCard card, boolean itemRatingSupported) {
         return ArticleSummaryDto.builder()
                 .nmId(card.getNmId())
+                .marketplaceType(MarketplaceType.WB)
                 .title(card.getTitle())
                 .brand(card.getBrand())
                 .subjectName(card.getSubjectName())

@@ -7,5 +7,7 @@ public enum OzonApiEventType {
     /** Постраничная загрузка каталога товаров. */
     PRODUCT_LIST_PAGE,
     /** Загрузка цен по кабинету (все страницы /v5/product/info/prices). */
-    PRICES_CABINET
+    PRICES_CABINET,
+    /** Загрузка остатков по кабинету (/v4/product/info/stocks). */
+    STOCKS_CABINET
 }

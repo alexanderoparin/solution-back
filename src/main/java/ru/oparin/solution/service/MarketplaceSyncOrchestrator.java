@@ -1,7 +1,9 @@
 package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.MarketplaceType;
 import ru.oparin.solution.service.events.OzonApiEventService;
@@ -26,6 +28,7 @@ public class MarketplaceSyncOrchestrator {
             boolean includeStocks,
             String triggerSource
     ) {
+        assertCabinetEligibleForSync(cabinet);
         if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
             ozonApiEventService.enqueueInitialProductListEvent(cabinet.getId(), includeStocks, triggerSource);
             return;
@@ -37,5 +40,15 @@ public class MarketplaceSyncOrchestrator {
                 includeStocks,
                 triggerSource
         );
+    }
+
+    private void assertCabinetEligibleForSync(Cabinet cabinet) {
+        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+            throw new UserException("У кабинета не задан API-ключ", HttpStatus.BAD_REQUEST);
+        }
+        if (cabinet.getMarketplaceType() == MarketplaceType.OZON
+                && (cabinet.getOzonClientId() == null || cabinet.getOzonClientId().isBlank())) {
+            throw new UserException("Для Ozon-кабинета не задан Client-Id", HttpStatus.BAD_REQUEST);
+        }
     }
 }

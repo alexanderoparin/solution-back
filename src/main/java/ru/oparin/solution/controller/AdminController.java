@@ -14,6 +14,7 @@ import ru.oparin.solution.repository.PlanRepository;
 import ru.oparin.solution.repository.SubscriptionRepository;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.*;
+import ru.oparin.solution.service.events.OzonApiEventService;
 import ru.oparin.solution.service.events.WbApiEventService;
 
 import java.time.LocalDate;
@@ -40,6 +41,7 @@ public class AdminController {
     private final AccountDeletionRequestService accountDeletionRequestService;
     private final UserService userService;
     private final WbApiEventService wbApiEventService;
+    private final OzonApiEventService ozonApiEventService;
     private final MarketplaceSyncOrchestrator marketplaceSyncOrchestrator;
 
     public AdminController(CabinetService cabinetService,
@@ -51,6 +53,7 @@ public class AdminController {
                            AccountDeletionRequestService accountDeletionRequestService,
                            UserService userService,
                            WbApiEventService wbApiEventService,
+                           OzonApiEventService ozonApiEventService,
                            MarketplaceSyncOrchestrator marketplaceSyncOrchestrator) {
         this.cabinetService = cabinetService;
         this.analyticsScheduler = analyticsScheduler;
@@ -61,6 +64,7 @@ public class AdminController {
         this.accountDeletionRequestService = accountDeletionRequestService;
         this.userService = userService;
         this.wbApiEventService = wbApiEventService;
+        this.ozonApiEventService = ozonApiEventService;
         this.marketplaceSyncOrchestrator = marketplaceSyncOrchestrator;
     }
 
@@ -76,7 +80,8 @@ public class AdminController {
     public ResponseEntity<Map<String, String>> runAnalytics(
             @RequestParam Long cabinetId,
             @RequestParam(required = false) LocalDate dateFrom,
-            @RequestParam(required = false) LocalDate dateTo
+            @RequestParam(required = false) LocalDate dateTo,
+            @RequestParam(defaultValue = "true") boolean includeStocks
     ) {
         Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
 
@@ -87,13 +92,14 @@ public class AdminController {
             throw new UserException("dateFrom не может быть позже dateTo", HttpStatus.BAD_REQUEST);
         }
 
-        marketplaceSyncOrchestrator.enqueueCabinetUpdate(cabinet, from, to, false, "ADMIN_MANUAL_CABINET");
+        marketplaceSyncOrchestrator.enqueueCabinetUpdate(cabinet, from, to, includeStocks, "ADMIN_MANUAL_CABINET");
 
         String marketplaceLabel = cabinet.getMarketplaceType() != null ? cabinet.getMarketplaceType().name() : "WB";
         return ResponseEntity.accepted()
                 .body(Map.of(
                         "message", "Обновление поставлено в очередь (" + marketplaceLabel + ")",
                         "cabinetId", String.valueOf(cabinetId),
+                        "includeStocks", String.valueOf(includeStocks),
                         "dateFrom", from.toString(),
                         "dateTo", to.toString()
                 ));
@@ -192,6 +198,65 @@ public class AdminController {
     @PostMapping("/wb-events/{eventId}/cancel")
     public ResponseEntity<Map<String, String>> cancelWbEvent(@PathVariable Long eventId) {
         wbApiEventService.cancel(eventId);
+        return ResponseEntity.ok(Map.of("message", "Событие отменено"));
+    }
+
+    @GetMapping("/ozon-events")
+    public ResponseEntity<PageResponse<OzonApiEventDto>> getOzonEvents(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) OzonApiEventStatus status,
+            @RequestParam(required = false) OzonApiEventType eventType,
+            @RequestParam(required = false) Long cabinetId,
+            @RequestParam(defaultValue = OzonApiEventSortField.DEFAULT_REQUEST_VALUE) OzonApiEventSortField sortBy,
+            @RequestParam(defaultValue = "DESC") org.springframework.data.domain.Sort.Direction sortDir
+    ) {
+        return ResponseEntity.ok(ozonApiEventService.getEventsPage(page, size, status, eventType, cabinetId, sortBy, sortDir));
+    }
+
+    @GetMapping("/ozon-events/{eventId}")
+    public ResponseEntity<OzonApiEventDto> getOzonEvent(@PathVariable Long eventId) {
+        return ResponseEntity.ok(ozonApiEventService.getEventById(eventId));
+    }
+
+    @GetMapping("/ozon-events/stats")
+    public ResponseEntity<OzonApiEventStatsDto> getOzonEventsStats() {
+        return ResponseEntity.ok(ozonApiEventService.getStats());
+    }
+
+    @GetMapping("/ozon-events/stats-by-type")
+    public ResponseEntity<OzonApiEventTypeStatsDto> getOzonEventsStatsByType(
+            @RequestParam(required = false) OzonApiEventStatus status
+    ) {
+        return ResponseEntity.ok(ozonApiEventService.getStatsByType(status));
+    }
+
+    @GetMapping("/ozon-events/stats-by-cabinet")
+    public ResponseEntity<OzonApiEventCabinetStatsDto> getOzonEventsStatsByCabinet(
+            @RequestParam(required = false) OzonApiEventStatus status,
+            @RequestParam(required = false) OzonApiEventType eventType
+    ) {
+        return ResponseEntity.ok(ozonApiEventService.getStatsByCabinet(status, eventType));
+    }
+
+    @PostMapping("/ozon-events/{eventId}/retry")
+    public ResponseEntity<Map<String, String>> retryOzonEvent(@PathVariable Long eventId) {
+        ozonApiEventService.retryNow(eventId);
+        return ResponseEntity.ok(Map.of("message", "Событие отправлено на повторное выполнение"));
+    }
+
+    @PostMapping("/ozon-events/retry-failed-final")
+    public ResponseEntity<Map<String, String>> retryAllFailedFinalOzonEvents() {
+        int updated = ozonApiEventService.retryAllFailedFinalNow();
+        return ResponseEntity.ok(Map.of(
+                "message", "События отправлены на повторное выполнение",
+                "updatedCount", String.valueOf(updated)
+        ));
+    }
+
+    @PostMapping("/ozon-events/{eventId}/cancel")
+    public ResponseEntity<Map<String, String>> cancelOzonEvent(@PathVariable Long eventId) {
+        ozonApiEventService.cancel(eventId);
         return ResponseEntity.ok(Map.of("message", "Событие отменено"));
     }
 

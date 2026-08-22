@@ -1,5 +1,7 @@
 package ru.oparin.solution.repository;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -34,6 +36,63 @@ public interface OzonApiEventRepository extends JpaRepository<OzonApiEvent, Long
             """)
     List<OzonApiEvent> findAllByIdInWithCabinet(@Param("ids") Collection<Long> ids);
 
+    @Query("""
+            select e
+            from OzonApiEvent e
+            where (:status is null or e.status = :status)
+              and (:eventType is null or e.eventType = :eventType)
+              and (:cabinetId is null or e.cabinet.id = :cabinetId)
+            """)
+    Page<OzonApiEvent> findAdminEvents(
+            @Param("status") OzonApiEventStatus status,
+            @Param("eventType") OzonApiEventType eventType,
+            @Param("cabinetId") Long cabinetId,
+            Pageable pageable
+    );
+
+    List<OzonApiEvent> findByStatus(OzonApiEventStatus status);
+
+    long countByStatus(OzonApiEventStatus status);
+
+    @Query("""
+            select e.eventType, count(e)
+              from OzonApiEvent e
+             where (:status is null or e.status = :status)
+             group by e.eventType
+            """)
+    List<Object[]> countGroupedByEventType(@Param("status") OzonApiEventStatus status);
+
+    @Query("""
+            select e.cabinet.id, c.name, count(e)
+              from OzonApiEvent e
+              join e.cabinet c
+             where (:status is null or e.status = :status)
+               and (:eventType is null or e.eventType = :eventType)
+             group by e.cabinet.id, c.name
+            """)
+    List<Object[]> countGroupedByCabinetId(
+            @Param("status") OzonApiEventStatus status,
+            @Param("eventType") OzonApiEventType eventType
+    );
+
+    long deleteByStatusAndFinishedAtBefore(OzonApiEventStatus status, LocalDateTime finishedAt);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update OzonApiEvent e
+               set e.status = :toStatus,
+                   e.nextAttemptAt = :now,
+                   e.lastError = null,
+                   e.finishedAt = null,
+                   e.updatedAt = :now
+             where e.status = :fromStatus
+            """)
+    int bulkRetryByStatus(
+            @Param("fromStatus") OzonApiEventStatus fromStatus,
+            @Param("toStatus") OzonApiEventStatus toStatus,
+            @Param("now") LocalDateTime now
+    );
+
     boolean existsByDedupKeyAndStatusIn(String dedupKey, Collection<OzonApiEventStatus> statuses);
 
     List<OzonApiEvent> findByStatusAndStartedAtBefore(OzonApiEventStatus status, LocalDateTime startedAt);
@@ -63,4 +122,7 @@ public interface OzonApiEventRepository extends JpaRepository<OzonApiEvent, Long
             @Param("runningStatus") OzonApiEventStatus runningStatus,
             @Param("now") LocalDateTime now
     );
+
+    @Query("SELECT e.id FROM OzonApiEvent e WHERE e.cabinet.id = :cabinetId")
+    List<Long> findIdByCabinet_Id(@Param("cabinetId") Long cabinetId, Pageable pageable);
 }

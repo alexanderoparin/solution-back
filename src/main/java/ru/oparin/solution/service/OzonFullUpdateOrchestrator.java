@@ -11,7 +11,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Полное read-only обновление Ozon-кабинетов: каталог (далее — цены и остатки).
+ * Полное read-only обновление Ozon-кабинетов: каталог → цены → остатки (при includeStocks).
  */
 @Service
 @Slf4j

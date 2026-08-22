@@ -8,10 +8,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.CabinetUpdateErrorScope;
-import ru.oparin.solution.model.Role;
-import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.*;
 import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.events.WbApiEventService;
 
@@ -152,7 +149,7 @@ public class AnalyticsScheduler {
                 seller.getId(), seller.getEmail());
 
         List<Cabinet> cabinets = cabinetService.findCabinetsByUserId(seller.getId()).stream()
-                .filter(c -> c.getApiKey() != null && !c.getApiKey().isBlank())
+                .filter(this::isCabinetEligibleForSync)
                 .toList();
 
         if (cabinets.isEmpty()) {
@@ -233,10 +230,18 @@ public class AnalyticsScheduler {
      * @throws UserException если с последнего обновления прошло меньше 6 часов
      */
     @Transactional
-    public void triggerManualUpdateByCabinet(Long cabinetId, boolean skipIntervalCheck) {
+    public void triggerManualUpdateByCabinet(Long cabinetId, boolean skipIntervalCheck, boolean includeStocks) {
         Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
-        log.info("Ручной запуск обновления данных для кабинета (ID: {}, продавец: {})",
-                cabinet.getId(), cabinet.getUser().getEmail());
+        if (!isCabinetEligibleForSync(cabinet)) {
+            throw new UserException(
+                    cabinet.getMarketplaceType() == MarketplaceType.OZON
+                            ? "Для Ozon-кабинета нужны API-ключ и Client-Id."
+                            : "У кабинета не задан API-ключ.",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+        log.info("Ручной запуск обновления данных для кабинета (ID: {}, продавец: {}, includeStocks={})",
+                cabinet.getId(), cabinet.getUser().getEmail(), includeStocks);
 
         try {
             if (!skipIntervalCheck) {
@@ -253,7 +258,7 @@ public class AnalyticsScheduler {
                     cabinet,
                     period.from(),
                     period.to(),
-                    false,
+                    includeStocks,
                     "MANUAL_CABINET"
             );
 
@@ -266,6 +271,20 @@ public class AnalyticsScheduler {
             cabinetUpdateErrorService.recordError(cabinet.getId(), CabinetUpdateErrorScope.MAIN, e.getMessage());
             throw e;
         }
+    }
+
+    public void triggerManualUpdateByCabinet(Long cabinetId, boolean skipIntervalCheck) {
+        triggerManualUpdateByCabinet(cabinetId, skipIntervalCheck, false);
+    }
+
+    private boolean isCabinetEligibleForSync(Cabinet cabinet) {
+        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+            return false;
+        }
+        if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            return cabinet.getOzonClientId() != null && !cabinet.getOzonClientId().isBlank();
+        }
+        return true;
     }
 
     /**

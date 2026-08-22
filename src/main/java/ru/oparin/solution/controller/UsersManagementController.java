@@ -317,6 +317,7 @@ public class UsersManagementController {
     @PostMapping("/cabinets/{cabinetId}/trigger-update")
     public ResponseEntity<MessageResponse> triggerCabinetDataUpdate(
             @PathVariable Long cabinetId,
+            @RequestParam(defaultValue = "true") boolean includeStocks,
             Authentication authentication
     ) {
         User currentUser = getCurrentUser(authentication);
@@ -325,12 +326,14 @@ public class UsersManagementController {
         }
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
         Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
-        log.info("Ручной запуск обновления данных по кабинету: initiatedByRole={}, initiatedById={}, initiatedByEmail={}, cabinetId={}, sellerEmail={}",
+        log.info("Ручной запуск обновления данных по кабинету: initiatedByRole={}, initiatedById={}, initiatedByEmail={}, cabinetId={}, sellerEmail={}, includeStocks={}",
                 currentUser.getRole(), currentUser.getId(), currentUser.getEmail(), cabinetId,
-                cabinet.getUser() != null ? cabinet.getUser().getEmail() : null);
+                cabinet.getUser() != null ? cabinet.getUser().getEmail() : null, includeStocks);
         boolean skipIntervalCheck = true;
-        analyticsScheduler.triggerManualUpdateByCabinet(cabinetId, skipIntervalCheck);
-        return okMessageResponse("Обновление данных запущено. Процесс выполняется в фоновом режиме. Данные будут доступны через несколько минут.");
+        analyticsScheduler.triggerManualUpdateByCabinet(cabinetId, skipIntervalCheck, includeStocks);
+        return okMessageResponse(includeStocks
+                ? "Обновление данных (каталог, цены, остатки) запущено. Процесс выполняется в фоновом режиме."
+                : "Обновление данных запущено. Процесс выполняется в фоновом режиме. Данные будут доступны через несколько минут.");
     }
 
     /**

@@ -1,6 +1,9 @@
 package ru.oparin.solution.repository;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import ru.oparin.solution.model.OzonProductPriceHistory;
 
 import java.time.LocalDate;
@@ -16,4 +19,7 @@ public interface OzonProductPriceHistoryRepository extends JpaRepository<OzonPro
             List<Long> productIds,
             LocalDate date
     );
+
+    @Query("SELECT e.id FROM OzonProductPriceHistory e WHERE e.cabinet.id = :cabinetId")
+    List<Long> findIdByCabinet_Id(@Param("cabinetId") Long cabinetId, Pageable pageable);
 }

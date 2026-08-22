@@ -4,9 +4,15 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Sort.Order;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.config.OzonEventsProperties;
+import ru.oparin.solution.dto.*;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.OzonApiEvent;
 import ru.oparin.solution.model.OzonApiEventStatus;
@@ -28,11 +34,14 @@ public class OzonApiEventService {
 
     public static final String PRODUCT_LIST_EXECUTOR_BEAN = "ozonProductListPageEventExecutor";
     public static final String PRICES_CABINET_EXECUTOR_BEAN = "ozonPricesCabinetEventExecutor";
+    public static final String STOCKS_CABINET_EXECUTOR_BEAN = "ozonStocksCabinetEventExecutor";
 
     private static final int PRODUCT_LIST_MAX_ATTEMPTS = 3;
     private static final int PRODUCT_LIST_PRIORITY = 100;
     private static final int PRICES_MAX_ATTEMPTS = 3;
     private static final int PRICES_PRIORITY = 85;
+    private static final int STOCKS_MAX_ATTEMPTS = 3;
+    private static final int STOCKS_PRIORITY = 80;
 
     private static final Set<OzonApiEventStatus> ACTIVE_STATUSES = Set.of(
             OzonApiEventStatus.CREATED,
@@ -92,6 +101,36 @@ public class OzonApiEventService {
                 .maxAttempts(PRICES_MAX_ATTEMPTS)
                 .nextAttemptAt(LocalDateTime.now())
                 .priority(PRICES_PRIORITY)
+                .triggerSource(triggerSource)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        eventRepository.save(event);
+    }
+
+    /**
+     * Загрузка остатков после цен (если includeStocks в цепочке sync).
+     */
+    @Transactional
+    public void enqueueStocksCabinetEvent(Long cabinetId, String triggerSource) {
+        String dedupKey = "STOCKS_CABINET:" + cabinetId;
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("Ozon STOCKS event уже существует (dedupKey={}), создание пропущено", dedupKey);
+            return;
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        OzonApiEvent event = OzonApiEvent.builder()
+                .eventType(OzonApiEventType.STOCKS_CABINET)
+                .status(OzonApiEventStatus.CREATED)
+                .executorBeanName(STOCKS_CABINET_EXECUTOR_BEAN)
+                .cabinet(cabinet)
+                .payloadJson("{}")
+                .dedupKey(dedupKey)
+                .attemptCount(0)
+                .maxAttempts(STOCKS_MAX_ATTEMPTS)
+                .nextAttemptAt(LocalDateTime.now())
+                .priority(STOCKS_PRIORITY)
                 .triggerSource(triggerSource)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
@@ -263,5 +302,182 @@ public class OzonApiEventService {
 
     private static String buildProductListDedupKey(Long cabinetId, String lastId) {
         return "PRODUCT_LIST_PAGE:" + cabinetId + ":" + (lastId == null || lastId.isBlank() ? "first" : lastId);
+    }
+
+    @Transactional
+    public long deleteOldSuccessfulEvents(int hours) {
+        LocalDateTime threshold = LocalDateTime.now().minusHours(hours);
+        return eventRepository.deleteByStatusAndFinishedAtBefore(OzonApiEventStatus.SUCCESS, threshold);
+    }
+
+    @Transactional(readOnly = true)
+    public OzonApiEventStatsDto getStats() {
+        Map<String, Long> byStatus = new LinkedHashMap<>();
+        for (OzonApiEventStatus status : OzonApiEventStatus.values()) {
+            byStatus.put(status.name(), eventRepository.countByStatus(status));
+        }
+        return OzonApiEventStatsDto.builder()
+                .total(eventRepository.count())
+                .byStatus(byStatus)
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public OzonApiEventTypeStatsDto getStatsByType(OzonApiEventStatus status) {
+        Map<String, Long> byType = new LinkedHashMap<>();
+        for (OzonApiEventType type : OzonApiEventType.values()) {
+            byType.put(type.name(), 0L);
+        }
+        List<Object[]> rows = eventRepository.countGroupedByEventType(status);
+        for (Object[] row : rows) {
+            OzonApiEventType eventType = (OzonApiEventType) row[0];
+            Long count = (Long) row[1];
+            byType.put(eventType.name(), count);
+        }
+        long total = byType.values().stream().mapToLong(Long::longValue).sum();
+        return OzonApiEventTypeStatsDto.builder()
+                .baseStatus(status != null ? status.name() : null)
+                .total(total)
+                .byType(byType)
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public OzonApiEventCabinetStatsDto getStatsByCabinet(OzonApiEventStatus status, OzonApiEventType eventType) {
+        List<OzonApiEventCabinetStatsItemDto> byCabinet = new ArrayList<>();
+        List<Object[]> rows = eventRepository.countGroupedByCabinetId(status, eventType);
+        for (Object[] row : rows) {
+            Long cabinetId = (Long) row[0];
+            String cabinetName = (String) row[1];
+            Long count = (Long) row[2];
+            byCabinet.add(OzonApiEventCabinetStatsItemDto.builder()
+                    .cabinetId(cabinetId)
+                    .cabinetName(cabinetName)
+                    .count(count != null ? count : 0L)
+                    .build());
+        }
+        long total = byCabinet.stream().mapToLong(OzonApiEventCabinetStatsItemDto::count).sum();
+        return OzonApiEventCabinetStatsDto.builder()
+                .baseStatus(status != null ? status.name() : null)
+                .baseEventType(eventType != null ? eventType.name() : null)
+                .total(total)
+                .byCabinet(byCabinet)
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<OzonApiEventDto> getEventsPage(
+            int page,
+            int size,
+            OzonApiEventStatus status,
+            OzonApiEventType eventType,
+            Long cabinetId,
+            OzonApiEventSortField sortBy,
+            Sort.Direction sortDir
+    ) {
+        Sort sort = sortForAdminEvents(sortBy, sortDir);
+        Pageable pageable = PageRequest.of(page, Math.clamp(size, 1, 100), sort);
+        Page<OzonApiEvent> eventsPage = eventRepository.findAdminEvents(status, eventType, cabinetId, pageable);
+        List<OzonApiEventDto> content = eventsPage.getContent().stream().map(this::toDto).toList();
+        return PageResponse.<OzonApiEventDto>builder()
+                .content(content)
+                .totalElements(eventsPage.getTotalElements())
+                .totalPages(eventsPage.getTotalPages())
+                .size(eventsPage.getSize())
+                .number(eventsPage.getNumber())
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public OzonApiEventDto getEventById(Long eventId) {
+        OzonApiEvent event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new IllegalArgumentException("Событие не найдено: " + eventId));
+        return toDto(event);
+    }
+
+    @Transactional
+    public void retryNow(Long eventId) {
+        OzonApiEvent event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new IllegalArgumentException("Событие не найдено: " + eventId));
+        event.setStatus(OzonApiEventStatus.CREATED);
+        event.setNextAttemptAt(LocalDateTime.now());
+        event.setLastError(null);
+        event.setFinishedAt(null);
+        event.setUpdatedAt(LocalDateTime.now());
+        eventRepository.save(event);
+    }
+
+    @Transactional
+    public int retryAllFailedFinalNow() {
+        return eventRepository.bulkRetryByStatus(
+                OzonApiEventStatus.FAILED_FINAL,
+                OzonApiEventStatus.CREATED,
+                LocalDateTime.now()
+        );
+    }
+
+    @Transactional
+    public void cancel(Long eventId) {
+        OzonApiEvent event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new IllegalArgumentException("Событие не найдено: " + eventId));
+        event.setStatus(OzonApiEventStatus.CANCELLED);
+        event.setFinishedAt(LocalDateTime.now());
+        event.setUpdatedAt(LocalDateTime.now());
+        eventRepository.save(event);
+    }
+
+    /**
+     * После остановки JVM события могли остаться в RUNNING.
+     */
+    @Transactional
+    public int recoverRunningEventsAfterJvmStop() {
+        List<OzonApiEvent> running = eventRepository.findByStatus(OzonApiEventStatus.RUNNING);
+        if (running.isEmpty()) {
+            return 0;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (OzonApiEvent event : running) {
+            event.setStatus(OzonApiEventStatus.FAILED_RETRYABLE);
+            event.setStartedAt(null);
+            event.setLastError("Запуск приложения: сброс RUNNING после остановки процесса");
+            event.setNextAttemptAt(now);
+            event.setUpdatedAt(now);
+        }
+        eventRepository.saveAll(running);
+        return running.size();
+    }
+
+    private static Sort sortForAdminEvents(OzonApiEventSortField sortBy, Sort.Direction sortDir) {
+        OzonApiEventSortField effectiveSortBy = sortBy != null ? sortBy : OzonApiEventSortField.ID;
+        Sort.Direction effectiveDir = sortDir != null ? sortDir : Sort.Direction.DESC;
+        Order order = new Order(effectiveDir, effectiveSortBy.getFieldPath());
+        if (effectiveSortBy == OzonApiEventSortField.STARTED_AT
+                || effectiveSortBy == OzonApiEventSortField.FINISHED_AT
+                || effectiveSortBy == OzonApiEventSortField.NEXT_ATTEMPT_AT) {
+            order = order.nullsLast();
+        }
+        return Sort.by(order);
+    }
+
+    private OzonApiEventDto toDto(OzonApiEvent event) {
+        return OzonApiEventDto.builder()
+                .id(event.getId())
+                .eventType(event.getEventType().name())
+                .status(event.getStatus().name())
+                .executorBeanName(event.getExecutorBeanName())
+                .cabinetId(event.getCabinet() != null ? event.getCabinet().getId() : null)
+                .cabinetName(event.getCabinet() != null ? event.getCabinet().getName() : null)
+                .dedupKey(event.getDedupKey())
+                .attemptCount(event.getAttemptCount())
+                .maxAttempts(event.getMaxAttempts())
+                .nextAttemptAt(event.getNextAttemptAt())
+                .lastError(event.getLastError())
+                .priority(event.getPriority())
+                .triggerSource(event.getTriggerSource())
+                .createdAt(event.getCreatedAt())
+                .startedAt(event.getStartedAt())
+                .finishedAt(event.getFinishedAt())
+                .updatedAt(event.getUpdatedAt())
+                .build();
     }
 }
