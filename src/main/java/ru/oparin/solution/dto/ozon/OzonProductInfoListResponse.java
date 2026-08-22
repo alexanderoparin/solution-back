@@ -2,6 +2,7 @@ package ru.oparin.solution.dto.ozon;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import lombok.Data;
 
 import java.util.List;
@@ -28,6 +29,7 @@ public class OzonProductInfoListResponse {
         private Long sku;
 
         @JsonProperty("primary_image")
+        @JsonDeserialize(using = OzonStringOrStringArrayDeserializer.class)
         private String primaryImage;
 
         private List<String> images;
