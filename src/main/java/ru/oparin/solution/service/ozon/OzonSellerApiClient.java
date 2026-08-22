@@ -10,6 +10,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import ru.oparin.solution.dto.ozon.OzonSellerInfoResponse;
+import ru.oparin.solution.model.OzonApiEventType;
 
 import java.time.Duration;
 
@@ -20,7 +21,7 @@ import java.time.Duration;
 @Slf4j
 public class OzonSellerApiClient {
 
-    private static final String SELLER_INFO_URL = "https://api-seller.ozon.ru/v1/seller/info";
+    private static final String SELLER_INFO_URL = OzonApiEventType.SELLER_INFO.getDefaultUrl();
     private static final String HEADER_CLIENT_ID = "Client-Id";
     private static final String HEADER_API_KEY = "Api-Key";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);

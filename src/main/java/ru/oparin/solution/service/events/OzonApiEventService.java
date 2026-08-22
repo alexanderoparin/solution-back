@@ -326,6 +326,9 @@ public class OzonApiEventService {
     public OzonApiEventTypeStatsDto getStatsByType(OzonApiEventStatus status) {
         Map<String, Long> byType = new LinkedHashMap<>();
         for (OzonApiEventType type : OzonApiEventType.values()) {
+            if (!type.isQueuedEvent()) {
+                continue;
+            }
             byType.put(type.name(), 0L);
         }
         List<Object[]> rows = eventRepository.countGroupedByEventType(status);
