@@ -107,5 +107,15 @@ public class ArticleSummaryDto {
      * Остаток FBS present (Ozon, сумма по SKU).
      */
     private Integer stockFbs;
+
+    /**
+     * Заказано единиц за период синхронизации аналитики (Ozon).
+     */
+    private Integer orderedUnits;
+
+    /**
+     * Выручка за период синхронизации аналитики (Ozon), руб.
+     */
+    private BigDecimal revenue;
 }
 

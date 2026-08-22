@@ -29,6 +29,10 @@ public enum OzonApiEventType {
     STOCKS_CABINET(
             OzonApiBaseUrl.SELLER,
             "/v4/product/info/stocks"),
+    /** Ежедневная аналитика продаж (базовые метрики). */
+    ANALYTICS_DATA_CABINET(
+            OzonApiBaseUrl.SELLER,
+            "/v1/analytics/data"),
     /** Проверка учётных данных продавца (seller/info). */
     SELLER_INFO(
             OzonApiBaseUrl.SELLER,
@@ -50,6 +54,9 @@ public enum OzonApiEventType {
      * Типы, которые реально ставятся в очередь {@code ozon_api_events}.
      */
     public boolean isQueuedEvent() {
-        return this == PRODUCT_LIST_PAGE || this == PRICES_CABINET || this == STOCKS_CABINET;
+        return this == PRODUCT_LIST_PAGE
+                || this == PRICES_CABINET
+                || this == STOCKS_CABINET
+                || this == ANALYTICS_DATA_CABINET;
     }
 }

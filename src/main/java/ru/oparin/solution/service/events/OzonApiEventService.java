@@ -20,9 +20,11 @@ import ru.oparin.solution.model.OzonApiEventType;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.OzonApiEventRepository;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.events.payload.OzonAnalyticsDataCabinetPayload;
 import ru.oparin.solution.service.events.payload.OzonPricesCabinetPayload;
 import ru.oparin.solution.service.events.payload.OzonProductListPagePayload;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -35,6 +37,7 @@ public class OzonApiEventService {
     public static final String PRODUCT_LIST_EXECUTOR_BEAN = "ozonProductListPageEventExecutor";
     public static final String PRICES_CABINET_EXECUTOR_BEAN = "ozonPricesCabinetEventExecutor";
     public static final String STOCKS_CABINET_EXECUTOR_BEAN = "ozonStocksCabinetEventExecutor";
+    public static final String ANALYTICS_DATA_CABINET_EXECUTOR_BEAN = "ozonAnalyticsDataCabinetEventExecutor";
 
     private static final int PRODUCT_LIST_MAX_ATTEMPTS = 3;
     private static final int PRODUCT_LIST_PRIORITY = 100;
@@ -42,6 +45,10 @@ public class OzonApiEventService {
     private static final int PRICES_PRIORITY = 85;
     private static final int STOCKS_MAX_ATTEMPTS = 3;
     private static final int STOCKS_PRIORITY = 80;
+    private static final int ANALYTICS_MAX_ATTEMPTS = 3;
+    private static final int ANALYTICS_PRIORITY = 70;
+    /** Суток в периоде аналитики (вчера + ещё 13 дней назад). */
+    private static final int ANALYTICS_PERIOD_DAYS = 14;
 
     private static final Set<OzonApiEventStatus> ACTIVE_STATUSES = Set.of(
             OzonApiEventStatus.CREATED,
@@ -131,6 +138,42 @@ public class OzonApiEventService {
                 .maxAttempts(STOCKS_MAX_ATTEMPTS)
                 .nextAttemptAt(LocalDateTime.now())
                 .priority(STOCKS_PRIORITY)
+                .triggerSource(triggerSource)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        eventRepository.save(event);
+    }
+
+    /**
+     * Загрузка аналитики продаж после цен/остатков (последний шаг main-цепочки).
+     */
+    @Transactional
+    public void enqueueAnalyticsDataCabinetEvent(Long cabinetId, String triggerSource) {
+        String dedupKey = "ANALYTICS_DATA_CABINET:" + cabinetId;
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("Ozon ANALYTICS event уже существует (dedupKey={}), создание пропущено", dedupKey);
+            return;
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        LocalDate dateTo = LocalDate.now().minusDays(1);
+        LocalDate dateFrom = dateTo.minusDays(ANALYTICS_PERIOD_DAYS - 1L);
+        OzonAnalyticsDataCabinetPayload payload = OzonAnalyticsDataCabinetPayload.builder()
+                .dateFrom(dateFrom)
+                .dateTo(dateTo)
+                .build();
+        OzonApiEvent event = OzonApiEvent.builder()
+                .eventType(OzonApiEventType.ANALYTICS_DATA_CABINET)
+                .status(OzonApiEventStatus.CREATED)
+                .executorBeanName(ANALYTICS_DATA_CABINET_EXECUTOR_BEAN)
+                .cabinet(cabinet)
+                .payloadJson(writePayload(payload))
+                .dedupKey(dedupKey)
+                .attemptCount(0)
+                .maxAttempts(ANALYTICS_MAX_ATTEMPTS)
+                .nextAttemptAt(LocalDateTime.now())
+                .priority(ANALYTICS_PRIORITY)
                 .triggerSource(triggerSource)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())

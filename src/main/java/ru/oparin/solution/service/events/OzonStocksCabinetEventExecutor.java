@@ -36,8 +36,8 @@ public class OzonStocksCabinetEventExecutor implements OzonApiEventExecutor {
         try {
             stocksSyncService.syncAllStocks(cabinet, clientId, apiKey);
             eventService.markStocksCompleted(cabinet.getId());
-            eventService.markMainCompleted(cabinet.getId());
-            log.info("Ozon остатки загружены, main завершён для cabinetId={}", cabinet.getId());
+            eventService.enqueueAnalyticsDataCabinetEvent(cabinet.getId(), event.getTriggerSource());
+            log.info("Ozon остатки загружены, аналитика поставлена в очередь cabinetId={}", cabinet.getId());
             return OzonApiEventExecutionResult.completedSuccessfully();
         } catch (OzonRateLimitDeferException e) {
             return OzonApiEventExecutionResult.deferredRetry(

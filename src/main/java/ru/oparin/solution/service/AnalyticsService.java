@@ -45,6 +45,7 @@ public class AnalyticsService {
     private final OzonProductCardRepository ozonProductCardRepository;
     private final OzonProductPriceHistoryRepository ozonProductPriceHistoryRepository;
     private final OzonProductStockRepository ozonProductStockRepository;
+    private final OzonProductCardAnalyticsRepository ozonProductCardAnalyticsRepository;
     private final CabinetService cabinetService;
     private final WbProductCardAnalyticsRepository analyticsRepository;
     private final WbPromotionCampaignRepository campaignRepository;
@@ -189,12 +190,14 @@ public class AnalyticsService {
 
         Map<Long, OzonProductPriceHistory> priceByProductId = loadLatestOzonPrices(cabinetId);
         Map<Long, int[]> stocksByProductId = loadOzonStockTotals(cabinetId);
+        Map<Long, OzonAnalyticsTotals> analyticsByProductId = loadOzonAnalyticsTotals(cabinetId);
 
         return cards.stream()
                 .map(card -> mapOzonToArticleSummary(
                         card,
                         priceByProductId.get(card.getProductId()),
-                        stocksByProductId.get(card.getProductId())
+                        stocksByProductId.get(card.getProductId()),
+                        analyticsByProductId.get(card.getProductId())
                 ))
                 .toList();
     }
@@ -229,10 +232,31 @@ public class AnalyticsService {
         return result;
     }
 
+    /**
+     * Агрегаты ordered_units / revenue за последние 14 дней (как период sync).
+     */
+    private Map<Long, OzonAnalyticsTotals> loadOzonAnalyticsTotals(Long cabinetId) {
+        LocalDate dateTo = LocalDate.now().minusDays(1);
+        LocalDate dateFrom = dateTo.minusDays(13);
+        Map<Long, OzonAnalyticsTotals> result = new HashMap<>();
+        for (OzonProductCardAnalytics row : ozonProductCardAnalyticsRepository.findByCabinet_IdAndDateBetween(
+                cabinetId, dateFrom, dateTo)) {
+            OzonAnalyticsTotals totals = result.computeIfAbsent(row.getProductId(), id -> new OzonAnalyticsTotals());
+            if (row.getOrderedUnits() != null) {
+                totals.orderedUnits += row.getOrderedUnits();
+            }
+            if (row.getRevenue() != null) {
+                totals.revenue = totals.revenue.add(row.getRevenue());
+            }
+        }
+        return result;
+    }
+
     private ArticleSummaryDto mapOzonToArticleSummary(
             OzonProductCard card,
             OzonProductPriceHistory price,
-            int[] stockTotals
+            int[] stockTotals,
+            OzonAnalyticsTotals analytics
     ) {
         ArticleSummaryDto.ArticleSummaryDtoBuilder builder = ArticleSummaryDto.builder()
                 .nmId(card.getProductId())
@@ -252,7 +276,18 @@ public class AnalyticsService {
         } else {
             builder.stockFbo(0).stockFbs(0);
         }
+        if (analytics != null) {
+            builder.orderedUnits(analytics.orderedUnits)
+                    .revenue(analytics.revenue);
+        } else {
+            builder.orderedUnits(0).revenue(BigDecimal.ZERO);
+        }
         return builder.build();
+    }
+
+    private static final class OzonAnalyticsTotals {
+        private int orderedUnits;
+        private BigDecimal revenue = BigDecimal.ZERO;
     }
 
     private List<WbProductCard> filterCardsBySearch(List<WbProductCard> cards, String searchLower) {

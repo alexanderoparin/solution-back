@@ -441,6 +441,7 @@ public class CabinetService {
         cabinetDeletionService.deleteStepOzonApiEvents(cabinetId);
         cabinetDeletionService.deleteStepOzonPriceHistory(cabinetId);
         cabinetDeletionService.deleteStepOzonStocks(cabinetId);
+        cabinetDeletionService.deleteStepOzonProductAnalytics(cabinetId);
         cabinetDeletionService.deleteStepOzonProductCards(cabinetId);
         log.info("[Удаление кабинета]   Запись кабинета");
         deleteCabinet(cabinet);

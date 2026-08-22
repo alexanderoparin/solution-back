@@ -6,29 +6,32 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.exception.OzonRateLimitDeferException;
 import ru.oparin.solution.model.Cabinet;
-
 import ru.oparin.solution.model.CabinetUpdateErrorScope;
 import ru.oparin.solution.model.OzonApiEvent;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.CabinetUpdateErrorService;
-import ru.oparin.solution.service.events.payload.OzonPricesCabinetPayload;
-import ru.oparin.solution.service.sync.OzonProductPricesSyncService;
+import ru.oparin.solution.service.events.payload.OzonAnalyticsDataCabinetPayload;
+import ru.oparin.solution.service.sync.OzonProductAnalyticsSyncService;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-@Component("ozonPricesCabinetEventExecutor")
+/**
+ * Загрузка аналитики продаж Ozon после каталога/цен/остатков.
+ */
+@Component("ozonAnalyticsDataCabinetEventExecutor")
 @RequiredArgsConstructor
 @Slf4j
-public class OzonPricesCabinetEventExecutor implements OzonApiEventExecutor {
+public class OzonAnalyticsDataCabinetEventExecutor implements OzonApiEventExecutor {
 
     private final OzonApiEventService eventService;
     private final CabinetService cabinetService;
-    private final OzonProductPricesSyncService pricesSyncService;
+    private final OzonProductAnalyticsSyncService analyticsSyncService;
     private final CabinetUpdateErrorService cabinetUpdateErrorService;
 
     @Override
     public OzonApiEventExecutionResult execute(OzonApiEvent event) {
-        OzonPricesCabinetPayload payload = eventService.readPayload(event, OzonPricesCabinetPayload.class);
+        OzonAnalyticsDataCabinetPayload payload = eventService.readPayload(event, OzonAnalyticsDataCabinetPayload.class);
         Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(event.getCabinet().getId());
         String clientId = cabinet.getOzonClientId();
         String apiKey = cabinet.getApiKey();
@@ -36,15 +39,18 @@ public class OzonPricesCabinetEventExecutor implements OzonApiEventExecutor {
             return OzonApiEventExecutionResult.finalError("У Ozon-кабинета не заданы Client-Id или Api-Key");
         }
 
+        LocalDate dateTo = payload != null && payload.dateTo() != null
+                ? payload.dateTo()
+                : LocalDate.now().minusDays(1);
+        LocalDate dateFrom = payload != null && payload.dateFrom() != null
+                ? payload.dateFrom()
+                : dateTo.minusDays(13);
+
         try {
-            pricesSyncService.syncAllPrices(cabinet, clientId, apiKey);
-            if (payload != null && payload.includeStocks()) {
-                eventService.enqueueStocksCabinetEvent(cabinet.getId(), event.getTriggerSource());
-                log.info("Ozon цены загружены, остатки поставлены в очередь cabinetId={}", cabinet.getId());
-            } else {
-                eventService.enqueueAnalyticsDataCabinetEvent(cabinet.getId(), event.getTriggerSource());
-                log.info("Ozon цены загружены, аналитика поставлена в очередь cabinetId={}", cabinet.getId());
-            }
+            analyticsSyncService.syncAnalytics(cabinet, clientId, apiKey, dateFrom, dateTo);
+            eventService.markMainCompleted(cabinet.getId());
+            log.info("Ozon analytics загружена, main завершён для cabinetId={}, период={}..{}",
+                    cabinet.getId(), dateFrom, dateTo);
             return OzonApiEventExecutionResult.completedSuccessfully();
         } catch (OzonRateLimitDeferException e) {
             return OzonApiEventExecutionResult.deferredRetry(
@@ -54,12 +60,14 @@ public class OzonPricesCabinetEventExecutor implements OzonApiEventExecutor {
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode().value() == 429) {
                 return OzonApiEventExecutionResult.deferredRetry(
-                        "Rate limit Ozon API (prices)",
+                        "Rate limit Ozon API (analytics)",
                         LocalDateTime.now().plusSeconds(60)
                 );
             }
+            // Без Premium часть метрик недоступна — для базовых revenue/ordered_units обычно ок;
+            // 403/400 логируем как retryable, чтобы не ронять весь sync молча.
             cabinetUpdateErrorService.recordError(cabinet.getId(), CabinetUpdateErrorScope.MAIN, e.getMessage());
-            return OzonApiEventExecutionResult.retryableError("Ozon API prices: " + e.getStatusCode());
+            return OzonApiEventExecutionResult.retryableError("Ozon API analytics: " + e.getStatusCode());
         } catch (Exception e) {
             OzonRateLimitDeferException defer = OzonRateLimitDeferException.findInChain(e);
             if (defer != null) {

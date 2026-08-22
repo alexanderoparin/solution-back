@@ -10,10 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
-import ru.oparin.solution.dto.ozon.OzonProductInfoListResponse;
-import ru.oparin.solution.dto.ozon.OzonProductInfoPricesResponse;
-import ru.oparin.solution.dto.ozon.OzonProductInfoStocksResponse;
-import ru.oparin.solution.dto.ozon.OzonProductListResponse;
+import ru.oparin.solution.dto.ozon.*;
 import ru.oparin.solution.model.OzonApiEventType;
 
 import java.time.Duration;
@@ -88,6 +85,34 @@ public class OzonProductsApiClient {
         body.put("filter", Map.of("visibility", "ALL"));
         body.put("limit", limit > 0 ? limit : DEFAULT_PAGE_LIMIT);
         return postJson(clientId, apiKey, OzonApiEventType.STOCKS_CABINET.getDefaultUrl(), body, OzonProductInfoStocksResponse.class, "product-info-stocks");
+    }
+
+    /**
+     * Аналитика продаж по SKU и дню (базовые метрики без Premium).
+     */
+    public OzonAnalyticsDataResponse getAnalyticsData(
+            String clientId,
+            String apiKey,
+            String dateFrom,
+            String dateTo,
+            int limit,
+            int offset
+    ) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("date_from", dateFrom);
+        body.put("date_to", dateTo);
+        body.put("metrics", List.of("revenue", "ordered_units"));
+        body.put("dimension", List.of("sku", "day"));
+        body.put("limit", limit > 0 ? limit : 1000);
+        body.put("offset", Math.max(0, offset));
+        return postJson(
+                clientId,
+                apiKey,
+                OzonApiEventType.ANALYTICS_DATA_CABINET.getDefaultUrl(),
+                body,
+                OzonAnalyticsDataResponse.class,
+                "analytics-data"
+        );
     }
 
     private <T> T postJson(String clientId, String apiKey, String url, Object body, Class<T> responseType, String operation) {
