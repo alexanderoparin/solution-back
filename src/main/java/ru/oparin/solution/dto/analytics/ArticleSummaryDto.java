@@ -5,6 +5,7 @@ import lombok.*;
 import ru.oparin.solution.model.MarketplaceType;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
@@ -81,5 +82,30 @@ public class ArticleSummaryDto {
      * Дата и время появления карточки на Wildberries.
      */
     private LocalDateTime wbCreatedAt;
+
+    /**
+     * Цена продавца (Ozon, последний снимок).
+     */
+    private BigDecimal price;
+
+    /**
+     * Старая цена (Ozon).
+     */
+    private BigDecimal oldPrice;
+
+    /**
+     * Дата снимка цены (Ozon).
+     */
+    private LocalDate priceDate;
+
+    /**
+     * Остаток FBO present (Ozon, сумма по SKU).
+     */
+    private Integer stockFbo;
+
+    /**
+     * Остаток FBS present (Ozon, сумма по SKU).
+     */
+    private Integer stockFbs;
 }
 

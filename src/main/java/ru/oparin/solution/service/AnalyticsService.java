@@ -43,6 +43,8 @@ public class AnalyticsService {
 
     private final WbProductCardRepository productCardRepository;
     private final OzonProductCardRepository ozonProductCardRepository;
+    private final OzonProductPriceHistoryRepository ozonProductPriceHistoryRepository;
+    private final OzonProductStockRepository ozonProductStockRepository;
     private final CabinetService cabinetService;
     private final WbProductCardAnalyticsRepository analyticsRepository;
     private final WbPromotionCampaignRepository campaignRepository;
@@ -181,21 +183,76 @@ public class AnalyticsService {
                     .filter(card -> card.getPhotoUrl() != null && !card.getPhotoUrl().isBlank())
                     .toList();
         }
+        if (cards.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, OzonProductPriceHistory> priceByProductId = loadLatestOzonPrices(cabinetId);
+        Map<Long, int[]> stocksByProductId = loadOzonStockTotals(cabinetId);
+
         return cards.stream()
-                .map(this::mapOzonToArticleSummary)
+                .map(card -> mapOzonToArticleSummary(
+                        card,
+                        priceByProductId.get(card.getProductId()),
+                        stocksByProductId.get(card.getProductId())
+                ))
                 .toList();
     }
 
-    private ArticleSummaryDto mapOzonToArticleSummary(OzonProductCard card) {
-        return ArticleSummaryDto.builder()
+    /**
+     * Последний снимок цен по кабинету (макс. дата), индекс по product_id.
+     */
+    private Map<Long, OzonProductPriceHistory> loadLatestOzonPrices(Long cabinetId) {
+        Optional<LocalDate> maxDate = ozonProductPriceHistoryRepository.findMaxDateByCabinetId(cabinetId);
+        if (maxDate.isEmpty()) {
+            return Map.of();
+        }
+        return ozonProductPriceHistoryRepository.findByCabinet_IdAndDate(cabinetId, maxDate.get()).stream()
+                .collect(Collectors.toMap(OzonProductPriceHistory::getProductId, p -> p, (a, b) -> a));
+    }
+
+    /**
+     * Суммы present по типам склада: [0]=FBO, [1]=FBS.
+     */
+    private Map<Long, int[]> loadOzonStockTotals(Long cabinetId) {
+        Map<Long, int[]> result = new HashMap<>();
+        for (OzonProductStock stock : ozonProductStockRepository.findByCabinet_Id(cabinetId)) {
+            int[] totals = result.computeIfAbsent(stock.getProductId(), id -> new int[2]);
+            int present = stock.getPresent() != null ? stock.getPresent() : 0;
+            String type = stock.getStockType() != null ? stock.getStockType().trim().toLowerCase() : "";
+            if ("fbo".equals(type)) {
+                totals[0] += present;
+            } else if ("fbs".equals(type)) {
+                totals[1] += present;
+            }
+        }
+        return result;
+    }
+
+    private ArticleSummaryDto mapOzonToArticleSummary(
+            OzonProductCard card,
+            OzonProductPriceHistory price,
+            int[] stockTotals
+    ) {
+        ArticleSummaryDto.ArticleSummaryDtoBuilder builder = ArticleSummaryDto.builder()
                 .nmId(card.getProductId())
                 .productId(card.getProductId())
                 .offerId(card.getOfferId())
                 .marketplaceType(MarketplaceType.OZON)
                 .title(card.getTitle())
                 .vendorCode(card.getOfferId())
-                .photoTm(card.getPhotoUrl())
-                .build();
+                .photoTm(card.getPhotoUrl());
+        if (price != null) {
+            builder.price(price.getPrice())
+                    .oldPrice(price.getOldPrice())
+                    .priceDate(price.getDate());
+        }
+        if (stockTotals != null) {
+            builder.stockFbo(stockTotals[0]).stockFbs(stockTotals[1]);
+        } else {
+            builder.stockFbo(0).stockFbs(0);
+        }
+        return builder.build();
     }
 
     private List<WbProductCard> filterCardsBySearch(List<WbProductCard> cards, String searchLower) {

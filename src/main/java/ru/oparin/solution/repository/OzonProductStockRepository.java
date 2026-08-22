@@ -13,6 +13,8 @@ public interface OzonProductStockRepository extends JpaRepository<OzonProductSto
 
     List<OzonProductStock> findByCabinet_IdAndProductId(Long cabinetId, Long productId);
 
+    List<OzonProductStock> findByCabinet_Id(Long cabinetId);
+
     Optional<OzonProductStock> findByCabinet_IdAndProductIdAndSkuAndStockType(
             Long cabinetId,
             Long productId,
