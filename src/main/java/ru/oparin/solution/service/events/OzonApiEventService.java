@@ -232,6 +232,16 @@ public class OzonApiEventService {
         cabinetService.save(cabinet);
     }
 
+    /**
+     * Фиксирует успешное обновление остатков Ozon (колонка «Обновление остатков» в админке).
+     */
+    @Transactional
+    public void markStocksCompleted(Long cabinetId) {
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+        cabinet.setLastStocksUpdateAt(LocalDateTime.now());
+        cabinetService.save(cabinet);
+    }
+
     @Transactional
     public int recoverStuckRunningEvents(int timeoutMinutes) {
         LocalDateTime threshold = LocalDateTime.now().minusMinutes(timeoutMinutes);
