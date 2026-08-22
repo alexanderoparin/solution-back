@@ -5,5 +5,7 @@ package ru.oparin.solution.model;
  */
 public enum OzonApiEventType {
     /** Постраничная загрузка каталога товаров. */
-    PRODUCT_LIST_PAGE
+    PRODUCT_LIST_PAGE,
+    /** Загрузка цен по кабинету (все страницы /v5/product/info/prices). */
+    PRICES_CABINET
 }

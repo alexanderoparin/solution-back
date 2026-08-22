@@ -11,6 +11,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import ru.oparin.solution.dto.ozon.OzonProductInfoListResponse;
+import ru.oparin.solution.dto.ozon.OzonProductInfoPricesResponse;
 import ru.oparin.solution.dto.ozon.OzonProductListResponse;
 
 import java.time.Duration;
@@ -27,6 +28,7 @@ public class OzonProductsApiClient {
 
     private static final String PRODUCT_LIST_URL = "https://api-seller.ozon.ru/v2/product/list";
     private static final String PRODUCT_INFO_LIST_URL = "https://api-seller.ozon.ru/v3/product/info/list";
+    private static final String PRODUCT_INFO_PRICES_URL = "https://api-seller.ozon.ru/v5/product/info/prices";
     private static final String HEADER_CLIENT_ID = "Client-Id";
     private static final String HEADER_API_KEY = "Api-Key";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
@@ -63,6 +65,17 @@ public class OzonProductsApiClient {
     public OzonProductInfoListResponse getProductInfoList(String clientId, String apiKey, List<Long> productIds) {
         Map<String, Object> body = Map.of("product_id", productIds);
         return postJson(clientId, apiKey, PRODUCT_INFO_LIST_URL, body, OzonProductInfoListResponse.class, "product-info-list");
+    }
+
+    /**
+     * Постраничный список цен товаров.
+     */
+    public OzonProductInfoPricesResponse listProductPrices(String clientId, String apiKey, String cursor, int limit) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("cursor", cursor != null ? cursor : "");
+        body.put("filter", Map.of("visibility", "ALL"));
+        body.put("limit", limit > 0 ? limit : DEFAULT_PAGE_LIMIT);
+        return postJson(clientId, apiKey, PRODUCT_INFO_PRICES_URL, body, OzonProductInfoPricesResponse.class, "product-info-prices");
     }
 
     private <T> T postJson(String clientId, String apiKey, String url, Object body, Class<T> responseType, String operation) {

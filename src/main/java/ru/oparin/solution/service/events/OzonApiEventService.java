@@ -14,6 +14,7 @@ import ru.oparin.solution.model.OzonApiEventType;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.OzonApiEventRepository;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.events.payload.OzonPricesCabinetPayload;
 import ru.oparin.solution.service.events.payload.OzonProductListPagePayload;
 
 import java.time.LocalDateTime;
@@ -26,9 +27,12 @@ import java.util.stream.Collectors;
 public class OzonApiEventService {
 
     public static final String PRODUCT_LIST_EXECUTOR_BEAN = "ozonProductListPageEventExecutor";
+    public static final String PRICES_CABINET_EXECUTOR_BEAN = "ozonPricesCabinetEventExecutor";
 
     private static final int PRODUCT_LIST_MAX_ATTEMPTS = 3;
     private static final int PRODUCT_LIST_PRIORITY = 100;
+    private static final int PRICES_MAX_ATTEMPTS = 3;
+    private static final int PRICES_PRIORITY = 85;
 
     private static final Set<OzonApiEventStatus> ACTIVE_STATUSES = Set.of(
             OzonApiEventStatus.CREATED,
@@ -60,6 +64,39 @@ public class OzonApiEventService {
     @Transactional
     public void enqueueNextProductListEvent(Long cabinetId, OzonProductListPagePayload payload, String triggerSource) {
         enqueueProductListEvent(cabinetId, payload, buildProductListDedupKey(cabinetId, payload.lastId()), triggerSource);
+    }
+
+    /**
+     * Загрузка цен по кабинету после завершения каталога.
+     */
+    @Transactional
+    public void enqueuePricesCabinetEvent(Long cabinetId, boolean includeStocks, String triggerSource) {
+        String dedupKey = "PRICES_CABINET:" + cabinetId;
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("Ozon PRICES event уже существует (dedupKey={}), создание пропущено", dedupKey);
+            return;
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        OzonPricesCabinetPayload payload = OzonPricesCabinetPayload.builder()
+                .includeStocks(includeStocks)
+                .build();
+        OzonApiEvent event = OzonApiEvent.builder()
+                .eventType(OzonApiEventType.PRICES_CABINET)
+                .status(OzonApiEventStatus.CREATED)
+                .executorBeanName(PRICES_CABINET_EXECUTOR_BEAN)
+                .cabinet(cabinet)
+                .payloadJson(writePayload(payload))
+                .dedupKey(dedupKey)
+                .attemptCount(0)
+                .maxAttempts(PRICES_MAX_ATTEMPTS)
+                .nextAttemptAt(LocalDateTime.now())
+                .priority(PRICES_PRIORITY)
+                .triggerSource(triggerSource)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        eventRepository.save(event);
     }
 
     @Transactional(readOnly = true)

@@ -61,8 +61,8 @@ public class OzonProductListPageEventExecutor implements OzonApiEventExecutor {
                 return OzonApiEventExecutionResult.completedSuccessfully();
             }
 
-            eventService.markMainCompleted(cabinet.getId());
-            log.info("Ozon каталог полностью загружен для cabinetId={}", cabinet.getId());
+            eventService.enqueuePricesCabinetEvent(cabinet.getId(), payload.includeStocks(), event.getTriggerSource());
+            log.info("Ozon каталог полностью загружен для cabinetId={}, поставлены цены в очередь", cabinet.getId());
             return OzonApiEventExecutionResult.completedSuccessfully();
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode().value() == 429) {
