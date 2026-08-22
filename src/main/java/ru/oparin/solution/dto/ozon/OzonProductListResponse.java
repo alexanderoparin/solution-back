@@ -7,7 +7,7 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * Ответ Ozon Seller API {@code POST /v2/product/list}.
+ * Ответ Ozon Seller API {@code POST /v3/product/list}.
  */
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)

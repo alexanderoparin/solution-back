@@ -27,7 +27,7 @@ import java.util.Map;
 @Slf4j
 public class OzonProductsApiClient {
 
-    private static final String PRODUCT_LIST_URL = "https://api-seller.ozon.ru/v2/product/list";
+    private static final String PRODUCT_LIST_URL = "https://api-seller.ozon.ru/v3/product/list";
     private static final String PRODUCT_INFO_LIST_URL = "https://api-seller.ozon.ru/v3/product/info/list";
     private static final String PRODUCT_INFO_PRICES_URL = "https://api-seller.ozon.ru/v5/product/info/prices";
     private static final String PRODUCT_INFO_STOCKS_URL = "https://api-seller.ozon.ru/v4/product/info/stocks";
