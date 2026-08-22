@@ -108,6 +108,7 @@ app:
     running-timeout-minutes: 15
     event-await-timeout-seconds: 60
     poll-batch-size: 50
+    success-spacing-ms: ${ozon_events_success_spacing_ms:250}
   uploads:
     directory: /app/uploads
     max-file-size: 31457280  # 30 MB по умолчанию

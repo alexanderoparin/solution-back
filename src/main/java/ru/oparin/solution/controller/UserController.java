@@ -10,10 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.config.SubscriptionProperties;
 import ru.oparin.solution.dto.*;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.Payment;
-import ru.oparin.solution.model.Role;
-import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.PaymentRepository;
 import ru.oparin.solution.repository.UserRepository;
@@ -37,6 +34,7 @@ public class UserController {
 
     private final UserService userService;
     private final WbApiKeyService wbApiKeyService;
+    private final OzonApiKeyService ozonApiKeyService;
     private final AnalyticsScheduler analyticsScheduler;
     private final SubscriptionAccessService subscriptionAccessService;
     private final WbCampaignManageAccessService campaignManageAccessService;
@@ -66,10 +64,16 @@ public class UserController {
     public ResponseEntity<MessageResponse> validateApiKey(Authentication authentication) {
         User user = getCurrentUser(authentication);
         validateCabinetOwner(user);
-        wbApiKeyService.validateApiKey(user.getId());
         Cabinet cabinet = wbApiKeyService.findDefaultCabinetByUserId(user.getId());
+        if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            ozonApiKeyService.validateApiKeyByCabinet(cabinet);
+        } else {
+            wbApiKeyService.validateApiKey(user.getId());
+            cabinet = wbApiKeyService.findDefaultCabinetByUserId(user.getId());
+        }
         if (TRUE.equals(cabinet.getIsValid())) {
-            return ResponseEntity.ok(createSuccessMessage("API ключ валиден"));
+            return ResponseEntity.ok(createSuccessMessage(
+                    cabinet.getMarketplaceType() == MarketplaceType.OZON ? "Api-Key Ozon валиден" : "API ключ валиден"));
         }
         String errorMsg = cabinet.getValidationError() != null
                 ? cabinet.getValidationError()

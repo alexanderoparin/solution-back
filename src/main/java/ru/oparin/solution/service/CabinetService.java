@@ -335,6 +335,8 @@ public class CabinetService {
                 .apiKey(apiKey)
                 .ozonClientId(clientId)
                 .tokenType(CabinetTokenType.BASIC)
+                .isValid(true)
+                .lastValidatedAt(java.time.LocalDateTime.now())
                 .build();
         cabinet = cabinetRepository.save(cabinet);
         cabinetBillingService.initializeCabinetBilling(cabinet);

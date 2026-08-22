@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.dto.ozon.OzonProductInfoListResponse;
 import ru.oparin.solution.dto.ozon.OzonProductListResponse;
+import ru.oparin.solution.exception.OzonRateLimitDeferException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetUpdateErrorScope;
 import ru.oparin.solution.model.OzonApiEvent;
@@ -64,6 +65,11 @@ public class OzonProductListPageEventExecutor implements OzonApiEventExecutor {
             eventService.enqueuePricesCabinetEvent(cabinet.getId(), payload.includeStocks(), event.getTriggerSource());
             log.info("Ozon каталог полностью загружен для cabinetId={}, поставлены цены в очередь", cabinet.getId());
             return OzonApiEventExecutionResult.completedSuccessfully();
+        } catch (OzonRateLimitDeferException e) {
+            return OzonApiEventExecutionResult.deferredRetry(
+                    e.getMessage(),
+                    e.getDeferUntil() != null ? e.getDeferUntil() : LocalDateTime.now().plusSeconds(60)
+            );
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode().value() == 429) {
                 return OzonApiEventExecutionResult.deferredRetry(
@@ -74,6 +80,13 @@ public class OzonProductListPageEventExecutor implements OzonApiEventExecutor {
             cabinetUpdateErrorService.recordError(cabinet.getId(), CabinetUpdateErrorScope.MAIN, e.getMessage());
             return OzonApiEventExecutionResult.retryableError("Ozon API: " + e.getStatusCode() + " " + e.getMessage());
         } catch (Exception e) {
+            OzonRateLimitDeferException defer = OzonRateLimitDeferException.findInChain(e);
+            if (defer != null) {
+                return OzonApiEventExecutionResult.deferredRetry(
+                        defer.getMessage(),
+                        defer.getDeferUntil() != null ? defer.getDeferUntil() : LocalDateTime.now().plusSeconds(60)
+                );
+            }
             cabinetUpdateErrorService.recordError(cabinet.getId(), CabinetUpdateErrorScope.MAIN, e.getMessage());
             return OzonApiEventExecutionResult.retryableError(e.getMessage());
         }

@@ -10,12 +10,10 @@ import ru.oparin.solution.dto.MessageResponse;
 import ru.oparin.solution.dto.cabinet.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.MarketplaceType;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
-import ru.oparin.solution.service.CabinetAccessService;
-import ru.oparin.solution.service.CabinetService;
-import ru.oparin.solution.service.UserService;
-import ru.oparin.solution.service.WbApiKeyService;
+import ru.oparin.solution.service.*;
 
 import java.util.List;
 
@@ -29,6 +27,7 @@ public class CabinetController {
 
     private final CabinetService cabinetService;
     private final WbApiKeyService wbApiKeyService;
+    private final OzonApiKeyService ozonApiKeyService;
     private final UserService userService;
     private final CabinetAccessService cabinetAccessService;
 
@@ -227,11 +226,17 @@ public class CabinetController {
             throw new UserException("Нет доступа", HttpStatus.FORBIDDEN);
         }
         Long ownerId = cabinetService.findById(id).orElseThrow().getUser().getId();
-        wbApiKeyService.validateApiKey(id, ownerId);
         Cabinet cabinet = cabinetService.findCabinetByIdAndUserId(id, ownerId);
+        if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            ozonApiKeyService.validateApiKeyByCabinet(cabinet);
+        } else {
+            wbApiKeyService.validateApiKey(id, ownerId);
+            cabinet = cabinetService.findCabinetByIdAndUserId(id, ownerId);
+        }
         boolean valid = Boolean.TRUE.equals(cabinet.getIsValid());
         MessageResponse body = MessageResponse.builder()
-                .message(valid ? "API ключ валиден"
+                .message(valid
+                        ? (cabinet.getMarketplaceType() == MarketplaceType.OZON ? "Api-Key Ozon валиден" : "API ключ валиден")
                         : (cabinet.getValidationError() != null ? cabinet.getValidationError() : "API ключ не прошёл проверку"))
                 .build();
         return valid ? ResponseEntity.ok(body) : ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);

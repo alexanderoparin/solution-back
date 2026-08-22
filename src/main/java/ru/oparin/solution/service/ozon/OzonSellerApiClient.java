@@ -30,14 +30,16 @@ public class OzonSellerApiClient {
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    private final OzonEndpointRateLimitCoordinator rateLimitCoordinator;
 
-    public OzonSellerApiClient() {
+    public OzonSellerApiClient(OzonEndpointRateLimitCoordinator rateLimitCoordinator) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(CONNECT_TIMEOUT);
         requestFactory.setReadTimeout(READ_TIMEOUT);
         this.restTemplate = new RestTemplate(requestFactory);
         this.objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.rateLimitCoordinator = rateLimitCoordinator;
     }
 
     /**
@@ -50,6 +52,8 @@ public class OzonSellerApiClient {
     public OzonSellerInfoResponse getSellerInfo(String clientId, String apiKey) {
         HttpHeaders headers = createAuthHeaders(clientId, apiKey);
         HttpEntity<String> entity = new HttpEntity<>("{}", headers);
+        String endpointKey = OzonEndpointRateLimitCoordinator.endpointKeyFromUrl(SELLER_INFO_URL);
+        rateLimitCoordinator.beforeRequest(clientId, endpointKey);
         long startedAtMs = System.currentTimeMillis();
 
         log.info("Ozon API seller-info: запрос POST {}, Client-Id={}", SELLER_INFO_URL, clientId);
@@ -62,6 +66,7 @@ public class OzonSellerApiClient {
                     entity,
                     String.class
             );
+            rateLimitCoordinator.afterResponse(clientId, endpointKey, response.getStatusCode().value(), response.getHeaders());
             long elapsedMs = System.currentTimeMillis() - startedAtMs;
             String body = response.getBody();
             log.info("Ozon API seller-info: ответ HTTP {}, {} ms, тело: {}",
@@ -74,6 +79,7 @@ public class OzonSellerApiClient {
             }
             return objectMapper.readValue(body, OzonSellerInfoResponse.class);
         } catch (HttpClientErrorException e) {
+            rateLimitCoordinator.afterResponse(clientId, endpointKey, e.getStatusCode().value(), e.getResponseHeaders());
             long elapsedMs = System.currentTimeMillis() - startedAtMs;
             log.warn("Ozon API seller-info: ответ HTTP {} {}, {} ms, тело: {}",
                     e.getStatusCode().value(),

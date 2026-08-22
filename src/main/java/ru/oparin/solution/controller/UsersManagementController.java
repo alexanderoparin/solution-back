@@ -15,15 +15,9 @@ import ru.oparin.solution.dto.cabinet.CabinetDto;
 import ru.oparin.solution.dto.cabinet.ManagedCabinetRowDto;
 import ru.oparin.solution.dto.cabinet.UpdateCabinetRequest;
 import ru.oparin.solution.dto.cabinet.WorkContextCabinetDto;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.CabinetTokenType;
-import ru.oparin.solution.model.Role;
-import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.*;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
-import ru.oparin.solution.service.CabinetService;
-import ru.oparin.solution.service.UserService;
-import ru.oparin.solution.service.WbApiKeyService;
-import ru.oparin.solution.service.WbProductCardAnalyticsService;
+import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.WbMainStepPayload;
 
@@ -47,6 +41,7 @@ public class UsersManagementController {
     private final UserService userService;
     private final CabinetService cabinetService;
     private final WbApiKeyService wbApiKeyService;
+    private final OzonApiKeyService ozonApiKeyService;
     private final AnalyticsScheduler analyticsScheduler;
     private final WbProductCardAnalyticsService productCardAnalyticsService;
     private final WbApiEventService wbApiEventService;
@@ -351,10 +346,16 @@ public class UsersManagementController {
         }
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
         Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
-        wbApiKeyService.validateApiKeyByCabinet(cabinet);
+        if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            ozonApiKeyService.validateApiKeyByCabinet(cabinet);
+        } else {
+            wbApiKeyService.validateApiKeyByCabinet(cabinet);
+        }
         boolean valid = Boolean.TRUE.equals(cabinet.getIsValid());
         String message = valid
-                ? "API ключ валиден"
+                ? (cabinet.getMarketplaceType() == MarketplaceType.OZON
+                        ? "Api-Key Ozon валиден"
+                        : "API ключ валиден")
                 : (cabinet.getValidationError() != null
                         ? cabinet.getValidationError()
                         : "API ключ не прошёл проверку");
