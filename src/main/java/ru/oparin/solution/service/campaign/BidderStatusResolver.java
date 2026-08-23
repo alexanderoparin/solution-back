@@ -3,7 +3,7 @@ package ru.oparin.solution.service.campaign;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.model.*;
-import ru.oparin.solution.repository.CabinetRepository;
+import ru.oparin.solution.service.CabinetService;
 
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -20,7 +20,7 @@ public class BidderStatusResolver {
     private static final ZoneId SCHEDULE_ZONE = ZoneId.of("Europe/Moscow");
 
     private final WbCampaignManageAccessService campaignManageAccessService;
-    private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
 
     /**
      * Статус биддера для одной кампании.
@@ -40,7 +40,7 @@ public class BidderStatusResolver {
             return BidderStatus.OFF;
         }
         Cabinet cabinet = cabinetId != null
-                ? cabinetRepository.findByIdWithUser(cabinetId).orElse(null)
+                ? cabinetService.findByIdWithUser(cabinetId).orElse(null)
                 : null;
         if (cabinet == null || !campaignManageAccessService.hasCampaignEntitlement(cabinet)) {
             return BidderStatus.NO_ACCESS;

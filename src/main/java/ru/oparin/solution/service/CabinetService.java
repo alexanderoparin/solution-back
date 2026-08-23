@@ -564,7 +564,9 @@ public class CabinetService {
      */
     @Transactional(readOnly = true)
     public Optional<Cabinet> findDefaultByUserId(Long userId) {
-        return cabinetRepository.findDefaultByUserId(userId);
+        Optional<Cabinet> cabinet = cabinetRepository.findDefaultByUserId(userId);
+        cabinet.ifPresent(cabinetIntegrationMirrorService::overlayOntoCabinet);
+        return cabinet;
     }
 
     /**

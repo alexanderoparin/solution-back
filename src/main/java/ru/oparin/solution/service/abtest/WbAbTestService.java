@@ -22,6 +22,7 @@ import ru.oparin.solution.dto.wb.WbCardsListResponse;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.*;
+import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.WbAbTestQuotaService;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.WbAbTestStartPayload;
@@ -99,7 +100,7 @@ public class WbAbTestService {
     private final WbAbTestStatsSnapshotRepository snapshotRepository;
     private final WbProductCardRepository productCardRepository;
     private final WbPromotionCampaignRepository promotionCampaignRepository;
-    private final CabinetRepository cabinetRepository;
+    private final CabinetService cabinetService;
     private final WbContentApiClient contentApiClient;
     private final WbApiEventService wbApiEventService;
     private final WbAbTestQuotaService abTestQuotaService;
@@ -186,11 +187,7 @@ public class WbAbTestService {
                     .orElseThrow(() -> new IllegalArgumentException("Кампания не найдена в кабинете: " + advertId));
         }
 
-        Cabinet cabinet = cabinetRepository.findById(cabinetId)
-                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
-        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
-            throw new IllegalArgumentException("У кабинета отсутствует API-ключ");
-        }
+        Cabinet cabinet = requireCabinetWithCredentials(cabinetId);
         if (!abTestQuotaService.canStartWbAbTest(cabinet)) {
             throw new ru.oparin.solution.exception.UserException(
                     "Недостаточно квоты А/Б тестов. Купите пакет, чтобы создать тест.",
@@ -299,8 +296,7 @@ public class WbAbTestService {
                 request.getStopMode(),
                 request.getDurationDays()
         );
-        Cabinet cabinet = cabinetRepository.findById(cabinetId)
-                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
+        Cabinet cabinet = requireCabinetWithCredentials(cabinetId);
         validateTokenAllowsInterval(cabinet, request.getRotationMode(), request.getRotationIntervalMinutes());
 
         applySettings(test, request);
@@ -372,11 +368,7 @@ public class WbAbTestService {
                 List.of(WbAbTestStatus.ENABLED, WbAbTestStatus.PENDING_START))) {
             throw new IllegalArgumentException("Для этого артикула уже есть активный или запускающийся А/Б-тест");
         }
-        Cabinet cabinet = cabinetRepository.findById(cabinetId)
-                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
-        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
-            throw new IllegalArgumentException("У кабинета отсутствует API-ключ");
-        }
+        Cabinet cabinet = requireCabinetWithCredentials(cabinetId);
         if (!abTestQuotaService.canStartWbAbTest(cabinet)) {
             throw new ru.oparin.solution.exception.UserException(
                     "Недостаточно квоты А/Б тестов. Купите пакет, чтобы перезапустить тест.",
@@ -534,8 +526,7 @@ public class WbAbTestService {
             log.info("Пропуск шага А/Б-старта: testId={}, step={}, status={}", abTestId, step, test.getStatus());
             return;
         }
-        Cabinet cabinet = cabinetRepository.findById(cabinetId)
-                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
+        Cabinet cabinet = requireCabinetWithCredentials(cabinetId);
         String source = triggerSource != null ? triggerSource : "AB_TEST_START";
 
         log.info("Шаг А/Б-старта: testId={}, step={}, variantId={}", abTestId, step, payload.variantId());
@@ -647,8 +638,7 @@ public class WbAbTestService {
         } else if (test.getStatus() != WbAbTestStatus.ENABLED) {
             return;
         }
-        Cabinet cabinet = cabinetRepository.findById(test.getCabinetId())
-                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
+        Cabinet cabinet = requireCabinetWithCredentials(test.getCabinetId());
         WbAbTestVariant variant = abTestVariantRepository.findByIdAndAbTestId(variantId, abTestId)
                 .orElseThrow(() -> new IllegalArgumentException("Вариант не найден"));
 
@@ -723,11 +713,13 @@ public class WbAbTestService {
     }
 
     private void refundQuotaIfNeeded(Long cabinetId) {
-        cabinetRepository.findById(cabinetId).ifPresent(cabinet -> {
-            if (!cabinetEntitlementServiceHasUnlimited(cabinet)) {
-                abTestQuotaService.addCredits(cabinet, 1);
-            }
-        });
+        Cabinet cabinet = cabinetService.findById(cabinetId).orElse(null);
+        if (cabinet == null) {
+            return;
+        }
+        if (!cabinetEntitlementServiceHasUnlimited(cabinet)) {
+            abTestQuotaService.addCredits(cabinet, 1);
+        }
     }
 
     private boolean cabinetEntitlementServiceHasUnlimited(Cabinet cabinet) {
@@ -1320,7 +1312,7 @@ public class WbAbTestService {
      * А/Б фото реализованы только для Wildberries; для Ozon — отдельное решение (Wave 4.3 gate).
      */
     private void requireWbCabinetForAbTest(Long cabinetId) {
-        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+        Cabinet cabinet = cabinetService.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
         if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
             throw new ru.oparin.solution.exception.UserException(
@@ -1328,6 +1320,17 @@ public class WbAbTestService {
                     org.springframework.http.HttpStatus.BAD_REQUEST
             );
         }
+    }
+
+    /**
+     * Кабинет с credentials из {@code cabinet_integrations} (Phase 5.2).
+     */
+    private Cabinet requireCabinetWithCredentials(Long cabinetId) {
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+            throw new IllegalArgumentException("У кабинета отсутствует API-ключ");
+        }
+        return cabinet;
     }
 
     private WbAbTestDto toDto(WbAbTest test) {

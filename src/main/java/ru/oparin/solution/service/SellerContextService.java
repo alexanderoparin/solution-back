@@ -58,7 +58,7 @@ public class SellerContextService {
             owner = resolveAdminOwner(sellerId, cabinetId);
             cabinet = resolveCabinet(owner.getId(), cabinetId);
         } else if (cabinetId != null) {
-            cabinet = cabinetRepository.findById(cabinetId)
+            cabinet = cabinetService.findById(cabinetId)
                     .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
             owner = cabinet.getUser();
             if (!cabinetAccessService.isCabinetOwner(currentUser, cabinetId)
@@ -77,7 +77,7 @@ public class SellerContextService {
             if (grants.isEmpty()) {
                 throw new UserException("Не найдено доступных кабинетов", HttpStatus.NOT_FOUND);
             }
-            cabinet = cabinetRepository.findById(grants.get(0).id())
+            cabinet = cabinetService.findById(grants.get(0).id())
                     .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
             owner = cabinet.getUser();
         }
@@ -103,7 +103,7 @@ public class SellerContextService {
 
     private User resolveAdminOwner(Long sellerId, Long cabinetId) {
         if (cabinetId != null) {
-            Cabinet cabinet = cabinetRepository.findById(cabinetId)
+            Cabinet cabinet = cabinetService.findById(cabinetId)
                     .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
             return cabinet.getUser();
         }

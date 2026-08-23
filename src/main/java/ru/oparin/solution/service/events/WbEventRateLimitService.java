@@ -2,9 +2,11 @@ package ru.oparin.solution.service.events;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.model.WbApiEventType;
+import ru.oparin.solution.service.CabinetIntegrationMirrorService;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -15,6 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @RequiredArgsConstructor
 public class WbEventRateLimitService {
     private final ConcurrentHashMap<String, LocalDateTime> lastCallByCabinetAndType = new ConcurrentHashMap<>();
+    private final CabinetIntegrationMirrorService cabinetIntegrationMirrorService;
 
     /**
      * Атомарно проверяет лимит по паре (cabinetId, eventType).
@@ -61,9 +64,10 @@ public class WbEventRateLimitService {
             return null;
         }
 
-        CabinetTokenType tokenType = event.getCabinet().getTokenType() != null
-                ? event.getCabinet().getTokenType()
-                : CabinetTokenType.BASIC;
+        // Phase 5.2: tokenType на Cabinet — @Transient; без overlay все PERSONAL читаются как BASIC.
+        Cabinet cabinet = event.getCabinet();
+        cabinetIntegrationMirrorService.overlayOntoCabinet(cabinet);
+        CabinetTokenType tokenType = CabinetTokenType.effective(cabinet.getTokenType());
         int intervalSeconds = resolveRateLimitSeconds(event.getEventType(), tokenType);
         if (intervalSeconds <= 0) {
             return null;
