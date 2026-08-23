@@ -66,6 +66,7 @@ public class AnalyticsService {
     private final MetricValueCalculator metricValueCalculator;
     private final WbCampaignStatisticsAggregator campaignStatisticsAggregator;
     private final WbPromotionNormQueryStatisticsService normQueryStatisticsService;
+    private final OzonPromotionCampaignSearchPhraseStatisticsService ozonSearchPhraseStatisticsService;
     private final WbPromotionParticipationRepository promotionParticipationRepository;
     private final WbArticleGoalService articleGoalService;
     private final WbCampaignGoalService campaignGoalService;
@@ -2036,6 +2037,10 @@ public class AnalyticsService {
      */
     @Transactional(readOnly = true)
     public CampaignDetailDto getCampaignDetail(Long campaignId, Long cabinetId, Long sellerId) {
+        CampaignDetailDto ozonDetail = getOzonCampaignDetail(campaignId, cabinetId, sellerId);
+        if (ozonDetail != null) {
+            return ozonDetail;
+        }
         WbPromotionCampaign campaign = resolveCampaignForDetail(campaignId, cabinetId, sellerId);
         Long cabinetIdForArticles = cabinetId;
         if (campaign != null && campaign.getCabinet() != null) {
@@ -2095,16 +2100,32 @@ public class AnalyticsService {
             Integer page,
             Integer size
     ) {
-        WbPromotionCampaign campaign = resolveCampaignForDetail(campaignId, cabinetId, sellerId);
-        if (campaign == null) {
-            return null;
-        }
         LocalDate from = dateFrom != null ? dateFrom : LocalDate.now().minusDays(DEFAULT_DAILY_DATA_SPAN_DAYS - 1);
         LocalDate to = dateTo != null ? dateTo : LocalDate.now();
         if (from.isAfter(to)) {
             LocalDate tmp = from;
             from = to;
             to = tmp;
+        }
+
+        OzonPromotionCampaign ozonCampaign = resolveOzonCampaignForDetail(campaignId, cabinetId, sellerId);
+        if (ozonCampaign != null) {
+            return ozonSearchPhraseStatisticsService.getAggregatedClustersPage(
+                    ozonCampaign.getCampaignId(),
+                    from,
+                    to,
+                    nmId,
+                    search,
+                    NormQueryClusterSortField.fromParam(sortBy),
+                    Sort.Direction.fromOptionalString(sortDir).orElse(Sort.Direction.DESC),
+                    page != null ? page : 0,
+                    size != null ? size : 20
+            );
+        }
+
+        WbPromotionCampaign campaign = resolveCampaignForDetail(campaignId, cabinetId, sellerId);
+        if (campaign == null) {
+            return null;
         }
         return normQueryStatisticsService.getAggregatedClustersPage(
                 campaign.getAdvertId(),
@@ -2117,6 +2138,87 @@ public class AnalyticsService {
                 page != null ? page : 0,
                 size != null ? size : 20
         );
+    }
+
+    private CampaignDetailDto getOzonCampaignDetail(Long campaignId, Long cabinetId, Long sellerId) {
+        OzonPromotionCampaign campaign = resolveOzonCampaignForDetail(campaignId, cabinetId, sellerId);
+        if (campaign == null) {
+            return null;
+        }
+        Long cabinetIdForArticles = campaign.getCabinet() != null ? campaign.getCabinet().getId() : cabinetId;
+        if (cabinetIdForArticles == null) {
+            return null;
+        }
+        List<OzonCampaignArticle> links = ozonCampaignArticleRepository.findByCampaignIdIn(List.of(campaign.getCampaignId()));
+        List<ArticleSummaryDto> articles = links.stream()
+                .map(link -> mapOzonCampaignArticle(link, cabinetIdForArticles))
+                .distinct()
+                .collect(Collectors.toList());
+        return CampaignDetailDto.builder()
+                .id(campaign.getCampaignId())
+                .name(campaign.getTitle())
+                .status(null)
+                .statusName(mapOzonCampaignStateLabel(campaign.getState()))
+                .articlesCount(articles.size())
+                .articles(articles)
+                .createdAt(campaign.getOzonCreatedAt())
+                .campaignGoal(null)
+                .build();
+    }
+
+    private ArticleSummaryDto mapOzonCampaignArticle(OzonCampaignArticle link, Long cabinetId) {
+        Long sku = link.getSku();
+        return ozonProductCardRepository.findByCabinet_IdAndSkuIn(cabinetId, List.of(sku)).stream()
+                .findFirst()
+                .map(card -> ArticleSummaryDto.builder()
+                        .nmId(sku)
+                        .productId(card.getProductId())
+                        .offerId(card.getOfferId())
+                        .marketplaceType(MarketplaceType.OZON)
+                        .title(card.getTitle())
+                        .photoTm(card.getPhotoUrl())
+                        .build())
+                .orElseGet(() -> ArticleSummaryDto.builder()
+                        .nmId(sku)
+                        .marketplaceType(MarketplaceType.OZON)
+                        .title("SKU " + sku)
+                        .build());
+    }
+
+    private static String mapOzonCampaignStateLabel(String state) {
+        if (state == null || state.isBlank()) {
+            return "—";
+        }
+        return switch (state) {
+            case "CAMPAIGN_STATE_RUNNING" -> "Активна";
+            case "CAMPAIGN_STATE_INACTIVE" -> "Неактивна";
+            case "CAMPAIGN_STATE_PLANNED" -> "Запланирована";
+            case "CAMPAIGN_STATE_STOPPED" -> "Остановлена";
+            case "CAMPAIGN_STATE_FINISHED" -> "Завершена";
+            default -> state;
+        };
+    }
+
+    private OzonPromotionCampaign resolveOzonCampaignForDetail(Long campaignId, Long cabinetId, Long sellerId) {
+        if (cabinetId != null) {
+            Optional<OzonPromotionCampaign> byCabinet = ozonPromotionCampaignRepository
+                    .findByCampaignIdAndCabinet_Id(campaignId, cabinetId);
+            if (byCabinet.isPresent()) {
+                return byCabinet.get();
+            }
+        }
+        if (sellerId != null) {
+            Optional<OzonPromotionCampaign> campaignOpt = ozonPromotionCampaignRepository.findById(campaignId);
+            if (campaignOpt.isPresent()) {
+                OzonPromotionCampaign campaign = campaignOpt.get();
+                if (campaign.getCabinet() != null
+                        && campaign.getCabinet().getUser() != null
+                        && campaign.getCabinet().getUser().getId().equals(sellerId)) {
+                    return campaign;
+                }
+            }
+        }
+        return null;
     }
 
     private WbPromotionCampaign resolveCampaignForDetail(Long campaignId, Long cabinetId, Long sellerId) {

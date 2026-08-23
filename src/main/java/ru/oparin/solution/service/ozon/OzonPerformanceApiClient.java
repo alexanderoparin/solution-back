@@ -34,6 +34,8 @@ public class OzonPerformanceApiClient {
     private static final String DAILY_STATS_URL = OzonApiEventType.CAMPAIGN_STATS_CABINET.getDefaultUrl();
     private static final String STATISTICS_SUBMIT_URL =
             OzonApiBaseUrl.PERFORMANCE.getDefaultBaseUrl() + "/api/client/statistics";
+    private static final String SEARCH_PHRASES_SUBMIT_URL =
+            OzonApiBaseUrl.PERFORMANCE.getDefaultBaseUrl() + "/api/client/statistics/phrases/json";
     private static final String STATISTICS_REPORT_URL =
             OzonApiBaseUrl.PERFORMANCE.getDefaultBaseUrl() + "/api/client/statistics/report";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
@@ -45,6 +47,8 @@ public class OzonPerformanceApiClient {
     private static final int DAILY_STATS_CAMPAIGN_BATCH = 50;
     /** Сколько campaignIds в одном async product-stats отчёте. */
     private static final int PRODUCT_STATS_CAMPAIGN_BATCH = 20;
+    /** По одной кампании в search-phrases отчёте (CSV, без ZIP). */
+    private static final int SEARCH_PHRASES_CAMPAIGN_BATCH = 1;
     /** Интервал опроса async-отчёта внутри одного execute. */
     private static final int PRODUCT_STATS_POLL_ATTEMPTS = 24;
     private static final long PRODUCT_STATS_POLL_SLEEP_MS = 3_000L;
@@ -247,6 +251,119 @@ public class OzonPerformanceApiClient {
         } catch (Exception e) {
             throw new RestClientException("Ошибка submit statistics: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Запрашивает async-отчёт по поисковым запросам (POST /api/client/statistics/phrases/json).
+     */
+    public String submitSearchPhrasesReport(
+            Long cabinetId,
+            String clientId,
+            String clientSecret,
+            Collection<Long> campaignIds,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+        String accessToken = getAccessToken(cabinetId, clientId, clientSecret);
+        List<Long> ids = campaignIds == null ? List.of() : campaignIds.stream().filter(id -> id != null).distinct().toList();
+        OzonPerformanceStatisticsSubmitRequest body = OzonPerformanceStatisticsSubmitRequest.builder()
+                .campaigns(ids)
+                .dateFrom(dateFrom.toString())
+                .dateTo(dateTo.toString())
+                .groupBy("DATE")
+                .build();
+        HttpHeaders headers = bearerHeaders(accessToken);
+        HttpEntity<OzonPerformanceStatisticsSubmitRequest> entity = new HttpEntity<>(body, headers);
+        log.info("Ozon Performance search phrases submit: POST {}, campaigns={}, period={}..{}",
+                SEARCH_PHRASES_SUBMIT_URL, ids.size(), dateFrom, dateTo);
+        long startedAtMs = System.currentTimeMillis();
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(
+                    SEARCH_PHRASES_SUBMIT_URL, HttpMethod.POST, entity, String.class);
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            String responseBody = response.getBody();
+            log.info("Ozon Performance search phrases submit: HTTP {} {} ms",
+                    response.getStatusCode().value(), elapsedMs);
+            if (!response.getStatusCode().is2xxSuccessful() || responseBody == null || responseBody.isBlank()) {
+                throw new RestClientException("Неожиданный ответ submit search phrases: " + response.getStatusCode());
+            }
+            OzonPerformanceStatisticsSubmitResponse parsed =
+                    objectMapper.readValue(responseBody, OzonPerformanceStatisticsSubmitResponse.class);
+            if (parsed.getUuid() == null || parsed.getUuid().isBlank()) {
+                throw new RestClientException("Performance API не вернул UUID отчёта search phrases");
+            }
+            return parsed.getUuid();
+        } catch (HttpClientErrorException e) {
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            log.warn("Ozon Performance search phrases submit: HTTP {} {}, {} ms, тело: {}",
+                    e.getStatusCode().value(), e.getStatusText(), elapsedMs,
+                    truncateForLog(e.getResponseBodyAsString()));
+            throw e;
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RestClientException("Ошибка submit search phrases: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Скачивает async-отчёт search phrases и разбирает строки (JSON или CSV).
+     */
+    public List<OzonPerformanceSearchPhrasesResponse.Row> downloadSearchPhrasesReport(
+            Long cabinetId,
+            String clientId,
+            String clientSecret,
+            String reportUuid,
+            Long fallbackCampaignId
+    ) {
+        String accessToken = getAccessToken(cabinetId, clientId, clientSecret);
+        String url = STATISTICS_REPORT_URL + "?UUID=" + reportUuid;
+        HttpHeaders headers = bearerHeaders(accessToken);
+        headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_PLAIN, MediaType.ALL));
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        log.info("Ozon Performance search phrases download: GET {}, uuid={}", STATISTICS_REPORT_URL, reportUuid);
+        long startedAtMs = System.currentTimeMillis();
+        try {
+            ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, entity, byte[].class);
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            byte[] bodyBytes = response.getBody();
+            log.info("Ozon Performance search phrases download: HTTP {} {} ms, bytes={}",
+                    response.getStatusCode().value(), elapsedMs, bodyBytes != null ? bodyBytes.length : 0);
+            if (!response.getStatusCode().is2xxSuccessful() || bodyBytes == null || bodyBytes.length == 0) {
+                throw new RestClientException("Неожиданный ответ search phrases download: " + response.getStatusCode());
+            }
+            if (bodyBytes.length >= 2 && bodyBytes[0] == 'P' && bodyBytes[1] == 'K') {
+                log.warn("Ozon search phrases report uuid={} вернул ZIP — пропуск (ожидался CSV/JSON)", reportUuid);
+                return List.of();
+            }
+            String body = new String(bodyBytes, StandardCharsets.UTF_8);
+            String trimmed = body.trim();
+            if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+                JsonNode root = objectMapper.readTree(body);
+                List<OzonPerformanceSearchPhrasesResponse.Row> rows = OzonPerformanceSearchPhrasesResponse.parseRows(root);
+                rows.forEach(row -> {
+                    if (row.getCampaignId() == null) {
+                        row.setCampaignId(fallbackCampaignId);
+                    }
+                });
+                return rows;
+            }
+            return OzonPerformanceSearchPhrasesCsvParser.parse(body, fallbackCampaignId);
+        } catch (HttpClientErrorException e) {
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            log.warn("Ozon Performance search phrases download: HTTP {} {}, {} ms, тело: {}",
+                    e.getStatusCode().value(), e.getStatusText(), elapsedMs,
+                    truncateForLog(e.getResponseBodyAsString()));
+            throw e;
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RestClientException("Ошибка search phrases download: " + e.getMessage(), e);
+        }
+    }
+
+    public int getSearchPhrasesCampaignBatchSize() {
+        return SEARCH_PHRASES_CAMPAIGN_BATCH;
     }
 
     /**

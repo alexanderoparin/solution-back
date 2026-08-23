@@ -3,21 +3,16 @@ package ru.oparin.solution.service.sync;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import ru.oparin.solution.dto.ozon.OzonPerformanceCampaignListResponse;
-import ru.oparin.solution.dto.ozon.OzonPerformanceDailyStatsResponse;
-import ru.oparin.solution.dto.ozon.OzonPerformanceProductStatsResponse;
-import ru.oparin.solution.dto.ozon.OzonPerformanceReportStatusResponse;
+import ru.oparin.solution.dto.ozon.*;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.OzonPromotionCampaign;
 import ru.oparin.solution.repository.OzonPromotionCampaignRepository;
-import ru.oparin.solution.service.OzonCampaignArticleService;
-import ru.oparin.solution.service.OzonPromotionCampaignProductStatisticsService;
-import ru.oparin.solution.service.OzonPromotionCampaignService;
-import ru.oparin.solution.service.OzonPromotionCampaignStatisticsService;
+import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.ozon.OzonPerformanceApiClient;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Синхронизация списка РК, объектов (SKU) и дневной статистики Ozon Performance API.
@@ -31,6 +26,7 @@ public class OzonPromotionCampaignSyncService {
     private final OzonPromotionCampaignService campaignService;
     private final OzonPromotionCampaignStatisticsService statisticsService;
     private final OzonPromotionCampaignProductStatisticsService productStatisticsService;
+    private final OzonPromotionCampaignSearchPhraseStatisticsService searchPhraseStatisticsService;
     private final OzonCampaignArticleService campaignArticleService;
     private final OzonPromotionCampaignRepository campaignRepository;
 
@@ -143,6 +139,97 @@ public class OzonPromotionCampaignSyncService {
 
     public int getProductStatsCampaignBatchSize() {
         return performanceApiClient.getProductStatsCampaignBatchSize();
+    }
+
+    /**
+     * Async search-phrases stats для одного батча кампаний (POST → poll → download).
+     */
+    public OzonProductStatsSyncResult syncSearchPhrasesBatch(
+            Cabinet cabinet,
+            String clientId,
+            String clientSecret,
+            LocalDate dateFrom,
+            LocalDate dateTo,
+            String existingReportUuid,
+            int campaignBatchStart
+    ) {
+        List<OzonPromotionCampaign> eligible = listSearchPhrasesEligibleCampaigns(cabinet.getId());
+        if (eligible.isEmpty()) {
+            return OzonProductStatsSyncResult.completed(0);
+        }
+        int batchSize = performanceApiClient.getSearchPhrasesCampaignBatchSize();
+        int batchStart = Math.max(0, campaignBatchStart);
+        if (batchStart >= eligible.size()) {
+            return OzonProductStatsSyncResult.completed(0);
+        }
+        OzonPromotionCampaign campaign = eligible.get(batchStart);
+        Long campaignId = campaign.getCampaignId();
+
+        String reportUuid = existingReportUuid;
+        if (reportUuid == null || reportUuid.isBlank()) {
+            reportUuid = performanceApiClient.submitSearchPhrasesReport(
+                    cabinet.getId(), clientId, clientSecret, List.of(campaignId), dateFrom, dateTo);
+        }
+
+        try {
+            OzonPerformanceReportStatusResponse status = performanceApiClient.waitForReportReady(
+                    cabinet.getId(), clientId, clientSecret, reportUuid);
+            String state = status != null && status.getState() != null
+                    ? status.getState().trim().toUpperCase()
+                    : "";
+            if ("IN_PROGRESS".equals(state) || "NOT_STARTED".equals(state)) {
+                return OzonProductStatsSyncResult.pending(reportUuid);
+            }
+            if ("ERROR".equals(state)) {
+                String err = status.getError() != null ? status.getError() : "ERROR";
+                log.warn("Ozon search phrases report ERROR uuid={}, campaignId={}: {}",
+                        reportUuid, campaignId, err);
+                return OzonProductStatsSyncResult.skipped(err);
+            }
+            if (!"OK".equals(state)) {
+                return OzonProductStatsSyncResult.pending(reportUuid);
+            }
+
+            List<OzonPerformanceSearchPhrasesResponse.Row> rows = performanceApiClient.downloadSearchPhrasesReport(
+                    cabinet.getId(), clientId, clientSecret, reportUuid, campaignId);
+            int saved = searchPhraseStatisticsService.replaceForCampaign(campaign, dateFrom, dateTo, rows);
+            log.info("Ozon search phrases sync: cabinetId={}, campaignId={}, saved={}",
+                    cabinet.getId(), campaignId, saved);
+            return OzonProductStatsSyncResult.completed(saved);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return OzonProductStatsSyncResult.pending(reportUuid);
+        }
+    }
+
+    /**
+     * Есть ли ещё батчи search-phrases после {@code campaignBatchStart}.
+     */
+    public boolean hasMoreSearchPhrasesBatches(Long cabinetId, int campaignBatchStart) {
+        int total = listSearchPhrasesEligibleCampaigns(cabinetId).size();
+        int batchSize = performanceApiClient.getSearchPhrasesCampaignBatchSize();
+        return campaignBatchStart + batchSize < total;
+    }
+
+    public int getSearchPhrasesCampaignBatchSize() {
+        return performanceApiClient.getSearchPhrasesCampaignBatchSize();
+    }
+
+    /**
+     * Кампании, для которых доступен отчёт /statistics/phrases (CPC, не завершённые).
+     */
+    public List<OzonPromotionCampaign> listSearchPhrasesEligibleCampaigns(Long cabinetId) {
+        return campaignRepository.findByCabinet_Id(cabinetId).stream()
+                .filter(c -> !"CAMPAIGN_STATE_FINISHED".equals(c.getState()))
+                .filter(this::isSearchPhrasesEligible)
+                .toList();
+    }
+
+    private boolean isSearchPhrasesEligible(OzonPromotionCampaign campaign) {
+        if (campaign.getPaymentType() == null) {
+            return false;
+        }
+        return campaign.getPaymentType().trim().toUpperCase(Locale.ROOT).contains("CPC");
     }
 
     /**

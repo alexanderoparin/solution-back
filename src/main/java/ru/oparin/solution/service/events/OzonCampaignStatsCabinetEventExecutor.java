@@ -51,7 +51,13 @@ public class OzonCampaignStatsCabinetEventExecutor implements OzonApiEventExecut
 
         try {
             int statsRows = 0;
-            if (payload == null || payload.productStatsReportUuid() == null || payload.productStatsReportUuid().isBlank()) {
+            boolean resumeAsyncPhase = payload != null && (
+                    (payload.productStatsReportUuid() != null && !payload.productStatsReportUuid().isBlank())
+                    || (payload.searchPhrasesReportUuid() != null && !payload.searchPhrasesReportUuid().isBlank())
+                    || payload.resolveProductStatsBatchStart() > 0
+                    || payload.resolveSearchPhrasesBatchStart() > 0
+            );
+            if (!resumeAsyncPhase) {
                 statsRows = campaignSyncService.syncCampaignsAndDailyStats(
                         cabinet, clientId.trim(), clientSecret.trim(), dateFrom, dateTo);
             }
@@ -77,6 +83,8 @@ public class OzonCampaignStatsCabinetEventExecutor implements OzonApiEventExecut
                             .dateTo(dateTo)
                             .productStatsReportUuid(productResult.getReportUuid())
                             .productStatsBatchStart(batchStart)
+                            .searchPhrasesReportUuid(payload != null ? payload.searchPhrasesReportUuid() : null)
+                            .searchPhrasesBatchStart(payload != null ? payload.resolveSearchPhrasesBatchStart() : 0)
                             .build();
                     eventService.updateEventPayload(event.getId(), pendingPayload);
                     return OzonApiEventExecutionResult.deferredPoll(
@@ -95,9 +103,49 @@ public class OzonCampaignStatsCabinetEventExecutor implements OzonApiEventExecut
                 reportUuid = null;
             }
 
+            int searchPhrasesRowsTotal = 0;
+            int searchPhrasesBatchStart = payload != null ? payload.resolveSearchPhrasesBatchStart() : 0;
+            String searchPhrasesReportUuid = payload != null ? payload.searchPhrasesReportUuid() : null;
+            int searchPhrasesBatchSize = campaignSyncService.getSearchPhrasesCampaignBatchSize();
+
+            while (true) {
+                OzonProductStatsSyncResult phrasesResult = campaignSyncService.syncSearchPhrasesBatch(
+                        cabinet,
+                        clientId.trim(),
+                        clientSecret.trim(),
+                        dateFrom,
+                        dateTo,
+                        searchPhrasesReportUuid,
+                        searchPhrasesBatchStart
+                );
+                if (phrasesResult.getStatus() == OzonProductStatsSyncResult.Status.PENDING) {
+                    OzonCampaignStatsCabinetPayload pendingPayload = OzonCampaignStatsCabinetPayload.builder()
+                            .dateFrom(dateFrom)
+                            .dateTo(dateTo)
+                            .productStatsBatchStart(batchStart)
+                            .searchPhrasesReportUuid(phrasesResult.getReportUuid())
+                            .searchPhrasesBatchStart(searchPhrasesBatchStart)
+                            .build();
+                    eventService.updateEventPayload(event.getId(), pendingPayload);
+                    return OzonApiEventExecutionResult.deferredPoll(
+                            "Ozon search-phrases отчёт формируется (uuid=" + phrasesResult.getReportUuid() + ")",
+                            LocalDateTime.now().plusSeconds(20)
+                    );
+                }
+                if (phrasesResult.getStatus() == OzonProductStatsSyncResult.Status.COMPLETED) {
+                    searchPhrasesRowsTotal += phrasesResult.getRowsSaved();
+                }
+
+                if (!campaignSyncService.hasMoreSearchPhrasesBatches(cabinet.getId(), searchPhrasesBatchStart)) {
+                    break;
+                }
+                searchPhrasesBatchStart += searchPhrasesBatchSize;
+                searchPhrasesReportUuid = null;
+            }
+
             eventService.markCampaignsSyncCompleted(cabinet.getId());
-            log.info("Ozon campaign stats sync завершён для cabinetId={}, период={}..{}, daily={}, product={}",
-                    cabinet.getId(), dateFrom, dateTo, statsRows, productRowsTotal);
+            log.info("Ozon campaign stats sync завершён для cabinetId={}, период={}..{}, daily={}, product={}, phrases={}",
+                    cabinet.getId(), dateFrom, dateTo, statsRows, productRowsTotal, searchPhrasesRowsTotal);
             return OzonApiEventExecutionResult.completedSuccessfully();
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode().value() == 429) {

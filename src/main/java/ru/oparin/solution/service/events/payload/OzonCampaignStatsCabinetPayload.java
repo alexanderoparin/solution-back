@@ -12,9 +12,15 @@ public record OzonCampaignStatsCabinetPayload(
         LocalDate dateFrom,
         LocalDate dateTo,
         String productStatsReportUuid,
-        Integer productStatsBatchStart
+        Integer productStatsBatchStart,
+        String searchPhrasesReportUuid,
+        Integer searchPhrasesBatchStart
 ) {
     public int resolveProductStatsBatchStart() {
         return productStatsBatchStart != null ? productStatsBatchStart : 0;
+    }
+
+    public int resolveSearchPhrasesBatchStart() {
+        return searchPhrasesBatchStart != null ? searchPhrasesBatchStart : 0;
     }
 }
