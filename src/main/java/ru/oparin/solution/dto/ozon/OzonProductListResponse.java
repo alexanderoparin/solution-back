@@ -33,5 +33,8 @@ public class OzonProductListResponse {
 
         @JsonProperty("offer_id")
         private String offerId;
+
+        /** SKU из {@code /v3/product/list} — нужен для {@code /v1/analytics/data}. */
+        private Long sku;
     }
 }

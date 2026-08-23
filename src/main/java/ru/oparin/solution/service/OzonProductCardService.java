@@ -68,8 +68,10 @@ public class OzonProductCardService {
             card.setOfferId(firstNotBlank(info != null ? info.getOfferId() : null, item.getOfferId()));
             if (info != null) {
                 card.setTitle(trimTo(info.getName(), 500));
-                card.setSku(info.getSku());
+                card.setSku(resolveSku(info, item));
                 card.setPhotoUrl(firstNotBlank(info.getPrimaryImage(), firstImage(info.getImages())));
+            } else if (item.getSku() != null) {
+                card.setSku(item.getSku());
             }
             productCardRepository.save(card);
             if (isNew) {
@@ -106,5 +108,15 @@ public class OzonProductCardService {
         }
         String trimmed = value.trim();
         return trimmed.length() <= maxLen ? trimmed : trimmed.substring(0, maxLen);
+    }
+
+    private static Long resolveSku(OzonProductInfoListResponse.Item info, OzonProductListResponse.Item listItem) {
+        if (info != null) {
+            Long fromInfo = info.resolveSku();
+            if (fromInfo != null) {
+                return fromInfo;
+            }
+        }
+        return listItem != null ? listItem.getSku() : null;
     }
 }

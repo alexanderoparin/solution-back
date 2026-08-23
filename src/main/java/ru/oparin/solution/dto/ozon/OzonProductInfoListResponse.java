@@ -33,5 +33,33 @@ public class OzonProductInfoListResponse {
         private String primaryImage;
 
         private List<String> images;
+
+        /** Источники товара; SKU для аналитики часто только здесь. */
+        private List<Source> sources;
+
+        /**
+         * Возвращает SKU: top-level поле или первый непустой из {@link #sources}.
+         */
+        public Long resolveSku() {
+            if (sku != null) {
+                return sku;
+            }
+            if (sources == null || sources.isEmpty()) {
+                return null;
+            }
+            for (Source source : sources) {
+                if (source != null && source.getSku() != null) {
+                    return source.getSku();
+                }
+            }
+            return null;
+        }
+    }
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Source {
+        private Long sku;
+        private String source;
     }
 }
