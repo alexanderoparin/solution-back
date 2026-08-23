@@ -9,7 +9,6 @@ import ru.oparin.solution.model.CabinetUpdateErrorScope;
 import ru.oparin.solution.model.WbProductCard;
 import ru.oparin.solution.service.wb.WbApiCategory;
 
-import java.time.LocalDateTime;
 import java.util.*;
 
 /**
@@ -24,6 +23,7 @@ public class WbStocksRoundRobinOrchestrator {
     private final WbProductStocksService productStocksService;
     private final WbProductCardService productCardService;
     private final CabinetService cabinetService;
+    private final CabinetSyncStateService cabinetSyncStateService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final CabinetUpdateErrorService cabinetUpdateErrorService;
 
@@ -105,8 +105,7 @@ public class WbStocksRoundRobinOrchestrator {
     }
 
     private void completeCabinetStocksUpdate(Cabinet cabinet) {
-        cabinet.setLastStocksUpdateAt(LocalDateTime.now());
-        cabinetService.save(cabinet);
+        cabinetSyncStateService.touchLastStocksUpdateAt(cabinet);
     }
 
     private static final class CabinetState {

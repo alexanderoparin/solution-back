@@ -50,6 +50,7 @@ public class WbProductCardAnalyticsService {
     private final WbPromotionCalendarService promotionCalendarService;
     private final WbItemRatingSyncService itemRatingSyncService;
     private final CabinetService cabinetService;
+    private final CabinetSyncStateService cabinetSyncStateService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final WbApiEventService wbApiEventService;
     @Qualifier("taskExecutor")
@@ -129,8 +130,7 @@ public class WbProductCardAnalyticsService {
     @Transactional
     public void recordStocksUpdateTriggered(Long cabinetId) {
         Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
-        cabinet.setLastStocksUpdateRequestedAt(LocalDateTime.now());
-        cabinetService.save(cabinet);
+        cabinetSyncStateService.touchLastStocksUpdateRequestedAt(cabinet);
     }
 
     /**
@@ -211,8 +211,7 @@ public class WbProductCardAnalyticsService {
                         runAsyncCabinetStep("syncStocksAsync", cabinetId,
                                 () -> runWithScopeGuard(cabinetId, WbApiCategory.ANALYTICS, () -> {
                                     syncStocks(managed, nmIds);
-                                    managed.setLastStocksUpdateAt(LocalDateTime.now());
-                                    cabinetService.save(managed);
+                                    cabinetSyncStateService.touchLastStocksUpdateAt(managed);
                                 })),
                         taskExecutor
                 );
@@ -249,13 +248,11 @@ public class WbProductCardAnalyticsService {
     }
 
     private void markUpdateRequested(Cabinet managed) {
-        managed.setLastDataUpdateRequestedAt(LocalDateTime.now());
-        cabinetService.save(managed);
+        cabinetSyncStateService.touchLastDataUpdateRequestedAt(managed);
     }
 
     private void markUpdateCompleted(Cabinet managed) {
-        managed.setLastDataUpdateAt(LocalDateTime.now());
-        cabinetService.save(managed);
+        cabinetSyncStateService.touchLastDataUpdateAt(managed);
     }
 
     private void syncCards(Cabinet managed, String apiKey) {

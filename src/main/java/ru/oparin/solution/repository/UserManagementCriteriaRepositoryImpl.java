@@ -11,6 +11,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.dto.UserSortField;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.CabinetSyncState;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 
@@ -26,8 +27,8 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
     private static final String USER_ID_FIELD = "id";
     private static final String USER_EMAIL_FIELD = "email";
     private static final String CABINET_USER_FIELD = "user";
-    private static final String CABINET_LAST_UPDATE_AT_FIELD = "lastDataUpdateAt";
-    private static final String CABINET_LAST_UPDATE_REQUESTED_AT_FIELD = "lastDataUpdateRequestedAt";
+    private static final String SYNC_LAST_UPDATE_AT_FIELD = "lastDataUpdateAt";
+    private static final String SYNC_LAST_UPDATE_REQUESTED_AT_FIELD = "lastDataUpdateRequestedAt";
 
     private final EntityManager entityManager;
 
@@ -97,14 +98,18 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
 
         if (sortBy == UserSortField.LAST_DATA_UPDATE_AT || sortBy == UserSortField.LAST_DATA_UPDATE_REQUESTED_AT) {
             String field = sortBy == UserSortField.LAST_DATA_UPDATE_AT
-                    ? CABINET_LAST_UPDATE_AT_FIELD
-                    : CABINET_LAST_UPDATE_REQUESTED_AT_FIELD;
+                    ? SYNC_LAST_UPDATE_AT_FIELD
+                    : SYNC_LAST_UPDATE_REQUESTED_AT_FIELD;
 
             Subquery<LocalDateTime> aggregateSubquery = cq.subquery(LocalDateTime.class);
             Root<Cabinet> cabinetRoot = aggregateSubquery.from(Cabinet.class);
-            Expression<LocalDateTime> aggregateField = cabinetRoot.get(field).as(LocalDateTime.class);
+            Root<CabinetSyncState> syncRoot = aggregateSubquery.from(CabinetSyncState.class);
+            Expression<LocalDateTime> aggregateField = syncRoot.get(field).as(LocalDateTime.class);
             aggregateSubquery.select(cb.greatest(aggregateField));
-            aggregateSubquery.where(cb.equal(cabinetRoot.get(CABINET_USER_FIELD).get(USER_ID_FIELD), root.get(USER_ID_FIELD)));
+            aggregateSubquery.where(
+                    cb.equal(syncRoot.get("cabinetId"), cabinetRoot.get("id")),
+                    cb.equal(cabinetRoot.get(CABINET_USER_FIELD).get(USER_ID_FIELD), root.get(USER_ID_FIELD))
+            );
 
             Expression<Integer> nullRank = cb.<Integer>selectCase()
                     .when(cb.isNull(aggregateSubquery), asc ? 0 : 1)

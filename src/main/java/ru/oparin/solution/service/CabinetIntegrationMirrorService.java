@@ -9,16 +9,13 @@ import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetIntegrationRepository;
 import ru.oparin.solution.repository.CabinetSyncStateRepository;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
- * Phase 5: dual-write / dual-read между колонками {@link Cabinet} и
- * {@code cabinet_integrations} / {@code cabinet_sync_state}.
- * <p>
- * До cutover колонки cabinets остаются каноном для большинства call sites;
- * этот сервис зеркалит записи и при чтении может подтянуть значения из integrations.
+ * Phase 5.2: чтение/запись credentials и sync-state через {@code cabinet_integrations} /
+ * {@code cabinet_sync_state}. Поля на {@link Cabinet} — in-memory overlay для совместимости call sites.
  */
 @Service
 @RequiredArgsConstructor
@@ -30,8 +27,17 @@ public class CabinetIntegrationMirrorService {
     private final ObjectMapper objectMapper;
 
     /**
-     * Зеркалит credentials и sync-метки кабинета в новые таблицы.
+     * Сохраняет credentials и sync-метки из in-memory {@link Cabinet} в integrations / sync_state.
      */
+    @Transactional
+    public void persistFromCabinet(Cabinet cabinet) {
+        mirrorFromCabinet(cabinet);
+    }
+
+    /**
+     * @deprecated используйте {@link #persistFromCabinet(Cabinet)}
+     */
+    @Deprecated
     @Transactional
     public void mirrorFromCabinet(Cabinet cabinet) {
         if (cabinet == null || cabinet.getId() == null) {
@@ -52,28 +58,88 @@ public class CabinetIntegrationMirrorService {
     }
 
     /**
-     * Dual-read: если в integrations есть значения — накладывает их на entity (in-memory).
-     * Колонки cabinets не перезаписываются в БД.
+     * Dual-read: подгружает integrations и sync-state на entity (in-memory).
      */
     @Transactional(readOnly = true)
     public void overlayOntoCabinet(Cabinet cabinet) {
         if (cabinet == null || cabinet.getId() == null) {
             return;
         }
-        try {
-            if (cabinet.getMarketplaceType() == MarketplaceType.WB) {
-                integrationRepository.findByCabinetIdAndIntegrationType(cabinet.getId(), CabinetIntegrationType.WB_API)
-                        .ifPresent(i -> applyWb(cabinet, i));
-            } else if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
-                integrationRepository.findByCabinetIdAndIntegrationType(cabinet.getId(), CabinetIntegrationType.OZON_SELLER)
-                        .ifPresent(i -> applyOzonSeller(cabinet, i));
-                integrationRepository.findByCabinetIdAndIntegrationType(cabinet.getId(), CabinetIntegrationType.OZON_PERFORMANCE)
-                        .ifPresent(i -> applyOzonPerformance(cabinet, i));
-            }
-            syncStateRepository.findById(cabinet.getId()).ifPresent(s -> applySyncState(cabinet, s));
-        } catch (Exception e) {
-            log.debug("Cabinet integration overlay skipped for cabinetId={}: {}", cabinet.getId(), e.getMessage());
+        overlayOntoCabinets(List.of(cabinet));
+    }
+
+    /**
+     * Batch overlay для списков кабинетов (меньше round-trips к БД).
+     */
+    @Transactional(readOnly = true)
+    public void overlayOntoCabinets(Collection<Cabinet> cabinets) {
+        if (cabinets == null || cabinets.isEmpty()) {
+            return;
         }
+        List<Long> ids = cabinets.stream()
+                .filter(c -> c != null && c.getId() != null)
+                .map(Cabinet::getId)
+                .distinct()
+                .toList();
+        if (ids.isEmpty()) {
+            return;
+        }
+        try {
+            Map<Long, List<CabinetIntegration>> integrationsByCabinet = integrationRepository.findByCabinetIdIn(ids)
+                    .stream()
+                    .collect(Collectors.groupingBy(CabinetIntegration::getCabinetId));
+            Map<Long, CabinetSyncState> syncByCabinet = syncStateRepository.findAllById(ids).stream()
+                    .collect(Collectors.toMap(CabinetSyncState::getCabinetId, Function.identity()));
+
+            for (Cabinet cabinet : cabinets) {
+                if (cabinet == null || cabinet.getId() == null) {
+                    continue;
+                }
+                applyIntegrations(cabinet, integrationsByCabinet.getOrDefault(cabinet.getId(), List.of()));
+                CabinetSyncState syncState = syncByCabinet.get(cabinet.getId());
+                if (syncState != null) {
+                    applySyncState(cabinet, syncState);
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Cabinet integration batch overlay failed: {}", e.getMessage());
+        }
+    }
+
+    private void applyIntegrations(Cabinet cabinet, List<CabinetIntegration> integrations) {
+        if (cabinet.getMarketplaceType() == MarketplaceType.WB) {
+            integrations.stream()
+                    .filter(i -> i.getIntegrationType() == CabinetIntegrationType.WB_API)
+                    .findFirst()
+                    .ifPresent(i -> applyWb(cabinet, i));
+        } else if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            integrations.stream()
+                    .filter(i -> i.getIntegrationType() == CabinetIntegrationType.OZON_SELLER)
+                    .findFirst()
+                    .ifPresent(i -> applyOzonSeller(cabinet, i));
+            integrations.stream()
+                    .filter(i -> i.getIntegrationType() == CabinetIntegrationType.OZON_PERFORMANCE)
+                    .findFirst()
+                    .ifPresent(i -> applyOzonPerformance(cabinet, i));
+        }
+    }
+
+    /**
+     * Определяет тип WB-токена по API-ключу (Phase 5.2 — из {@code cabinet_integrations}).
+     */
+    @Transactional(readOnly = true)
+    public CabinetTokenType resolveWbTokenTypeByApiKey(String apiKey) {
+        if (apiKey == null || apiKey.isBlank()) {
+            return CabinetTokenType.BASIC;
+        }
+        return integrationRepository
+                .findTopByCredentialPrimaryAndIntegrationTypeOrderByCabinetIdDesc(
+                        apiKey.trim(), CabinetIntegrationType.WB_API)
+                .map(i -> {
+                    CabinetTokenType tokenType = readTokenType(i.getMetaJson());
+                    return tokenType != null ? tokenType : CabinetTokenType.BASIC;
+                })
+                .orElse(CabinetTokenType.BASIC);
     }
 
     private void upsertWbIntegration(Cabinet cabinet) {

@@ -1,15 +1,9 @@
 package ru.oparin.solution.repository.spec;
 
-import jakarta.persistence.criteria.CriteriaQuery;
-import jakarta.persistence.criteria.Join;
-import jakarta.persistence.criteria.JoinType;
-import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.util.StringUtils;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.MarketplaceType;
-import ru.oparin.solution.model.Role;
-import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -96,10 +90,16 @@ public final class CabinetManagedSpecifications {
             }
 
             Predicate scope = cb.equal(userJoin.get("role"), Role.USER);
-            Predicate hasKey = cb.and(
-                    cb.isNotNull(root.get("apiKey")),
-                    cb.notEqual(root.get("apiKey"), "")
+            Subquery<Long> integrationSubquery = query.subquery(Long.class);
+            Root<CabinetIntegration> integrationRoot = integrationSubquery.from(CabinetIntegration.class);
+            integrationSubquery.select(integrationRoot.get("cabinetId"));
+            integrationSubquery.where(
+                    cb.equal(integrationRoot.get("cabinetId"), root.get("id")),
+                    cb.equal(integrationRoot.get("integrationType"), CabinetIntegrationType.WB_API),
+                    cb.isNotNull(integrationRoot.get("credentialPrimary")),
+                    cb.notEqual(integrationRoot.get("credentialPrimary"), "")
             );
+            Predicate hasKey = cb.exists(integrationSubquery);
             return cb.and(scope, hasKey);
         };
     }

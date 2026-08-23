@@ -25,6 +25,7 @@ import java.util.List;
 public class AnalyticsScheduler {
 
     private final CabinetService cabinetService;
+    private final CabinetSyncStateService cabinetSyncStateService;
     private final WbFullUpdateOrchestrator fullUpdateOrchestrator;
     private final OzonFullUpdateOrchestrator ozonFullUpdateOrchestrator;
     private final MarketplaceSyncOrchestrator marketplaceSyncOrchestrator;
@@ -194,8 +195,7 @@ public class AnalyticsScheduler {
             if (!skipIntervalCheck) {
                 validateUpdateInterval(cabinet);
             }
-            cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
-            cabinetService.save(cabinet);
+            cabinetSyncStateService.touchLastDataUpdateRequestedAt(cabinet);
             marketplaceSyncOrchestrator.enqueueCabinetUpdate(
                     cabinet,
                     period.from(),
@@ -250,8 +250,7 @@ public class AnalyticsScheduler {
                 validateAdminUpdateIntervalForCabinet(cabinet);
             }
 
-            cabinet.setLastDataUpdateRequestedAt(LocalDateTime.now());
-            cabinetService.save(cabinet);
+            cabinetSyncStateService.touchLastDataUpdateRequestedAt(cabinet);
 
             DateRange period = calculateLastTwoWeeksPeriod();
             marketplaceSyncOrchestrator.enqueueCabinetUpdate(

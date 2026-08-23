@@ -20,6 +20,7 @@ import ru.oparin.solution.model.OzonApiEventType;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.OzonApiEventRepository;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.CabinetSyncStateService;
 import ru.oparin.solution.service.events.payload.*;
 
 import java.time.LocalDate;
@@ -72,6 +73,7 @@ public class OzonApiEventService {
     private final OzonApiEventRepository eventRepository;
     private final CabinetRepository cabinetRepository;
     private final CabinetService cabinetService;
+    private final CabinetSyncStateService cabinetSyncStateService;
     private final ObjectMapper objectMapper;
     private final OzonEventsProperties ozonEventsProperties;
 
@@ -420,9 +422,7 @@ public class OzonApiEventService {
 
     @Transactional
     public void markMainCompleted(Long cabinetId) {
-        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
-        cabinet.setLastDataUpdateAt(LocalDateTime.now());
-        cabinetService.save(cabinet);
+        cabinetSyncStateService.touchLastDataUpdateAt(cabinetId);
     }
 
     /**
@@ -430,9 +430,7 @@ public class OzonApiEventService {
      */
     @Transactional
     public void markStocksCompleted(Long cabinetId) {
-        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
-        cabinet.setLastStocksUpdateAt(LocalDateTime.now());
-        cabinetService.save(cabinet);
+        cabinetSyncStateService.touchLastStocksUpdateAt(cabinetId);
     }
 
     /**
@@ -440,9 +438,7 @@ public class OzonApiEventService {
      */
     @Transactional
     public void markCampaignsSyncCompleted(Long cabinetId) {
-        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
-        cabinet.setLastOzonCampaignsSyncAt(LocalDateTime.now());
-        cabinetService.save(cabinet);
+        cabinetSyncStateService.touchLastOzonCampaignsSyncAt(cabinetId);
     }
 
     @Transactional

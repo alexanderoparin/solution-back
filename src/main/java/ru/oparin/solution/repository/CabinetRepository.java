@@ -23,18 +23,6 @@ public interface CabinetRepository extends JpaRepository<Cabinet, Long>, JpaSpec
      */
     List<Cabinet> findByUser_IdOrderByCreatedAtDesc(Long userId);
 
-    /**
-     * Последний кабинет с заданным API-ключом (для определения типа токена по ключу).
-     */
-    Optional<Cabinet> findTopByApiKeyOrderByIdDesc(String apiKey);
-
-    /**
-     * Проверка, что API-ключ уже привязан к другому кабинету.
-     */
-    boolean existsByApiKeyAndIdNot(String apiKey, Long id);
-
-    boolean existsByApiKey(String apiKey);
-
     boolean existsByUser_Id(Long userId);
 
     /**
@@ -60,7 +48,12 @@ public interface CabinetRepository extends JpaRepository<Cabinet, Long>, JpaSpec
      */
     @Query("""
             SELECT c FROM Cabinet c JOIN FETCH c.user u
-            WHERE c.apiKey IS NOT NULL AND c.apiKey <> ''
+            WHERE EXISTS (
+                SELECT 1 FROM CabinetIntegration i
+                WHERE i.cabinetId = c.id
+                  AND i.integrationType = ru.oparin.solution.model.CabinetIntegrationType.WB_API
+                  AND i.credentialPrimary IS NOT NULL AND i.credentialPrimary <> ''
+            )
               AND u.isActive = true AND u.role = :role
               AND c.marketplaceType = ru.oparin.solution.model.MarketplaceType.WB
             ORDER BY c.id
@@ -72,8 +65,13 @@ public interface CabinetRepository extends JpaRepository<Cabinet, Long>, JpaSpec
      */
     @Query("""
             SELECT c FROM Cabinet c JOIN FETCH c.user u
-            WHERE c.apiKey IS NOT NULL AND c.apiKey <> ''
-              AND c.ozonClientId IS NOT NULL AND c.ozonClientId <> ''
+            WHERE EXISTS (
+                SELECT 1 FROM CabinetIntegration i
+                WHERE i.cabinetId = c.id
+                  AND i.integrationType = ru.oparin.solution.model.CabinetIntegrationType.OZON_SELLER
+                  AND i.credentialPrimary IS NOT NULL AND i.credentialPrimary <> ''
+                  AND i.credentialSecondary IS NOT NULL AND i.credentialSecondary <> ''
+            )
               AND u.isActive = true AND u.role = :role
               AND c.marketplaceType = ru.oparin.solution.model.MarketplaceType.OZON
             ORDER BY c.id

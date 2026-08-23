@@ -10,8 +10,9 @@ import java.time.LocalDateTime;
 
 /**
  * Кабинет продавца на одном маркетплейсе ({@link MarketplaceType}).
- * Для WB хранит API-ключ; для Ozon — отдельные credentials (добавятся позже).
- * У одного пользователя может быть несколько кабинетов (в т.ч. с одинаковым именем на разных МП).
+ * Phase 5.2: в БД только {@code user_id}, {@code marketplace_type}, {@code name}, audit;
+ * credentials и метки синка — {@link CabinetIntegration} / {@link CabinetSyncState},
+ * на entity подгружаются in-memory через {@code CabinetIntegrationMirrorService}.
  */
 @Entity
 @Table(name = "cabinets", schema = "solution")
@@ -49,90 +50,61 @@ public class Cabinet {
     private String name;
 
     /**
-     * WB API ключ Wildberries. Кабинет может существовать без ключа (null).
-     * Для Ozon — Seller API Api-Key.
+     * Метки синка (read-only join для сортировки в админке).
      */
-    @Column(name = "api_key", length = 500)
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id", referencedColumnName = "cabinet_id", insertable = false, updatable = false)
+    private CabinetSyncState syncState;
+
+    /** WB API ключ / Ozon Seller Api-Key (in-memory, Phase 5.2). */
+    @Transient
     private String apiKey;
 
-    /**
-     * Ozon Seller API Client-Id. Только для {@link MarketplaceType#OZON}.
-     */
-    @Column(name = "ozon_client_id", length = 64)
+    /** Ozon Seller Client-Id (in-memory). */
+    @Transient
     private String ozonClientId;
 
-    /**
-     * Ozon Performance API client_id (реклама). Отдельные credentials от Seller API.
-     */
-    @Column(name = "ozon_performance_client_id", length = 128)
+    @Transient
     private String ozonPerformanceClientId;
 
-    /**
-     * Ozon Performance API client_secret.
-     */
-    @Column(name = "ozon_performance_client_secret", length = 500)
+    @Transient
     private String ozonPerformanceClientSecret;
 
-    /**
-     * Результат последней проверки Performance credentials (null — не проверяли).
-     */
-    @Column(name = "ozon_performance_is_valid")
+    @Transient
     private Boolean ozonPerformanceIsValid;
 
-    @Column(name = "ozon_performance_last_validated_at")
+    @Transient
     private LocalDateTime ozonPerformanceLastValidatedAt;
 
-    @Column(name = "ozon_performance_validation_error", columnDefinition = "TEXT")
+    @Transient
     private String ozonPerformanceValidationError;
 
-    /**
-     * Время последней успешной синхронизации списка РК Ozon.
-     */
-    @Column(name = "last_ozon_campaigns_sync_at")
+    @Transient
     private LocalDateTime lastOzonCampaignsSyncAt;
 
-    /**
-     * Тип WB API токена кабинета.
-     * Для Ozon не используется (остаётся значение по умолчанию).
-     */
     @Builder.Default
-    @Enumerated(EnumType.STRING)
-    @Column(name = "token_type", nullable = false, length = 32)
+    @Transient
     private CabinetTokenType tokenType = CabinetTokenType.BASIC;
 
-    /**
-     * Флаг валидности ключа (null до первой проверки).
-     */
-    @Column(name = "is_valid")
+    @Transient
     private Boolean isValid;
 
-    @Column(name = "last_validated_at")
+    @Transient
     private LocalDateTime lastValidatedAt;
 
-    @Column(name = "validation_error", columnDefinition = "TEXT")
+    @Transient
     private String validationError;
 
-    @Column(name = "last_data_update_at")
+    @Transient
     private LocalDateTime lastDataUpdateAt;
 
-    /**
-     * Время запроса обновления (нажатие кнопки). Сбрасывается при реальном старте задачи.
-     * Нужно для блокировки повторных нажатий, пока задача в очереди.
-     */
-    @Column(name = "last_data_update_requested_at")
+    @Transient
     private LocalDateTime lastDataUpdateRequestedAt;
 
-    /**
-     * Время последнего запуска обновления только остатков по кабинету (кнопка «Обновить остатки»).
-     * Используется для ограничения «не чаще раза в час» и для отображения на фронте.
-     */
-    @Column(name = "last_stocks_update_requested_at")
+    @Transient
     private LocalDateTime lastStocksUpdateRequestedAt;
 
-    /**
-     * Время последнего успешного завершения обновления остатков по кабинету.
-     */
-    @Column(name = "last_stocks_update_at")
+    @Transient
     private LocalDateTime lastStocksUpdateAt;
 
     @CreatedDate

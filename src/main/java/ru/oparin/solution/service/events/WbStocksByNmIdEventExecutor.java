@@ -9,10 +9,10 @@ import ru.oparin.solution.model.WbApiEventStatus;
 import ru.oparin.solution.model.WbApiEventType;
 import ru.oparin.solution.repository.WbApiEventRepository;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.CabinetSyncStateService;
 import ru.oparin.solution.service.WbProductStocksService;
 import ru.oparin.solution.service.events.payload.WbStocksByNmIdPayload;
 
-import java.time.LocalDateTime;
 import java.util.Set;
 
 @Component("stocksByNmIdEventExecutor")
@@ -34,6 +34,7 @@ public class WbStocksByNmIdEventExecutor implements WbApiEventExecutor {
     private final WbApiEventService eventService;
     private final WbProductStocksService productStocksService;
     private final CabinetService cabinetService;
+    private final CabinetSyncStateService cabinetSyncStateService;
     private final WbApiEventRepository eventRepository;
 
     @Override
@@ -59,9 +60,7 @@ public class WbStocksByNmIdEventExecutor implements WbApiEventExecutor {
                 PENDING_STOCKS_STATUSES
         );
         if (!hasPendingStocks) {
-            Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
-            cabinet.setLastStocksUpdateAt(LocalDateTime.now());
-            cabinetService.save(cabinet);
+            cabinetSyncStateService.touchLastStocksUpdateAt(cabinetId);
         }
     }
 }

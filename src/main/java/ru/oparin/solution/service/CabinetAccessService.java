@@ -33,17 +33,22 @@ public class CabinetAccessService {
     private final UserRepository userRepository;
     private final EmailService emailService;
     private final AccountTypeService accountTypeService;
+    private final CabinetIntegrationMirrorService cabinetIntegrationMirrorService;
 
     @Transactional(readOnly = true)
     public CabinetsOverviewDto getOverview(User currentUser, String search) {
         String q = search != null ? search.trim().toLowerCase() : "";
-        List<OwnedCabinetRowDto> owned = cabinetRepository.findByUser_IdOrderByCreatedAtDesc(currentUser.getId()).stream()
+        List<Cabinet> ownedCabinets = cabinetRepository.findByUser_IdOrderByCreatedAtDesc(currentUser.getId());
+        cabinetIntegrationMirrorService.overlayOntoCabinets(ownedCabinets);
+        List<OwnedCabinetRowDto> owned = ownedCabinets.stream()
                 .filter(c -> matchesSearch(c.getName(), q))
                 .map(this::toOwnedRow)
                 .collect(Collectors.toCollection(ArrayList::new));
-        List<GrantedCabinetRowDto> granted = grantRepository
-                .findActiveGrantedForUser(currentUser.getId(), CabinetAccessGrantStatus.ACTIVE, LocalDateTime.now())
-                .stream()
+        List<CabinetAccessGrant> activeGrants = grantRepository
+                .findActiveGrantedForUser(currentUser.getId(), CabinetAccessGrantStatus.ACTIVE, LocalDateTime.now());
+        cabinetIntegrationMirrorService.overlayOntoCabinets(
+                activeGrants.stream().map(CabinetAccessGrant::getCabinet).toList());
+        List<GrantedCabinetRowDto> granted = activeGrants.stream()
                 .filter(g -> matchesSearch(g.getCabinet().getName(), q))
                 .map(this::toGrantedRow)
                 .collect(Collectors.toCollection(ArrayList::new));

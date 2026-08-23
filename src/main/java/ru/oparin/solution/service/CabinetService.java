@@ -18,6 +18,7 @@ import ru.oparin.solution.dto.wb.WbSellerInfoResponse;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetAccessGrantRepository;
+import ru.oparin.solution.repository.CabinetIntegrationRepository;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.repository.spec.CabinetManagedSpecifications;
@@ -61,6 +62,7 @@ public class CabinetService {
     private final OzonPerformanceApiClient ozonPerformanceApiClient;
     private final CabinetBillingService cabinetBillingService;
     private final CabinetIntegrationMirrorService cabinetIntegrationMirrorService;
+    private final CabinetIntegrationRepository cabinetIntegrationRepository;
 
     /**
      * Список кабинетов пользователя (продавца), отсортированный по дате создания (новые первые).
@@ -87,7 +89,9 @@ public class CabinetService {
                 user.getId(), CabinetAccessGrantStatus.ACTIVE, now)) {
             Long cabinetId = grant.getCabinet().getId();
             if (!ids.contains(cabinetId)) {
-                result.add(toDto(grant.getCabinet(), true));
+                Cabinet grantedCabinet = grant.getCabinet();
+                cabinetIntegrationMirrorService.overlayOntoCabinet(grantedCabinet);
+                result.add(toDto(grantedCabinet, true));
                 ids.add(cabinetId);
             }
         }
@@ -104,12 +108,12 @@ public class CabinetService {
             case SELLER_EMAIL -> Sort.by(new Order(direction, "user.email").ignoreCase());
             case LAST_DATA_UPDATE_AT -> Sort.by(
                     direction == Sort.Direction.ASC
-                            ? Order.asc("lastDataUpdateAt").nullsLast()
-                            : Order.desc("lastDataUpdateAt").nullsLast());
+                            ? Order.asc("syncState.lastDataUpdateAt").nullsLast()
+                            : Order.desc("syncState.lastDataUpdateAt").nullsLast());
             case LAST_STOCKS_UPDATE_AT -> Sort.by(
                     direction == Sort.Direction.ASC
-                            ? Order.asc("lastStocksUpdateAt").nullsLast()
-                            : Order.desc("lastStocksUpdateAt").nullsLast());
+                            ? Order.asc("syncState.lastStocksUpdateAt").nullsLast()
+                            : Order.desc("syncState.lastStocksUpdateAt").nullsLast());
         };
     }
 
@@ -130,6 +134,7 @@ public class CabinetService {
         var spec = CabinetManagedSpecifications.managedList(currentUser, search, onlyActiveUsers, marketplaceType);
         Page<Cabinet> cabinetPage = cabinetRepository.findAll(spec, pageable);
         List<Cabinet> cabinets = cabinetPage.getContent();
+        cabinetIntegrationMirrorService.overlayOntoCabinets(cabinets);
         if (cabinets.isEmpty()) {
             return cabinetPage.map(c -> ManagedCabinetRowDto.builder()
                     .sellerId(c.getUser().getId())
@@ -196,6 +201,7 @@ public class CabinetService {
         }
         List<Cabinet> list = cabinetRepository.findAll(
                 CabinetManagedSpecifications.managedListWithApiKey(currentUser));
+        cabinetIntegrationMirrorService.overlayOntoCabinets(list);
         return list.stream()
                 .sorted(Comparator.comparing(Cabinet::getName, String.CASE_INSENSITIVE_ORDER))
                 .map(c -> WorkContextCabinetDto.builder()
@@ -216,7 +222,9 @@ public class CabinetService {
      */
     @Transactional(readOnly = true)
     public List<Cabinet> findCabinetsByUserId(Long userId) {
-        return cabinetRepository.findByUser_IdOrderByCreatedAtDesc(userId);
+        List<Cabinet> cabinets = cabinetRepository.findByUser_IdOrderByCreatedAtDesc(userId);
+        cabinetIntegrationMirrorService.overlayOntoCabinets(cabinets);
+        return cabinets;
     }
 
     /**
@@ -465,9 +473,14 @@ public class CabinetService {
      * Один WB API-ключ может быть привязан только к одному кабинету.
      */
     private void assertApiKeyNotUsedByAnotherCabinet(Long cabinetId, String apiKey) {
+        List<CabinetIntegrationType> sellerTypes = List.of(
+                CabinetIntegrationType.WB_API,
+                CabinetIntegrationType.OZON_SELLER
+        );
         boolean duplicate = cabinetId == null
-                ? cabinetRepository.existsByApiKey(apiKey)
-                : cabinetRepository.existsByApiKeyAndIdNot(apiKey, cabinetId);
+                ? cabinetIntegrationRepository.existsByCredentialPrimaryAndIntegrationTypeIn(apiKey, sellerTypes)
+                : cabinetIntegrationRepository.existsByCredentialPrimaryAndIntegrationTypeInAndCabinetIdNot(
+                        apiKey, sellerTypes, cabinetId);
         if (duplicate) {
             throw new UserException(API_KEY_ALREADY_USED, HttpStatus.CONFLICT);
         }
@@ -561,8 +574,10 @@ public class CabinetService {
      */
     @Transactional(readOnly = true)
     public Cabinet findDefaultByUserIdOrThrow(Long userId) {
-        return cabinetRepository.findDefaultByUserId(userId)
+        Cabinet cabinet = cabinetRepository.findDefaultByUserId(userId)
                 .orElseThrow(() -> new IllegalStateException("У продавца нет кабинета по умолчанию"));
+        cabinetIntegrationMirrorService.overlayOntoCabinet(cabinet);
+        return cabinet;
     }
 
     /**
@@ -570,23 +585,27 @@ public class CabinetService {
      */
     @Transactional(readOnly = true)
     public List<Cabinet> findCabinetsWithApiKeyAndUser(Role role) {
-        return cabinetRepository.findCabinetsWithApiKeyAndUser(role);
+        List<Cabinet> cabinets = cabinetRepository.findCabinetsWithApiKeyAndUser(role);
+        cabinetIntegrationMirrorService.overlayOntoCabinets(cabinets);
+        return cabinets;
     }
 
     /**
      * Ozon-кабинеты с ключами для планировщика синхронизации.
      */
     public List<Cabinet> findOzonCabinetsWithApiKeyAndUser(Role role) {
-        return cabinetRepository.findOzonCabinetsWithApiKeyAndUser(role);
+        List<Cabinet> cabinets = cabinetRepository.findOzonCabinetsWithApiKeyAndUser(role);
+        cabinetIntegrationMirrorService.overlayOntoCabinets(cabinets);
+        return cabinets;
     }
 
     /**
-     * Сохраняет кабинет (создание или обновление) и зеркалит credentials/sync в Phase 5 таблицы.
+     * Сохраняет кабинет (ядро) и credentials/sync в Phase 5 таблицы.
      */
     @Transactional
     public Cabinet save(Cabinet cabinet) {
         Cabinet saved = cabinetRepository.save(cabinet);
-        cabinetIntegrationMirrorService.mirrorFromCabinet(saved);
+        cabinetIntegrationMirrorService.persistFromCabinet(saved);
         return saved;
     }
 

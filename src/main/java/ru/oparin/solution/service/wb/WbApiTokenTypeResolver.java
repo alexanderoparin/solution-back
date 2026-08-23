@@ -3,7 +3,7 @@ package ru.oparin.solution.service.wb;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.model.CabinetTokenType;
-import ru.oparin.solution.repository.CabinetRepository;
+import ru.oparin.solution.service.CabinetIntegrationMirrorService;
 
 import java.util.Locale;
 
@@ -16,7 +16,7 @@ public class WbApiTokenTypeResolver {
 
     private static final String BEARER_PREFIX = "bearer ";
 
-    private final CabinetRepository cabinetRepository;
+    private final CabinetIntegrationMirrorService cabinetIntegrationMirrorService;
 
     public CabinetTokenType resolveByAuthorizationHeader(String authorizationHeader) {
         return resolveByApiKey(extractApiKey(authorizationHeader));
@@ -27,9 +27,7 @@ public class WbApiTokenTypeResolver {
         if (normalized == null) {
             return CabinetTokenType.BASIC;
         }
-        return cabinetRepository.findTopByApiKeyOrderByIdDesc(normalized)
-                .map(c -> c.getTokenType() != null ? c.getTokenType() : CabinetTokenType.BASIC)
-                .orElse(CabinetTokenType.BASIC);
+        return cabinetIntegrationMirrorService.resolveWbTokenTypeByApiKey(normalized);
     }
 
     private String extractApiKey(String authorizationHeader) {

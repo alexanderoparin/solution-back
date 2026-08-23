@@ -17,6 +17,7 @@ import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.WbApiEventRepository;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.CabinetSyncStateService;
 import ru.oparin.solution.service.WbProductCardService;
 import ru.oparin.solution.service.events.payload.*;
 import ru.oparin.solution.service.sync.WbPromotionCampaignSyncService;
@@ -93,6 +94,7 @@ public class WbApiEventService {
     private final WbApiEventRepository eventRepository;
     private final CabinetRepository cabinetRepository;
     private final CabinetService cabinetService;
+    private final CabinetSyncStateService cabinetSyncStateService;
     private final WbProductCardService productCardService;
     private final WbPromotionCampaignSyncService promotionCampaignSyncService;
     private final ObjectMapper objectMapper;
@@ -981,9 +983,7 @@ public class WbApiEventService {
      */
     @Transactional
     public void markMainCompleted(Long cabinetId) {
-        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
-        cabinet.setLastDataUpdateAt(LocalDateTime.now());
-        cabinetService.save(cabinet);
+        cabinetSyncStateService.touchLastDataUpdateAt(cabinetId);
     }
 
     /**
