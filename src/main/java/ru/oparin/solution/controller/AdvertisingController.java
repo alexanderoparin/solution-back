@@ -36,6 +36,7 @@ public class AdvertisingController {
     private final WbApiEventService wbApiEventService;
     private final OzonApiEventService ozonApiEventService;
     private final OzonPerformanceCredentialsService ozonPerformanceCredentialsService;
+    private final OzonPromotionCampaignControlService ozonPromotionCampaignControlService;
     private final WbPromotionCampaignControlService promotionCampaignControlService;
     private final WbPromotionCampaignControlWriteService promotionCampaignControlWriteService;
     private final WbCampaignManageAccessService campaignManageAccessService;
@@ -156,6 +157,9 @@ public class AdvertisingController {
         if (cabinet == null) {
             return ResponseEntity.badRequest().build();
         }
+        if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            return ResponseEntity.ok(ozonPromotionCampaignControlService.getCapabilities(cabinet));
+        }
         return ResponseEntity.ok(promotionCampaignControlWriteService.getCapabilities(cabinet));
     }
 
@@ -201,6 +205,29 @@ public class AdvertisingController {
         Cabinet cabinet = context.cabinet();
         if (cabinet == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "Кабинет не выбран"));
+        }
+        if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            try {
+                User actor = userService.findByEmail(authentication.getName());
+                campaignManageAccessService.requireAccess(actor, cabinet);
+                CampaignControlEnqueueResponse response = start
+                        ? ozonPromotionCampaignControlService.activate(cabinet, advertId)
+                        : ozonPromotionCampaignControlService.deactivate(cabinet, advertId);
+                return ResponseEntity.ok(response);
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            } catch (UserException e) {
+                if (e.getHttpStatus() == HttpStatus.FORBIDDEN) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                            "error", WbCampaignManageAccessService.SUBSCRIPTION_REQUIRED_CODE,
+                            "message", e.getMessage()
+                    ));
+                }
+                return ResponseEntity.status(e.getHttpStatus()).body(Map.of(
+                        "error", e.getMessage(),
+                        "message", e.getMessage()
+                ));
+            }
         }
         try {
             User actor = userService.findByEmail(authentication.getName());

@@ -268,6 +268,55 @@ public class OzonPerformanceApiClient {
         return fetchCampaignSkuList(accessToken, base + "/objects");
     }
 
+    /**
+     * Активирует кампанию (POST .../activate).
+     */
+    public void activateCampaign(Long cabinetId, String clientId, String clientSecret, Long campaignId) {
+        postCampaignAction(cabinetId, clientId, clientSecret, campaignId, "activate");
+    }
+
+    /**
+     * Выключает кампанию (POST .../deactivate).
+     */
+    public void deactivateCampaign(Long cabinetId, String clientId, String clientSecret, Long campaignId) {
+        postCampaignAction(cabinetId, clientId, clientSecret, campaignId, "deactivate");
+    }
+
+    private void postCampaignAction(
+            Long cabinetId,
+            String clientId,
+            String clientSecret,
+            Long campaignId,
+            String action
+    ) {
+        String accessToken = getAccessToken(cabinetId, clientId, clientSecret);
+        String url = OzonApiBaseUrl.PERFORMANCE.getDefaultBaseUrl()
+                + "/api/client/campaign/" + campaignId + "/" + action;
+        HttpHeaders headers = bearerHeaders(accessToken);
+        HttpEntity<String> entity = new HttpEntity<>("{}", headers);
+        log.info("Ozon Performance campaign {}: POST {}", action, url);
+        long startedAtMs = System.currentTimeMillis();
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            log.info("Ozon Performance campaign {}: HTTP {} {} ms",
+                    action, response.getStatusCode().value(), elapsedMs);
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                throw new RestClientException("Ozon Performance " + action + ": HTTP " + response.getStatusCode());
+            }
+        } catch (HttpClientErrorException e) {
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            log.warn("Ozon Performance campaign {}: HTTP {} {}, {} ms, тело: {}",
+                    action, e.getStatusCode().value(), e.getStatusText(), elapsedMs,
+                    truncateForLog(e.getResponseBodyAsString()));
+            throw e;
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RestClientException("Ошибка Ozon Performance " + action + ": " + e.getMessage(), e);
+        }
+    }
+
     private List<Long> fetchCampaignSkuList(String accessToken, String url) {
         HttpHeaders headers = bearerHeaders(accessToken);
         HttpEntity<Void> entity = new HttpEntity<>(headers);

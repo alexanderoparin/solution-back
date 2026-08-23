@@ -16,5 +16,7 @@ public interface OzonPromotionCampaignRepository extends JpaRepository<OzonPromo
 
     List<OzonPromotionCampaign> findByCabinet_Id(Long cabinetId);
 
+    java.util.Optional<OzonPromotionCampaign> findByCampaignIdAndCabinet_Id(Long campaignId, Long cabinetId);
+
     List<Long> findCampaignIdByCabinet_Id(@Param("cabinetId") Long cabinetId, Pageable pageable);
 }
