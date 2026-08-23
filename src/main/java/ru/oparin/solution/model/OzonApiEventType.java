@@ -44,7 +44,11 @@ public enum OzonApiEventType {
     /** Загрузка списка рекламных кампаний Performance API. */
     CAMPAIGNS_CABINET(
             OzonApiBaseUrl.PERFORMANCE,
-            "/api/client/campaign");
+            "/api/client/campaign"),
+    /** Дневная статистика РК Performance API. */
+    CAMPAIGN_STATS_CABINET(
+            OzonApiBaseUrl.PERFORMANCE,
+            "/api/client/statistics/daily/json");
 
     /** Базовый URL группы Ozon API для данного типа. */
     private final OzonApiBaseUrl baseUrl;
@@ -66,6 +70,7 @@ public enum OzonApiEventType {
                 || this == PRICES_CABINET
                 || this == STOCKS_CABINET
                 || this == ANALYTICS_DATA_CABINET
-                || this == CAMPAIGNS_CABINET;
+                || this == CAMPAIGNS_CABINET
+                || this == CAMPAIGN_STATS_CABINET;
     }
 }

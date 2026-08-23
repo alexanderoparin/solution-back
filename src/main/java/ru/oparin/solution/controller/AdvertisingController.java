@@ -70,7 +70,8 @@ public class AdvertisingController {
         Long resolvedCabinetId = context.cabinet() != null ? context.cabinet().getId() : null;
         Cabinet cabinet = context.cabinet();
         if (cabinet != null && cabinet.getMarketplaceType() == MarketplaceType.OZON) {
-            return ResponseEntity.ok(analyticsService.listOzonCampaignsByCabinet(resolvedCabinetId));
+            return ResponseEntity.ok(analyticsService.listOzonCampaignsByCabinet(
+                    resolvedCabinetId, dateFrom, dateTo));
         }
         List<CampaignDto> campaigns = analyticsService.listCampaignsByCabinet(
                 resolvedCabinetId, dateFrom, dateTo, context.user(), nmId);
@@ -101,7 +102,15 @@ public class AdvertisingController {
                 return ResponseEntity.badRequest()
                         .body(Map.of("error", "У кабинета не настроены или не проверены Performance credentials Ozon"));
             }
-            boolean enqueued = ozonApiEventService.enqueueCampaignsCabinetEvent(cabinet.getId(), "ADVERTISING_UI");
+            LocalDate to = dateTo != null ? dateTo : LocalDate.now().minusDays(1);
+            LocalDate from = dateFrom != null ? dateFrom : to.minusDays(SYNC_PROMOTION_DEFAULT_PERIOD_DAYS - 1);
+            if (from.isAfter(to)) {
+                LocalDate tmp = from;
+                from = to;
+                to = tmp;
+            }
+            boolean enqueued = ozonApiEventService.enqueueCampaignStatsCabinetEvent(
+                    cabinet.getId(), from, to, "ADVERTISING_UI");
             return ResponseEntity.ok(new PromotionSyncEnqueueResponse(enqueued));
         }
         if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {

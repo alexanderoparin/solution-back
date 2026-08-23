@@ -1,5 +1,6 @@
 package ru.oparin.solution.service.ozon;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
@@ -8,13 +9,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 import ru.oparin.solution.dto.ozon.OzonPerformanceCampaignListResponse;
+import ru.oparin.solution.dto.ozon.OzonPerformanceDailyStatsResponse;
 import ru.oparin.solution.dto.ozon.OzonPerformanceTokenRequest;
 import ru.oparin.solution.dto.ozon.OzonPerformanceTokenResponse;
 import ru.oparin.solution.model.OzonApiEventType;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -26,11 +32,14 @@ public class OzonPerformanceApiClient {
 
     private static final String TOKEN_URL = OzonApiEventType.PERFORMANCE_TOKEN.getDefaultUrl();
     private static final String CAMPAIGNS_URL = OzonApiEventType.CAMPAIGNS_CABINET.getDefaultUrl();
+    private static final String DAILY_STATS_URL = OzonApiEventType.CAMPAIGN_STATS_CABINET.getDefaultUrl();
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(60);
     private static final int DEFAULT_PAGE_SIZE = 100;
     private static final int TOKEN_REFRESH_MARGIN_SECONDS = 60;
     private static final int MAX_BODY_LOG_LENGTH = 2000;
+    /** Сколько campaignIds передаём в один daily-запрос. */
+    private static final int DAILY_STATS_CAMPAIGN_BATCH = 50;
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
@@ -177,6 +186,75 @@ public class OzonPerformanceApiClient {
             }
         }
         return all;
+    }
+
+    /**
+     * Дневная статистика по всем кампаниям кабинета за период (батчами по campaignIds).
+     */
+    public List<OzonPerformanceDailyStatsResponse.Row> getDailyStatistics(
+            Long cabinetId,
+            String clientId,
+            String clientSecret,
+            Collection<Long> campaignIds,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+        String accessToken = getAccessToken(cabinetId, clientId, clientSecret);
+        if (campaignIds == null || campaignIds.isEmpty()) {
+            return getDailyStatisticsBatch(accessToken, List.of(), dateFrom, dateTo);
+        }
+        List<Long> ids = campaignIds.stream().filter(id -> id != null).distinct().toList();
+        List<OzonPerformanceDailyStatsResponse.Row> all = new java.util.ArrayList<>();
+        for (int i = 0; i < ids.size(); i += DAILY_STATS_CAMPAIGN_BATCH) {
+            List<Long> batch = ids.subList(i, Math.min(i + DAILY_STATS_CAMPAIGN_BATCH, ids.size()));
+            all.addAll(getDailyStatisticsBatch(accessToken, batch, dateFrom, dateTo));
+        }
+        return all;
+    }
+
+    private List<OzonPerformanceDailyStatsResponse.Row> getDailyStatisticsBatch(
+            String accessToken,
+            List<Long> campaignIds,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(DAILY_STATS_URL)
+                .queryParam("dateFrom", dateFrom.toString())
+                .queryParam("dateTo", dateTo.toString());
+        for (Long id : campaignIds) {
+            // Официальный пример использует campaigns=; в схеме — campaignIds. Шлём оба.
+            builder.queryParam("campaigns", id);
+            builder.queryParam("campaignIds", id);
+        }
+        String url = builder.toUriString();
+        HttpHeaders headers = bearerHeaders(accessToken);
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        log.info("Ozon Performance daily stats: GET {}, campaigns={}, period={}..{}",
+                DAILY_STATS_URL, campaignIds.size(), dateFrom, dateTo);
+        long startedAtMs = System.currentTimeMillis();
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            String body = response.getBody();
+            log.info("Ozon Performance daily stats: HTTP {} {} ms, body={}",
+                    response.getStatusCode().value(), elapsedMs, truncateForLog(body));
+            if (!response.getStatusCode().is2xxSuccessful() || body == null || body.isBlank()) {
+                throw new RestClientException("Неожиданный ответ daily stats: " + response.getStatusCode());
+            }
+            JsonNode root = objectMapper.readTree(body);
+            return OzonPerformanceDailyStatsResponse.parseRows(root);
+        } catch (HttpClientErrorException e) {
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            log.warn("Ozon Performance daily stats: HTTP {} {}, {} ms, тело: {}",
+                    e.getStatusCode().value(), e.getStatusText(), elapsedMs,
+                    truncateForLog(e.getResponseBodyAsString()));
+            throw e;
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RestClientException("Ошибка запроса daily stats: " + e.getMessage(), e);
+        }
     }
 
     private static HttpHeaders bearerHeaders(String accessToken) {

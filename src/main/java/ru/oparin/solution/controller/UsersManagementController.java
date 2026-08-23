@@ -463,8 +463,11 @@ public class UsersManagementController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(new MessageResponse("Сначала задайте и проверьте Performance credentials Ozon"));
         }
-        ozonApiEventService.enqueueCampaignsCabinetEvent(cabinetId, "MANUAL_CAMPAIGNS_ONLY");
-        return okMessageResponse("Синхронизация рекламных кампаний Ozon поставлена в очередь событий.");
+        LocalDate dateTo = LocalDate.now().minusDays(1);
+        LocalDate dateFrom = dateTo.minusDays(13);
+        ozonApiEventService.enqueueCampaignStatsCabinetEvent(
+                cabinetId, dateFrom, dateTo, "MANUAL_CAMPAIGNS_ONLY");
+        return okMessageResponse("Синхронизация РК и статистики Ozon поставлена в очередь событий.");
     }
 
     /**

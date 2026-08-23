@@ -50,6 +50,7 @@ public class AnalyticsService {
     private final WbProductCardAnalyticsRepository analyticsRepository;
     private final WbPromotionCampaignRepository campaignRepository;
     private final OzonPromotionCampaignRepository ozonPromotionCampaignRepository;
+    private final OzonPromotionCampaignStatisticsRepository ozonPromotionCampaignStatisticsRepository;
     private final WbCampaignArticleRepository campaignArticleRepository;
     private final WbPromotionCampaignStatisticsRepository campaignStatisticsRepository;
     private final WbProductPriceHistoryRepository priceHistoryRepository;
@@ -1879,22 +1880,71 @@ public class AnalyticsService {
     }
 
     /**
-     * Список рекламных кампаний Ozon из локальной БД (статистика Performance — позже, Wave 3 slice 2).
+     * Список рекламных кампаний Ozon из локальной БД с агрегацией дневной статистики за период.
      */
     @Transactional(readOnly = true)
-    public List<CampaignDto> listOzonCampaignsByCabinet(Long cabinetId) {
+    public List<CampaignDto> listOzonCampaignsByCabinet(Long cabinetId, LocalDate dateFrom, LocalDate dateTo) {
         if (cabinetId == null) {
             return Collections.emptyList();
         }
-        return ozonPromotionCampaignRepository.findByCabinet_Id(cabinetId).stream()
+        AnalyticsDateRange range = resolveAnalyticsDateRange(dateFrom, dateTo);
+        LocalDate from = range.startDate();
+        LocalDate to = range.endDate();
+
+        List<OzonPromotionCampaign> campaigns = ozonPromotionCampaignRepository.findByCabinet_Id(cabinetId).stream()
                 .filter(c -> !"CAMPAIGN_STATE_FINISHED".equals(c.getState()))
-                .map(this::buildOzonCampaignDto)
+                .collect(Collectors.toList());
+        if (campaigns.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> campaignIds = campaigns.stream().map(OzonPromotionCampaign::getCampaignId).toList();
+        Map<Long, List<OzonPromotionCampaignStatistics>> statsByCampaign =
+                ozonPromotionCampaignStatisticsRepository
+                        .findByCampaign_CampaignIdInAndDateBetween(campaignIds, from, to)
+                        .stream()
+                        .collect(Collectors.groupingBy(s -> s.getCampaign().getCampaignId()));
+
+        return campaigns.stream()
+                .map(c -> buildOzonCampaignDto(c, statsByCampaign.getOrDefault(c.getCampaignId(), Collections.emptyList())))
                 .collect(Collectors.toList());
     }
 
-    private CampaignDto buildOzonCampaignDto(OzonPromotionCampaign campaign) {
+    private CampaignDto buildOzonCampaignDto(
+            OzonPromotionCampaign campaign,
+            List<OzonPromotionCampaignStatistics> stats
+    ) {
         boolean running = "CAMPAIGN_STATE_RUNNING".equals(campaign.getState());
         String type = buildOzonCampaignTypeLabel(campaign.getAdvObjectType(), campaign.getPaymentType());
+
+        int views = 0;
+        int clicks = 0;
+        BigDecimal spend = BigDecimal.ZERO;
+        int orders = 0;
+        for (OzonPromotionCampaignStatistics s : stats) {
+            if (s.getViews() != null) {
+                views += s.getViews();
+            }
+            if (s.getClicks() != null) {
+                clicks += s.getClicks();
+            }
+            if (s.getSpend() != null) {
+                spend = spend.add(s.getSpend());
+            }
+            if (s.getOrders() != null) {
+                orders += s.getOrders();
+            }
+        }
+        BigDecimal ctr = null;
+        BigDecimal cpc = null;
+        if (views > 0) {
+            ctr = BigDecimal.valueOf(clicks)
+                    .multiply(BigDecimal.valueOf(100))
+                    .divide(BigDecimal.valueOf(views), 2, RoundingMode.HALF_UP);
+        }
+        if (clicks > 0) {
+            cpc = spend.divide(BigDecimal.valueOf(clicks), 2, RoundingMode.HALF_UP);
+        }
+
         return CampaignDto.builder()
                 .id(campaign.getCampaignId())
                 .name(campaign.getTitle())
@@ -1903,6 +1953,12 @@ public class AnalyticsService {
                 .statusName(formatOzonCampaignState(campaign.getState()))
                 .createdAt(campaign.getOzonCreatedAt())
                 .updatedAt(campaign.getOzonUpdatedAt() != null ? campaign.getOzonUpdatedAt() : campaign.getSyncedAt())
+                .views(views)
+                .clicks(clicks)
+                .ctr(ctr)
+                .cpc(cpc)
+                .costs(spend)
+                .orders(orders)
                 .articlesCount(null)
                 .build();
     }
