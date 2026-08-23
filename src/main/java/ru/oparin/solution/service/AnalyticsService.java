@@ -94,6 +94,24 @@ public class AnalyticsService {
         validatePeriods(periods);
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
 
+        if (cabinetId != null) {
+            Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+            if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+                return getOzonSummary(
+                        cabinetId,
+                        sortedPeriods,
+                        excludedNmIds,
+                        page,
+                        size,
+                        search,
+                        includedNmIds,
+                        filterToNone,
+                        onlyWithPhoto,
+                        sortDir
+                );
+            }
+        }
+
         List<WbProductCard> visibleCards = applyCatalogFilters(
                 getVisibleCards(seller.getId(), cabinetId, excludedNmIds),
                 seller.getId(),
@@ -290,6 +308,286 @@ public class AnalyticsService {
         private BigDecimal revenue = BigDecimal.ZERO;
     }
 
+    /**
+     * Сводная аналитика Ozon: заказы и выручка по периодам из {@code ozon_product_card_analytics}.
+     */
+    private SummaryResponseDto getOzonSummary(
+            Long cabinetId,
+            List<PeriodDto> periods,
+            List<Long> excludedNmIds,
+            Integer page,
+            Integer size,
+            String search,
+            List<Long> includedNmIds,
+            Boolean filterToNone,
+            Boolean onlyWithPhoto,
+            String sortDir
+    ) {
+        List<OzonProductCard> visibleCards = getVisibleOzonCards(cabinetId, excludedNmIds, onlyWithPhoto);
+        Sort.Direction resolvedSortDir = Sort.Direction.fromOptionalString(sortDir).orElse(Sort.Direction.DESC);
+
+        boolean paginated = page != null && size != null && size > 0;
+        if (paginated) {
+            List<OzonProductCard> filtered = visibleCards;
+            if (Boolean.TRUE.equals(filterToNone)) {
+                filtered = List.of();
+            } else if (includedNmIds != null && !includedNmIds.isEmpty()) {
+                Set<Long> idSet = new HashSet<>(includedNmIds);
+                filtered = filtered.stream()
+                        .filter(card -> card.getProductId() != null && idSet.contains(card.getProductId()))
+                        .collect(Collectors.toList());
+            }
+            if (search != null && !search.isBlank()) {
+                filtered = filterOzonCardsBySearch(filtered, search.trim());
+            }
+            sortOzonProductCards(filtered, resolvedSortDir);
+            int total = filtered.size();
+            int from = Math.min(page * size, total);
+            int to = Math.min(from + size, total);
+            List<OzonProductCard> pageCards = from < to ? filtered.subList(from, to) : List.of();
+            return SummaryResponseDto.builder()
+                    .periods(periods)
+                    .articles(mapOzonCardsToArticleSummaries(pageCards, cabinetId))
+                    .aggregatedMetrics(null)
+                    .totalArticles((long) total)
+                    .build();
+        }
+
+        Set<Long> productIds = visibleCards.stream()
+                .map(OzonProductCard::getProductId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Integer, AggregatedMetricsDto> aggregatedMetrics = calculateOzonAggregatedMetrics(
+                cabinetId, productIds, periods);
+        List<OzonProductCard> sortedCards = new ArrayList<>(visibleCards);
+        sortOzonProductCards(sortedCards, resolvedSortDir);
+        return SummaryResponseDto.builder()
+                .periods(periods)
+                .articles(mapOzonCardsToArticleSummaries(sortedCards, cabinetId))
+                .aggregatedMetrics(aggregatedMetrics)
+                .totalArticles(null)
+                .build();
+    }
+
+    private MetricGroupResponseDto getOzonMetricGroup(
+            Long cabinetId,
+            String metricName,
+            List<PeriodDto> periods,
+            List<Long> excludedNmIds,
+            Boolean onlyWithPhoto
+    ) {
+        if (!MetricNames.ORDERS.equals(metricName) && !MetricNames.ORDERS_AMOUNT.equals(metricName)) {
+            return MetricGroupResponseDto.builder()
+                    .metricName(metricName)
+                    .metricNameRu(MetricNames.getRussianName(metricName))
+                    .category(getMetricCategory(metricName))
+                    .articles(List.of())
+                    .build();
+        }
+
+        List<OzonProductCard> visibleCards = getVisibleOzonCards(cabinetId, excludedNmIds, onlyWithPhoto);
+        Map<Long, List<OzonProductCardAnalytics>> analyticsByProductId = loadOzonAnalyticsGroupedByProduct(
+                cabinetId,
+                visibleCards.stream().map(OzonProductCard::getProductId).filter(Objects::nonNull).collect(Collectors.toSet()),
+                periods
+        );
+
+        List<ArticleMetricDto> articleMetrics = visibleCards.stream()
+                .map(card -> buildOzonArticleMetric(card, metricName, periods, analyticsByProductId))
+                .collect(Collectors.toList());
+
+        return MetricGroupResponseDto.builder()
+                .metricName(metricName)
+                .metricNameRu(MetricNames.getRussianName(metricName))
+                .category(getMetricCategory(metricName))
+                .articles(articleMetrics)
+                .build();
+    }
+
+    private List<OzonProductCard> getVisibleOzonCards(
+            Long cabinetId,
+            List<Long> excludedNmIds,
+            Boolean onlyWithPhoto
+    ) {
+        List<OzonProductCard> cards = ozonProductCardRepository.findByCabinet_IdOrderByProductIdAsc(cabinetId);
+        if (Boolean.TRUE.equals(onlyWithPhoto)) {
+            cards = cards.stream()
+                    .filter(card -> card.getPhotoUrl() != null && !card.getPhotoUrl().isBlank())
+                    .collect(Collectors.toList());
+        }
+        if (excludedNmIds != null && !excludedNmIds.isEmpty()) {
+            Set<Long> excluded = new HashSet<>(excludedNmIds);
+            cards = cards.stream()
+                    .filter(card -> card.getProductId() != null && !excluded.contains(card.getProductId()))
+                    .collect(Collectors.toList());
+        }
+        return cards;
+    }
+
+    private Map<Integer, AggregatedMetricsDto> calculateOzonAggregatedMetrics(
+            Long cabinetId,
+            Set<Long> productIds,
+            List<PeriodDto> periods
+    ) {
+        Map<Integer, AggregatedMetricsDto> result = new HashMap<>();
+        if (periods.isEmpty()) {
+            return result;
+        }
+        Map<Long, List<OzonProductCardAnalytics>> analyticsByProductId = loadOzonAnalyticsGroupedByProduct(
+                cabinetId, productIds, periods);
+        for (PeriodDto period : periods) {
+            int orders = 0;
+            BigDecimal ordersAmount = BigDecimal.ZERO;
+            for (Long productId : productIds) {
+                OzonPeriodTotals totals = sumOzonAnalyticsForPeriod(
+                        analyticsByProductId.getOrDefault(productId, List.of()), period);
+                orders += totals.orderedUnits();
+                ordersAmount = ordersAmount.add(totals.revenue());
+            }
+            AggregatedMetricsDto metrics = new AggregatedMetricsDto();
+            metrics.setOrders(orders);
+            metrics.setOrdersAmount(ordersAmount);
+            result.put(period.getId(), metrics);
+        }
+        return result;
+    }
+
+    private Map<Long, List<OzonProductCardAnalytics>> loadOzonAnalyticsGroupedByProduct(
+            Long cabinetId,
+            Set<Long> productIds,
+            List<PeriodDto> periods
+    ) {
+        if (productIds.isEmpty() || periods.isEmpty()) {
+            return Map.of();
+        }
+        LocalDate dateFrom = periods.stream()
+                .map(PeriodDto::getDateFrom)
+                .min(LocalDate::compareTo)
+                .orElseThrow();
+        LocalDate dateTo = periods.stream()
+                .map(PeriodDto::getDateTo)
+                .max(LocalDate::compareTo)
+                .orElseThrow();
+        return ozonProductCardAnalyticsRepository.findByCabinet_IdAndDateBetween(cabinetId, dateFrom, dateTo).stream()
+                .filter(row -> productIds.contains(row.getProductId()))
+                .collect(Collectors.groupingBy(OzonProductCardAnalytics::getProductId));
+    }
+
+    private OzonPeriodTotals sumOzonAnalyticsForPeriod(
+            List<OzonProductCardAnalytics> rows,
+            PeriodDto period
+    ) {
+        int orderedUnits = 0;
+        BigDecimal revenue = BigDecimal.ZERO;
+        for (OzonProductCardAnalytics row : rows) {
+            if (row.getDate().isBefore(period.getDateFrom()) || row.getDate().isAfter(period.getDateTo())) {
+                continue;
+            }
+            if (row.getOrderedUnits() != null) {
+                orderedUnits += row.getOrderedUnits();
+            }
+            if (row.getRevenue() != null) {
+                revenue = revenue.add(row.getRevenue());
+            }
+        }
+        return new OzonPeriodTotals(orderedUnits, revenue);
+    }
+
+    private ArticleMetricDto buildOzonArticleMetric(
+            OzonProductCard card,
+            String metricName,
+            List<PeriodDto> periods,
+            Map<Long, List<OzonProductCardAnalytics>> analyticsByProductId
+    ) {
+        List<OzonProductCardAnalytics> rows = analyticsByProductId.getOrDefault(card.getProductId(), List.of());
+        List<PeriodMetricValueDto> periodValues = new ArrayList<>();
+        for (PeriodDto period : periods) {
+            OzonPeriodTotals totals = sumOzonAnalyticsForPeriod(rows, period);
+            Object value = MetricNames.ORDERS.equals(metricName)
+                    ? totals.orderedUnits()
+                    : totals.revenue();
+            BigDecimal changePercent = calculateOzonChangePercent(metricName, period, periods, rows);
+            periodValues.add(PeriodMetricValueDto.builder()
+                    .periodId(period.getId())
+                    .value(value)
+                    .changePercent(changePercent)
+                    .build());
+        }
+        return ArticleMetricDto.builder()
+                .nmId(card.getProductId())
+                .photoTm(card.getPhotoUrl())
+                .periods(periodValues)
+                .build();
+    }
+
+    private BigDecimal calculateOzonChangePercent(
+            String metricName,
+            PeriodDto period,
+            List<PeriodDto> sortedPeriods,
+            List<OzonProductCardAnalytics> rows
+    ) {
+        OzonPeriodTotals currentTotals = sumOzonAnalyticsForPeriod(rows, period);
+        Object currentValue = MetricNames.ORDERS.equals(metricName)
+                ? currentTotals.orderedUnits()
+                : currentTotals.revenue();
+        if (currentValue == null) {
+            return null;
+        }
+        PeriodDto previousPeriod = findPreviousPeriodByDateOrder(period, sortedPeriods);
+        if (previousPeriod == null) {
+            return null;
+        }
+        OzonPeriodTotals previousTotals = sumOzonAnalyticsForPeriod(rows, previousPeriod);
+        Object previousValue = MetricNames.ORDERS.equals(metricName)
+                ? previousTotals.orderedUnits()
+                : previousTotals.revenue();
+        return calculatePercentageChange(currentValue, previousValue);
+    }
+
+    private List<ArticleSummaryDto> mapOzonCardsToArticleSummaries(
+            List<OzonProductCard> cards,
+            Long cabinetId
+    ) {
+        if (cards.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, OzonProductPriceHistory> priceByProductId = loadLatestOzonPrices(cabinetId);
+        Map<Long, int[]> stocksByProductId = loadOzonStockTotals(cabinetId);
+        return cards.stream()
+                .map(card -> mapOzonToArticleSummary(
+                        card,
+                        priceByProductId.get(card.getProductId()),
+                        stocksByProductId.get(card.getProductId()),
+                        null
+                ))
+                .toList();
+    }
+
+    private void sortOzonProductCards(List<OzonProductCard> cards, Sort.Direction sortDir) {
+        Comparator<OzonProductCard> comparator = Comparator.comparing(
+                OzonProductCard::getProductId,
+                Comparator.nullsLast(Comparator.naturalOrder())
+        );
+        if (sortDir == Sort.Direction.DESC) {
+            comparator = comparator.reversed();
+        }
+        cards.sort(comparator);
+    }
+
+    private List<OzonProductCard> filterOzonCardsBySearch(List<OzonProductCard> cards, String searchLower) {
+        String lower = searchLower.toLowerCase();
+        return cards.stream()
+                .filter(card ->
+                        (card.getTitle() != null && card.getTitle().toLowerCase().contains(lower))
+                                || (card.getOfferId() != null && card.getOfferId().toLowerCase().contains(lower))
+                                || (card.getProductId() != null && String.valueOf(card.getProductId()).contains(lower))
+                )
+                .collect(Collectors.toList());
+    }
+
+    private record OzonPeriodTotals(int orderedUnits, BigDecimal revenue) {
+    }
+
     private List<WbProductCard> filterCardsBySearch(List<WbProductCard> cards, String searchLower) {
         String lower = searchLower.toLowerCase();
         return cards.stream()
@@ -316,6 +614,18 @@ public class AnalyticsService {
             Boolean onlyInAdvertising
     ) {
         List<PeriodDto> sortedPeriods = sortPeriodsByDateFrom(periods);
+        if (cabinetId != null) {
+            Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+            if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+                return getOzonMetricGroup(
+                        cabinetId,
+                        metricName,
+                        sortedPeriods,
+                        excludedNmIds,
+                        onlyWithPhoto
+                );
+            }
+        }
         if (isAdvertisingMetric(metricName)) {
             return getAdvertisingMetricGroup(
                     seller, cabinetId, metricName, sortedPeriods, excludedNmIds,
