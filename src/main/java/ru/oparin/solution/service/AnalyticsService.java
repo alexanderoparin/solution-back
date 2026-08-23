@@ -1985,6 +1985,7 @@ public class AnalyticsService {
                 .costs(spend)
                 .orders(orders)
                 .articlesCount(articlesCount)
+                .bidderStatus(resolveOzonBidderStatus(campaign.getState()))
                 .build();
     }
 
@@ -1999,6 +2000,19 @@ public class AnalyticsService {
             return advObjectType;
         }
         return advObjectType + " / " + paymentType;
+    }
+
+    /**
+     * Статус для страницы «Управление РК»: RUNNING/OFF/WAITING по state Ozon Performance.
+     */
+    private static String resolveOzonBidderStatus(String state) {
+        if ("CAMPAIGN_STATE_RUNNING".equals(state)) {
+            return BidderStatus.RUNNING.name();
+        }
+        if ("CAMPAIGN_STATE_STOPPED".equals(state) || "CAMPAIGN_STATE_INACTIVE".equals(state)) {
+            return BidderStatus.OFF.name();
+        }
+        return BidderStatus.WAITING.name();
     }
 
     private static String formatOzonCampaignState(String state) {
@@ -2532,6 +2546,7 @@ public class AnalyticsService {
                 .costs(spend)
                 .orders(orders)
                 .articlesCount(articlesCount)
+                .bidderStatus(resolveOzonBidderStatus(campaign.getState()))
                 .build();
     }
 

@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.PageResponse;
 import ru.oparin.solution.dto.analytics.CampaignControlEnqueueResponse;
 import ru.oparin.solution.dto.analytics.manage.*;
+import ru.oparin.solution.model.MarketplaceType;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.SellerContextService;
 import ru.oparin.solution.service.UserService;
@@ -45,6 +46,9 @@ public class WbCampaignManageController {
             Authentication authentication
     ) {
         SellerContextService.SellerContext ctx = sellerContextService.createContext(authentication, sellerId, cabinetId, ru.oparin.solution.model.CabinetAccessSection.CAMPAIGN_MANAGE);
+        if (isOzonCabinet(ctx)) {
+            return ResponseEntity.notFound().build();
+        }
         Long resolvedCabinetId = ctx.cabinet() != null ? ctx.cabinet().getId() : null;
         CampaignManageResponseDto dto = manageService.getManage(advertId, resolvedCabinetId, ctx.user());
         if (dto == null) {
@@ -360,5 +364,9 @@ public class WbCampaignManageController {
             }
             throw e;
         }
+    }
+
+    private static boolean isOzonCabinet(SellerContextService.SellerContext ctx) {
+        return ctx.cabinet() != null && ctx.cabinet().getMarketplaceType() == MarketplaceType.OZON;
     }
 }
