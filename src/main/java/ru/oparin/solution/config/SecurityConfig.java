@@ -57,6 +57,8 @@ public class SecurityConfig {
     private static final String USERS_MANAGEMENT_ENDPOINTS = "/users/**";
     private static final String USERS_TRIGGER_STOCKS_UPDATE_ENDPOINT = "/users/cabinets/*/trigger-stocks-update";
     private static final String USERS_TRIGGER_OZON_ANALYTICS_UPDATE_ENDPOINT = "/users/cabinets/*/trigger-ozon-analytics-update";
+    private static final String USERS_TRIGGER_OZON_CAMPAIGNS_SYNC_ENDPOINT = "/users/cabinets/*/trigger-ozon-campaigns-sync";
+    private static final String USERS_VALIDATE_OZON_PERFORMANCE_ENDPOINT = "/users/cabinets/*/validate-ozon-performance";
     private static final String CABINETS_ENDPOINTS = "/cabinets/**";
     private static final String INVITE_ENDPOINTS = "/public/invitations/**";
     private static final String SUBSCRIPTION_PLANS = "/subscription/plans";
@@ -125,6 +127,7 @@ public class SecurityConfig {
                 .requestMatchers(ADVERTISING_ENDPOINTS).hasAnyRole(ADMIN, USER)
                 .requestMatchers(USERS_TRIGGER_STOCKS_UPDATE_ENDPOINT).hasAnyRole(ADMIN, USER)
                 .requestMatchers(USERS_TRIGGER_OZON_ANALYTICS_UPDATE_ENDPOINT).hasAnyRole(ADMIN, USER)
+                .requestMatchers(USERS_TRIGGER_OZON_CAMPAIGNS_SYNC_ENDPOINT).hasAnyRole(ADMIN, USER)
                 .requestMatchers(USERS_MANAGEMENT_ENDPOINTS).hasRole(ADMIN)
                 .requestMatchers(CABINETS_ENDPOINTS).hasAnyRole(ADMIN, USER)
                 .anyRequest().authenticated();

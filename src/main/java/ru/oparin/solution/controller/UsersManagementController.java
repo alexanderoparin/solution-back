@@ -43,6 +43,7 @@ public class UsersManagementController {
     private final CabinetService cabinetService;
     private final WbApiKeyService wbApiKeyService;
     private final OzonApiKeyService ozonApiKeyService;
+    private final OzonPerformanceCredentialsService ozonPerformanceCredentialsService;
     private final AnalyticsScheduler analyticsScheduler;
     private final WbProductCardAnalyticsService productCardAnalyticsService;
     private final WbApiEventService wbApiEventService;
@@ -383,6 +384,13 @@ public class UsersManagementController {
             CabinetDto updated = cabinetService.updateApiKey(cabinetId, request.getApiKey(), request.getTokenType());
             return ResponseEntity.ok(updated);
         }
+        if (request.getOzonPerformanceClientId() != null || request.getOzonPerformanceClientSecret() != null) {
+            CabinetDto updated = cabinetService.updateOzonPerformanceCredentials(
+                    cabinetId,
+                    request.getOzonPerformanceClientId(),
+                    request.getOzonPerformanceClientSecret());
+            return ResponseEntity.ok(updated);
+        }
         if (request.getName() != null && !request.getName().isBlank()) {
             Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
             cabinet.setName(request.getName().trim());
@@ -434,6 +442,58 @@ public class UsersManagementController {
         }
         ozonApiEventService.enqueueAnalyticsDataCabinetEvent(cabinetId, "MANUAL_ANALYTICS_ONLY");
         return okMessageResponse("Синхронизация аналитики Ozon поставлена в очередь событий.");
+    }
+
+    /**
+     * Запуск синхронизации списка рекламных кампаний Ozon (Performance API).
+     */
+    @PostMapping("/cabinets/{cabinetId}/trigger-ozon-campaigns-sync")
+    public ResponseEntity<MessageResponse> triggerOzonCampaignsSync(
+            @PathVariable Long cabinetId,
+            Authentication authentication
+    ) {
+        User currentUser = getCurrentUser(authentication);
+        cabinetService.validateCabinetAccessForStocksUpdate(cabinetId, currentUser);
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+        if (cabinet.getMarketplaceType() != MarketplaceType.OZON) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new MessageResponse("Эндпоинт доступен только для Ozon-кабинетов"));
+        }
+        if (!ozonPerformanceCredentialsService.hasUsableCredentials(cabinet)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new MessageResponse("Сначала задайте и проверьте Performance credentials Ozon"));
+        }
+        ozonApiEventService.enqueueCampaignsCabinetEvent(cabinetId, "MANUAL_CAMPAIGNS_ONLY");
+        return okMessageResponse("Синхронизация рекламных кампаний Ozon поставлена в очередь событий.");
+    }
+
+    /**
+     * Валидация Performance credentials Ozon (client_id + client_secret).
+     */
+    @PostMapping("/cabinets/{cabinetId}/validate-ozon-performance")
+    public ResponseEntity<MessageResponse> validateOzonPerformanceCredentials(
+            @PathVariable Long cabinetId,
+            Authentication authentication
+    ) {
+        User currentUser = getCurrentUser(authentication);
+        if (!isAdmin(currentUser)) {
+            return forbiddenMessageResponse(MESSAGE_FORBIDDEN);
+        }
+        cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+        if (cabinet.getMarketplaceType() != MarketplaceType.OZON) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new MessageResponse("Кабинет не является Ozon"));
+        }
+        ozonPerformanceCredentialsService.validateByCabinet(cabinet);
+        boolean valid = Boolean.TRUE.equals(cabinet.getOzonPerformanceIsValid());
+        String message = valid
+                ? "Performance credentials Ozon валидны"
+                : (cabinet.getOzonPerformanceValidationError() != null
+                        ? cabinet.getOzonPerformanceValidationError()
+                        : "Performance credentials не прошли проверку");
+        return valid ? okMessageResponse(message)
+                : ResponseEntity.status(HttpStatus.BAD_REQUEST).body(MessageResponse.builder().message(message).build());
     }
 
     /**

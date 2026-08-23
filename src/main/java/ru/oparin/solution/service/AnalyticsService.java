@@ -49,6 +49,7 @@ public class AnalyticsService {
     private final CabinetService cabinetService;
     private final WbProductCardAnalyticsRepository analyticsRepository;
     private final WbPromotionCampaignRepository campaignRepository;
+    private final OzonPromotionCampaignRepository ozonPromotionCampaignRepository;
     private final WbCampaignArticleRepository campaignArticleRepository;
     private final WbPromotionCampaignStatisticsRepository campaignStatisticsRepository;
     private final WbProductPriceHistoryRepository priceHistoryRepository;
@@ -1875,6 +1876,62 @@ public class AnalyticsService {
                     return buildCampaignDto(c, scopeNmIds, stats, true, articlesCount, bidderStatus);
                 })
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Список рекламных кампаний Ozon из локальной БД (статистика Performance — позже, Wave 3 slice 2).
+     */
+    @Transactional(readOnly = true)
+    public List<CampaignDto> listOzonCampaignsByCabinet(Long cabinetId) {
+        if (cabinetId == null) {
+            return Collections.emptyList();
+        }
+        return ozonPromotionCampaignRepository.findByCabinet_Id(cabinetId).stream()
+                .filter(c -> !"CAMPAIGN_STATE_FINISHED".equals(c.getState()))
+                .map(this::buildOzonCampaignDto)
+                .collect(Collectors.toList());
+    }
+
+    private CampaignDto buildOzonCampaignDto(OzonPromotionCampaign campaign) {
+        boolean running = "CAMPAIGN_STATE_RUNNING".equals(campaign.getState());
+        String type = buildOzonCampaignTypeLabel(campaign.getAdvObjectType(), campaign.getPaymentType());
+        return CampaignDto.builder()
+                .id(campaign.getCampaignId())
+                .name(campaign.getTitle())
+                .type(type)
+                .status(running ? 9 : 4)
+                .statusName(formatOzonCampaignState(campaign.getState()))
+                .createdAt(campaign.getOzonCreatedAt())
+                .updatedAt(campaign.getOzonUpdatedAt() != null ? campaign.getOzonUpdatedAt() : campaign.getSyncedAt())
+                .articlesCount(null)
+                .build();
+    }
+
+    private static String buildOzonCampaignTypeLabel(String advObjectType, String paymentType) {
+        if (advObjectType == null && paymentType == null) {
+            return null;
+        }
+        if (advObjectType == null) {
+            return paymentType;
+        }
+        if (paymentType == null) {
+            return advObjectType;
+        }
+        return advObjectType + " / " + paymentType;
+    }
+
+    private static String formatOzonCampaignState(String state) {
+        if (state == null || state.isBlank()) {
+            return "неизвестно";
+        }
+        return switch (state) {
+            case "CAMPAIGN_STATE_RUNNING" -> "активна";
+            case "CAMPAIGN_STATE_STOPPED" -> "остановлена";
+            case "CAMPAIGN_STATE_INACTIVE" -> "неактивна";
+            case "CAMPAIGN_STATE_FINISHED" -> "завершена";
+            case "CAMPAIGN_STATE_PLANNED" -> "запланирована";
+            default -> state.replace("CAMPAIGN_STATE_", "").toLowerCase(Locale.ROOT);
+        };
     }
 
     /**

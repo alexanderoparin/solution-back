@@ -28,6 +28,7 @@ public class CabinetController {
     private final CabinetService cabinetService;
     private final WbApiKeyService wbApiKeyService;
     private final OzonApiKeyService ozonApiKeyService;
+    private final OzonPerformanceCredentialsService ozonPerformanceCredentialsService;
     private final UserService userService;
     private final CabinetAccessService cabinetAccessService;
 
@@ -238,6 +239,32 @@ public class CabinetController {
                 .message(valid
                         ? (cabinet.getMarketplaceType() == MarketplaceType.OZON ? "Api-Key Ozon валиден" : "API ключ валиден")
                         : (cabinet.getValidationError() != null ? cabinet.getValidationError() : "API ключ не прошёл проверку"))
+                .build();
+        return valid ? ResponseEntity.ok(body) : ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @PostMapping("/{id}/ozon-performance/validate")
+    public ResponseEntity<MessageResponse> validateOzonPerformanceCredentials(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        if (!cabinetAccessService.isCabinetOwner(user, id) && user.getRole() != Role.ADMIN) {
+            throw new UserException("Нет доступа", HttpStatus.FORBIDDEN);
+        }
+        Long ownerId = cabinetService.findById(id).orElseThrow().getUser().getId();
+        Cabinet cabinet = cabinetService.findCabinetByIdAndUserId(id, ownerId);
+        if (cabinet.getMarketplaceType() != MarketplaceType.OZON) {
+            throw new UserException("Кабинет не является Ozon", HttpStatus.BAD_REQUEST);
+        }
+        ozonPerformanceCredentialsService.validateByCabinet(cabinet);
+        boolean valid = Boolean.TRUE.equals(cabinet.getOzonPerformanceIsValid());
+        MessageResponse body = MessageResponse.builder()
+                .message(valid
+                        ? "Performance credentials Ozon валидны"
+                        : (cabinet.getOzonPerformanceValidationError() != null
+                                ? cabinet.getOzonPerformanceValidationError()
+                                : "Performance credentials не прошли проверку"))
                 .build();
         return valid ? ResponseEntity.ok(body) : ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }

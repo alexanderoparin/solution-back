@@ -62,6 +62,36 @@ public class Cabinet {
     private String ozonClientId;
 
     /**
+     * Ozon Performance API client_id (реклама). Отдельные credentials от Seller API.
+     */
+    @Column(name = "ozon_performance_client_id", length = 128)
+    private String ozonPerformanceClientId;
+
+    /**
+     * Ozon Performance API client_secret.
+     */
+    @Column(name = "ozon_performance_client_secret", length = 500)
+    private String ozonPerformanceClientSecret;
+
+    /**
+     * Результат последней проверки Performance credentials (null — не проверяли).
+     */
+    @Column(name = "ozon_performance_is_valid")
+    private Boolean ozonPerformanceIsValid;
+
+    @Column(name = "ozon_performance_last_validated_at")
+    private LocalDateTime ozonPerformanceLastValidatedAt;
+
+    @Column(name = "ozon_performance_validation_error", columnDefinition = "TEXT")
+    private String ozonPerformanceValidationError;
+
+    /**
+     * Время последней успешной синхронизации списка РК Ozon.
+     */
+    @Column(name = "last_ozon_campaigns_sync_at")
+    private LocalDateTime lastOzonCampaignsSyncAt;
+
+    /**
      * Тип WB API токена кабинета.
      * Для Ozon не используется (остаётся значение по умолчанию).
      */

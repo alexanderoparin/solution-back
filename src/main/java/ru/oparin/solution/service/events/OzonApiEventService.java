@@ -38,6 +38,7 @@ public class OzonApiEventService {
     public static final String PRICES_CABINET_EXECUTOR_BEAN = "ozonPricesCabinetEventExecutor";
     public static final String STOCKS_CABINET_EXECUTOR_BEAN = "ozonStocksCabinetEventExecutor";
     public static final String ANALYTICS_DATA_CABINET_EXECUTOR_BEAN = "ozonAnalyticsDataCabinetEventExecutor";
+    public static final String CAMPAIGNS_CABINET_EXECUTOR_BEAN = "ozonCampaignsCabinetEventExecutor";
 
     private static final int PRODUCT_LIST_MAX_ATTEMPTS = 3;
     private static final int PRODUCT_LIST_PRIORITY = 100;
@@ -47,6 +48,8 @@ public class OzonApiEventService {
     private static final int STOCKS_PRIORITY = 80;
     private static final int ANALYTICS_MAX_ATTEMPTS = 3;
     private static final int ANALYTICS_PRIORITY = 70;
+    private static final int CAMPAIGNS_MAX_ATTEMPTS = 3;
+    private static final int CAMPAIGNS_PRIORITY = 65;
     /** Суток в периоде аналитики (вчера + ещё 13 дней назад). */
     private static final int ANALYTICS_PERIOD_DAYS = 14;
 
@@ -181,6 +184,39 @@ public class OzonApiEventService {
         eventRepository.save(event);
     }
 
+    /**
+     * Загрузка списка рекламных кампаний Ozon Performance API (отдельная цепочка от main sync).
+     *
+     * @return {@code true}, если событие создано; {@code false}, если уже есть активное с тем же dedupKey
+     */
+    @Transactional
+    public boolean enqueueCampaignsCabinetEvent(Long cabinetId, String triggerSource) {
+        String dedupKey = "CAMPAIGNS_CABINET:" + cabinetId;
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("Ozon CAMPAIGNS event уже существует (dedupKey={}), создание пропущено", dedupKey);
+            return false;
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        OzonApiEvent event = OzonApiEvent.builder()
+                .eventType(OzonApiEventType.CAMPAIGNS_CABINET)
+                .status(OzonApiEventStatus.CREATED)
+                .executorBeanName(CAMPAIGNS_CABINET_EXECUTOR_BEAN)
+                .cabinet(cabinet)
+                .payloadJson("{}")
+                .dedupKey(dedupKey)
+                .attemptCount(0)
+                .maxAttempts(CAMPAIGNS_MAX_ATTEMPTS)
+                .nextAttemptAt(LocalDateTime.now())
+                .priority(CAMPAIGNS_PRIORITY)
+                .triggerSource(triggerSource)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        eventRepository.save(event);
+        return true;
+    }
+
     @Transactional(readOnly = true)
     public List<OzonApiEvent> findDueEvents() {
         List<String> statusNames = RUNNABLE_STATUSES.stream().map(Enum::name).toList();
@@ -282,6 +318,16 @@ public class OzonApiEventService {
     public void markStocksCompleted(Long cabinetId) {
         Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
         cabinet.setLastStocksUpdateAt(LocalDateTime.now());
+        cabinetService.save(cabinet);
+    }
+
+    /**
+     * Фиксирует успешную синхронизацию списка РК Ozon.
+     */
+    @Transactional
+    public void markCampaignsSyncCompleted(Long cabinetId) {
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+        cabinet.setLastOzonCampaignsSyncAt(LocalDateTime.now());
         cabinetService.save(cabinet);
     }
 

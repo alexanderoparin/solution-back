@@ -21,6 +21,7 @@ import ru.oparin.solution.repository.CabinetAccessGrantRepository;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
 import ru.oparin.solution.repository.spec.CabinetManagedSpecifications;
+import ru.oparin.solution.service.ozon.OzonPerformanceApiClient;
 import ru.oparin.solution.service.ozon.OzonSellerApiClient;
 import ru.oparin.solution.service.wb.Wb429RateLimitHeadersLogger;
 import ru.oparin.solution.service.wb.WbCommonApiClient;
@@ -57,6 +58,7 @@ public class CabinetService {
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final WbCommonApiClient wbCommonApiClient;
     private final OzonSellerApiClient ozonSellerApiClient;
+    private final OzonPerformanceApiClient ozonPerformanceApiClient;
     private final CabinetBillingService cabinetBillingService;
 
     /**
@@ -359,9 +361,64 @@ public class CabinetService {
         if (request.getTokenType() != null) {
             cabinet.setTokenType(request.getTokenType());
         }
+        if (request.getOzonPerformanceClientId() != null) {
+            resetPerformanceValidationAndSetClientId(cabinet, request.getOzonPerformanceClientId());
+        }
+        if (request.getOzonPerformanceClientSecret() != null) {
+            resetPerformanceValidationAndSetClientSecret(cabinet, request.getOzonPerformanceClientSecret());
+        }
 
         cabinet = cabinetRepository.save(cabinet);
         return toDto(cabinet);
+    }
+
+    /**
+     * Обновляет Performance credentials Ozon (для админа при редактировании кабинета).
+     */
+    @Transactional
+    public CabinetDto updateOzonPerformanceCredentials(
+            Long cabinetId,
+            String clientId,
+            String clientSecret
+    ) {
+        Cabinet cabinet = findByIdWithUserOrThrow(cabinetId);
+        if (cabinet.getMarketplaceType() != MarketplaceType.OZON) {
+            throw new UserException("Кабинет не является Ozon", HttpStatus.BAD_REQUEST);
+        }
+        if (clientId != null) {
+            resetPerformanceValidationAndSetClientId(cabinet, clientId);
+        }
+        if (clientSecret != null) {
+            resetPerformanceValidationAndSetClientSecret(cabinet, clientSecret);
+        }
+        cabinet = cabinetRepository.save(cabinet);
+        return toDto(cabinet, false);
+    }
+
+    /**
+     * Сбрасывает статус валидации Performance и устанавливает client_id.
+     */
+    public void resetPerformanceValidationAndSetClientId(Cabinet cabinet, String clientId) {
+        String trimmed = clientId != null ? clientId.trim() : null;
+        cabinet.setOzonPerformanceIsValid(null);
+        cabinet.setOzonPerformanceValidationError(null);
+        cabinet.setOzonPerformanceLastValidatedAt(null);
+        cabinet.setOzonPerformanceClientId(trimmed != null && !trimmed.isBlank() ? trimmed : null);
+        ozonPerformanceApiClient.invalidateTokenCache(cabinet.getId());
+    }
+
+    /**
+     * Сбрасывает статус валидации Performance и устанавливает client_secret.
+     */
+    public void resetPerformanceValidationAndSetClientSecret(Cabinet cabinet, String clientSecret) {
+        String trimmed = clientSecret != null ? clientSecret.trim() : null;
+        cabinet.setOzonPerformanceIsValid(null);
+        cabinet.setOzonPerformanceValidationError(null);
+        cabinet.setOzonPerformanceLastValidatedAt(null);
+        if (trimmed != null && !trimmed.isBlank()) {
+            cabinet.setOzonPerformanceClientSecret(trimmed);
+        }
+        ozonPerformanceApiClient.invalidateTokenCache(cabinet.getId());
     }
 
     /**
@@ -443,6 +500,7 @@ public class CabinetService {
         cabinetDeletionService.deleteStepOzonStocks(cabinetId);
         cabinetDeletionService.deleteStepOzonProductAnalytics(cabinetId);
         cabinetDeletionService.deleteStepOzonProductCards(cabinetId);
+        cabinetDeletionService.deleteStepOzonPromotionCampaigns(cabinetId);
         log.info("[Удаление кабинета]   Запись кабинета");
         deleteCabinet(cabinet);
 
@@ -716,6 +774,7 @@ public class CabinetService {
                 .lastDataUpdateAt(cabinet.getLastDataUpdateAt())
                 .lastDataUpdateRequestedAt(cabinet.getLastDataUpdateRequestedAt())
                 .lastStocksUpdateAt(cabinet.getLastStocksUpdateAt())
+                .lastOzonCampaignsSyncAt(cabinet.getLastOzonCampaignsSyncAt())
                 .apiKey(apiKeyInfo)
                 .scopeStatuses(scopeStatuses)
                 .build();
@@ -737,6 +796,13 @@ public class CabinetService {
                 .lastDataUpdateAt(cabinet.getLastDataUpdateAt())
                 .lastDataUpdateRequestedAt(cabinet.getLastDataUpdateRequestedAt())
                 .lastStocksUpdateAt(cabinet.getLastStocksUpdateAt())
+                .ozonPerformanceClientId(cabinet.getOzonPerformanceClientId())
+                .ozonPerformanceConfigured(
+                        cabinet.getOzonPerformanceClientSecret() != null
+                                && !cabinet.getOzonPerformanceClientSecret().isBlank())
+                .ozonPerformanceIsValid(cabinet.getOzonPerformanceIsValid())
+                .ozonPerformanceLastValidatedAt(cabinet.getOzonPerformanceLastValidatedAt())
+                .ozonPerformanceValidationError(cabinet.getOzonPerformanceValidationError())
                 .build();
     }
 

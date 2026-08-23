@@ -31,6 +31,9 @@ public class CabinetDto {
     /** Время последнего успешного завершения обновления остатков. */
     private LocalDateTime lastStocksUpdateAt;
 
+    /** Время последней успешной синхронизации списка РК Ozon. */
+    private LocalDateTime lastOzonCampaignsSyncAt;
+
     /**
      * Информация о WB API ключе кабинета.
      */
@@ -59,6 +62,14 @@ public class CabinetDto {
         private LocalDateTime lastDataUpdateRequestedAt;
         /** Время последнего успешного завершения обновления остатков. */
         private LocalDateTime lastStocksUpdateAt;
+        /** Ozon Performance API client_id. */
+        private String ozonPerformanceClientId;
+        /** Задан ли client_secret (сам secret не отдаётся). */
+        private Boolean ozonPerformanceConfigured;
+        /** Результат проверки Performance credentials. */
+        private Boolean ozonPerformanceIsValid;
+        private LocalDateTime ozonPerformanceLastValidatedAt;
+        private String ozonPerformanceValidationError;
     }
 
     @Getter

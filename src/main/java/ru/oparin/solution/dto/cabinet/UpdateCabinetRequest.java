@@ -28,4 +28,16 @@ public class UpdateCabinetRequest {
      * Новый тип WB API токена (опционально).
      */
     private CabinetTokenType tokenType;
+
+    /**
+     * Ozon Performance API client_id (опционально, только OZON).
+     */
+    @Size(max = 128)
+    private String ozonPerformanceClientId;
+
+    /**
+     * Ozon Performance API client_secret (опционально). Пустая строка — не менять.
+     */
+    @Size(max = 500)
+    private String ozonPerformanceClientSecret;
 }

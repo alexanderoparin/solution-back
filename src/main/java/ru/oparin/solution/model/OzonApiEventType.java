@@ -36,7 +36,15 @@ public enum OzonApiEventType {
     /** Проверка учётных данных продавца (seller/info). */
     SELLER_INFO(
             OzonApiBaseUrl.SELLER,
-            "/v1/seller/info");
+            "/v1/seller/info"),
+    /** OAuth-токен Performance API (POST /api/client/token). В очередь не ставится. */
+    PERFORMANCE_TOKEN(
+            OzonApiBaseUrl.PERFORMANCE,
+            "/api/client/token"),
+    /** Загрузка списка рекламных кампаний Performance API. */
+    CAMPAIGNS_CABINET(
+            OzonApiBaseUrl.PERFORMANCE,
+            "/api/client/campaign");
 
     /** Базовый URL группы Ozon API для данного типа. */
     private final OzonApiBaseUrl baseUrl;
@@ -57,6 +65,7 @@ public enum OzonApiEventType {
         return this == PRODUCT_LIST_PAGE
                 || this == PRICES_CABINET
                 || this == STOCKS_CABINET
-                || this == ANALYTICS_DATA_CABINET;
+                || this == ANALYTICS_DATA_CABINET
+                || this == CAMPAIGNS_CABINET;
     }
 }

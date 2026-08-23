@@ -9,9 +9,11 @@ import ru.oparin.solution.dto.analytics.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetAccessSection;
+import ru.oparin.solution.model.MarketplaceType;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.campaign.WbCampaignManageAccessService;
+import ru.oparin.solution.service.events.OzonApiEventService;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.WbMainStepPayload;
 
@@ -32,6 +34,8 @@ public class AdvertisingController {
     private final SellerContextService sellerContextService;
     private final AnalyticsService analyticsService;
     private final WbApiEventService wbApiEventService;
+    private final OzonApiEventService ozonApiEventService;
+    private final OzonPerformanceCredentialsService ozonPerformanceCredentialsService;
     private final WbPromotionCampaignControlService promotionCampaignControlService;
     private final WbPromotionCampaignControlWriteService promotionCampaignControlWriteService;
     private final WbCampaignManageAccessService campaignManageAccessService;
@@ -64,6 +68,10 @@ public class AdvertisingController {
                 CabinetAccessSection.AD_CAMPAIGNS
         );
         Long resolvedCabinetId = context.cabinet() != null ? context.cabinet().getId() : null;
+        Cabinet cabinet = context.cabinet();
+        if (cabinet != null && cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            return ResponseEntity.ok(analyticsService.listOzonCampaignsByCabinet(resolvedCabinetId));
+        }
         List<CampaignDto> campaigns = analyticsService.listCampaignsByCabinet(
                 resolvedCabinetId, dateFrom, dateTo, context.user(), nmId);
         return ResponseEntity.ok(campaigns);
@@ -88,6 +96,14 @@ public class AdvertisingController {
                 CabinetAccessSection.AD_CAMPAIGNS
         );
         Cabinet cabinet = context.cabinet();
+        if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            if (!ozonPerformanceCredentialsService.hasUsableCredentials(cabinet)) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "У кабинета не настроены или не проверены Performance credentials Ozon"));
+            }
+            boolean enqueued = ozonApiEventService.enqueueCampaignsCabinetEvent(cabinet.getId(), "ADVERTISING_UI");
+            return ResponseEntity.ok(new PromotionSyncEnqueueResponse(enqueued));
+        }
         if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "У кабинета нет API-ключа"));
