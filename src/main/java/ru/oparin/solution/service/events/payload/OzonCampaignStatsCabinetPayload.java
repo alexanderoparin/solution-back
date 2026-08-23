@@ -10,6 +10,11 @@ import java.time.LocalDate;
 @Builder
 public record OzonCampaignStatsCabinetPayload(
         LocalDate dateFrom,
-        LocalDate dateTo
+        LocalDate dateTo,
+        String productStatsReportUuid,
+        Integer productStatsBatchStart
 ) {
+    public int resolveProductStatsBatchStart() {
+        return productStatsBatchStart != null ? productStatsBatchStart : 0;
+    }
 }

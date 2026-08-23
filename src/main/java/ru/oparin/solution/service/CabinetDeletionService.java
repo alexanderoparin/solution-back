@@ -50,6 +50,7 @@ public class CabinetDeletionService {
     private final OzonProductCardRepository ozonProductCardRepository;
     private final OzonPromotionCampaignRepository ozonPromotionCampaignRepository;
     private final OzonPromotionCampaignStatisticsRepository ozonPromotionCampaignStatisticsRepository;
+    private final OzonPromotionCampaignProductStatisticsRepository ozonPromotionCampaignProductStatisticsRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void deleteStepStatisticsAndArticles(Long cabinetId) {
@@ -219,6 +220,10 @@ public class CabinetDeletionService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void deleteStepOzonPromotionCampaigns(Long cabinetId) {
+        deleteByIdBatches("Product-stats РК Ozon",
+                () -> ozonPromotionCampaignProductStatisticsRepository.findIdByCampaign_Cabinet_Id(
+                        cabinetId, PageRequest.of(0, BATCH_SIZE)),
+                ozonPromotionCampaignProductStatisticsRepository::deleteAllById);
         deleteByIdBatches("Статистика РК Ozon",
                 () -> ozonPromotionCampaignStatisticsRepository.findIdByCampaign_Cabinet_Id(
                         cabinetId, PageRequest.of(0, BATCH_SIZE)),

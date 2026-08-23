@@ -8,13 +8,14 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.OzonApiEvent;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.events.payload.OzonCampaignStatsCabinetPayload;
+import ru.oparin.solution.service.sync.OzonProductStatsSyncResult;
 import ru.oparin.solution.service.sync.OzonPromotionCampaignSyncService;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * Обновление списка РК и дневной статистики Ozon Performance за период.
+ * Обновление списка РК, дневной статистики и async product-stats Ozon Performance за период.
  */
 @Component("ozonCampaignStatsCabinetEventExecutor")
 @RequiredArgsConstructor
@@ -49,11 +50,54 @@ public class OzonCampaignStatsCabinetEventExecutor implements OzonApiEventExecut
         }
 
         try {
-            int statsRows = campaignSyncService.syncCampaignsAndDailyStats(
-                    cabinet, clientId.trim(), clientSecret.trim(), dateFrom, dateTo);
+            int statsRows = 0;
+            if (payload == null || payload.productStatsReportUuid() == null || payload.productStatsReportUuid().isBlank()) {
+                statsRows = campaignSyncService.syncCampaignsAndDailyStats(
+                        cabinet, clientId.trim(), clientSecret.trim(), dateFrom, dateTo);
+            }
+
+            int batchStart = payload != null ? payload.resolveProductStatsBatchStart() : 0;
+            String reportUuid = payload != null ? payload.productStatsReportUuid() : null;
+            int productRowsTotal = 0;
+            int batchSize = campaignSyncService.getProductStatsCampaignBatchSize();
+
+            while (true) {
+                OzonProductStatsSyncResult productResult = campaignSyncService.syncProductStatsBatch(
+                        cabinet,
+                        clientId.trim(),
+                        clientSecret.trim(),
+                        dateFrom,
+                        dateTo,
+                        reportUuid,
+                        batchStart
+                );
+                if (productResult.getStatus() == OzonProductStatsSyncResult.Status.PENDING) {
+                    OzonCampaignStatsCabinetPayload pendingPayload = OzonCampaignStatsCabinetPayload.builder()
+                            .dateFrom(dateFrom)
+                            .dateTo(dateTo)
+                            .productStatsReportUuid(productResult.getReportUuid())
+                            .productStatsBatchStart(batchStart)
+                            .build();
+                    eventService.updateEventPayload(event.getId(), pendingPayload);
+                    return OzonApiEventExecutionResult.deferredPoll(
+                            "Ozon product-stats отчёт формируется (uuid=" + productResult.getReportUuid() + ")",
+                            LocalDateTime.now().plusSeconds(20)
+                    );
+                }
+                if (productResult.getStatus() == OzonProductStatsSyncResult.Status.COMPLETED) {
+                    productRowsTotal += productResult.getRowsSaved();
+                }
+
+                if (!campaignSyncService.hasMoreProductStatsBatches(cabinet.getId(), batchStart)) {
+                    break;
+                }
+                batchStart += batchSize;
+                reportUuid = null;
+            }
+
             eventService.markCampaignsSyncCompleted(cabinet.getId());
-            log.info("Ozon campaign stats sync завершён для cabinetId={}, период={}..{}, строк={}",
-                    cabinet.getId(), dateFrom, dateTo, statsRows);
+            log.info("Ozon campaign stats sync завершён для cabinetId={}, период={}..{}, daily={}, product={}",
+                    cabinet.getId(), dateFrom, dateTo, statsRows, productRowsTotal);
             return OzonApiEventExecutionResult.completedSuccessfully();
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode().value() == 429) {

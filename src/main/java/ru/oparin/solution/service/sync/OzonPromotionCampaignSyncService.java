@@ -5,10 +5,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.dto.ozon.OzonPerformanceCampaignListResponse;
 import ru.oparin.solution.dto.ozon.OzonPerformanceDailyStatsResponse;
+import ru.oparin.solution.dto.ozon.OzonPerformanceProductStatsResponse;
+import ru.oparin.solution.dto.ozon.OzonPerformanceReportStatusResponse;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.OzonPromotionCampaign;
 import ru.oparin.solution.repository.OzonPromotionCampaignRepository;
 import ru.oparin.solution.service.OzonCampaignArticleService;
+import ru.oparin.solution.service.OzonPromotionCampaignProductStatisticsService;
 import ru.oparin.solution.service.OzonPromotionCampaignService;
 import ru.oparin.solution.service.OzonPromotionCampaignStatisticsService;
 import ru.oparin.solution.service.ozon.OzonPerformanceApiClient;
@@ -27,6 +30,7 @@ public class OzonPromotionCampaignSyncService {
     private final OzonPerformanceApiClient performanceApiClient;
     private final OzonPromotionCampaignService campaignService;
     private final OzonPromotionCampaignStatisticsService statisticsService;
+    private final OzonPromotionCampaignProductStatisticsService productStatisticsService;
     private final OzonCampaignArticleService campaignArticleService;
     private final OzonPromotionCampaignRepository campaignRepository;
 
@@ -56,7 +60,89 @@ public class OzonPromotionCampaignSyncService {
     ) {
         syncCampaigns(cabinet, clientId, clientSecret);
         syncCampaignObjects(cabinet, clientId, clientSecret);
-        return syncDailyStats(cabinet, clientId, clientSecret, dateFrom, dateTo);
+        int dailyRows = syncDailyStats(cabinet, clientId, clientSecret, dateFrom, dateTo);
+        log.info("Ozon sync campaigns+stats: dailyRows={} cabinetId={}", dailyRows, cabinet.getId());
+        return dailyRows;
+    }
+
+    /**
+     * Async product-level stats для одного батча кампаний (POST → poll → download).
+     * Может вернуть {@link OzonProductStatsSyncResult.Status#PENDING} — тогда нужен повтор с тем же UUID.
+     */
+    public OzonProductStatsSyncResult syncProductStatsBatch(
+            Cabinet cabinet,
+            String clientId,
+            String clientSecret,
+            LocalDate dateFrom,
+            LocalDate dateTo,
+            String existingReportUuid,
+            int campaignBatchStart
+    ) {
+        List<Long> allCampaignIds = campaignRepository.findByCabinet_Id(cabinet.getId()).stream()
+                .map(OzonPromotionCampaign::getCampaignId)
+                .toList();
+        if (allCampaignIds.isEmpty()) {
+            return OzonProductStatsSyncResult.completed(0);
+        }
+        int batchSize = performanceApiClient.getProductStatsCampaignBatchSize();
+        int batchStart = Math.max(0, campaignBatchStart);
+        if (batchStart >= allCampaignIds.size()) {
+            return OzonProductStatsSyncResult.completed(0);
+        }
+        List<Long> batchIds = allCampaignIds.subList(
+                batchStart,
+                Math.min(batchStart + batchSize, allCampaignIds.size())
+        );
+        Long fallbackCampaignId = batchIds.size() == 1 ? batchIds.get(0) : null;
+
+        String reportUuid = existingReportUuid;
+        if (reportUuid == null || reportUuid.isBlank()) {
+            reportUuid = performanceApiClient.submitProductStatisticsReport(
+                    cabinet.getId(), clientId, clientSecret, batchIds, dateFrom, dateTo);
+        }
+
+        try {
+            OzonPerformanceReportStatusResponse status = performanceApiClient.waitForReportReady(
+                    cabinet.getId(), clientId, clientSecret, reportUuid);
+            String state = status != null && status.getState() != null
+                    ? status.getState().trim().toUpperCase()
+                    : "";
+            if ("IN_PROGRESS".equals(state) || "NOT_STARTED".equals(state)) {
+                return OzonProductStatsSyncResult.pending(reportUuid);
+            }
+            if ("ERROR".equals(state)) {
+                String err = status.getError() != null ? status.getError() : "ERROR";
+                log.warn("Ozon product stats report ERROR uuid={}, batchStart={}: {}",
+                        reportUuid, batchStart, err);
+                return OzonProductStatsSyncResult.skipped(err);
+            }
+            if (!"OK".equals(state)) {
+                return OzonProductStatsSyncResult.pending(reportUuid);
+            }
+
+            List<OzonPerformanceProductStatsResponse.Row> rows = performanceApiClient.downloadProductStatisticsReport(
+                    cabinet.getId(), clientId, clientSecret, reportUuid, fallbackCampaignId);
+            int saved = productStatisticsService.saveOrUpdate(rows);
+            log.info("Ozon product stats sync: cabinetId={}, batchStart={}, saved={}",
+                    cabinet.getId(), batchStart, saved);
+            return OzonProductStatsSyncResult.completed(saved);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return OzonProductStatsSyncResult.pending(reportUuid);
+        }
+    }
+
+    /**
+     * Есть ли ещё батчи product-stats после {@code campaignBatchStart}.
+     */
+    public boolean hasMoreProductStatsBatches(Long cabinetId, int campaignBatchStart) {
+        int total = campaignRepository.findByCabinet_Id(cabinetId).size();
+        int batchSize = performanceApiClient.getProductStatsCampaignBatchSize();
+        return campaignBatchStart + batchSize < total;
+    }
+
+    public int getProductStatsCampaignBatchSize() {
+        return performanceApiClient.getProductStatsCampaignBatchSize();
     }
 
     /**

@@ -14,6 +14,7 @@ import ru.oparin.solution.dto.ozon.*;
 import ru.oparin.solution.model.OzonApiBaseUrl;
 import ru.oparin.solution.model.OzonApiEventType;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -31,6 +32,10 @@ public class OzonPerformanceApiClient {
     private static final String TOKEN_URL = OzonApiEventType.PERFORMANCE_TOKEN.getDefaultUrl();
     private static final String CAMPAIGNS_URL = OzonApiEventType.CAMPAIGNS_CABINET.getDefaultUrl();
     private static final String DAILY_STATS_URL = OzonApiEventType.CAMPAIGN_STATS_CABINET.getDefaultUrl();
+    private static final String STATISTICS_SUBMIT_URL =
+            OzonApiBaseUrl.PERFORMANCE.getDefaultBaseUrl() + "/api/client/statistics";
+    private static final String STATISTICS_REPORT_URL =
+            OzonApiBaseUrl.PERFORMANCE.getDefaultBaseUrl() + "/api/client/statistics/report";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(60);
     private static final int DEFAULT_PAGE_SIZE = 100;
@@ -38,6 +43,11 @@ public class OzonPerformanceApiClient {
     private static final int MAX_BODY_LOG_LENGTH = 2000;
     /** Сколько campaignIds передаём в один daily-запрос. */
     private static final int DAILY_STATS_CAMPAIGN_BATCH = 50;
+    /** Сколько campaignIds в одном async product-stats отчёте. */
+    private static final int PRODUCT_STATS_CAMPAIGN_BATCH = 20;
+    /** Интервал опроса async-отчёта внутри одного execute. */
+    private static final int PRODUCT_STATS_POLL_ATTEMPTS = 24;
+    private static final long PRODUCT_STATS_POLL_SLEEP_MS = 3_000L;
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
@@ -184,6 +194,172 @@ public class OzonPerformanceApiClient {
             }
         }
         return all;
+    }
+
+    /**
+     * Запрашивает async-отчёт статистики по SKU в кампаниях (POST /api/client/statistics, groupBy=DATE).
+     */
+    public String submitProductStatisticsReport(
+            Long cabinetId,
+            String clientId,
+            String clientSecret,
+            Collection<Long> campaignIds,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+        String accessToken = getAccessToken(cabinetId, clientId, clientSecret);
+        List<Long> ids = campaignIds == null ? List.of() : campaignIds.stream().filter(id -> id != null).distinct().toList();
+        OzonPerformanceStatisticsSubmitRequest body = OzonPerformanceStatisticsSubmitRequest.builder()
+                .campaigns(ids)
+                .dateFrom(dateFrom.toString())
+                .dateTo(dateTo.toString())
+                .groupBy("DATE")
+                .build();
+        HttpHeaders headers = bearerHeaders(accessToken);
+        HttpEntity<OzonPerformanceStatisticsSubmitRequest> entity = new HttpEntity<>(body, headers);
+        log.info("Ozon Performance product stats submit: POST {}, campaigns={}, period={}..{}",
+                STATISTICS_SUBMIT_URL, ids.size(), dateFrom, dateTo);
+        long startedAtMs = System.currentTimeMillis();
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(
+                    STATISTICS_SUBMIT_URL, HttpMethod.POST, entity, String.class);
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            String responseBody = response.getBody();
+            log.info("Ozon Performance product stats submit: HTTP {} {} ms",
+                    response.getStatusCode().value(), elapsedMs);
+            if (!response.getStatusCode().is2xxSuccessful() || responseBody == null || responseBody.isBlank()) {
+                throw new RestClientException("Неожиданный ответ submit statistics: " + response.getStatusCode());
+            }
+            OzonPerformanceStatisticsSubmitResponse parsed =
+                    objectMapper.readValue(responseBody, OzonPerformanceStatisticsSubmitResponse.class);
+            if (parsed.getUuid() == null || parsed.getUuid().isBlank()) {
+                throw new RestClientException("Performance API не вернул UUID отчёта");
+            }
+            return parsed.getUuid();
+        } catch (HttpClientErrorException e) {
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            log.warn("Ozon Performance product stats submit: HTTP {} {}, {} ms, тело: {}",
+                    e.getStatusCode().value(), e.getStatusText(), elapsedMs,
+                    truncateForLog(e.getResponseBodyAsString()));
+            throw e;
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RestClientException("Ошибка submit statistics: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Статус async-отчёта (GET /api/client/statistics/{UUID}).
+     */
+    public OzonPerformanceReportStatusResponse getStatisticsReportStatus(
+            Long cabinetId,
+            String clientId,
+            String clientSecret,
+            String reportUuid
+    ) {
+        String accessToken = getAccessToken(cabinetId, clientId, clientSecret);
+        String url = OzonApiBaseUrl.PERFORMANCE.getDefaultBaseUrl() + "/api/client/statistics/" + reportUuid;
+        HttpHeaders headers = bearerHeaders(accessToken);
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        long startedAtMs = System.currentTimeMillis();
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            String body = response.getBody();
+            log.info("Ozon Performance report status: HTTP {} {} ms, uuid={}",
+                    response.getStatusCode().value(), elapsedMs, reportUuid);
+            if (!response.getStatusCode().is2xxSuccessful() || body == null || body.isBlank()) {
+                throw new RestClientException("Неожиданный ответ report status: " + response.getStatusCode());
+            }
+            return objectMapper.readValue(body, OzonPerformanceReportStatusResponse.class);
+        } catch (HttpClientErrorException e) {
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            log.warn("Ozon Performance report status: HTTP {} {}, {} ms, тело: {}",
+                    e.getStatusCode().value(), e.getStatusText(), elapsedMs,
+                    truncateForLog(e.getResponseBodyAsString()));
+            throw e;
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RestClientException("Ошибка report status: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Скачивает async-отчёт и разбирает строки по SKU (JSON или CSV).
+     */
+    public List<OzonPerformanceProductStatsResponse.Row> downloadProductStatisticsReport(
+            Long cabinetId,
+            String clientId,
+            String clientSecret,
+            String reportUuid,
+            Long fallbackCampaignId
+    ) {
+        String accessToken = getAccessToken(cabinetId, clientId, clientSecret);
+        String url = STATISTICS_REPORT_URL + "?UUID=" + reportUuid;
+        HttpHeaders headers = bearerHeaders(accessToken);
+        headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_PLAIN, MediaType.ALL));
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        log.info("Ozon Performance product stats download: GET {}, uuid={}", STATISTICS_REPORT_URL, reportUuid);
+        long startedAtMs = System.currentTimeMillis();
+        try {
+            ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, entity, byte[].class);
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            byte[] bodyBytes = response.getBody();
+            log.info("Ozon Performance product stats download: HTTP {} {} ms, bytes={}",
+                    response.getStatusCode().value(), elapsedMs, bodyBytes != null ? bodyBytes.length : 0);
+            if (!response.getStatusCode().is2xxSuccessful() || bodyBytes == null || bodyBytes.length == 0) {
+                throw new RestClientException("Неожиданный ответ report download: " + response.getStatusCode());
+            }
+            String body = new String(bodyBytes, StandardCharsets.UTF_8);
+            String trimmed = body.trim();
+            if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+                JsonNode root = objectMapper.readTree(body);
+                return OzonPerformanceProductStatsResponse.parseRows(root);
+            }
+            return OzonPerformanceProductStatsCsvParser.parse(body, fallbackCampaignId);
+        } catch (HttpClientErrorException e) {
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            log.warn("Ozon Performance product stats download: HTTP {} {}, {} ms, тело: {}",
+                    e.getStatusCode().value(), e.getStatusText(), elapsedMs,
+                    truncateForLog(e.getResponseBodyAsString()));
+            throw e;
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RestClientException("Ошибка report download: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Ожидает готовности async-отчёта внутри одного вызова (короткий poll-loop).
+     */
+    public OzonPerformanceReportStatusResponse waitForReportReady(
+            Long cabinetId,
+            String clientId,
+            String clientSecret,
+            String reportUuid
+    ) throws InterruptedException {
+        OzonPerformanceReportStatusResponse last = null;
+        for (int attempt = 0; attempt < PRODUCT_STATS_POLL_ATTEMPTS; attempt++) {
+            last = getStatisticsReportStatus(cabinetId, clientId, clientSecret, reportUuid);
+            String state = last.getState() != null ? last.getState().trim().toUpperCase() : "";
+            if ("OK".equals(state)) {
+                return last;
+            }
+            if ("ERROR".equals(state)) {
+                return last;
+            }
+            if (attempt < PRODUCT_STATS_POLL_ATTEMPTS - 1) {
+                Thread.sleep(PRODUCT_STATS_POLL_SLEEP_MS);
+            }
+        }
+        return last;
+    }
+
+    public int getProductStatsCampaignBatchSize() {
+        return PRODUCT_STATS_CAMPAIGN_BATCH;
     }
 
     /**

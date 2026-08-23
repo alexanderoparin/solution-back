@@ -52,7 +52,7 @@ public class OzonApiEventService {
     private static final int ANALYTICS_PRIORITY = 70;
     private static final int CAMPAIGNS_MAX_ATTEMPTS = 3;
     private static final int CAMPAIGNS_PRIORITY = 65;
-    private static final int CAMPAIGN_STATS_MAX_ATTEMPTS = 3;
+    private static final int CAMPAIGN_STATS_MAX_ATTEMPTS = 15;
     private static final int CAMPAIGN_STATS_PRIORITY = 60;
     /** Суток в периоде аналитики (вчера + ещё 13 дней назад). */
     private static final int ANALYTICS_PERIOD_DAYS = 14;
@@ -405,6 +405,18 @@ public class OzonApiEventService {
         } catch (Exception e) {
             throw new IllegalArgumentException("Некорректный payload события " + event.getId() + ": " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Обновляет JSON payload события (для multi-step async, например product-stats poll).
+     */
+    @Transactional
+    public void updateEventPayload(Long eventId, Object payload) {
+        OzonApiEvent event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new IllegalArgumentException("Событие не найдено: " + eventId));
+        event.setPayloadJson(writePayload(payload));
+        event.setUpdatedAt(LocalDateTime.now());
+        eventRepository.save(event);
     }
 
     private void enqueueProductListEvent(

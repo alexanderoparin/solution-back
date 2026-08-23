@@ -43,4 +43,17 @@ public record OzonApiEventExecutionResult(
                 .countsAsAttempt(true)
                 .build();
     }
+
+    /**
+     * Отложенный повтор без увеличения счётчика попыток (async poll).
+     */
+    public static OzonApiEventExecutionResult deferredPoll(String message, LocalDateTime deferUntil) {
+        return OzonApiEventExecutionResult.builder()
+                .success(false)
+                .retryable(true)
+                .errorMessage(message)
+                .deferUntil(deferUntil)
+                .countsAsAttempt(false)
+                .build();
+    }
 }
