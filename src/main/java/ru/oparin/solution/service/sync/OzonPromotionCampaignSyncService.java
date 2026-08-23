@@ -8,6 +8,7 @@ import ru.oparin.solution.dto.ozon.OzonPerformanceDailyStatsResponse;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.OzonPromotionCampaign;
 import ru.oparin.solution.repository.OzonPromotionCampaignRepository;
+import ru.oparin.solution.service.OzonCampaignArticleService;
 import ru.oparin.solution.service.OzonPromotionCampaignService;
 import ru.oparin.solution.service.OzonPromotionCampaignStatisticsService;
 import ru.oparin.solution.service.ozon.OzonPerformanceApiClient;
@@ -16,7 +17,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * Синхронизация списка РК и дневной статистики Ozon Performance API.
+ * Синхронизация списка РК, объектов (SKU) и дневной статистики Ozon Performance API.
  */
 @Service
 @RequiredArgsConstructor
@@ -26,6 +27,7 @@ public class OzonPromotionCampaignSyncService {
     private final OzonPerformanceApiClient performanceApiClient;
     private final OzonPromotionCampaignService campaignService;
     private final OzonPromotionCampaignStatisticsService statisticsService;
+    private final OzonCampaignArticleService campaignArticleService;
     private final OzonPromotionCampaignRepository campaignRepository;
 
     /**
@@ -41,7 +43,7 @@ public class OzonPromotionCampaignSyncService {
     }
 
     /**
-     * Обновляет список кампаний и дневную статистику за период.
+     * Обновляет список кампаний, SKU в РК и дневную статистику за период.
      *
      * @return число сохранённых строк статистики
      */
@@ -53,7 +55,32 @@ public class OzonPromotionCampaignSyncService {
             LocalDate dateTo
     ) {
         syncCampaigns(cabinet, clientId, clientSecret);
+        syncCampaignObjects(cabinet, clientId, clientSecret);
         return syncDailyStats(cabinet, clientId, clientSecret, dateFrom, dateTo);
+    }
+
+    /**
+     * Для каждой кампании кабинета загружает список SKU.
+     */
+    public int syncCampaignObjects(Cabinet cabinet, String clientId, String clientSecret) {
+        List<OzonPromotionCampaign> campaigns = campaignRepository.findByCabinet_Id(cabinet.getId());
+        int totalLinks = 0;
+        for (OzonPromotionCampaign campaign : campaigns) {
+            if ("CAMPAIGN_STATE_FINISHED".equals(campaign.getState())) {
+                continue;
+            }
+            try {
+                List<Long> skus = performanceApiClient.listCampaignSkus(
+                        cabinet.getId(), clientId, clientSecret, campaign.getCampaignId());
+                totalLinks += campaignArticleService.replaceCampaignSkus(
+                        cabinet.getId(), campaign.getCampaignId(), skus);
+            } catch (Exception e) {
+                log.warn("Ozon campaign objects: ошибка для campaignId={}: {}",
+                        campaign.getCampaignId(), e.getMessage());
+            }
+        }
+        log.info("Ozon campaign objects sync: cabinetId={}, всего связей SKU={}", cabinet.getId(), totalLinks);
+        return totalLinks;
     }
 
     /**

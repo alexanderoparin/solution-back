@@ -51,6 +51,7 @@ public class AnalyticsService {
     private final WbPromotionCampaignRepository campaignRepository;
     private final OzonPromotionCampaignRepository ozonPromotionCampaignRepository;
     private final OzonPromotionCampaignStatisticsRepository ozonPromotionCampaignStatisticsRepository;
+    private final OzonCampaignArticleRepository ozonCampaignArticleRepository;
     private final WbCampaignArticleRepository campaignArticleRepository;
     private final WbPromotionCampaignStatisticsRepository campaignStatisticsRepository;
     private final WbProductPriceHistoryRepository priceHistoryRepository;
@@ -109,6 +110,7 @@ public class AnalyticsService {
                         includedNmIds,
                         filterToNone,
                         onlyWithPhoto,
+                        onlyInAdvertising,
                         sortDir
                 );
             }
@@ -182,7 +184,7 @@ public class AnalyticsService {
         if (cabinetId != null) {
             Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
             if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
-                return getOzonArticleList(cabinetId, onlyWithPhoto);
+                return getOzonArticleList(cabinetId, onlyWithPhoto, onlyInAdvertising);
             }
         }
         List<WbProductCard> allCards = applyCatalogFilters(
@@ -197,11 +199,16 @@ public class AnalyticsService {
         return mapToArticleSummaries(allCards, isItemRatingSupported(seller.getId(), cabinetId));
     }
 
-    private List<ArticleSummaryDto> getOzonArticleList(Long cabinetId, Boolean onlyWithPhoto) {
-        List<OzonProductCard> cards = ozonProductCardRepository.findByCabinet_IdOrderByProductIdAsc(cabinetId);
-        if (Boolean.TRUE.equals(onlyWithPhoto)) {
+    private List<ArticleSummaryDto> getOzonArticleList(
+            Long cabinetId,
+            Boolean onlyWithPhoto,
+            Boolean onlyInAdvertising
+    ) {
+        List<OzonProductCard> cards = getVisibleOzonCards(cabinetId, null, onlyWithPhoto);
+        if (Boolean.TRUE.equals(onlyInAdvertising)) {
+            Set<Long> advertised = new HashSet<>(ozonCampaignArticleRepository.findActiveProductIdsByCabinetId(cabinetId));
             cards = cards.stream()
-                    .filter(card -> card.getPhotoUrl() != null && !card.getPhotoUrl().isBlank())
+                    .filter(c -> c.getProductId() != null && advertised.contains(c.getProductId()))
                     .toList();
         }
         if (cards.isEmpty()) {
@@ -323,9 +330,16 @@ public class AnalyticsService {
             List<Long> includedNmIds,
             Boolean filterToNone,
             Boolean onlyWithPhoto,
+            Boolean onlyInAdvertising,
             String sortDir
     ) {
         List<OzonProductCard> visibleCards = getVisibleOzonCards(cabinetId, excludedNmIds, onlyWithPhoto);
+        if (Boolean.TRUE.equals(onlyInAdvertising)) {
+            Set<Long> advertised = new HashSet<>(ozonCampaignArticleRepository.findActiveProductIdsByCabinetId(cabinetId));
+            visibleCards = visibleCards.stream()
+                    .filter(card -> card.getProductId() != null && advertised.contains(card.getProductId()))
+                    .collect(Collectors.toList());
+        }
         Sort.Direction resolvedSortDir = Sort.Direction.fromOptionalString(sortDir).orElse(Sort.Direction.DESC);
 
         boolean paginated = page != null && size != null && size > 0;
@@ -984,6 +998,8 @@ public class AnalyticsService {
                         cabinetId,
                         nmId,
                         periods,
+                        campaignDateFrom,
+                        campaignDateTo,
                         dailyDataDateFrom,
                         dailyDataDateTo
                 );
@@ -1903,15 +1919,23 @@ public class AnalyticsService {
                         .findByCampaign_CampaignIdInAndDateBetween(campaignIds, from, to)
                         .stream()
                         .collect(Collectors.groupingBy(s -> s.getCampaign().getCampaignId()));
+        Map<Long, Integer> articlesCountByCampaign = new HashMap<>();
+        for (Object[] row : ozonCampaignArticleRepository.countByCampaignIdIn(campaignIds)) {
+            articlesCountByCampaign.put((Long) row[0], ((Number) row[1]).intValue());
+        }
 
         return campaigns.stream()
-                .map(c -> buildOzonCampaignDto(c, statsByCampaign.getOrDefault(c.getCampaignId(), Collections.emptyList())))
+                .map(c -> buildOzonCampaignDto(
+                        c,
+                        statsByCampaign.getOrDefault(c.getCampaignId(), Collections.emptyList()),
+                        articlesCountByCampaign.getOrDefault(c.getCampaignId(), 0)))
                 .collect(Collectors.toList());
     }
 
     private CampaignDto buildOzonCampaignDto(
             OzonPromotionCampaign campaign,
-            List<OzonPromotionCampaignStatistics> stats
+            List<OzonPromotionCampaignStatistics> stats,
+            Integer articlesCount
     ) {
         boolean running = "CAMPAIGN_STATE_RUNNING".equals(campaign.getState());
         String type = buildOzonCampaignTypeLabel(campaign.getAdvObjectType(), campaign.getPaymentType());
@@ -1959,7 +1983,7 @@ public class AnalyticsService {
                 .cpc(cpc)
                 .costs(spend)
                 .orders(orders)
-                .articlesCount(null)
+                .articlesCount(articlesCount)
                 .build();
     }
 
@@ -2321,6 +2345,8 @@ public class AnalyticsService {
             Long cabinetId,
             Long productId,
             List<PeriodDto> periods,
+            LocalDate campaignDateFrom,
+            LocalDate campaignDateTo,
             LocalDate dailyDataDateFrom,
             LocalDate dailyDataDateTo
     ) {
@@ -2334,6 +2360,10 @@ public class AnalyticsService {
         List<DailyDataDto> dailyData = getOzonDailyData(cabinetId, productId, dailyDataDateFrom, dailyDataDateTo);
         List<MetricDto> metrics = buildOzonArticleMetrics(cabinetId, productId, sortedPeriods);
         OzonStockSummary stockSummary = loadOzonStockSummary(cabinetId, productId);
+
+        LocalDate rkFrom = campaignDateFrom != null ? campaignDateFrom : dailyDataDateFrom;
+        LocalDate rkTo = campaignDateTo != null ? campaignDateTo : dailyDataDateTo;
+        List<CampaignDto> campaigns = getOzonCampaignsForProduct(cabinetId, productId, card.getSku(), rkFrom, rkTo);
 
         List<StockDto> fboStocks = List.of(StockDto.builder()
                 .warehouseName("FBO")
@@ -2353,7 +2383,7 @@ public class AnalyticsService {
                 .periods(sortedPeriods)
                 .metrics(metrics)
                 .dailyData(dailyData)
-                .campaigns(List.of())
+                .campaigns(campaigns)
                 .inWbPromotion(false)
                 .wbPromotionNames(List.of())
                 .wbPromotionTypes(List.of())
@@ -2363,6 +2393,72 @@ public class AnalyticsService {
                 .lastStocksUpdateTriggeredAt(lastStocksUpdateTriggeredAt)
                 .articleGoal(null)
                 .build();
+    }
+
+    /**
+     * РК Ozon, в которых участвует товар (по product_id или sku).
+     * Метрики — агрегаты по кампании за период (не доля SKU).
+     */
+    private List<CampaignDto> getOzonCampaignsForProduct(
+            Long cabinetId,
+            Long productId,
+            Long sku,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+        List<OzonCampaignArticle> links = new ArrayList<>();
+        if (productId != null) {
+            links.addAll(ozonCampaignArticleRepository.findByProductId(productId));
+        }
+        if (sku != null) {
+            for (OzonCampaignArticle link : ozonCampaignArticleRepository.findBySkuFetched(sku)) {
+                boolean already = links.stream()
+                        .anyMatch(l -> Objects.equals(l.getCampaignId(), link.getCampaignId()));
+                if (!already) {
+                    links.add(link);
+                }
+            }
+        }
+        if (links.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<OzonPromotionCampaign> campaigns = links.stream()
+                .map(OzonCampaignArticle::getCampaign)
+                .filter(Objects::nonNull)
+                .filter(c -> c.getCabinet() != null && Objects.equals(c.getCabinet().getId(), cabinetId))
+                .filter(c -> !"CAMPAIGN_STATE_FINISHED".equals(c.getState()))
+                .distinct()
+                .collect(Collectors.toList());
+        if (campaigns.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        boolean withMetrics = dateFrom != null && dateTo != null;
+        Map<Long, List<OzonPromotionCampaignStatistics>> statsByCampaign = Map.of();
+        if (withMetrics) {
+            AnalyticsDateRange range = resolveAnalyticsDateRange(dateFrom, dateTo);
+            List<Long> campaignIds = campaigns.stream().map(OzonPromotionCampaign::getCampaignId).toList();
+            statsByCampaign = ozonPromotionCampaignStatisticsRepository
+                    .findByCampaign_CampaignIdInAndDateBetween(campaignIds, range.startDate(), range.endDate())
+                    .stream()
+                    .collect(Collectors.groupingBy(s -> s.getCampaign().getCampaignId()));
+        }
+        Map<Long, Integer> articlesCountByCampaign = new HashMap<>();
+        List<Long> campaignIds = campaigns.stream().map(OzonPromotionCampaign::getCampaignId).toList();
+        for (Object[] row : ozonCampaignArticleRepository.countByCampaignIdIn(campaignIds)) {
+            articlesCountByCampaign.put((Long) row[0], ((Number) row[1]).intValue());
+        }
+
+        final Map<Long, List<OzonPromotionCampaignStatistics>> statsFinal = statsByCampaign;
+        return campaigns.stream()
+                .map(c -> buildOzonCampaignDto(
+                        c,
+                        withMetrics
+                                ? statsFinal.getOrDefault(c.getCampaignId(), Collections.emptyList())
+                                : Collections.emptyList(),
+                        articlesCountByCampaign.getOrDefault(c.getCampaignId(), 0)))
+                .collect(Collectors.toList());
     }
 
     private List<DailyDataDto> getOzonDailyData(

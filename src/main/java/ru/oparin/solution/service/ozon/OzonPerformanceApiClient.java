@@ -10,10 +10,8 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
-import ru.oparin.solution.dto.ozon.OzonPerformanceCampaignListResponse;
-import ru.oparin.solution.dto.ozon.OzonPerformanceDailyStatsResponse;
-import ru.oparin.solution.dto.ozon.OzonPerformanceTokenRequest;
-import ru.oparin.solution.dto.ozon.OzonPerformanceTokenResponse;
+import ru.oparin.solution.dto.ozon.*;
+import ru.oparin.solution.model.OzonApiBaseUrl;
 import ru.oparin.solution.model.OzonApiEventType;
 
 import java.time.Duration;
@@ -254,6 +252,50 @@ public class OzonPerformanceApiClient {
             throw e;
         } catch (Exception e) {
             throw new RestClientException("Ошибка запроса daily stats: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * SKU кампании: сначала {@code /v2/products}, при пустом ответе — {@code /objects}.
+     */
+    public List<Long> listCampaignSkus(Long cabinetId, String clientId, String clientSecret, Long campaignId) {
+        String accessToken = getAccessToken(cabinetId, clientId, clientSecret);
+        String base = OzonApiBaseUrl.PERFORMANCE.getDefaultBaseUrl() + "/api/client/campaign/" + campaignId;
+        List<Long> fromProducts = fetchCampaignSkuList(accessToken, base + "/v2/products");
+        if (!fromProducts.isEmpty()) {
+            return fromProducts;
+        }
+        return fetchCampaignSkuList(accessToken, base + "/objects");
+    }
+
+    private List<Long> fetchCampaignSkuList(String accessToken, String url) {
+        HttpHeaders headers = bearerHeaders(accessToken);
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        log.info("Ozon Performance campaign objects: GET {}", url);
+        long startedAtMs = System.currentTimeMillis();
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            String body = response.getBody();
+            log.info("Ozon Performance campaign objects: HTTP {} {} ms", response.getStatusCode().value(), elapsedMs);
+            if (!response.getStatusCode().is2xxSuccessful() || body == null || body.isBlank()) {
+                return List.of();
+            }
+            return OzonPerformanceCampaignObjectsResponse.parseSkus(objectMapper.readTree(body));
+        } catch (HttpClientErrorException e) {
+            long elapsedMs = System.currentTimeMillis() - startedAtMs;
+            if (e.getStatusCode().value() == 404) {
+                log.debug("Ozon Performance campaign objects: 404 for {}, {} ms", url, elapsedMs);
+                return List.of();
+            }
+            log.warn("Ozon Performance campaign objects: HTTP {} {}, {} ms, тело: {}",
+                    e.getStatusCode().value(), e.getStatusText(), elapsedMs,
+                    truncateForLog(e.getResponseBodyAsString()));
+            throw e;
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RestClientException("Ошибка запроса campaign objects: " + e.getMessage(), e);
         }
     }
 
