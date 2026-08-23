@@ -20,6 +20,13 @@ public interface OzonProductPriceHistoryRepository extends JpaRepository<OzonPro
             LocalDate date
     );
 
+    List<OzonProductPriceHistory> findByCabinet_IdAndProductIdAndDateBetween(
+            Long cabinetId,
+            Long productId,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    );
+
     List<OzonProductPriceHistory> findByCabinet_IdAndDate(Long cabinetId, LocalDate date);
 
     @Query("SELECT MAX(e.date) FROM OzonProductPriceHistory e WHERE e.cabinet.id = :cabinetId")

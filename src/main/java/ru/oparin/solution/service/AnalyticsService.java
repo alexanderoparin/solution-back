@@ -975,6 +975,18 @@ public class AnalyticsService {
                                          LocalDate campaignDateFrom, LocalDate campaignDateTo,
                                          LocalDate dailyDataDateFrom, LocalDate dailyDataDateTo,
                                          Long dailyDataCampaignAdvertId) {
+        if (cabinetId != null) {
+            Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+            if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+                return getOzonArticle(
+                        cabinetId,
+                        nmId,
+                        periods,
+                        dailyDataDateFrom,
+                        dailyDataDateTo
+                );
+            }
+        }
         WbProductCard card = findCardBySeller(nmId, seller.getId(), cabinetId);
         Long cardCabinetId = card.getCabinet() != null ? card.getCabinet().getId() : null;
 
@@ -2187,6 +2199,159 @@ public class AnalyticsService {
                 .isPriority(Boolean.TRUE.equals(card.getIsPriority()))
                 .wbCreatedAt(card.getWbCreatedAt())
                 .build();
+    }
+
+    /**
+     * Страница артикула Ozon: заказы/выручка по периодам и по дням, цена, остатки FBO/FBS.
+     */
+    private ArticleResponseDto getOzonArticle(
+            Long cabinetId,
+            Long productId,
+            List<PeriodDto> periods,
+            LocalDate dailyDataDateFrom,
+            LocalDate dailyDataDateTo
+    ) {
+        OzonProductCard card = ozonProductCardRepository.findByCabinet_IdAndProductId(cabinetId, productId)
+                .orElseThrow(() -> new UserException("Товар Ozon не найден", HttpStatus.NOT_FOUND));
+
+        List<PeriodDto> sortedPeriods = periods != null && !periods.isEmpty()
+                ? sortPeriodsByDateFrom(periods)
+                : List.of();
+
+        List<DailyDataDto> dailyData = getOzonDailyData(cabinetId, productId, dailyDataDateFrom, dailyDataDateTo);
+        List<MetricDto> metrics = buildOzonArticleMetrics(cabinetId, productId, sortedPeriods);
+        OzonStockSummary stockSummary = loadOzonStockSummary(cabinetId, productId);
+
+        List<StockDto> fboStocks = List.of(StockDto.builder()
+                .warehouseName("FBO")
+                .amount(stockSummary.fbo())
+                .build());
+        List<StockDto> fbsStocks = List.of(StockDto.builder()
+                .warehouseName("FBS")
+                .amount(stockSummary.fbs())
+                .build());
+
+        LocalDateTime lastStocksUpdateTriggeredAt = cabinetService.findById(cabinetId)
+                .map(Cabinet::getLastStocksUpdateRequestedAt)
+                .orElse(null);
+
+        return ArticleResponseDto.builder()
+                .article(mapOzonToArticleDetail(card))
+                .periods(sortedPeriods)
+                .metrics(metrics)
+                .dailyData(dailyData)
+                .campaigns(List.of())
+                .inWbPromotion(false)
+                .wbPromotionNames(List.of())
+                .wbPromotionTypes(List.of())
+                .stocks(fboStocks)
+                .fbsStocks(fbsStocks)
+                .bundleProducts(List.of())
+                .lastStocksUpdateTriggeredAt(lastStocksUpdateTriggeredAt)
+                .articleGoal(null)
+                .build();
+    }
+
+    private List<DailyDataDto> getOzonDailyData(
+            Long cabinetId,
+            Long productId,
+            LocalDate dailyDataDateFrom,
+            LocalDate dailyDataDateTo
+    ) {
+        AnalyticsDateRange range = resolveAnalyticsDateRange(dailyDataDateFrom, dailyDataDateTo);
+        LocalDate startDate = range.startDate();
+        LocalDate endDate = range.endDate();
+
+        Map<LocalDate, OzonProductCardAnalytics> analyticsByDate = ozonProductCardAnalyticsRepository
+                .findByCabinet_IdAndProductIdAndDateBetween(cabinetId, productId, startDate, endDate)
+                .stream()
+                .collect(Collectors.toMap(OzonProductCardAnalytics::getDate, row -> row, (a, b) -> a));
+
+        Map<LocalDate, OzonProductPriceHistory> priceByDate = ozonProductPriceHistoryRepository
+                .findByCabinet_IdAndProductIdAndDateBetween(cabinetId, productId, startDate, endDate)
+                .stream()
+                .collect(Collectors.toMap(OzonProductPriceHistory::getDate, row -> row, (a, b) -> a));
+
+        List<DailyDataDto> result = new ArrayList<>();
+        LocalDate current = startDate;
+        while (!current.isAfter(endDate)) {
+            DailyDataDto.DailyDataDtoBuilder builder = DailyDataDto.builder().date(current);
+            OzonProductCardAnalytics analytics = analyticsByDate.get(current);
+            if (analytics != null) {
+                builder.orders(analytics.getOrderedUnits())
+                        .ordersAmount(analytics.getRevenue());
+            }
+            OzonProductPriceHistory price = priceByDate.get(current);
+            if (price != null) {
+                builder.priceBeforeDiscount(price.getOldPrice())
+                        .priceWithDiscount(price.getPrice());
+            }
+            result.add(builder.build());
+            current = current.plusDays(1);
+        }
+        return result;
+    }
+
+    private List<MetricDto> buildOzonArticleMetrics(Long cabinetId, Long productId, List<PeriodDto> periods) {
+        if (periods.isEmpty()) {
+            return List.of();
+        }
+        LocalDate minFrom = periods.stream().map(PeriodDto::getDateFrom).min(LocalDate::compareTo).orElseThrow();
+        LocalDate maxTo = periods.stream().map(PeriodDto::getDateTo).max(LocalDate::compareTo).orElseThrow();
+        List<OzonProductCardAnalytics> rows = ozonProductCardAnalyticsRepository
+                .findByCabinet_IdAndProductIdAndDateBetween(cabinetId, productId, minFrom, maxTo);
+
+        List<MetricDto> metrics = new ArrayList<>();
+        for (String metricName : List.of(MetricNames.ORDERS, MetricNames.ORDERS_AMOUNT)) {
+            List<PeriodMetricValueDto> periodValues = new ArrayList<>();
+            for (PeriodDto period : periods) {
+                OzonPeriodTotals totals = sumOzonAnalyticsForPeriod(rows, period);
+                Object value = MetricNames.ORDERS.equals(metricName)
+                        ? totals.orderedUnits()
+                        : totals.revenue();
+                BigDecimal changePercent = calculateOzonChangePercent(metricName, period, periods, rows);
+                periodValues.add(PeriodMetricValueDto.builder()
+                        .periodId(period.getId())
+                        .value(value)
+                        .changePercent(changePercent)
+                        .build());
+            }
+            metrics.add(MetricDto.builder()
+                    .metricName(metricName)
+                    .metricNameRu(MetricNames.getRussianName(metricName))
+                    .category("funnel")
+                    .periods(periodValues)
+                    .build());
+        }
+        return metrics;
+    }
+
+    private OzonStockSummary loadOzonStockSummary(Long cabinetId, Long productId) {
+        int fbo = 0;
+        int fbs = 0;
+        for (OzonProductStock stock : ozonProductStockRepository.findByCabinet_IdAndProductId(cabinetId, productId)) {
+            int present = stock.getPresent() != null ? stock.getPresent() : 0;
+            String type = stock.getStockType() != null ? stock.getStockType().trim().toLowerCase() : "";
+            if ("fbo".equals(type)) {
+                fbo += present;
+            } else if ("fbs".equals(type)) {
+                fbs += present;
+            }
+        }
+        return new OzonStockSummary(fbo, fbs);
+    }
+
+    private ArticleDetailDto mapOzonToArticleDetail(OzonProductCard card) {
+        return ArticleDetailDto.builder()
+                .nmId(card.getProductId())
+                .title(card.getTitle())
+                .vendorCode(card.getOfferId())
+                .photoTm(card.getPhotoUrl())
+                .productUrl("")
+                .build();
+    }
+
+    private record OzonStockSummary(int fbo, int fbs) {
     }
 
     private ArticleDetailDto mapToArticleDetail(WbProductCard card, boolean itemRatingSupported) {

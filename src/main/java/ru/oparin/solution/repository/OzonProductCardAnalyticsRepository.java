@@ -18,6 +18,13 @@ public interface OzonProductCardAnalyticsRepository extends JpaRepository<OzonPr
             LocalDate date
     );
 
+    List<OzonProductCardAnalytics> findByCabinet_IdAndProductIdAndDateBetween(
+            Long cabinetId,
+            Long productId,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    );
+
     List<OzonProductCardAnalytics> findByCabinet_IdAndDateBetween(
             Long cabinetId,
             LocalDate dateFrom,
