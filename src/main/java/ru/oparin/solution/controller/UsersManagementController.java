@@ -18,6 +18,7 @@ import ru.oparin.solution.dto.cabinet.WorkContextCabinetDto;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.*;
+import ru.oparin.solution.service.events.OzonApiEventService;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.WbMainStepPayload;
 
@@ -45,6 +46,7 @@ public class UsersManagementController {
     private final AnalyticsScheduler analyticsScheduler;
     private final WbProductCardAnalyticsService productCardAnalyticsService;
     private final WbApiEventService wbApiEventService;
+    private final OzonApiEventService ozonApiEventService;
 
     /**
      * Постраничное получение списка пользователей, которыми может управлять текущий пользователь.
@@ -405,8 +407,33 @@ public class UsersManagementController {
         cabinetService.validateCabinetAccessForStocksUpdate(cabinetId, currentUser);
         productCardAnalyticsService.validateStocksUpdateInterval(cabinetId);
         productCardAnalyticsService.recordStocksUpdateTriggered(cabinetId);
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+        if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            ozonApiEventService.enqueueStocksCabinetEvent(cabinetId, "MANUAL_STOCKS_ONLY");
+            return okMessageResponse("Обновление остатков Ozon поставлено в очередь событий.");
+        }
         wbApiEventService.enqueueAllStocksByNmIdForCabinet(cabinetId, "MANUAL_STOCKS_ONLY");
         return okMessageResponse("Обновление остатков поставлено в очередь событий WB API.");
+    }
+
+    /**
+     * Запуск только синхронизации аналитики продаж Ozon ({@code /v1/analytics/data}).
+     * Для WB не используется — там аналитика идёт в составе полного обновления.
+     */
+    @PostMapping("/cabinets/{cabinetId}/trigger-ozon-analytics-update")
+    public ResponseEntity<MessageResponse> triggerOzonAnalyticsUpdate(
+            @PathVariable Long cabinetId,
+            Authentication authentication
+    ) {
+        User currentUser = getCurrentUser(authentication);
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+        cabinetService.validateCabinetAccessForStocksUpdate(cabinetId, currentUser);
+        if (cabinet.getMarketplaceType() != MarketplaceType.OZON) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new MessageResponse("Эндпоинт доступен только для Ozon-кабинетов"));
+        }
+        ozonApiEventService.enqueueAnalyticsDataCabinetEvent(cabinetId, "MANUAL_ANALYTICS_ONLY");
+        return okMessageResponse("Синхронизация аналитики Ozon поставлена в очередь событий.");
     }
 
     /**
