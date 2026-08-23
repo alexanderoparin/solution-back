@@ -217,6 +217,7 @@ public class UsersManagementController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "true") boolean onlyActive,
+            @RequestParam(required = false) MarketplaceType marketplaceType,
             @RequestParam(defaultValue = ManagedCabinetSortField.DEFAULT_REQUEST_VALUE) ManagedCabinetSortField sortBy,
             @RequestParam(defaultValue = "DESC") Sort.Direction sortDir,
             Authentication authentication
@@ -226,7 +227,7 @@ public class UsersManagementController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         Pageable pageable = PageRequest.of(page, Math.clamp(size, 1, 100), CabinetService.sortForManagedList(sortBy, sortDir));
-        var cabinetPage = cabinetService.pageManagedCabinets(currentUser, pageable, search, onlyActive);
+        var cabinetPage = cabinetService.pageManagedCabinets(currentUser, pageable, search, onlyActive, marketplaceType);
         PageResponse<ManagedCabinetRowDto> response = PageResponse.<ManagedCabinetRowDto>builder()
                 .content(cabinetPage.getContent())
                 .totalElements(cabinetPage.getTotalElements())

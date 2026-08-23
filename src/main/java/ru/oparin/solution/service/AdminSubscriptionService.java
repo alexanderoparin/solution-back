@@ -61,7 +61,7 @@ public class AdminSubscriptionService {
         CabinetBillingSortField effectiveSort =
                 sortBy != null ? sortBy : CabinetBillingSortField.CABINET_ID;
         Sort.Direction effectiveDir = sortDir != null ? sortDir : Sort.Direction.DESC;
-        var spec = CabinetManagedSpecifications.managedList(admin, search, false);
+        var spec = CabinetManagedSpecifications.managedList(admin, search, false, null);
 
         if (isEntitySort(effectiveSort)) {
             PageRequest pageable = PageRequest.of(safePage, safeSize, entitySort(effectiveSort, effectiveDir));

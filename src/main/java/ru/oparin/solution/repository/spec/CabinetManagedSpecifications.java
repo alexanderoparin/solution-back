@@ -7,6 +7,7 @@ import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.util.StringUtils;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.MarketplaceType;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 
@@ -26,7 +27,12 @@ public final class CabinetManagedSpecifications {
         return Long.class.equals(rt) || long.class.equals(rt);
     }
 
-    public static Specification<Cabinet> managedList(User currentUser, String searchRaw, boolean onlyActiveUsers) {
+    public static Specification<Cabinet> managedList(
+            User currentUser,
+            String searchRaw,
+            boolean onlyActiveUsers,
+            MarketplaceType marketplaceType
+    ) {
         return (root, query, cb) -> {
             Join<Cabinet, User> userJoin = root.join("user", JoinType.INNER);
 
@@ -42,6 +48,17 @@ public final class CabinetManagedSpecifications {
 
             if (onlyActiveUsers) {
                 scope = cb.and(scope, cb.isTrue(userJoin.get("isActive")));
+            }
+
+            if (marketplaceType != null) {
+                if (marketplaceType == MarketplaceType.WB) {
+                    scope = cb.and(scope, cb.or(
+                            cb.equal(root.get("marketplaceType"), MarketplaceType.WB),
+                            cb.isNull(root.get("marketplaceType"))
+                    ));
+                } else {
+                    scope = cb.and(scope, cb.equal(root.get("marketplaceType"), marketplaceType));
+                }
             }
 
             if (!StringUtils.hasText(searchRaw)) {
@@ -64,7 +81,7 @@ public final class CabinetManagedSpecifications {
     }
 
     /**
-     * Та же зона видимости, что у {@link #managedList(User, String, boolean)}, но только кабинеты с непустым API-ключом.
+     * Та же зона видимости, что у {@link #managedList(User, String, boolean, MarketplaceType)}, но только кабинеты с непустым API-ключом.
      */
     public static Specification<Cabinet> managedListWithApiKey(User currentUser) {
         return (root, query, cb) -> {

@@ -60,6 +60,7 @@ public class CabinetService {
     private final OzonSellerApiClient ozonSellerApiClient;
     private final OzonPerformanceApiClient ozonPerformanceApiClient;
     private final CabinetBillingService cabinetBillingService;
+    private final CabinetIntegrationMirrorService cabinetIntegrationMirrorService;
 
     /**
      * Список кабинетов пользователя (продавца), отсортированный по дате создания (новые первые).
@@ -94,7 +95,7 @@ public class CabinetService {
     }
 
     /**
-     * Сортировка для {@link #pageManagedCabinets(User, Pageable, String, boolean)}.
+     * Сортировка для {@link #pageManagedCabinets(User, Pageable, String, boolean, ru.oparin.solution.model.MarketplaceType)}.
      */
     public static Sort sortForManagedList(ManagedCabinetSortField field, Sort.Direction direction) {
         return switch (field) {
@@ -120,12 +121,13 @@ public class CabinetService {
             User currentUser,
             Pageable pageable,
             String search,
-            boolean onlyActiveUsers
+            boolean onlyActiveUsers,
+            MarketplaceType marketplaceType
     ) {
         if (currentUser.getRole() != Role.ADMIN) {
             throw new UserException(CABINET_ACCESS_DENIED, HttpStatus.FORBIDDEN);
         }
-        var spec = CabinetManagedSpecifications.managedList(currentUser, search, onlyActiveUsers);
+        var spec = CabinetManagedSpecifications.managedList(currentUser, search, onlyActiveUsers, marketplaceType);
         Page<Cabinet> cabinetPage = cabinetRepository.findAll(spec, pageable);
         List<Cabinet> cabinets = cabinetPage.getContent();
         if (cabinets.isEmpty()) {
@@ -226,8 +228,10 @@ public class CabinetService {
      */
     @Transactional(readOnly = true)
     public Cabinet findByIdWithUserOrThrow(Long cabinetId) {
-        return cabinetRepository.findByIdWithUser(cabinetId)
+        Cabinet cabinet = cabinetRepository.findByIdWithUser(cabinetId)
                 .orElseThrow(() -> new UserException(CABINET_NOT_FOUND, HttpStatus.NOT_FOUND));
+        cabinetIntegrationMirrorService.overlayOntoCabinet(cabinet);
+        return cabinet;
     }
 
     /**
@@ -235,7 +239,9 @@ public class CabinetService {
      */
     @Transactional(readOnly = true)
     public Optional<Cabinet> findByIdWithUser(Long cabinetId) {
-        return cabinetRepository.findByIdWithUser(cabinetId);
+        Optional<Cabinet> cabinet = cabinetRepository.findByIdWithUser(cabinetId);
+        cabinet.ifPresent(cabinetIntegrationMirrorService::overlayOntoCabinet);
+        return cabinet;
     }
 
     /**
@@ -305,6 +311,7 @@ public class CabinetService {
                 .build();
         cabinet = cabinetRepository.save(cabinet);
         cabinetBillingService.initializeCabinetBilling(cabinet);
+        cabinetIntegrationMirrorService.mirrorFromCabinet(cabinet);
         return toDto(cabinet);
     }
 
@@ -342,6 +349,7 @@ public class CabinetService {
                 .build();
         cabinet = cabinetRepository.save(cabinet);
         cabinetBillingService.initializeCabinetBilling(cabinet);
+        cabinetIntegrationMirrorService.mirrorFromCabinet(cabinet);
         return toDto(cabinet);
     }
 
@@ -368,7 +376,7 @@ public class CabinetService {
             resetPerformanceValidationAndSetClientSecret(cabinet, request.getOzonPerformanceClientSecret());
         }
 
-        cabinet = cabinetRepository.save(cabinet);
+        cabinet = save(cabinet);
         return toDto(cabinet);
     }
 
@@ -391,7 +399,7 @@ public class CabinetService {
         if (clientSecret != null) {
             resetPerformanceValidationAndSetClientSecret(cabinet, clientSecret);
         }
-        cabinet = cabinetRepository.save(cabinet);
+        cabinet = save(cabinet);
         return toDto(cabinet, false);
     }
 
@@ -434,7 +442,7 @@ public class CabinetService {
         if (tokenType != null) {
             cabinet.setTokenType(tokenType);
         }
-        cabinet = cabinetRepository.save(cabinet);
+        cabinet = save(cabinet);
         return toDto(cabinet);
     }
 
@@ -573,11 +581,13 @@ public class CabinetService {
     }
 
     /**
-     * Сохраняет кабинет (создание или обновление).
+     * Сохраняет кабинет (создание или обновление) и зеркалит credentials/sync в Phase 5 таблицы.
      */
     @Transactional
     public Cabinet save(Cabinet cabinet) {
-        return cabinetRepository.save(cabinet);
+        Cabinet saved = cabinetRepository.save(cabinet);
+        cabinetIntegrationMirrorService.mirrorFromCabinet(saved);
+        return saved;
     }
 
     /**
@@ -585,7 +595,9 @@ public class CabinetService {
      */
     @Transactional(readOnly = true)
     public Optional<Cabinet> findById(Long cabinetId) {
-        return cabinetRepository.findById(cabinetId);
+        Optional<Cabinet> cabinet = cabinetRepository.findById(cabinetId);
+        cabinet.ifPresent(cabinetIntegrationMirrorService::overlayOntoCabinet);
+        return cabinet;
     }
 
     /**
@@ -611,8 +623,10 @@ public class CabinetService {
         if (!cabinetRepository.existsByIdAndUser_Id(cabinetId, userId)) {
             throw new UserException("Кабинет не найден или доступ запрещён", HttpStatus.NOT_FOUND);
         }
-        return cabinetRepository.findById(cabinetId)
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new UserException(CABINET_NOT_FOUND, HttpStatus.NOT_FOUND));
+        cabinetIntegrationMirrorService.overlayOntoCabinet(cabinet);
+        return cabinet;
     }
 
     private void assertSellerInfoOrThrow(String apiKey) {

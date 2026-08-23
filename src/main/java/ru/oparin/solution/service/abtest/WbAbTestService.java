@@ -128,6 +128,7 @@ public class WbAbTestService {
      */
     @Transactional(readOnly = true)
     public List<WbAbTestDto> list(Long cabinetId, boolean activeOnly) {
+        requireWbCabinetForAbTest(cabinetId);
         List<WbAbTest> tests = activeOnly
                 ? abTestRepository.findByCabinetIdOrderByCreatedAtDesc(cabinetId).stream()
                 .filter(t -> t.getStatus() == WbAbTestStatus.ENABLED || t.getStatus() == WbAbTestStatus.PENDING_START)
@@ -153,6 +154,7 @@ public class WbAbTestService {
      */
     @Transactional(readOnly = true)
     public WbAbTestDto get(Long cabinetId, Long testId) {
+        requireWbCabinetForAbTest(cabinetId);
         WbAbTest test = requireTest(cabinetId, testId);
         if (test.getStatus() == WbAbTestStatus.PENDING_START
                 && isWbUnauthorizedTokenMessage(test.getLastWbError())) {
@@ -167,6 +169,7 @@ public class WbAbTestService {
      */
     @Transactional
     public WbAbTestDto create(Long cabinetId, WbCreateAbTestRequest request, List<MultipartFile> variantFiles) {
+        requireWbCabinetForAbTest(cabinetId);
         validateCreateRequest(request, variantFiles);
         if (abTestRepository.existsByCabinetIdAndNmIdAndStatusIn(
                 cabinetId,
@@ -1311,6 +1314,20 @@ public class WbAbTestService {
     private WbAbTest requireTest(Long cabinetId, Long testId) {
         return abTestRepository.findByIdAndCabinetId(testId, cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("А/Б-тест не найден"));
+    }
+
+    /**
+     * А/Б фото реализованы только для Wildberries; для Ozon — отдельное решение (Wave 4.3 gate).
+     */
+    private void requireWbCabinetForAbTest(Long cabinetId) {
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
+        if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            throw new ru.oparin.solution.exception.UserException(
+                    "А/Б-тест фото для Ozon пока недоступен",
+                    org.springframework.http.HttpStatus.BAD_REQUEST
+            );
+        }
     }
 
     private WbAbTestDto toDto(WbAbTest test) {
