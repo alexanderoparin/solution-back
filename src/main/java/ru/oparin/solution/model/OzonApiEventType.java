@@ -33,6 +33,10 @@ public enum OzonApiEventType {
     ANALYTICS_DATA_CABINET(
             OzonApiBaseUrl.SELLER,
             "/v1/analytics/data"),
+    /** Контент-рейтинг товаров по SKU. */
+    CONTENT_RATING_CABINET(
+            OzonApiBaseUrl.SELLER,
+            "/v1/product/rating-by-sku"),
     /** Проверка учётных данных продавца (seller/info). */
     SELLER_INFO(
             OzonApiBaseUrl.SELLER,
@@ -70,6 +74,7 @@ public enum OzonApiEventType {
                 || this == PRICES_CABINET
                 || this == STOCKS_CABINET
                 || this == ANALYTICS_DATA_CABINET
+                || this == CONTENT_RATING_CABINET
                 || this == CAMPAIGNS_CABINET
                 || this == CAMPAIGN_STATS_CABINET;
     }

@@ -6,6 +6,7 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -46,6 +47,16 @@ public class OzonProductCard {
 
     @Column(name = "photo_url", length = 1000)
     private String photoUrl;
+
+    /**
+     * Контент-рейтинг Ozon (0–100) из {@code POST /v1/product/rating-by-sku}.
+     */
+    @Column(name = "content_rating", precision = 5, scale = 2)
+    private BigDecimal contentRating;
+
+    /** Время последней успешной записи контент-рейтинга. */
+    @Column(name = "content_rating_synced_at")
+    private LocalDateTime contentRatingSyncedAt;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)

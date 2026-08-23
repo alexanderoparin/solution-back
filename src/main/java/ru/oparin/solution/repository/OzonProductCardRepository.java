@@ -18,6 +18,9 @@ public interface OzonProductCardRepository extends JpaRepository<OzonProductCard
 
     List<OzonProductCard> findByCabinet_IdAndSkuIn(Long cabinetId, Collection<Long> skus);
 
+    @Query("SELECT c.sku FROM OzonProductCard c WHERE c.cabinet.id = :cabinetId AND c.sku IS NOT NULL ORDER BY c.sku ASC")
+    List<Long> findSkusByCabinetId(@Param("cabinetId") Long cabinetId, Pageable pageable);
+
     @Query("SELECT c.id FROM OzonProductCard c WHERE c.cabinet.id = :cabinetId")
     List<Long> findIdByCabinet_Id(@Param("cabinetId") Long cabinetId, Pageable pageable);
 }

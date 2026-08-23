@@ -20,10 +20,7 @@ import ru.oparin.solution.model.OzonApiEventType;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.OzonApiEventRepository;
 import ru.oparin.solution.service.CabinetService;
-import ru.oparin.solution.service.events.payload.OzonAnalyticsDataCabinetPayload;
-import ru.oparin.solution.service.events.payload.OzonCampaignStatsCabinetPayload;
-import ru.oparin.solution.service.events.payload.OzonPricesCabinetPayload;
-import ru.oparin.solution.service.events.payload.OzonProductListPagePayload;
+import ru.oparin.solution.service.events.payload.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -41,6 +38,7 @@ public class OzonApiEventService {
     public static final String ANALYTICS_DATA_CABINET_EXECUTOR_BEAN = "ozonAnalyticsDataCabinetEventExecutor";
     public static final String CAMPAIGNS_CABINET_EXECUTOR_BEAN = "ozonCampaignsCabinetEventExecutor";
     public static final String CAMPAIGN_STATS_CABINET_EXECUTOR_BEAN = "ozonCampaignStatsCabinetEventExecutor";
+    public static final String CONTENT_RATING_CABINET_EXECUTOR_BEAN = "ozonContentRatingCabinetEventExecutor";
 
     private static final int PRODUCT_LIST_MAX_ATTEMPTS = 3;
     private static final int PRODUCT_LIST_PRIORITY = 100;
@@ -50,6 +48,8 @@ public class OzonApiEventService {
     private static final int STOCKS_PRIORITY = 80;
     private static final int ANALYTICS_MAX_ATTEMPTS = 3;
     private static final int ANALYTICS_PRIORITY = 70;
+    private static final int CONTENT_RATING_MAX_ATTEMPTS = 3;
+    private static final int CONTENT_RATING_PRIORITY = 75;
     private static final int CAMPAIGNS_MAX_ATTEMPTS = 3;
     private static final int CAMPAIGNS_PRIORITY = 65;
     private static final int CAMPAIGN_STATS_MAX_ATTEMPTS = 15;
@@ -181,6 +181,67 @@ public class OzonApiEventService {
                 .maxAttempts(ANALYTICS_MAX_ATTEMPTS)
                 .nextAttemptAt(LocalDateTime.now())
                 .priority(ANALYTICS_PRIORITY)
+                .triggerSource(triggerSource)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        eventRepository.save(event);
+    }
+
+    /**
+     * Старт синхронизации контент-рейтинга после загрузки каталога.
+     */
+    @Transactional
+    public void enqueueContentRatingCabinetEvent(Long cabinetId, String triggerSource) {
+        enqueueContentRatingCabinetEvent(
+                cabinetId,
+                OzonContentRatingCabinetPayload.builder()
+                        .offset(0)
+                        .syncStartedAt(LocalDateTime.now())
+                        .build(),
+                triggerSource
+        );
+    }
+
+    /**
+     * Следующий батч контент-рейтинга (offset по SKU).
+     */
+    @Transactional
+    public void enqueueNextContentRatingCabinetEvent(
+            Long cabinetId,
+            OzonContentRatingCabinetPayload payload,
+            String triggerSource
+    ) {
+        enqueueContentRatingCabinetEvent(cabinetId, payload, triggerSource);
+    }
+
+    private void enqueueContentRatingCabinetEvent(
+            Long cabinetId,
+            OzonContentRatingCabinetPayload payload,
+            String triggerSource
+    ) {
+        int offset = payload != null ? payload.offset() : 0;
+        String dedupKey = "CONTENT_RATING_CABINET:" + cabinetId + ":" + offset;
+        if (eventRepository.existsByDedupKeyAndStatusIn(dedupKey, ACTIVE_STATUSES)) {
+            log.debug("Ozon CONTENT_RATING event уже существует (dedupKey={}), создание пропущено", dedupKey);
+            return;
+        }
+        Cabinet cabinet = cabinetRepository.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
+        OzonContentRatingCabinetPayload safePayload = payload != null
+                ? payload
+                : OzonContentRatingCabinetPayload.builder().offset(0).syncStartedAt(LocalDateTime.now()).build();
+        OzonApiEvent event = OzonApiEvent.builder()
+                .eventType(OzonApiEventType.CONTENT_RATING_CABINET)
+                .status(OzonApiEventStatus.CREATED)
+                .executorBeanName(CONTENT_RATING_CABINET_EXECUTOR_BEAN)
+                .cabinet(cabinet)
+                .payloadJson(writePayload(safePayload))
+                .dedupKey(dedupKey)
+                .attemptCount(0)
+                .maxAttempts(CONTENT_RATING_MAX_ATTEMPTS)
+                .nextAttemptAt(LocalDateTime.now())
+                .priority(CONTENT_RATING_PRIORITY)
                 .triggerSource(triggerSource)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())

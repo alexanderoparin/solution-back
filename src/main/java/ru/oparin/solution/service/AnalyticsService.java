@@ -310,6 +310,7 @@ public class AnalyticsService {
         } else {
             builder.orderedUnits(0).revenue(BigDecimal.ZERO);
         }
+        builder.rating(ArticleRatingUtils.toDisplayRating(card.getContentRating()));
         return builder.build();
     }
 
@@ -2645,6 +2646,7 @@ public class AnalyticsService {
                 .title(card.getTitle())
                 .vendorCode(card.getOfferId())
                 .photoTm(card.getPhotoUrl())
+                .rating(ArticleRatingUtils.toDisplayRating(card.getContentRating()))
                 .productUrl("")
                 .build();
     }

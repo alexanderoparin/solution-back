@@ -115,6 +115,25 @@ public class OzonProductsApiClient {
         );
     }
 
+    /**
+     * Контент-рейтинг товаров по списку SKU (до 100 за запрос).
+     */
+    public OzonProductRatingBySkuResponse getProductRatingBySku(String clientId, String apiKey, List<Long> skus) {
+        List<String> skuStrings = skus.stream()
+                .filter(sku -> sku != null)
+                .map(String::valueOf)
+                .toList();
+        Map<String, Object> body = Map.of("skus", skuStrings);
+        return postJson(
+                clientId,
+                apiKey,
+                OzonApiEventType.CONTENT_RATING_CABINET.getDefaultUrl(),
+                body,
+                OzonProductRatingBySkuResponse.class,
+                "product-rating-by-sku"
+        );
+    }
+
     private <T> T postJson(String clientId, String apiKey, String url, Object body, Class<T> responseType, String operation) {
         HttpHeaders headers = createAuthHeaders(clientId, apiKey);
         String jsonBody;
