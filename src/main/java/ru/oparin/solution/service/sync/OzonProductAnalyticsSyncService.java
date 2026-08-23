@@ -15,10 +15,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Загрузка и сохранение аналитики продаж Ozon ({@code /v1/analytics/data}).
@@ -55,6 +52,8 @@ public class OzonProductAnalyticsSyncService {
         int pages = 0;
         int rowsTotal = 0;
         int saved = 0;
+        int skippedUnknownSku = 0;
+        Set<Long> unknownSkus = new HashSet<>();
 
         while (true) {
             OzonAnalyticsDataResponse response = productsApiClient.getAnalyticsData(
@@ -68,15 +67,18 @@ public class OzonProductAnalyticsSyncService {
                 break;
             }
             rowsTotal += rows.size();
-            saved += saveRows(cabinet, rows, productIdBySku, dateFrom, dateTo);
+            SaveResult pageResult = saveRows(cabinet, rows, productIdBySku, dateFrom, dateTo, unknownSkus);
+            saved += pageResult.saved();
+            skippedUnknownSku += pageResult.skippedUnknownSku();
             if (rows.size() < PAGE_LIMIT) {
                 break;
             }
             offset += PAGE_LIMIT;
         }
 
-        log.info("Ozon analytics cabinetId={}: страниц={}, строк={}, сохранено/обновлено={}, период={}..{}",
-                cabinet.getId(), pages, rowsTotal, saved, dateFrom, dateTo);
+        log.info("Ozon analytics cabinetId={}: страниц={}, строк={}, сохранено/обновлено={}, "
+                        + "пропущено без карточки={} (уник. SKU={}), период={}..{}",
+                cabinet.getId(), pages, rowsTotal, saved, skippedUnknownSku, unknownSkus.size(), dateFrom, dateTo);
     }
 
     private Map<Long, Long> buildSkuToProductIdMap(Long cabinetId) {
@@ -89,14 +91,16 @@ public class OzonProductAnalyticsSyncService {
         return map;
     }
 
-    private int saveRows(
+    private SaveResult saveRows(
             Cabinet cabinet,
             List<OzonAnalyticsDataResponse.Row> rows,
             Map<Long, Long> productIdBySku,
             LocalDate dateFrom,
-            LocalDate dateTo
+            LocalDate dateTo,
+            Set<Long> unknownSkus
     ) {
         List<OzonProductCardAnalytics> toSave = new ArrayList<>();
+        int skippedUnknownSku = 0;
         for (OzonAnalyticsDataResponse.Row row : rows) {
             ParsedRow parsed = parseRow(row);
             if (parsed == null) {
@@ -107,7 +111,8 @@ public class OzonProductAnalyticsSyncService {
             }
             Long productId = productIdBySku.get(parsed.sku());
             if (productId == null) {
-                log.debug("Ozon analytics: SKU {} не найден в каталоге cabinetId={}", parsed.sku(), cabinet.getId());
+                unknownSkus.add(parsed.sku());
+                skippedUnknownSku++;
                 continue;
             }
             OzonProductCardAnalytics entity = analyticsRepository
@@ -125,7 +130,7 @@ public class OzonProductAnalyticsSyncService {
         if (!toSave.isEmpty()) {
             analyticsRepository.saveAll(toSave);
         }
-        return toSave.size();
+        return new SaveResult(toSave.size(), skippedUnknownSku);
     }
 
     private static ParsedRow parseRow(OzonAnalyticsDataResponse.Row row) {
@@ -180,5 +185,8 @@ public class OzonProductAnalyticsSyncService {
     }
 
     private record ParsedRow(Long sku, LocalDate date, Integer orderedUnits, BigDecimal revenue) {
+    }
+
+    private record SaveResult(int saved, int skippedUnknownSku) {
     }
 }

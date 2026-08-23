@@ -24,6 +24,9 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class Cabinet {
 
+    /**
+     * Уникальный идентификатор кабинета.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -56,61 +59,113 @@ public class Cabinet {
     @JoinColumn(name = "id", referencedColumnName = "cabinet_id", insertable = false, updatable = false)
     private CabinetSyncState syncState;
 
-    /** WB API ключ / Ozon Seller Api-Key (in-memory, Phase 5.2). */
+    /**
+     * WB API ключ / Ozon Seller Api-Key (in-memory, Phase 5.2).
+     */
     @Transient
     private String apiKey;
 
-    /** Ozon Seller Client-Id (in-memory). */
+    /**
+     * Ozon Seller Client-Id (in-memory).
+     */
     @Transient
     private String ozonClientId;
 
+    /**
+     * Ozon Performance Client-Id (in-memory).
+     */
     @Transient
     private String ozonPerformanceClientId;
 
+    /**
+     * Ozon Performance Client-Secret (in-memory).
+     */
     @Transient
     private String ozonPerformanceClientSecret;
 
+    /**
+     * Результат последней валидации Ozon Performance (in-memory).
+     */
     @Transient
     private Boolean ozonPerformanceIsValid;
 
+    /**
+     * Время последней проверки Ozon Performance (in-memory).
+     */
     @Transient
     private LocalDateTime ozonPerformanceLastValidatedAt;
 
+    /**
+     * Текст ошибки последней валидации Ozon Performance (in-memory).
+     */
     @Transient
     private String ozonPerformanceValidationError;
 
+    /**
+     * Время последней синхронизации рекламных кампаний Ozon (in-memory).
+     */
     @Transient
     private LocalDateTime lastOzonCampaignsSyncAt;
 
+    /**
+     * Тип WB API-токена (in-memory).
+     */
     @Builder.Default
     @Transient
     private CabinetTokenType tokenType = CabinetTokenType.BASIC;
 
+    /**
+     * Результат последней валидации основных credentials (in-memory).
+     */
     @Transient
     private Boolean isValid;
 
+    /**
+     * Время последней проверки основных credentials (in-memory).
+     */
     @Transient
     private LocalDateTime lastValidatedAt;
 
+    /**
+     * Текст ошибки последней валидации основных credentials (in-memory).
+     */
     @Transient
     private String validationError;
 
+    /**
+     * Время последнего успешного обновления основных данных (in-memory).
+     */
     @Transient
     private LocalDateTime lastDataUpdateAt;
 
+    /**
+     * Время последнего запроса на обновление основных данных (in-memory).
+     */
     @Transient
     private LocalDateTime lastDataUpdateRequestedAt;
 
+    /**
+     * Время последнего запроса на обновление остатков (in-memory).
+     */
     @Transient
     private LocalDateTime lastStocksUpdateRequestedAt;
 
+    /**
+     * Время последнего успешного обновления остатков (in-memory).
+     */
     @Transient
     private LocalDateTime lastStocksUpdateAt;
 
+    /**
+     * Дата создания записи.
+     */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Дата последнего обновления записи.
+     */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;

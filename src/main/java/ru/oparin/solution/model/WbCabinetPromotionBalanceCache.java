@@ -20,20 +20,34 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class WbCabinetPromotionBalanceCache {
 
+    /**
+     * Идентификатор кабинета (PK).
+     */
     @Id
     @Column(name = "cabinet_id", nullable = false)
     private Long cabinetId;
 
+    /**
+     * Баланс продвижения, руб.
+     */
     @Column(name = "balance_rub")
     private Integer balanceRub;
 
+    /**
+     * Сетевой баланс (net), руб.
+     */
     @Column(name = "net_rub")
     private Integer netRub;
 
+    /**
+     * Бонусы продвижения, руб.
+     */
     @Column(name = "bonus_rub")
     private Integer bonusRub;
 
-    /** Сумма промо-бонусов ({@code cashbacks}) из ответа WB. */
+    /**
+     * Сумма промо-бонусов ({@code cashbacks}) из ответа WB.
+     */
     @Column(name = "cashback_rub")
     private Integer cashbackRub;
 
@@ -44,12 +58,21 @@ public class WbCabinetPromotionBalanceCache {
     @Column(name = "cashback_percent")
     private Integer cashbackPercent;
 
+    /**
+     * Время последнего успешного запроса к WB.
+     */
     @Column(name = "fetched_at")
     private LocalDateTime fetchedAt;
 
+    /**
+     * Текст последней ошибки при запросе баланса.
+     */
     @Column(name = "fetch_error", columnDefinition = "TEXT")
     private String fetchError;
 
+    /**
+     * Дата последнего обновления записи.
+     */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;

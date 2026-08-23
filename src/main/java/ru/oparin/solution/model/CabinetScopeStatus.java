@@ -20,24 +20,42 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class CabinetScopeStatus {
 
+    /**
+     * Уникальный идентификатор записи.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Кабинет, для которого проверялась категория API.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cabinet_id", nullable = false)
     private Cabinet cabinet;
 
+    /**
+     * Категория WB API (контент, аналитика, продвижение и т.д.).
+     */
     @Enumerated(EnumType.STRING)
     @Column(name = "category", nullable = false, length = 50)
     private WbApiCategory category;
 
+    /**
+     * Время последней проверки доступа к категории.
+     */
     @Column(name = "last_checked_at", nullable = false)
     private LocalDateTime lastCheckedAt;
 
+    /**
+     * Результат проверки: {@code true} — доступ есть, {@code false} — отказ (например 401).
+     */
     @Column(name = "success", nullable = false)
     private Boolean success;
 
+    /**
+     * Текст ошибки последней неуспешной проверки (если был).
+     */
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
 

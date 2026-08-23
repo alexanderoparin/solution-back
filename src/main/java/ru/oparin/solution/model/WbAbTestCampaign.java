@@ -16,10 +16,16 @@ import lombok.*;
 @AllArgsConstructor
 public class WbAbTestCampaign {
 
+    /**
+     * Уникальный идентификатор связи.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * ID А/Б-теста.
+     */
     @Column(name = "ab_test_id", nullable = false)
     private Long abTestId;
 

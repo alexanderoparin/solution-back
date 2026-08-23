@@ -21,28 +21,49 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class Subscription {
 
+    /**
+     * Уникальный идентификатор подписки.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Пользователь-владелец подписки.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    /**
+     * Кабинет, на который оформлена подписка.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cabinet_id")
     private Cabinet cabinet;
 
+    /**
+     * Тарифный план подписки.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "plan_id")
     private Plan plan;
 
+    /**
+     * Статус подписки.
+     */
     @Column(name = "status", nullable = false, length = 20)
     private String status;
 
+    /**
+     * Дата начала действия подписки.
+     */
     @Column(name = "started_at", nullable = false)
     private LocalDateTime startedAt;
 
+    /**
+     * Дата окончания действия подписки.
+     */
     @Column(name = "expires_at")
     private LocalDateTime expiresAt;
 
@@ -53,12 +74,17 @@ public class Subscription {
     @Builder.Default
     private Boolean autoRenew = false;
 
+    /**
+     * Дата создания записи.
+     */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Дата последнего обновления записи.
+     */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 }
-

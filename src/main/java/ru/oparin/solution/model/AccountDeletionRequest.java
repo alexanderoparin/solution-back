@@ -20,6 +20,9 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class AccountDeletionRequest {
 
+    /**
+     * Уникальный идентификатор заявки.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -32,38 +35,62 @@ public class AccountDeletionRequest {
     @JoinColumn(name = "user_id")
     private User user;
 
-    /** Email на момент заявки — остаётся после удаления пользователя. */
+    /**
+     * Email на момент заявки — остаётся после удаления пользователя.
+     */
     @Column(name = "user_email", nullable = false, length = 255)
     private String userEmail;
 
-    /** Имя на момент заявки — остаётся после удаления пользователя. */
+    /**
+     * Имя на момент заявки — остаётся после удаления пользователя.
+     */
     @Column(name = "user_name", length = 255)
     private String userName;
 
+    /**
+     * Причина удаления аккаунта (из формы пользователя).
+     */
     @Enumerated(EnumType.STRING)
     @Column(name = "reason", nullable = false, length = 50)
     private AccountDeletionReason reason;
 
+    /**
+     * Дополнительный комментарий пользователя.
+     */
     @Column(name = "comment_text", columnDefinition = "TEXT")
     private String commentText;
 
+    /**
+     * Статус обработки заявки.
+     */
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     @Builder.Default
     private AccountDeletionRequestStatus status = AccountDeletionRequestStatus.PENDING;
 
+    /**
+     * Дата создания заявки.
+     */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Время обработки заявки администратором.
+     */
     @Column(name = "processed_at")
     private LocalDateTime processedAt;
 
+    /**
+     * Администратор, обработавший заявку.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "processed_by_user_id")
     private User processedByUser;
 
-    /** Email админа на момент обработки — остаётся после удаления связи с пользователем. */
+    /**
+     * Email админа на момент обработки — остаётся после удаления связи с пользователем.
+     */
     @Column(name = "processed_by_email", length = 255)
     private String processedByEmail;
 }

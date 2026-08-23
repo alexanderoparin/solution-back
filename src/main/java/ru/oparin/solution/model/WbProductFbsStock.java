@@ -23,6 +23,9 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class WbProductFbsStock {
 
+    /**
+     * Уникальный идентификатор записи остатка FBS.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")

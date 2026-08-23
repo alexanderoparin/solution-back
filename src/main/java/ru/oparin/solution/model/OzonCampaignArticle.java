@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 
 /**
  * Связь рекламной кампании Ozon и SKU.
+ * Источник: GET {@code /api/client/campaign/{id}/v2/products} или {@code /objects}.
  */
 @Entity
 @Table(name = "ozon_campaign_articles", schema = "solution")
@@ -24,14 +25,23 @@ import java.time.LocalDateTime;
 @IdClass(OzonCampaignArticleId.class)
 public class OzonCampaignArticle {
 
+    /**
+     * ID кампании в Ozon Performance API.
+     */
     @Id
     @Column(name = "campaign_id", nullable = false)
     private Long campaignId;
 
+    /**
+     * SKU товара в кампании.
+     */
     @Id
     @Column(name = "sku", nullable = false)
     private Long sku;
 
+    /**
+     * Кампания (связь только для чтения).
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "campaign_id", nullable = false, insertable = false, updatable = false, referencedColumnName = "campaign_id")
     private OzonPromotionCampaign campaign;
@@ -42,10 +52,16 @@ public class OzonCampaignArticle {
     @Column(name = "product_id")
     private Long productId;
 
+    /**
+     * Дата создания записи.
+     */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Дата последнего обновления записи.
+     */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;

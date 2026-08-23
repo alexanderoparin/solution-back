@@ -25,24 +25,42 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class WbCampaignGoal {
 
+    /**
+     * Уникальный идентификатор записи.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Идентификатор кабинета WB.
+     */
     @Column(name = "cabinet_id", nullable = false)
     private Long cabinetId;
 
+    /**
+     * Идентификатор рекламной кампании.
+     */
     @Column(name = "campaign_id", nullable = false)
     private Long campaignId;
 
+    /**
+     * Текст цели на кампанию.
+     */
     @Column(name = "goal_text", nullable = false, columnDefinition = "TEXT")
     @Builder.Default
     private String goalText = "";
 
+    /**
+     * Дата создания записи.
+     */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Дата последнего обновления записи.
+     */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;

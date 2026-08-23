@@ -23,41 +23,73 @@ import java.util.UUID;
 @AllArgsConstructor
 public class WbCampaignScheduleSlot {
 
+    /**
+     * Уникальный идентификатор слота.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Идентификатор рекламной кампании.
+     */
     @Column(name = "campaign_id", nullable = false)
     private Long campaignId;
 
+    /**
+     * Идентификатор кабинета WB.
+     */
     @Column(name = "cabinet_id", nullable = false)
     private Long cabinetId;
 
-    /** 1 = понедельник … 7 = воскресенье. */
+    /**
+     * 1 = понедельник … 7 = воскресенье.
+     */
     @Column(name = "day_of_week", nullable = false)
     private short dayOfWeek;
 
+    /**
+     * Время начала слота.
+     */
     @Column(name = "start_time", nullable = false)
     private LocalTime startTime;
 
+    /**
+     * Время окончания слота.
+     */
     @Column(name = "end_time", nullable = false)
     private LocalTime endTime;
 
+    /**
+     * Бюджет слота, руб.
+     */
     @Column(name = "budget_rub", nullable = false)
     private Integer budgetRub;
 
+    /**
+     * Идентификатор группы повторяющихся слотов.
+     */
     @Column(name = "repeat_group_id")
     private UUID repeatGroupId;
 
+    /**
+     * Режим повторения слота.
+     */
     @Enumerated(EnumType.STRING)
     @Column(name = "repeat_mode", nullable = false, length = 20)
     @Builder.Default
     private WbCampaignSlotRepeatMode repeatMode = WbCampaignSlotRepeatMode.DAILY;
 
+    /**
+     * Дата создания записи.
+     */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Дата последнего обновления записи.
+     */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;

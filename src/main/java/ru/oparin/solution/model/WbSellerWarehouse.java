@@ -23,6 +23,9 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class WbSellerWarehouse {
 
+    /**
+     * Уникальный идентификатор записи склада продавца.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")

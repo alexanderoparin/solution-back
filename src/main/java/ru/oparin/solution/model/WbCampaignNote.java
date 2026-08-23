@@ -23,6 +23,9 @@ import java.util.List;
 @AllArgsConstructor
 public class WbCampaignNote {
 
+    /**
+     * Уникальный идентификатор заметки.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -39,21 +42,36 @@ public class WbCampaignNote {
     @Column(name = "cabinet_id", nullable = false)
     private Long cabinetId;
 
+    /**
+     * Автор заметки.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    /**
+     * Текст заметки.
+     */
     @Column(name = "content", columnDefinition = "TEXT")
     private String content;
 
+    /**
+     * Прикреплённые файлы.
+     */
     @OneToMany(mappedBy = "note", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<WbCampaignNoteFile> files = new ArrayList<>();
 
+    /**
+     * Дата создания записи.
+     */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Дата последнего обновления записи.
+     */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;

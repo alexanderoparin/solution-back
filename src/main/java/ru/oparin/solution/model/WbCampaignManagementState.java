@@ -22,34 +22,64 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class WbCampaignManagementState {
 
+    /**
+     * Идентификатор рекламной кампании (PK).
+     */
     @Id
     @Column(name = "campaign_id", nullable = false)
     private Long campaignId;
 
+    /**
+     * Идентификатор кабинета WB.
+     */
     @Column(name = "cabinet_id", nullable = false)
     private Long cabinetId;
 
+    /**
+     * Кампания остановлена вручную пользователем.
+     */
     @Column(name = "manual_stopped", nullable = false)
     private boolean manualStopped;
 
+    /**
+     * Управление по расписанию включено.
+     */
     @Column(name = "schedule_enabled", nullable = false)
     private boolean scheduleEnabled;
 
+    /**
+     * Идентификатор текущего активного слота.
+     */
     @Column(name = "active_slot_id")
     private Long activeSlotId;
 
+    /**
+     * Бюджет кампании на момент старта слота, руб.
+     */
     @Column(name = "budget_at_slot_start")
     private Integer budgetAtSlotStart;
 
+    /**
+     * Последний известный общий бюджет, руб.
+     */
     @Column(name = "last_budget_total")
     private Integer lastBudgetTotal;
 
+    /**
+     * Время последней проверки бюджета.
+     */
     @Column(name = "last_budget_checked_at")
     private LocalDateTime lastBudgetCheckedAt;
 
+    /**
+     * Число автопополнений за текущие сутки.
+     */
     @Column(name = "top_ups_today_count", nullable = false)
     private int topUpsTodayCount;
 
+    /**
+     * Дата, к которой относится счётчик пополнений.
+     */
     @Column(name = "top_ups_today_date")
     private LocalDate topUpsTodayDate;
 
@@ -79,10 +109,16 @@ public class WbCampaignManagementState {
     @Column(name = "start_no_budget_checked_at")
     private LocalDateTime startNoBudgetCheckedAt;
 
+    /**
+     * Дата создания записи.
+     */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Дата последнего обновления записи.
+     */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;

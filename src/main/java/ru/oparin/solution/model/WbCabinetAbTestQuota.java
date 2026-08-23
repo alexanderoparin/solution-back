@@ -21,26 +21,38 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class WbCabinetAbTestQuota {
 
+    /**
+     * Идентификатор кабинета (PK).
+     */
     @Id
     @Column(name = "cabinet_id")
     private Long cabinetId;
 
+    /**
+     * Связанный кабинет.
+     */
     @OneToOne(fetch = FetchType.LAZY)
     @MapsId
     @JoinColumn(name = "cabinet_id")
     private Cabinet cabinet;
 
-    /** Доступно запусков. */
+    /**
+     * Доступно запусков.
+     */
     @Column(name = "remaining", nullable = false)
     @Builder.Default
     private Integer remaining = 3;
 
-    /** Успешных стартов (списаний). */
+    /**
+     * Успешных стартов (списаний).
+     */
     @Column(name = "used_starts", nullable = false)
     @Builder.Default
     private Integer usedStarts = 0;
 
-    /** Стартовый бесплатный пакет. */
+    /**
+     * Стартовый бесплатный пакет.
+     */
     @Column(name = "included_free", nullable = false)
     @Builder.Default
     private Integer includedFree = 3;
@@ -53,10 +65,16 @@ public class WbCabinetAbTestQuota {
     @Builder.Default
     private Boolean activated = false;
 
+    /**
+     * Дата создания записи.
+     */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Дата последнего обновления записи.
+     */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;

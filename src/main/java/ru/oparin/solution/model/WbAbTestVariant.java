@@ -23,26 +23,47 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class WbAbTestVariant {
 
+    /**
+     * Уникальный идентификатор варианта.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Идентификатор А/Б-теста.
+     */
     @Column(name = "ab_test_id", nullable = false)
     private Long abTestId;
 
+    /**
+     * Порядок варианта в галерее (слот).
+     */
     @Column(name = "sort_order", nullable = false)
     private Integer sortOrder;
 
+    /**
+     * Контрольный вариант (исходное фото).
+     */
     @Column(name = "is_control", nullable = false)
     @Builder.Default
     private boolean control = false;
 
+    /**
+     * URL фото варианта на WB.
+     */
     @Column(name = "photo_url", length = 1000)
     private String photoUrl;
 
+    /**
+     * URL превью варианта.
+     */
     @Column(name = "preview_url", length = 1000)
     private String previewUrl;
 
+    /**
+     * Имя файла в хранилище приложения.
+     */
     @Column(name = "stored_file_name", length = 512)
     private String storedFileName;
 
@@ -61,26 +82,44 @@ public class WbAbTestVariant {
     @Builder.Default
     private boolean paused = false;
 
+    /**
+     * Количество показов варианта.
+     */
     @Column(name = "views", nullable = false)
     @Builder.Default
     private long views = 0;
 
+    /**
+     * Количество кликов по варианту.
+     */
     @Column(name = "clicks", nullable = false)
     @Builder.Default
     private long clicks = 0;
 
+    /**
+     * Добавления в корзину (ATB).
+     */
     @Column(name = "atbs", nullable = false)
     @Builder.Default
     private long atbs = 0;
 
+    /**
+     * Количество заказов.
+     */
     @Column(name = "orders", nullable = false)
     @Builder.Default
     private long orders = 0;
 
+    /**
+     * Дата создания записи.
+     */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Дата последнего обновления записи.
+     */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;

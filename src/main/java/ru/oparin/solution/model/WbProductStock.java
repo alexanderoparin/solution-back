@@ -23,6 +23,9 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class WbProductStock {
 
+    /**
+     * Уникальный идентификатор записи остатка.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")

@@ -23,6 +23,9 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class WbProductPriceHistory {
 
+    /**
+     * Уникальный идентификатор записи истории цен.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")

@@ -9,7 +9,8 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.LocalDateTime;
 
 /**
- * Метки синхронизации кабинета. Phase 5 dual-write с колонками {@link Cabinet}.
+ * Метки синхронизации кабинета.
+ * Phase 5.2: каноническое хранение в {@code cabinet_sync_state}; поля {@link Cabinet} — {@code @Transient} overlay.
  */
 @Entity
 @Table(name = "cabinet_sync_state", schema = "solution")
@@ -21,29 +22,53 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class CabinetSyncState {
 
+    /**
+     * Идентификатор кабинета (PK, FK на cabinets).
+     */
     @Id
     @Column(name = "cabinet_id")
     private Long cabinetId;
 
+    /**
+     * Время последнего успешного обновления основных данных.
+     */
     @Column(name = "last_data_update_at")
     private LocalDateTime lastDataUpdateAt;
 
+    /**
+     * Время последнего запроса на обновление основных данных.
+     */
     @Column(name = "last_data_update_requested_at")
     private LocalDateTime lastDataUpdateRequestedAt;
 
+    /**
+     * Время последнего успешного обновления остатков.
+     */
     @Column(name = "last_stocks_update_at")
     private LocalDateTime lastStocksUpdateAt;
 
+    /**
+     * Время последнего запроса на обновление остатков.
+     */
     @Column(name = "last_stocks_update_requested_at")
     private LocalDateTime lastStocksUpdateRequestedAt;
 
+    /**
+     * Время последней синхронизации рекламных кампаний Ozon.
+     */
     @Column(name = "last_ozon_campaigns_sync_at")
     private LocalDateTime lastOzonCampaignsSyncAt;
 
+    /**
+     * Дата создания записи.
+     */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Дата последнего обновления записи.
+     */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;

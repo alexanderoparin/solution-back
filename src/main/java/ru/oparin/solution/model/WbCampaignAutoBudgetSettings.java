@@ -21,20 +21,34 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class WbCampaignAutoBudgetSettings {
 
+    /**
+     * Идентификатор рекламной кампании (PK).
+     */
     @Id
     @Column(name = "campaign_id", nullable = false)
     private Long campaignId;
 
+    /**
+     * Идентификатор кабинета WB.
+     */
     @Column(name = "cabinet_id", nullable = false)
     private Long cabinetId;
 
+    /**
+     * Автопополнение включено.
+     */
     @Column(name = "enabled", nullable = false)
     private boolean enabled;
 
+    /**
+     * Сумма одного пополнения, руб.
+     */
     @Column(name = "top_up_amount")
     private Integer topUpAmount;
 
-    /** Источник WB: 0 счёт, 1 баланс, 3 бонусы. */
+    /**
+     * Источник WB: 0 счёт, 1 баланс, 3 бонусы.
+     */
     @Column(name = "source_type")
     private Integer sourceType;
 
@@ -46,19 +60,34 @@ public class WbCampaignAutoBudgetSettings {
     @Builder.Default
     private boolean usePromoCashback = true;
 
+    /**
+     * Порог бюджета для пополнения, руб.
+     */
     @Column(name = "threshold_rub")
     private Integer thresholdRub;
 
+    /**
+     * Максимум пополнений в сутки.
+     */
     @Column(name = "max_top_ups_per_day")
     private Integer maxTopUpsPerDay;
 
+    /**
+     * Настройки заблокированы от редактирования.
+     */
     @Column(name = "locked", nullable = false)
     private boolean locked;
 
+    /**
+     * Дата создания записи.
+     */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Дата последнего обновления записи.
+     */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;

@@ -17,20 +17,35 @@ import java.time.Instant;
 @AllArgsConstructor
 public class EmailConfirmationToken {
 
+    /**
+     * Уникальный идентификатор токена.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Пользователь, подтверждающий email.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    /**
+     * Одноразовый токен из ссылки письма.
+     */
     @Column(nullable = false, unique = true, length = 255)
     private String token;
 
+    /**
+     * Срок действия токена.
+     */
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
+    /**
+     * Дата создания токена.
+     */
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 }

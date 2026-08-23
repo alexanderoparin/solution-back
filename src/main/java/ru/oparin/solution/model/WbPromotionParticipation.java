@@ -20,20 +20,35 @@ import lombok.*;
 @AllArgsConstructor
 public class WbPromotionParticipation {
 
+    /**
+     * Уникальный идентификатор записи.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Кабинет продавца.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cabinet_id", nullable = false)
     private Cabinet cabinet;
 
+    /**
+     * Артикул WB (nmID), участвующий в акции.
+     */
     @Column(name = "nm_id", nullable = false)
     private Long nmId;
 
+    /**
+     * ID акции в календаре WB.
+     */
     @Column(name = "wb_promotion_id", nullable = false)
     private Long wbPromotionId;
 
+    /**
+     * Название акции из ответа WB.
+     */
     @Column(name = "wb_promotion_name", length = 500)
     private String wbPromotionName;
 
