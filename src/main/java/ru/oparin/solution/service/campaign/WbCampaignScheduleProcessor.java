@@ -12,8 +12,10 @@ import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.WbPromotionCampaignControlService;
 import ru.oparin.solution.service.WbPromotionCampaignControlWriteService;
 import ru.oparin.solution.service.events.WbApiEventService;
+import ru.oparin.solution.service.sync.WbPromotionCampaignSyncService;
 
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -39,6 +41,7 @@ public class WbCampaignScheduleProcessor {
     private final WbCampaignManageAccessService campaignManageAccessService;
     private final WbCampaignScheduleControlNotifier scheduleControlNotifier;
     private final WbCampaignStartBudgetGuard startBudgetGuard;
+    private final WbPromotionCampaignSyncService promotionCampaignSyncService;
 
     /**
      * Тик планировщика для одной кампании.
@@ -86,9 +89,16 @@ public class WbCampaignScheduleProcessor {
                 } else {
                     checkSlotBudgetCap(state, slot, cabinet);
                     if (!SlotBudgetSpendUtils.isSlotBudgetExhausted(state, slot.getId())) {
-                        autoTopUpService.tryTopUpInNewTransaction(advertId, cabinetId, cabinet)
-                                .ifPresent(amount -> reloadStateAfterTopUp(state, advertId, amount));
-                        ensureRunning(campaign, cabinet, advertId, state, now);
+                        WbPromotionCampaign campaignForStart = campaign;
+                        Optional<Integer> toppedUp = autoTopUpService.tryTopUpInNewTransaction(
+                                advertId, cabinetId, cabinet);
+                        if (toppedUp.isPresent()) {
+                            reloadStateAfterTopUp(state, advertId, toppedUp.get());
+                            // WB мог сам поставить РК на паузу при нулевом бюджете, а в БД остался ACTIVE —
+                            // без свежего статуса ensureRunning не перезапустит кампанию после deposit.
+                            campaignForStart = refreshCampaignStatusFromWb(cabinet, advertId).orElse(campaign);
+                        }
+                        ensureRunning(campaignForStart, cabinet, advertId, state, now);
                     }
                 }
             }
@@ -115,6 +125,24 @@ public class WbCampaignScheduleProcessor {
         state.setSlotTopUpsRub(fresh.getSlotTopUpsRub());
         state.setLastBudgetTotal(fresh.getLastBudgetTotal());
         state.setLastBudgetCheckedAt(fresh.getLastBudgetCheckedAt());
+    }
+
+    /**
+     * Подтягивает актуальный статус РК с WB после автопополнения.
+     */
+    private Optional<WbPromotionCampaign> refreshCampaignStatusFromWb(Cabinet cabinet, Long advertId) {
+        try {
+            promotionCampaignSyncService.loadAndSaveAdvertsBatch(
+                    cabinet, cabinet.getApiKey(), List.of(advertId));
+            return campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinet.getId());
+        } catch (Exception e) {
+            log.warn(
+                    "Не удалось обновить статус РК после автопополнения advertId={}: {}",
+                    advertId,
+                    e.getMessage()
+            );
+            return Optional.empty();
+        }
     }
 
     private void onSlotEnter(WbCampaignManagementState state, WbCampaignScheduleSlot slot, Cabinet cabinet) {
