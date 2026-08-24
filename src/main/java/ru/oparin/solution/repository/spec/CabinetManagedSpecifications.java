@@ -75,7 +75,8 @@ public final class CabinetManagedSpecifications {
     }
 
     /**
-     * Та же зона видимости, что у {@link #managedList(User, String, boolean, MarketplaceType)}, но только кабинеты с непустым API-ключом.
+     * Та же зона видимости, что у {@link #managedList(User, String, boolean, MarketplaceType)}, но только кабинеты
+     * с настроенными credentials: WB — {@link CabinetIntegrationType#WB_API}, Ozon — {@link CabinetIntegrationType#OZON_SELLER}.
      */
     public static Specification<Cabinet> managedListWithApiKey(User currentUser) {
         return (root, query, cb) -> {
@@ -90,17 +91,34 @@ public final class CabinetManagedSpecifications {
             }
 
             Predicate scope = cb.equal(userJoin.get("role"), Role.USER);
-            Subquery<Long> integrationSubquery = query.subquery(Long.class);
-            Root<CabinetIntegration> integrationRoot = integrationSubquery.from(CabinetIntegration.class);
-            integrationSubquery.select(integrationRoot.get("cabinetId"));
-            integrationSubquery.where(
-                    cb.equal(integrationRoot.get("cabinetId"), root.get("id")),
-                    cb.equal(integrationRoot.get("integrationType"), CabinetIntegrationType.WB_API),
-                    cb.isNotNull(integrationRoot.get("credentialPrimary")),
-                    cb.notEqual(integrationRoot.get("credentialPrimary"), "")
-            );
-            Predicate hasKey = cb.exists(integrationSubquery);
-            return cb.and(scope, hasKey);
+            Predicate hasWbKey = hasIntegrationCredentials(
+                    root, query, cb, CabinetIntegrationType.WB_API, false);
+            Predicate hasOzonKey = hasIntegrationCredentials(
+                    root, query, cb, CabinetIntegrationType.OZON_SELLER, true);
+            return cb.and(scope, cb.or(hasWbKey, hasOzonKey));
         };
+    }
+
+    private static Predicate hasIntegrationCredentials(
+            Root<Cabinet> root,
+            CriteriaQuery<?> query,
+            CriteriaBuilder cb,
+            CabinetIntegrationType integrationType,
+            boolean requireSecondaryCredential
+    ) {
+        Subquery<Long> integrationSubquery = query.subquery(Long.class);
+        Root<CabinetIntegration> integrationRoot = integrationSubquery.from(CabinetIntegration.class);
+        integrationSubquery.select(integrationRoot.get("cabinetId"));
+        List<Predicate> predicates = new ArrayList<>();
+        predicates.add(cb.equal(integrationRoot.get("cabinetId"), root.get("id")));
+        predicates.add(cb.equal(integrationRoot.get("integrationType"), integrationType));
+        predicates.add(cb.isNotNull(integrationRoot.get("credentialPrimary")));
+        predicates.add(cb.notEqual(integrationRoot.get("credentialPrimary"), ""));
+        if (requireSecondaryCredential) {
+            predicates.add(cb.isNotNull(integrationRoot.get("credentialSecondary")));
+            predicates.add(cb.notEqual(integrationRoot.get("credentialSecondary"), ""));
+        }
+        integrationSubquery.where(predicates.toArray(Predicate[]::new));
+        return cb.exists(integrationSubquery);
     }
 }
