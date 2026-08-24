@@ -39,7 +39,6 @@ public class WbArticleNoteService {
     private final WbArticleNoteRepository noteRepository;
     private final WbArticleNoteFileRepository fileRepository;
     private final UserService userService;
-    private final CabinetService cabinetService;
 
     @Value("${app.uploads.directory}")
     private String uploadsDirectory;
@@ -310,15 +309,13 @@ public class WbArticleNoteService {
     }
 
     /**
-     * Определяет ID кабинета по умолчанию для контекста продавца.
+     * Кабинет из контекста запроса (выбранный в UI или переданный админом).
      */
     private long resolveCabinetId(SellerContext context) {
-        return cabinetService.findDefaultByUserId(context.user().getId())
-                .orElseThrow(() -> new UserException(
-                        "У продавца нет кабинета по умолчанию",
-                        HttpStatus.BAD_REQUEST
-                ))
-                .getId();
+        if (context.cabinet() == null) {
+            throw new UserException("Кабинет не указан", HttpStatus.BAD_REQUEST);
+        }
+        return context.cabinet().getId();
     }
 
     /**
