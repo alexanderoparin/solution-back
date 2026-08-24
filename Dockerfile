@@ -42,13 +42,10 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:8080/api/health || exit 1
 
-# su-exec для переключения на пользователя spring после chown
-RUN apk add --no-cache su-exec
-
-# Entrypoint: при монтировании томов каталоги на хосте часто с владельцем root — даём права spring
+# Entrypoint: при монтировании томов каталоги на хосте часто с владельцем root — даём права spring.
+# Переключение на spring через BusyBox su (без apk su-exec — меньше зависимость от DNS Alpine).
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && chown root:root /entrypoint.sh
 
 USER root
 ENTRYPOINT ["/entrypoint.sh"]
-
