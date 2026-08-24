@@ -2,6 +2,7 @@ package ru.oparin.solution.repository;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.OzonPromotionCampaignProductStatistics;
@@ -31,5 +32,9 @@ public interface OzonPromotionCampaignProductStatisticsRepository
             LocalDate date
     );
 
+    /**
+     * Выборка только ID статистики по кабинету пачкой (для пакетного удаления).
+     */
+    @Query("SELECT s.id FROM OzonPromotionCampaignProductStatistics s WHERE s.campaign.cabinet.id = :cabinetId")
     List<Long> findIdByCampaign_Cabinet_Id(@Param("cabinetId") Long cabinetId, Pageable pageable);
 }
