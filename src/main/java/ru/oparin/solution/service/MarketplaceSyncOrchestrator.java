@@ -30,7 +30,8 @@ public class MarketplaceSyncOrchestrator {
     ) {
         assertCabinetEligibleForSync(cabinet);
         if (cabinet.getMarketplaceType() == MarketplaceType.OZON) {
-            ozonApiEventService.enqueueInitialProductListEvent(cabinet.getId(), includeStocks, triggerSource);
+            // Полное обновление: Seller-цепочка + РК Performance (если credentials заданы).
+            ozonApiEventService.enqueueFullCabinetUpdate(cabinet.getId(), includeStocks, triggerSource);
             return;
         }
         wbApiEventService.enqueueInitialContentEvent(

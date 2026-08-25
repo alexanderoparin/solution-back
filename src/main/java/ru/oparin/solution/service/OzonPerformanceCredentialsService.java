@@ -67,16 +67,23 @@ public class OzonPerformanceCredentialsService {
     }
 
     /**
-     * Проверяет, что у кабинета заданы и валидны Performance credentials.
+     * Проверяет, что у кабинета заданы Performance credentials (без проверки is_valid).
      */
-    public boolean hasUsableCredentials(Cabinet cabinet) {
+    public boolean hasConfiguredCredentials(Cabinet cabinet) {
         if (cabinet == null) {
             return false;
         }
         String clientId = cabinet.getOzonPerformanceClientId();
         String clientSecret = cabinet.getOzonPerformanceClientSecret();
         return clientId != null && !clientId.isBlank()
-                && clientSecret != null && !clientSecret.isBlank()
+                && clientSecret != null && !clientSecret.isBlank();
+    }
+
+    /**
+     * Проверяет, что у кабинета заданы и валидны Performance credentials.
+     */
+    public boolean hasUsableCredentials(Cabinet cabinet) {
+        return hasConfiguredCredentials(cabinet)
                 && Boolean.TRUE.equals(cabinet.getOzonPerformanceIsValid());
     }
 

@@ -77,6 +77,36 @@ public class OzonApiEventService {
     private final ObjectMapper objectMapper;
     private final OzonEventsProperties ozonEventsProperties;
 
+    /**
+     * Полное обновление Ozon-кабинета: каталог → цены → остатки/аналитика + параллельно РК Performance
+     * (если заданы client_id / client_secret).
+     */
+    @Transactional
+    public void enqueueFullCabinetUpdate(Long cabinetId, boolean includeStocks, String triggerSource) {
+        enqueueInitialProductListEvent(cabinetId, includeStocks, triggerSource);
+        enqueueCampaignStatsIfConfigured(cabinetId, triggerSource);
+    }
+
+    /**
+     * Ставит синхронизацию РК + статистики, если у кабинета заданы Performance credentials.
+     * Без credentials шаг пропускается (кабинет без рекламы).
+     */
+    @Transactional
+    public boolean enqueueCampaignStatsIfConfigured(Long cabinetId, String triggerSource) {
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+        String clientId = cabinet.getOzonPerformanceClientId();
+        String clientSecret = cabinet.getOzonPerformanceClientSecret();
+        if (clientId == null || clientId.isBlank() || clientSecret == null || clientSecret.isBlank()) {
+            log.debug("Ozon campaign stats пропущен: нет Performance credentials, cabinetId={}", cabinetId);
+            return false;
+        }
+        boolean enqueued = enqueueCampaignStatsCabinetEvent(cabinetId, null, null, triggerSource);
+        if (enqueued) {
+            log.info("Ozon campaign stats поставлен в очередь для cabinetId={}, trigger={}", cabinetId, triggerSource);
+        }
+        return enqueued;
+    }
+
     @Transactional
     public void enqueueInitialProductListEvent(Long cabinetId, boolean includeStocks, String triggerSource) {
         OzonProductListPagePayload payload = OzonProductListPagePayload.builder()

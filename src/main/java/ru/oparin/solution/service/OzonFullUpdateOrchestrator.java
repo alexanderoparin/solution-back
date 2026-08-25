@@ -11,7 +11,8 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Полное read-only обновление Ozon-кабинетов: каталог → цены → остатки (при includeStocks).
+ * Полное read-only обновление Ozon-кабинетов: каталог → цены → остатки (при includeStocks)
+ * + РК Performance (если заданы credentials).
  */
 @Service
 @Slf4j
@@ -34,11 +35,12 @@ public class OzonFullUpdateOrchestrator {
         if (cabinets.isEmpty()) {
             return;
         }
-        cabinets.forEach(cabinet -> ozonApiEventService.enqueueInitialProductListEvent(
+        cabinets.forEach(cabinet -> ozonApiEventService.enqueueFullCabinetUpdate(
                 cabinet.getId(),
                 includeStocks,
                 "SCHEDULED"
         ));
-        log.info("Созданы PRODUCT_LIST события для {} Ozon-кабинетов", cabinets.size());
+        log.info("Созданы full-update события (каталог + РК при наличии Performance) для {} Ozon-кабинетов",
+                cabinets.size());
     }
 }
