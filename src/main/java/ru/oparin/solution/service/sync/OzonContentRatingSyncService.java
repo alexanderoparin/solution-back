@@ -19,6 +19,7 @@ import ru.oparin.solution.util.ArticleRatingUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -111,10 +112,11 @@ public class OzonContentRatingSyncService {
         }
         List<OzonProductCard> cards = productCardRepository.findByCabinet_IdAndSkuIn(cabinetId, ratingBySku.keySet());
         int updated = 0;
+        LocalDateTime syncedAtDb = toDbTimestamp(syncedAt);
         for (OzonProductCard card : cards) {
             BigDecimal fromApi = ratingBySku.get(card.getSku());
             card.setContentRating(ArticleRatingUtils.resolveRatingAfterSync(card.getContentRating(), fromApi));
-            card.setContentRatingSyncedAt(syncedAt);
+            card.setContentRatingSyncedAt(syncedAtDb);
             updated++;
         }
         productCardRepository.saveAll(cards);
@@ -127,16 +129,17 @@ public class OzonContentRatingSyncService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void finalizeRatings(Long cabinetId, LocalDateTime syncStartedAt) {
+        LocalDateTime runStartedAt = toDbTimestamp(syncStartedAt);
         List<OzonProductCard> cards = productCardRepository.findByCabinet_IdOrderByProductIdAsc(cabinetId);
         int cleared = 0;
         for (OzonProductCard card : cards) {
             if (card.getContentRating() == null) {
                 continue;
             }
-            if (card.getContentRatingSyncedAt() == null
-                    || card.getContentRatingSyncedAt().isBefore(syncStartedAt)) {
+            LocalDateTime cardSyncedAt = card.getContentRatingSyncedAt();
+            if (cardSyncedAt == null || cardSyncedAt.isBefore(runStartedAt)) {
                 card.setContentRating(null);
-                card.setContentRatingSyncedAt(syncStartedAt);
+                card.setContentRatingSyncedAt(runStartedAt);
                 cleared++;
             }
         }
@@ -144,5 +147,10 @@ public class OzonContentRatingSyncService {
             productCardRepository.saveAll(cards);
         }
         log.info("Ozon content-rating finalize: cabinetId={}, очищено={}", cabinetId, cleared);
+    }
+
+    /** PostgreSQL TIMESTAMP хранит микросекунды; без усечения finalize затирал только что сохранённый рейтинг. */
+    private static LocalDateTime toDbTimestamp(LocalDateTime value) {
+        return value == null ? null : value.truncatedTo(ChronoUnit.MICROS);
     }
 }
