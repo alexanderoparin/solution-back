@@ -3,6 +3,7 @@ package ru.oparin.solution.service.sync;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.dto.ozon.*;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.OzonPromotionCampaign;
@@ -11,6 +12,7 @@ import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.ozon.OzonPerformanceApiClient;
 
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -180,8 +182,17 @@ public class OzonPromotionCampaignSyncService {
 
         String reportUuid = existingReportUuid;
         if (reportUuid == null || reportUuid.isBlank()) {
-            reportUuid = performanceApiClient.submitSearchPhrasesReport(
-                    cabinet.getId(), clientId, clientSecret, List.of(campaignId), dateFrom, dateTo);
+            try {
+                reportUuid = performanceApiClient.submitSearchPhrasesReport(
+                        cabinet.getId(), clientId, clientSecret, List.of(campaignId), dateFrom, dateTo);
+            } catch (HttpClientErrorException e) {
+                if (e.getStatusCode().value() == 400) {
+                    log.warn("Ozon search phrases submit skipped: campaignId={}, HTTP 400, body={}",
+                            campaignId, e.getResponseBodyAsString());
+                    return OzonProductStatsSyncResult.skipped("HTTP 400 для campaignId=" + campaignId);
+                }
+                throw e;
+            }
         }
 
         try {
@@ -204,7 +215,7 @@ public class OzonPromotionCampaignSyncService {
             }
 
             List<OzonPerformanceSearchPhrasesResponse.Row> rows = performanceApiClient.downloadSearchPhrasesReport(
-                    cabinet.getId(), clientId, clientSecret, reportUuid, campaignId);
+                    cabinet.getId(), clientId, clientSecret, reportUuid, campaignId, dateFrom, dateTo);
             log.info("Ozon search phrases sync: cabinetId={}, campaignId={}, parsed={}",
                     cabinet.getId(), campaignId, rows.size());
             int saved = searchPhraseStatisticsService.replaceForCampaign(campaign, dateFrom, dateTo, rows);
@@ -231,16 +242,19 @@ public class OzonPromotionCampaignSyncService {
     }
 
     /**
-     * Кампании, для которых доступен отчёт /statistics/phrases (CPC, не завершённые).
+     * Кампании, для которых доступен отчёт /statistics/phrases (активные SKU/CPC).
      */
     public List<OzonPromotionCampaign> listSearchPhrasesEligibleCampaigns(Long cabinetId) {
         return campaignRepository.findByCabinet_Id(cabinetId).stream()
-                .filter(c -> !"CAMPAIGN_STATE_FINISHED".equals(c.getState()))
                 .filter(this::isSearchPhrasesEligible)
+                .sorted(Comparator.comparing(OzonPromotionCampaign::getCampaignId))
                 .toList();
     }
 
     private boolean isSearchPhrasesEligible(OzonPromotionCampaign campaign) {
+        if (!isActiveCampaignState(campaign.getState())) {
+            return false;
+        }
         String advObjectType = campaign.getAdvObjectType();
         if (advObjectType == null || "SEARCH_PROMO".equals(advObjectType)) {
             return false;
@@ -250,6 +264,14 @@ public class OzonPromotionCampaignSyncService {
             return true;
         }
         return "SKU".equals(advObjectType);
+    }
+
+    private static boolean isActiveCampaignState(String state) {
+        if (state == null || state.isBlank()) {
+            return false;
+        }
+        String normalized = state.trim().toUpperCase(Locale.ROOT);
+        return "CAMPAIGN_STATE_RUNNING".equals(normalized);
     }
 
     private boolean isCampaignObjectsEligible(OzonPromotionCampaign campaign) {

@@ -107,6 +107,10 @@ public class OzonCampaignStatsCabinetEventExecutor implements OzonApiEventExecut
                     if (productResult.getStatus() == OzonProductStatsSyncResult.Status.COMPLETED) {
                         productRowsTotal += productResult.getRowsSaved();
                     }
+                    if (productResult.getStatus() == OzonProductStatsSyncResult.Status.SKIPPED) {
+                        log.warn("Ozon product stats batch skipped: cabinetId={}, batchStart={}, reason={}",
+                                cabinet.getId(), batchStart, productResult.getMessage());
+                    }
 
                     if (!campaignSyncService.hasMoreProductStatsBatches(cabinet.getId(), batchStart)) {
                         break;
@@ -148,6 +152,10 @@ public class OzonCampaignStatsCabinetEventExecutor implements OzonApiEventExecut
                 }
                 if (phrasesResult.getStatus() == OzonProductStatsSyncResult.Status.COMPLETED) {
                     searchPhrasesRowsTotal += phrasesResult.getRowsSaved();
+                }
+                if (phrasesResult.getStatus() == OzonProductStatsSyncResult.Status.SKIPPED) {
+                    log.warn("Ozon search phrases batch skipped: cabinetId={}, batchStart={}, reason={}",
+                            cabinet.getId(), searchPhrasesBatchStart, phrasesResult.getMessage());
                 }
 
                 if (!campaignSyncService.hasMoreSearchPhrasesBatches(cabinet.getId(), searchPhrasesBatchStart)) {

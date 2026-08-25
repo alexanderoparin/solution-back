@@ -23,11 +23,17 @@ public final class OzonPerformanceSearchPhrasesCsvParser {
     /**
      * Разбирает CSV-тело отчёта; определяет колонки по заголовку.
      */
-    public static List<OzonPerformanceSearchPhrasesResponse.Row> parse(String csvBody, Long fallbackCampaignId) {
+    public static List<OzonPerformanceSearchPhrasesResponse.Row> parse(
+            String csvBody,
+            Long fallbackCampaignId,
+            LocalDate fallbackDateFrom,
+            LocalDate fallbackDateTo
+    ) {
         if (csvBody == null || csvBody.isBlank()) {
             return List.of();
         }
-        String[] lines = csvBody.split("\\r?\\n");
+        String normalized = csvBody.replace("\uFEFF", "");
+        String[] lines = normalized.split("\\r?\\n");
         Map<String, Integer> columnIndex = null;
         List<OzonPerformanceSearchPhrasesResponse.Row> rows = new ArrayList<>();
         for (String rawLine : lines) {
@@ -42,7 +48,8 @@ public final class OzonPerformanceSearchPhrasesCsvParser {
                 }
                 continue;
             }
-            OzonPerformanceSearchPhrasesResponse.Row row = toRow(cols, columnIndex, fallbackCampaignId);
+            OzonPerformanceSearchPhrasesResponse.Row row = toRow(
+                    cols, columnIndex, fallbackCampaignId, fallbackDateFrom, fallbackDateTo);
             if (row != null && !row.isTotalRow()) {
                 rows.add(row);
             }
@@ -55,7 +62,7 @@ public final class OzonPerformanceSearchPhrasesCsvParser {
         for (String col : cols) {
             String lower = col.trim().toLowerCase(Locale.ROOT);
             if (lower.contains("запрос") || lower.contains("phrase") || lower.contains("query")
-                    || lower.contains("фраз")) {
+                    || lower.contains("фраз") || lower.contains("кластер") || lower.contains("criteria")) {
                 return true;
             }
         }
@@ -67,7 +74,7 @@ public final class OzonPerformanceSearchPhrasesCsvParser {
         for (int i = 0; i < cols.length; i++) {
             String lower = cols[i].trim().toLowerCase(Locale.ROOT);
             if (lower.contains("запрос") || lower.contains("phrase") || lower.contains("query")
-                    || lower.contains("фраз") || lower.contains("кластер")) {
+                    || lower.contains("фраз") || lower.contains("кластер") || lower.contains("criteria")) {
                 map.put("phrase", i);
             } else if (lower.equals("sku") || lower.contains("ozon id")) {
                 map.put("sku", i);
@@ -100,7 +107,9 @@ public final class OzonPerformanceSearchPhrasesCsvParser {
     private static OzonPerformanceSearchPhrasesResponse.Row toRow(
             String[] cols,
             Map<String, Integer> columnIndex,
-            Long fallbackCampaignId
+            Long fallbackCampaignId,
+            LocalDate fallbackDateFrom,
+            LocalDate fallbackDateTo
     ) {
         Integer phraseIdx = columnIndex.get("phrase");
         if (phraseIdx == null || phraseIdx >= cols.length) {
@@ -111,6 +120,9 @@ public final class OzonPerformanceSearchPhrasesCsvParser {
             return null;
         }
         LocalDate date = readColDate(cols, columnIndex.get("date"));
+        if (date == null) {
+            date = fallbackDateTo != null ? fallbackDateTo : fallbackDateFrom;
+        }
         if (date == null) {
             return null;
         }

@@ -312,14 +312,16 @@ public class OzonPerformanceApiClient {
     }
 
     /**
-     * Скачивает async-отчёт search phrases и разбирает строки (JSON или CSV).
+     * Скачивает async-отчёт search phrases и разбирает строки (JSON, CSV или ZIP).
      */
     public List<OzonPerformanceSearchPhrasesResponse.Row> downloadSearchPhrasesReport(
             Long cabinetId,
             String clientId,
             String clientSecret,
             String reportUuid,
-            Long fallbackCampaignId
+            Long fallbackCampaignId,
+            LocalDate fallbackDateFrom,
+            LocalDate fallbackDateTo
     ) {
         String accessToken = getAccessToken(cabinetId, clientId, clientSecret);
         String url = STATISTICS_REPORT_URL + "?UUID=" + reportUuid;
@@ -338,17 +340,21 @@ public class OzonPerformanceApiClient {
                 throw new RestClientException("Неожиданный ответ search phrases download: " + response.getStatusCode());
             }
             if (bodyBytes.length >= 2 && bodyBytes[0] == 'P' && bodyBytes[1] == 'K') {
-                log.warn("Ozon search phrases report uuid={} вернул ZIP — пропуск (ожидался CSV/JSON)", reportUuid);
-                return List.of();
+                List<OzonPerformanceSearchPhrasesResponse.Row> rows = parseSearchPhrasesZip(
+                        bodyBytes, fallbackCampaignId, fallbackDateFrom, fallbackDateTo);
+                log.info("Ozon search phrases parse result: uuid={}, rows={}", reportUuid, rows.size());
+                return rows;
             }
             String body = new String(bodyBytes, StandardCharsets.UTF_8);
             String trimmed = body.trim();
             if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
                 JsonNode root = objectMapper.readTree(body);
-                List<OzonPerformanceSearchPhrasesResponse.Row> rows = OzonPerformanceSearchPhrasesResponse.parseRows(root);
-                if (rows.isEmpty() && trimmed.toLowerCase(Locale.ROOT).contains("запрос")) {
+                List<OzonPerformanceSearchPhrasesResponse.Row> rows = OzonPerformanceSearchPhrasesResponse.parseRows(
+                        root, fallbackDateFrom, fallbackDateTo);
+                if (rows.isEmpty()) {
                     log.info("Ozon search phrases: JSON пуст, пробуем CSV-fallback uuid={}", reportUuid);
-                    rows = OzonPerformanceSearchPhrasesCsvParser.parse(body, fallbackCampaignId);
+                    rows = OzonPerformanceSearchPhrasesCsvParser.parse(
+                            body, fallbackCampaignId, fallbackDateFrom, fallbackDateTo);
                 }
                 rows.forEach(row -> {
                     if (row.getCampaignId() == null) {
@@ -358,8 +364,8 @@ public class OzonPerformanceApiClient {
                 log.info("Ozon search phrases parse result: uuid={}, rows={}", reportUuid, rows.size());
                 return rows;
             }
-            List<OzonPerformanceSearchPhrasesResponse.Row> rows =
-                    OzonPerformanceSearchPhrasesCsvParser.parse(body, fallbackCampaignId);
+            List<OzonPerformanceSearchPhrasesResponse.Row> rows = OzonPerformanceSearchPhrasesCsvParser.parse(
+                    body, fallbackCampaignId, fallbackDateFrom, fallbackDateTo);
             log.info("Ozon search phrases parse result: uuid={}, rows={}", reportUuid, rows.size());
             return rows;
         } catch (HttpClientErrorException e) {
@@ -722,6 +728,48 @@ public class OzonPerformanceApiClient {
             log.warn("Ozon product stats ZIP: ошибка разбора архива: {}", e.getMessage());
         }
         log.info("Ozon product stats ZIP: распознано {} строк SKU", allRows.size());
+        return allRows;
+    }
+
+    private List<OzonPerformanceSearchPhrasesResponse.Row> parseSearchPhrasesZip(
+            byte[] zipBytes,
+            Long fallbackCampaignId,
+            LocalDate fallbackDateFrom,
+            LocalDate fallbackDateTo
+    ) {
+        List<OzonPerformanceSearchPhrasesResponse.Row> allRows = new ArrayList<>();
+        try (ZipInputStream zipInputStream = new ZipInputStream(new java.io.ByteArrayInputStream(zipBytes))) {
+            ZipEntry entry;
+            while ((entry = zipInputStream.getNextEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                byte[] entryBytes = zipInputStream.readAllBytes();
+                if (entryBytes.length == 0) {
+                    continue;
+                }
+                String entryBody = new String(entryBytes, StandardCharsets.UTF_8).trim();
+                if (entryBody.startsWith("{") || entryBody.startsWith("[")) {
+                    JsonNode root = objectMapper.readTree(entryBody);
+                    List<OzonPerformanceSearchPhrasesResponse.Row> rows = OzonPerformanceSearchPhrasesResponse.parseRows(
+                            root, fallbackDateFrom, fallbackDateTo);
+                    if (fallbackCampaignId != null) {
+                        rows.forEach(row -> {
+                            if (row.getCampaignId() == null) {
+                                row.setCampaignId(fallbackCampaignId);
+                            }
+                        });
+                    }
+                    allRows.addAll(rows);
+                } else {
+                    allRows.addAll(OzonPerformanceSearchPhrasesCsvParser.parse(
+                            entryBody, fallbackCampaignId, fallbackDateFrom, fallbackDateTo));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Ozon search phrases ZIP: ошибка разбора архива: {}", e.getMessage());
+        }
+        log.info("Ozon search phrases ZIP: распознано {} строк", allRows.size());
         return allRows;
     }
 
