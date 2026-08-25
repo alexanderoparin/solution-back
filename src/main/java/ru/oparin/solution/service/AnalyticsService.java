@@ -2762,11 +2762,21 @@ public class AnalyticsService {
                 .vendorCode(card.getOfferId())
                 .photoTm(card.getPhotoUrl())
                 .rating(ArticleRatingUtils.toDisplayRating(card.getContentRating()))
-                .productUrl("")
+                .productUrl(buildOzonProductUrl(card.getProductId()))
                 .build();
     }
 
     private record OzonStockSummary(int fbo, int fbs) {
+    }
+
+    /**
+     * Публичная ссылка на карточку товара Ozon (достаточно product_id).
+     */
+    private static String buildOzonProductUrl(Long productId) {
+        if (productId == null) {
+            return "";
+        }
+        return "https://www.ozon.ru/product/" + productId + "/";
     }
 
     private ArticleDetailDto mapToArticleDetail(WbProductCard card, boolean itemRatingSupported) {
