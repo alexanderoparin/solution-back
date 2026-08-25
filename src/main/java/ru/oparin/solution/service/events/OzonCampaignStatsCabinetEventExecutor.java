@@ -51,10 +51,20 @@ public class OzonCampaignStatsCabinetEventExecutor implements OzonApiEventExecut
 
         try {
             int statsRows = 0;
+            boolean productStatsDone = payload != null && (
+                    payload.isProductStatsDone()
+                    || (payload.searchPhrasesReportUuid() != null
+                            && !payload.searchPhrasesReportUuid().isBlank()
+                            && (payload.productStatsReportUuid() == null
+                                    || payload.productStatsReportUuid().isBlank()))
+            );
             boolean resumeAsyncPhase = payload != null && (
-                    (payload.productStatsReportUuid() != null && !payload.productStatsReportUuid().isBlank())
-                    || (payload.searchPhrasesReportUuid() != null && !payload.searchPhrasesReportUuid().isBlank())
-                    || payload.resolveProductStatsBatchStart() > 0
+                    (!productStatsDone
+                            && payload.productStatsReportUuid() != null
+                            && !payload.productStatsReportUuid().isBlank())
+                    || (payload.searchPhrasesReportUuid() != null
+                            && !payload.searchPhrasesReportUuid().isBlank())
+                    || (!productStatsDone && payload.resolveProductStatsBatchStart() > 0)
                     || payload.resolveSearchPhrasesBatchStart() > 0
             );
             if (!resumeAsyncPhase) {
@@ -67,40 +77,44 @@ public class OzonCampaignStatsCabinetEventExecutor implements OzonApiEventExecut
             int productRowsTotal = 0;
             int batchSize = campaignSyncService.getProductStatsCampaignBatchSize();
 
-            while (true) {
-                OzonProductStatsSyncResult productResult = campaignSyncService.syncProductStatsBatch(
-                        cabinet,
-                        clientId.trim(),
-                        clientSecret.trim(),
-                        dateFrom,
-                        dateTo,
-                        reportUuid,
-                        batchStart
-                );
-                if (productResult.getStatus() == OzonProductStatsSyncResult.Status.PENDING) {
-                    OzonCampaignStatsCabinetPayload pendingPayload = OzonCampaignStatsCabinetPayload.builder()
-                            .dateFrom(dateFrom)
-                            .dateTo(dateTo)
-                            .productStatsReportUuid(productResult.getReportUuid())
-                            .productStatsBatchStart(batchStart)
-                            .searchPhrasesReportUuid(payload != null ? payload.searchPhrasesReportUuid() : null)
-                            .searchPhrasesBatchStart(payload != null ? payload.resolveSearchPhrasesBatchStart() : 0)
-                            .build();
-                    eventService.updateEventPayload(event.getId(), pendingPayload);
-                    return OzonApiEventExecutionResult.deferredPoll(
-                            "Ozon product-stats отчёт формируется (uuid=" + productResult.getReportUuid() + ")",
-                            LocalDateTime.now().plusSeconds(20)
+            if (!productStatsDone) {
+                while (true) {
+                    OzonProductStatsSyncResult productResult = campaignSyncService.syncProductStatsBatch(
+                            cabinet,
+                            clientId.trim(),
+                            clientSecret.trim(),
+                            dateFrom,
+                            dateTo,
+                            reportUuid,
+                            batchStart
                     );
-                }
-                if (productResult.getStatus() == OzonProductStatsSyncResult.Status.COMPLETED) {
-                    productRowsTotal += productResult.getRowsSaved();
-                }
+                    if (productResult.getStatus() == OzonProductStatsSyncResult.Status.PENDING) {
+                        OzonCampaignStatsCabinetPayload pendingPayload = OzonCampaignStatsCabinetPayload.builder()
+                                .dateFrom(dateFrom)
+                                .dateTo(dateTo)
+                                .productStatsReportUuid(productResult.getReportUuid())
+                                .productStatsBatchStart(batchStart)
+                                .productStatsDone(false)
+                                .searchPhrasesReportUuid(payload != null ? payload.searchPhrasesReportUuid() : null)
+                                .searchPhrasesBatchStart(payload != null ? payload.resolveSearchPhrasesBatchStart() : 0)
+                                .build();
+                        eventService.updateEventPayload(event.getId(), pendingPayload);
+                        return OzonApiEventExecutionResult.deferredPoll(
+                                "Ozon product-stats отчёт формируется (uuid=" + productResult.getReportUuid() + ")",
+                                LocalDateTime.now().plusSeconds(20)
+                        );
+                    }
+                    if (productResult.getStatus() == OzonProductStatsSyncResult.Status.COMPLETED) {
+                        productRowsTotal += productResult.getRowsSaved();
+                    }
 
-                if (!campaignSyncService.hasMoreProductStatsBatches(cabinet.getId(), batchStart)) {
-                    break;
+                    if (!campaignSyncService.hasMoreProductStatsBatches(cabinet.getId(), batchStart)) {
+                        break;
+                    }
+                    batchStart += batchSize;
+                    reportUuid = null;
                 }
-                batchStart += batchSize;
-                reportUuid = null;
+                productStatsDone = true;
             }
 
             int searchPhrasesRowsTotal = 0;
@@ -122,7 +136,7 @@ public class OzonCampaignStatsCabinetEventExecutor implements OzonApiEventExecut
                     OzonCampaignStatsCabinetPayload pendingPayload = OzonCampaignStatsCabinetPayload.builder()
                             .dateFrom(dateFrom)
                             .dateTo(dateTo)
-                            .productStatsBatchStart(batchStart)
+                            .productStatsDone(true)
                             .searchPhrasesReportUuid(phrasesResult.getReportUuid())
                             .searchPhrasesBatchStart(searchPhrasesBatchStart)
                             .build();

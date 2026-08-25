@@ -123,7 +123,13 @@ public class OzonPromotionCampaignSyncService {
 
             List<OzonPerformanceProductStatsResponse.Row> rows = performanceApiClient.downloadProductStatisticsReport(
                     cabinet.getId(), clientId, clientSecret, reportUuid, fallbackCampaignId);
+            log.info("Ozon product stats sync: cabinetId={}, batchStart={}, parsed={}, campaignIds={}",
+                    cabinet.getId(), batchStart, rows.size(), batchIds);
             int saved = productStatisticsService.saveOrUpdate(rows);
+            if (saved == 0 && !rows.isEmpty()) {
+                log.warn("Ozon product stats sync: parsed {} строк, но сохранено 0 — проверьте campaignId в БД",
+                        rows.size());
+            }
             log.info("Ozon product stats sync: cabinetId={}, batchStart={}, saved={}",
                     cabinet.getId(), batchStart, saved);
             return OzonProductStatsSyncResult.completed(saved);
@@ -199,6 +205,8 @@ public class OzonPromotionCampaignSyncService {
 
             List<OzonPerformanceSearchPhrasesResponse.Row> rows = performanceApiClient.downloadSearchPhrasesReport(
                     cabinet.getId(), clientId, clientSecret, reportUuid, campaignId);
+            log.info("Ozon search phrases sync: cabinetId={}, campaignId={}, parsed={}",
+                    cabinet.getId(), campaignId, rows.size());
             int saved = searchPhraseStatisticsService.replaceForCampaign(campaign, dateFrom, dateTo, rows);
             log.info("Ozon search phrases sync: cabinetId={}, campaignId={}, saved={}",
                     cabinet.getId(), campaignId, saved);

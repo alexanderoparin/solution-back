@@ -13,6 +13,7 @@ public record OzonCampaignStatsCabinetPayload(
         LocalDate dateTo,
         String productStatsReportUuid,
         Integer productStatsBatchStart,
+        Boolean productStatsDone,
         String searchPhrasesReportUuid,
         Integer searchPhrasesBatchStart
 ) {
@@ -22,5 +23,9 @@ public record OzonCampaignStatsCabinetPayload(
 
     public int resolveSearchPhrasesBatchStart() {
         return searchPhrasesBatchStart != null ? searchPhrasesBatchStart : 0;
+    }
+
+    public boolean isProductStatsDone() {
+        return Boolean.TRUE.equals(productStatsDone);
     }
 }

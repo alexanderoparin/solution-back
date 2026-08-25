@@ -3,62 +3,127 @@ package ru.oparin.solution.dto.ozon;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
- * Разбор JSON-отчёта Performance API по SKU (поле rows).
+ * Разбор JSON/CSV-отчёта Performance API по SKU (поле rows или report.rows).
  */
+@Slf4j
 public final class OzonPerformanceProductStatsResponse {
+
+    private static final Set<String> SKIP_NESTED_FIELDS = Set.of(
+            "rows", "report", "campaigns", "meta", "request", "title", "name"
+    );
 
     private OzonPerformanceProductStatsResponse() {
     }
 
     /**
      * Разбирает JSON-тело отчёта в плоский список строк по SKU.
+     * Поддерживает {@code rows}, {@code report.rows}, {@code campaigns[]} и ключи-ID кампаний.
      */
     public static List<Row> parseRows(JsonNode root) {
         if (root == null || root.isNull()) {
             return List.of();
         }
-        List<JsonNode> nodes = new ArrayList<>();
-        if (root.isArray()) {
-            root.forEach(nodes::add);
-        } else if (root.isObject()) {
-            JsonNode rows = root.get("rows");
-            if (rows != null && rows.isArray()) {
-                rows.forEach(nodes::add);
-            } else {
-                Iterator<Map.Entry<String, JsonNode>> fields = root.fields();
-                while (fields.hasNext()) {
-                    Map.Entry<String, JsonNode> entry = fields.next();
-                    JsonNode value = entry.getValue();
-                    if (value != null && value.isArray()) {
-                        value.forEach(nodes::add);
-                    }
-                }
-            }
-        }
-        List<Row> result = new ArrayList<>(nodes.size());
-        for (JsonNode node : nodes) {
-            Row row = toRow(node);
+        List<RowCandidate> candidates = new ArrayList<>();
+        collectRowNodes(root, null, candidates);
+        List<Row> result = new ArrayList<>(candidates.size());
+        for (RowCandidate candidate : candidates) {
+            Row row = toRow(candidate.node(), candidate.campaignId());
             if (row != null) {
                 result.add(row);
             }
         }
+        if (result.isEmpty() && root.isObject()) {
+            List<String> keys = new ArrayList<>();
+            root.fieldNames().forEachRemaining(keys::add);
+            log.warn("Ozon product stats JSON: 0 строк, корневые ключи: {}", keys);
+        } else {
+            log.info("Ozon product stats JSON: распознано {} строк SKU", result.size());
+        }
         return result;
     }
 
-    private static Row toRow(JsonNode node) {
+    private static void collectRowNodes(JsonNode node, Long inheritedCampaignId, List<RowCandidate> out) {
+        if (node == null || node.isNull()) {
+            return;
+        }
+        if (node.isArray()) {
+            node.forEach(element -> collectRowNodes(element, inheritedCampaignId, out));
+            return;
+        }
+        if (!node.isObject()) {
+            return;
+        }
+
+        if (looksLikeDataRow(node)) {
+            out.add(new RowCandidate(node, inheritedCampaignId));
+            return;
+        }
+
+        Long campaignId = readLong(node, "campaignId", "campaign_id");
+        if (campaignId == null) {
+            campaignId = readLong(node, "id");
+        }
+        Long contextCampaignId = campaignId != null ? campaignId : inheritedCampaignId;
+
+        JsonNode report = node.get("report");
+        if (report != null) {
+            collectRowNodes(report, contextCampaignId, out);
+        }
+
+        JsonNode rows = node.get("rows");
+        if (rows != null && rows.isArray()) {
+            rows.forEach(rowNode -> {
+                if (rowNode != null && rowNode.isObject()) {
+                    out.add(new RowCandidate(rowNode, contextCampaignId));
+                }
+            });
+        }
+
+        JsonNode campaigns = node.get("campaigns");
+        if (campaigns != null) {
+            collectRowNodes(campaigns, contextCampaignId, out);
+        }
+
+        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> entry = fields.next();
+            String key = entry.getKey();
+            if (SKIP_NESTED_FIELDS.contains(key)) {
+                continue;
+            }
+            if (key.matches("\\d{5,}")) {
+                Long idFromKey = Long.parseLong(key);
+                collectRowNodes(entry.getValue(), idFromKey, out);
+            }
+        }
+    }
+
+    private static boolean looksLikeDataRow(JsonNode node) {
+        Long sku = readLong(node, "sku", "SKU", "objectId", "object_id");
+        if (sku == null) {
+            return false;
+        }
+        if (readDate(node, "date", "Date", "day", "statDate", "stat_date") != null) {
+            return true;
+        }
+        return node.has("views") || node.has("clicks") || node.has("expense") || node.has("moneySpent");
+    }
+
+    private static Row toRow(JsonNode node, Long inheritedCampaignId) {
         if (node == null || !node.isObject()) {
             return null;
         }
         Long campaignId = readLong(node, "campaignId", "campaign_id", "id");
+        if (campaignId == null) {
+            campaignId = inheritedCampaignId;
+        }
         Long sku = readLong(node, "sku", "SKU", "objectId", "object_id");
         LocalDate date = readDate(node, "date", "Date", "day", "statDate", "stat_date");
         if (sku == null || date == null) {
@@ -92,8 +157,12 @@ public final class OzonPerformanceProductStatsResponse {
                 return v.longValue();
             }
             if (v.isTextual()) {
+                String text = v.asText().trim().replace(" ", "");
+                if (text.isEmpty()) {
+                    continue;
+                }
                 try {
-                    return Long.parseLong(v.asText().trim());
+                    return Long.parseLong(text);
                 } catch (NumberFormatException ignored) {
                     // next
                 }
@@ -153,20 +222,38 @@ public final class OzonPerformanceProductStatsResponse {
     private static LocalDate readDate(JsonNode node, String... names) {
         for (String name : names) {
             JsonNode v = node.get(name);
-            if (v == null || v.isNull() || !v.isTextual()) {
+            if (v == null || v.isNull()) {
                 continue;
             }
-            String text = v.asText().trim();
+            String text = null;
+            if (v.isTextual()) {
+                text = v.asText().trim();
+            } else if (v.isNumber()) {
+                text = v.asText();
+            }
+            if (text == null || text.isBlank()) {
+                continue;
+            }
             if (text.length() >= 10) {
                 text = text.substring(0, 10);
             }
             try {
                 return LocalDate.parse(text);
             } catch (Exception ignored) {
-                // next
+                if (text.length() >= 10 && text.charAt(2) == '.') {
+                    try {
+                        return LocalDate.parse(text.substring(0, 10),
+                                java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"));
+                    } catch (Exception ignored2) {
+                        // next
+                    }
+                }
             }
         }
         return null;
+    }
+
+    private record RowCandidate(JsonNode node, Long campaignId) {
     }
 
     /**

@@ -346,14 +346,22 @@ public class OzonPerformanceApiClient {
             if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
                 JsonNode root = objectMapper.readTree(body);
                 List<OzonPerformanceSearchPhrasesResponse.Row> rows = OzonPerformanceSearchPhrasesResponse.parseRows(root);
+                if (rows.isEmpty() && trimmed.toLowerCase(Locale.ROOT).contains("запрос")) {
+                    log.info("Ozon search phrases: JSON пуст, пробуем CSV-fallback uuid={}", reportUuid);
+                    rows = OzonPerformanceSearchPhrasesCsvParser.parse(body, fallbackCampaignId);
+                }
                 rows.forEach(row -> {
                     if (row.getCampaignId() == null) {
                         row.setCampaignId(fallbackCampaignId);
                     }
                 });
+                log.info("Ozon search phrases parse result: uuid={}, rows={}", reportUuid, rows.size());
                 return rows;
             }
-            return OzonPerformanceSearchPhrasesCsvParser.parse(body, fallbackCampaignId);
+            List<OzonPerformanceSearchPhrasesResponse.Row> rows =
+                    OzonPerformanceSearchPhrasesCsvParser.parse(body, fallbackCampaignId);
+            log.info("Ozon search phrases parse result: uuid={}, rows={}", reportUuid, rows.size());
+            return rows;
         } catch (HttpClientErrorException e) {
             long elapsedMs = System.currentTimeMillis() - startedAtMs;
             log.warn("Ozon Performance search phrases download: HTTP {} {}, {} ms, тело: {}",
@@ -442,6 +450,10 @@ public class OzonPerformanceApiClient {
             if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
                 JsonNode root = objectMapper.readTree(body);
                 List<OzonPerformanceProductStatsResponse.Row> rows = OzonPerformanceProductStatsResponse.parseRows(root);
+                if (rows.isEmpty() && trimmed.toLowerCase(Locale.ROOT).contains("sku")) {
+                    log.info("Ozon product stats: JSON пуст, пробуем CSV-fallback uuid={}", reportUuid);
+                    rows = OzonPerformanceProductStatsCsvParser.parse(body, fallbackCampaignId);
+                }
                 if (fallbackCampaignId != null) {
                     rows.forEach(row -> {
                         if (row.getCampaignId() == null) {
@@ -449,9 +461,13 @@ public class OzonPerformanceApiClient {
                         }
                     });
                 }
+                log.info("Ozon product stats parse result: uuid={}, rows={}", reportUuid, rows.size());
                 return rows;
             }
-            return OzonPerformanceProductStatsCsvParser.parse(body, fallbackCampaignId);
+            List<OzonPerformanceProductStatsResponse.Row> rows =
+                    OzonPerformanceProductStatsCsvParser.parse(body, fallbackCampaignId);
+            log.info("Ozon product stats parse result: uuid={}, rows={}", reportUuid, rows.size());
+            return rows;
         } catch (HttpClientErrorException e) {
             long elapsedMs = System.currentTimeMillis() - startedAtMs;
             log.warn("Ozon Performance product stats download: HTTP {} {}, {} ms, тело: {}",
