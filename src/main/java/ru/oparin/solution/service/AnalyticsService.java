@@ -113,6 +113,7 @@ public class AnalyticsService {
                         filterToNone,
                         onlyWithPhoto,
                         onlyInAdvertising,
+                        sortBy,
                         sortDir
                 );
             }
@@ -312,6 +313,9 @@ public class AnalyticsService {
             builder.orderedUnits(0).revenue(BigDecimal.ZERO);
         }
         builder.rating(ArticleRatingUtils.toDisplayRating(card.getContentRating()));
+        if (card.getCreatedAt() != null) {
+            builder.wbCreatedAt(card.getCreatedAt());
+        }
         return builder.build();
     }
 
@@ -334,6 +338,7 @@ public class AnalyticsService {
             Boolean filterToNone,
             Boolean onlyWithPhoto,
             Boolean onlyInAdvertising,
+            String sortBy,
             String sortDir
     ) {
         List<OzonProductCard> visibleCards = getVisibleOzonCards(cabinetId, excludedNmIds, onlyWithPhoto);
@@ -343,6 +348,7 @@ public class AnalyticsService {
                     .filter(card -> card.getProductId() != null && advertised.contains(card.getProductId()))
                     .collect(Collectors.toList());
         }
+        ArticleSummarySortField resolvedSortBy = ArticleSummarySortField.fromParam(sortBy);
         Sort.Direction resolvedSortDir = Sort.Direction.fromOptionalString(sortDir).orElse(Sort.Direction.DESC);
 
         boolean paginated = page != null && size != null && size > 0;
@@ -359,7 +365,7 @@ public class AnalyticsService {
             if (search != null && !search.isBlank()) {
                 filtered = filterOzonCardsBySearch(filtered, search.trim());
             }
-            sortOzonProductCards(filtered, resolvedSortDir);
+            sortOzonProductCards(filtered, resolvedSortBy, resolvedSortDir);
             int total = filtered.size();
             int from = Math.min(page * size, total);
             int to = Math.min(from + size, total);
@@ -379,7 +385,7 @@ public class AnalyticsService {
         Map<Integer, AggregatedMetricsDto> aggregatedMetrics = calculateOzonAggregatedMetrics(
                 cabinetId, productIds, periods);
         List<OzonProductCard> sortedCards = new ArrayList<>(visibleCards);
-        sortOzonProductCards(sortedCards, resolvedSortDir);
+        sortOzonProductCards(sortedCards, resolvedSortBy, resolvedSortDir);
         return SummaryResponseDto.builder()
                 .periods(periods)
                 .articles(mapOzonCardsToArticleSummaries(sortedCards, cabinetId))
@@ -582,11 +588,18 @@ public class AnalyticsService {
                 .toList();
     }
 
-    private void sortOzonProductCards(List<OzonProductCard> cards, Sort.Direction sortDir) {
-        Comparator<OzonProductCard> comparator = Comparator.comparing(
-                OzonProductCard::getProductId,
-                Comparator.nullsLast(Comparator.naturalOrder())
-        );
+    private void sortOzonProductCards(
+            List<OzonProductCard> cards,
+            ArticleSummarySortField sortBy,
+            Sort.Direction sortDir
+    ) {
+        ArticleSummarySortField effectiveSortBy = sortBy != null ? sortBy : ArticleSummarySortField.WB_CREATED_AT;
+        Comparator<OzonProductCard> comparator = switch (effectiveSortBy) {
+            case WB_CREATED_AT -> Comparator.comparing(
+                    OzonProductCard::getCreatedAt,
+                    Comparator.nullsLast(Comparator.naturalOrder())
+            );
+        };
         if (sortDir == Sort.Direction.DESC) {
             comparator = comparator.reversed();
         }
