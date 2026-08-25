@@ -351,10 +351,11 @@ public class OzonPerformanceApiClient {
                 JsonNode root = objectMapper.readTree(body);
                 List<OzonPerformanceSearchPhrasesResponse.Row> rows = OzonPerformanceSearchPhrasesResponse.parseRows(
                         root, fallbackDateFrom, fallbackDateTo);
-                if (rows.isEmpty()) {
-                    log.info("Ozon search phrases: JSON пуст, пробуем CSV-fallback uuid={}", reportUuid);
-                    rows = OzonPerformanceSearchPhrasesCsvParser.parse(
-                            body, fallbackCampaignId, fallbackDateFrom, fallbackDateTo);
+                if (OzonPerformanceSearchPhrasesResponse.needsCsvFallback(rows, bodyBytes.length)) {
+                    log.info("Ozon search phrases: JSON дал мало строк ({}), пробуем CSV-fallback uuid={}",
+                            rows.size(), reportUuid);
+                    rows = parseSearchPhrasesCsvFallback(
+                            body, root, fallbackCampaignId, fallbackDateFrom, fallbackDateTo);
                 }
                 rows.forEach(row -> {
                     if (row.getCampaignId() == null) {
@@ -403,12 +404,17 @@ public class OzonPerformanceApiClient {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             long elapsedMs = System.currentTimeMillis() - startedAtMs;
             String body = response.getBody();
-            log.info("Ozon Performance report status: HTTP {} {} ms, uuid={}",
-                    response.getStatusCode().value(), elapsedMs, reportUuid);
             if (!response.getStatusCode().is2xxSuccessful() || body == null || body.isBlank()) {
                 throw new RestClientException("Неожиданный ответ report status: " + response.getStatusCode());
             }
-            return objectMapper.readValue(body, OzonPerformanceReportStatusResponse.class);
+            OzonPerformanceReportStatusResponse status = objectMapper.readValue(body, OzonPerformanceReportStatusResponse.class);
+            String errorSuffix = status.getError() != null && !status.getError().isBlank()
+                    ? ", error=" + truncateForLog(status.getError())
+                    : "";
+            log.info("Ozon Performance report status: HTTP {} {} ms, uuid={}, state={}, kind={}{}",
+                    response.getStatusCode().value(), elapsedMs, reportUuid,
+                    status.getState(), status.getKind(), errorSuffix);
+            return status;
         } catch (HttpClientErrorException e) {
             long elapsedMs = System.currentTimeMillis() - startedAtMs;
             log.warn("Ozon Performance report status: HTTP {} {}, {} ms, тело: {}",
@@ -731,6 +737,25 @@ public class OzonPerformanceApiClient {
         return allRows;
     }
 
+    private List<OzonPerformanceSearchPhrasesResponse.Row> parseSearchPhrasesCsvFallback(
+            String rawBody,
+            JsonNode root,
+            Long fallbackCampaignId,
+            LocalDate fallbackDateFrom,
+            LocalDate fallbackDateTo
+    ) {
+        List<OzonPerformanceSearchPhrasesResponse.Row> rows = new ArrayList<>();
+        for (String csvChunk : OzonPerformanceSearchPhrasesResponse.extractEmbeddedCsvTexts(root)) {
+            rows.addAll(OzonPerformanceSearchPhrasesCsvParser.parse(
+                    csvChunk, fallbackCampaignId, fallbackDateFrom, fallbackDateTo));
+        }
+        if (rows.isEmpty()) {
+            rows.addAll(OzonPerformanceSearchPhrasesCsvParser.parse(
+                    rawBody, fallbackCampaignId, fallbackDateFrom, fallbackDateTo));
+        }
+        return OzonPerformanceSearchPhrasesResponse.filterValidDataRows(rows);
+    }
+
     private List<OzonPerformanceSearchPhrasesResponse.Row> parseSearchPhrasesZip(
             byte[] zipBytes,
             Long fallbackCampaignId,
@@ -753,6 +778,10 @@ public class OzonPerformanceApiClient {
                     JsonNode root = objectMapper.readTree(entryBody);
                     List<OzonPerformanceSearchPhrasesResponse.Row> rows = OzonPerformanceSearchPhrasesResponse.parseRows(
                             root, fallbackDateFrom, fallbackDateTo);
+                    if (OzonPerformanceSearchPhrasesResponse.needsCsvFallback(rows, entryBytes.length)) {
+                        rows = parseSearchPhrasesCsvFallback(
+                                entryBody, root, fallbackCampaignId, fallbackDateFrom, fallbackDateTo);
+                    }
                     if (fallbackCampaignId != null) {
                         rows.forEach(row -> {
                             if (row.getCampaignId() == null) {

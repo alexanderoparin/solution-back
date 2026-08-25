@@ -8,14 +8,19 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Парсер CSV-отчёта Performance API по поисковым запросам (разделитель {@code ;}).
+ * Поддерживает секции «Кампания по продвижению…» и вложенный CSV внутри JSON.
  */
 @Slf4j
 public final class OzonPerformanceSearchPhrasesCsvParser {
 
     private static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+    private static final Pattern CAMPAIGN_ID_IN_COMMENT = Pattern.compile("№\\s*(\\d+)");
+    private static final Pattern DATE_IN_TEXT = Pattern.compile("\\b(\\d{2}\\.\\d{2}\\.\\d{4})\\b");
 
     private OzonPerformanceSearchPhrasesCsvParser() {
     }
@@ -32,30 +37,97 @@ public final class OzonPerformanceSearchPhrasesCsvParser {
         if (csvBody == null || csvBody.isBlank()) {
             return List.of();
         }
-        String normalized = csvBody.replace("\uFEFF", "");
-        String[] lines = normalized.split("\\r?\\n");
+        List<OzonPerformanceSearchPhrasesResponse.Row> rows = parseInternal(
+                stripBom(csvBody), fallbackCampaignId, fallbackDateFrom, fallbackDateTo);
+        log.info("Ozon search phrases CSV: распознано {} строк", rows.size());
+        return rows;
+    }
+
+    private static List<OzonPerformanceSearchPhrasesResponse.Row> parseInternal(
+            String csvBody,
+            Long fallbackCampaignId,
+            LocalDate fallbackDateFrom,
+            LocalDate fallbackDateTo
+    ) {
+        String[] lines = csvBody.split("\\r?\\n");
         Map<String, Integer> columnIndex = null;
         List<OzonPerformanceSearchPhrasesResponse.Row> rows = new ArrayList<>();
+        Long currentCampaignId = fallbackCampaignId;
+
         for (String rawLine : lines) {
             String line = rawLine.trim();
-            if (line.isEmpty() || line.startsWith(";")) {
+            if (line.isEmpty()) {
                 continue;
             }
+            if (isReportHeaderLine(line)) {
+                Long parsedCampaignId = parseCampaignIdFromComment(line);
+                if (parsedCampaignId != null) {
+                    currentCampaignId = parsedCampaignId;
+                }
+                columnIndex = null;
+                continue;
+            }
+
             String[] cols = line.split(";", -1);
+            if (line.startsWith(";")) {
+                Long parsedCampaignId = parseCampaignIdFromComment(line);
+                if (parsedCampaignId != null) {
+                    currentCampaignId = parsedCampaignId;
+                    columnIndex = null;
+                    continue;
+                }
+                if (columnIndex == null && looksLikeHeader(cols)) {
+                    columnIndex = mapHeaderColumns(cols);
+                    continue;
+                }
+                if (columnIndex != null) {
+                    OzonPerformanceSearchPhrasesResponse.Row row = toRow(
+                            cols, columnIndex, currentCampaignId, fallbackDateFrom, fallbackDateTo);
+                    if (row != null && row.isValidDataRow()) {
+                        rows.add(row);
+                    }
+                }
+                continue;
+            }
+
             if (columnIndex == null) {
                 if (looksLikeHeader(cols)) {
                     columnIndex = mapHeaderColumns(cols);
                 }
                 continue;
             }
+
             OzonPerformanceSearchPhrasesResponse.Row row = toRow(
-                    cols, columnIndex, fallbackCampaignId, fallbackDateFrom, fallbackDateTo);
-            if (row != null && !row.isTotalRow()) {
+                    cols, columnIndex, currentCampaignId, fallbackDateFrom, fallbackDateTo);
+            if (row != null && row.isValidDataRow()) {
                 rows.add(row);
             }
         }
-        log.info("Ozon search phrases CSV: распознано {} строк", rows.size());
         return rows;
+    }
+
+    private static String stripBom(String csvBody) {
+        if (!csvBody.isEmpty() && csvBody.charAt(0) == '\uFEFF') {
+            return csvBody.substring(1);
+        }
+        return csvBody;
+    }
+
+    private static boolean isReportHeaderLine(String line) {
+        String lower = line.toLowerCase(Locale.ROOT);
+        return lower.contains("кампания по продвижению") || lower.contains("campaign promotion");
+    }
+
+    private static Long parseCampaignIdFromComment(String line) {
+        Matcher matcher = CAMPAIGN_ID_IN_COMMENT.matcher(line);
+        if (!matcher.find()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(matcher.group(1));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static boolean looksLikeHeader(String[] cols) {
@@ -63,6 +135,9 @@ public final class OzonPerformanceSearchPhrasesCsvParser {
             String lower = col.trim().toLowerCase(Locale.ROOT);
             if (lower.contains("запрос") || lower.contains("phrase") || lower.contains("query")
                     || lower.contains("фраз") || lower.contains("кластер") || lower.contains("criteria")) {
+                return true;
+            }
+            if (lower.equals("дата") || lower.contains("date")) {
                 return true;
             }
         }
@@ -80,13 +155,13 @@ public final class OzonPerformanceSearchPhrasesCsvParser {
                 map.put("sku", i);
             } else if (lower.contains("показ")) {
                 map.put("views", i);
-            } else if (lower.contains("клик")) {
+            } else if (lower.contains("клик") && !lower.contains("цена")) {
                 map.put("clicks", i);
             } else if (lower.contains("ctr")) {
                 map.put("ctr", i);
             } else if (lower.contains("корзин")) {
                 map.put("toCart", i);
-            } else if (lower.contains("цена клика") || lower.contains("cpc") || lower.contains("клика,")) {
+            } else if (lower.contains("цена клика") || lower.contains("cpc")) {
                 map.put("avgCpc", i);
             } else if (lower.contains("расход") || lower.contains("затрат")) {
                 map.put("spend", i);
@@ -94,12 +169,18 @@ public final class OzonPerformanceSearchPhrasesCsvParser {
                 map.put("orders", i);
             } else if (lower.contains("позиц") || lower.contains("position")) {
                 map.put("avgPos", i);
-            } else if (lower.contains("дата")) {
+            } else if (lower.equals("дата") || (lower.contains("дата") && !lower.contains("добавления"))) {
                 map.put("date", i);
             }
         }
-        if (!map.containsKey("phrase") && cols.length > 0) {
-            map.put("phrase", 0);
+        if (!map.containsKey("phrase")) {
+            for (int i = 0; i < cols.length; i++) {
+                String lower = cols[i].trim().toLowerCase(Locale.ROOT);
+                if (!lower.isEmpty() && !lower.equals("дата") && !lower.contains("date")) {
+                    map.putIfAbsent("phrase", i);
+                    break;
+                }
+            }
         }
         return map;
     }
@@ -116,10 +197,13 @@ public final class OzonPerformanceSearchPhrasesCsvParser {
             return null;
         }
         String phrase = cols[phraseIdx].trim();
-        if (phrase.isEmpty()) {
+        if (phrase.isEmpty() || OzonPerformanceSearchPhrasesResponse.isReportHeaderPhrase(phrase)) {
             return null;
         }
         LocalDate date = readColDate(cols, columnIndex.get("date"));
+        if (date == null) {
+            date = findDateInRow(cols, columnIndex);
+        }
         if (date == null) {
             date = fallbackDateTo != null ? fallbackDateTo : fallbackDateFrom;
         }
@@ -140,6 +224,29 @@ public final class OzonPerformanceSearchPhrasesCsvParser {
         row.setOrders(readColInt(cols, columnIndex.get("orders")));
         row.setAvgPos(readColDecimal(cols, columnIndex.get("avgPos")));
         return row;
+    }
+
+    private static LocalDate findDateInRow(String[] cols, Map<String, Integer> columnIndex) {
+        Integer phraseIdx = columnIndex.get("phrase");
+        for (int i = cols.length - 1; i >= 0; i--) {
+            if (phraseIdx != null && phraseIdx == i) {
+                continue;
+            }
+            LocalDate date = parseDate(cols[i]);
+            if (date != null) {
+                return date;
+            }
+        }
+        for (String col : cols) {
+            Matcher matcher = DATE_IN_TEXT.matcher(col);
+            if (matcher.find()) {
+                LocalDate date = parseDate(matcher.group(1));
+                if (date != null) {
+                    return date;
+                }
+            }
+        }
+        return null;
     }
 
     private static Long readColLong(String[] cols, Integer idx) {

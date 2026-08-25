@@ -47,6 +47,7 @@ public final class OzonPerformanceSearchPhrasesResponse {
         if (result.isEmpty()) {
             collectAggressiveFallback(root, null, null, fallbackDateFrom, fallbackDateTo, result);
         }
+        result = filterValidDataRows(result);
         if (result.isEmpty() && root.isObject()) {
             List<String> keys = new ArrayList<>();
             root.fieldNames().forEachRemaining(keys::add);
@@ -56,6 +57,91 @@ public final class OzonPerformanceSearchPhrasesResponse {
             log.info("Ozon search phrases JSON: распознано {} строк", result.size());
         }
         return result;
+    }
+
+    /**
+     * Извлекает из JSON текстовые фрагменты, похожие на CSV-отчёт Ozon (в т.ч. {@code {"35592855": "…csv…"}}).
+     */
+    public static List<String> extractEmbeddedCsvTexts(JsonNode root) {
+        if (root == null || root.isNull()) {
+            return List.of();
+        }
+        List<String> chunks = new ArrayList<>();
+        collectEmbeddedCsvTexts(root, chunks);
+        return chunks;
+    }
+
+    /**
+     * Оставляет только строки с реальными поисковыми запросами (не заголовки отчёта).
+     */
+    public static List<Row> filterValidDataRows(List<Row> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<Row> filtered = new ArrayList<>(rows.size());
+        for (Row row : rows) {
+            if (row != null && row.isValidDataRow()) {
+                filtered.add(row);
+            }
+        }
+        return filtered;
+    }
+
+    /**
+     * Признак заголовка секции отчёта («Кампания по продвижению…»), а не поисковой фразы.
+     */
+    public static boolean isReportHeaderPhrase(String phrase) {
+        if (phrase == null || phrase.isBlank()) {
+            return true;
+        }
+        String lower = phrase.trim().toLowerCase(Locale.ROOT);
+        return lower.contains("кампания по продвижению")
+                || lower.contains("campaign promotion")
+                || (lower.contains("период") && lower.contains("№"));
+    }
+
+    /**
+     * Нужен ли CSV-fallback: мало строк или только заголовки при большом теле ответа.
+     */
+    public static boolean needsCsvFallback(List<Row> jsonRows, int bodyBytes) {
+        List<Row> valid = filterValidDataRows(jsonRows);
+        if (valid.isEmpty()) {
+            return true;
+        }
+        return bodyBytes > 8_000 && valid.size() <= 2;
+    }
+
+    private static void collectEmbeddedCsvTexts(JsonNode node, List<String> out) {
+        if (node == null || node.isNull()) {
+            return;
+        }
+        if (node.isTextual()) {
+            String text = node.asText();
+            if (looksLikeCsvReport(text)) {
+                out.add(text);
+            }
+            return;
+        }
+        if (node.isArray()) {
+            node.forEach(element -> collectEmbeddedCsvTexts(element, out));
+            return;
+        }
+        if (node.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+            while (fields.hasNext()) {
+                collectEmbeddedCsvTexts(fields.next().getValue(), out);
+            }
+        }
+    }
+
+    private static boolean looksLikeCsvReport(String text) {
+        if (text == null || text.length() < 40) {
+            return false;
+        }
+        String lower = text.toLowerCase(Locale.ROOT);
+        return text.contains(";") && text.contains("\n")
+                && (lower.contains("запрос") || lower.contains("кампания по продвижению")
+                || lower.contains("phrase") || lower.contains("query"));
     }
 
     private static void collectRows(
@@ -73,7 +159,7 @@ public final class OzonPerformanceSearchPhrasesResponse {
             for (JsonNode element : node) {
                 if (element != null && element.isArray()) {
                     Row arrayRow = toRowFromArray(element, inheritedCampaignId, inheritedDate, fallbackDateTo);
-                    if (arrayRow != null && !arrayRow.isTotalRow()) {
+                    if (arrayRow != null && arrayRow.isValidDataRow()) {
                         out.add(arrayRow);
                         continue;
                     }
@@ -109,7 +195,7 @@ public final class OzonPerformanceSearchPhrasesResponse {
             for (JsonNode rowNode : rows) {
                 if (rowNode != null && rowNode.isArray()) {
                     Row arrayRow = toRowFromArray(rowNode, contextCampaignId, inheritedDate, fallbackDateTo);
-                    if (arrayRow != null && !arrayRow.isTotalRow()) {
+                    if (arrayRow != null && arrayRow.isValidDataRow()) {
                         out.add(arrayRow);
                     }
                     continue;
@@ -141,6 +227,9 @@ public final class OzonPerformanceSearchPhrasesResponse {
             if (value == null || value.isNull()) {
                 continue;
             }
+            if (value.isTextual() && looksLikeCsvReport(value.asText())) {
+                continue;
+            }
             if (key.matches("\\d{5,}")) {
                 Long idFromKey = Long.parseLong(key);
                 collectRows(value, idFromKey, inheritedDate, fallbackDateFrom, fallbackDateTo, out);
@@ -165,7 +254,7 @@ public final class OzonPerformanceSearchPhrasesResponse {
             return false;
         }
         Row row = toRow(node, inheritedCampaignId, inheritedDate, fallbackDateFrom, fallbackDateTo);
-        if (row != null && !row.isTotalRow()) {
+        if (row != null && row.isValidDataRow()) {
             out.add(row);
             return true;
         }
@@ -253,40 +342,9 @@ public final class OzonPerformanceSearchPhrasesResponse {
     }
 
     private static String readPhrase(JsonNode node) {
-        String direct = readText(node,
+        return readText(node,
                 "searchPhrase", "search_phrase", "phrase", "query", "normQuery", "norm_query",
-                "searchQuery", "search_query", "criteria", "keyword", "cluster", "name", "title");
-        if (direct != null) {
-            return direct;
-        }
-        return findLongestTextField(node);
-    }
-
-    private static String findLongestTextField(JsonNode node) {
-        Set<String> skipFields = Set.of(
-                "date", "Date", "day", "statDate", "stat_date", "sku", "SKU", "campaignId", "campaign_id",
-                "id", "objectId", "object_id", "state", "type", "uuid", "UUID"
-        );
-        String longest = null;
-        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-        while (fields.hasNext()) {
-            Map.Entry<String, JsonNode> entry = fields.next();
-            if (skipFields.contains(entry.getKey())) {
-                continue;
-            }
-            JsonNode value = entry.getValue();
-            if (value == null || !value.isTextual()) {
-                continue;
-            }
-            String text = value.asText().trim();
-            if (text.length() < 2 || text.matches("\\d+") || text.matches("\\d{4}-\\d{2}-\\d{2}.*")) {
-                continue;
-            }
-            if (longest == null || text.length() > longest.length()) {
-                longest = text;
-            }
-        }
-        return longest;
+                "searchQuery", "search_query", "criteria", "keyword", "cluster");
     }
 
     private static LocalDate parseDateKey(String key) {
@@ -508,6 +566,14 @@ public final class OzonPerformanceSearchPhrasesResponse {
             }
             String lower = searchPhrase.trim().toLowerCase(Locale.ROOT);
             return lower.startsWith("bcero") || lower.startsWith("всего") || lower.startsWith("total");
+        }
+
+        /** Строка пригодна для сохранения в БД (не заголовок и не «Всего»). */
+        public boolean isValidDataRow() {
+            if (isTotalRow() || isReportHeaderPhrase(searchPhrase)) {
+                return false;
+            }
+            return searchPhrase != null && !searchPhrase.isBlank() && date != null;
         }
     }
 }
