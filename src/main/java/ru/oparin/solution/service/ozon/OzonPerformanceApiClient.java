@@ -46,8 +46,8 @@ public class OzonPerformanceApiClient {
     private static final int MAX_BODY_LOG_LENGTH = 2000;
     /** Сколько campaignIds передаём в один daily-запрос. */
     private static final int DAILY_STATS_CAMPAIGN_BATCH = 50;
-    /** Сколько campaignIds в одном async product-stats отчёте. */
-    private static final int PRODUCT_STATS_CAMPAIGN_BATCH = 20;
+    /** Сколько campaignIds в одном async product-stats отчёте (лимит Ozon Performance API). */
+    private static final int PRODUCT_STATS_CAMPAIGN_BATCH = 10;
     /** По одной кампании в search-phrases отчёте (CSV, без ZIP). */
     private static final int SEARCH_PHRASES_CAMPAIGN_BATCH = 1;
     /** Интервал опроса async-отчёта внутри одного execute. */
