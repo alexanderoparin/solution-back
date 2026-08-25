@@ -60,8 +60,8 @@ public final class OzonPerformanceProductStatsResponse {
         }
         Long campaignId = readLong(node, "campaignId", "campaign_id", "id");
         Long sku = readLong(node, "sku", "SKU", "objectId", "object_id");
-        LocalDate date = readDate(node, "date", "Date", "day");
-        if (campaignId == null || sku == null || date == null) {
+        LocalDate date = readDate(node, "date", "Date", "day", "statDate", "stat_date");
+        if (sku == null || date == null) {
             return null;
         }
         Row row = new Row();

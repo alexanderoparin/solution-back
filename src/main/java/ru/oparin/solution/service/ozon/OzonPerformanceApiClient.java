@@ -19,9 +19,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 /**
  * Клиент Ozon Performance API: OAuth-токен и список рекламных кампаний.
@@ -34,7 +38,7 @@ public class OzonPerformanceApiClient {
     private static final String CAMPAIGNS_URL = OzonApiEventType.CAMPAIGNS_CABINET.getDefaultUrl();
     private static final String DAILY_STATS_URL = OzonApiEventType.CAMPAIGN_STATS_CABINET.getDefaultUrl();
     private static final String STATISTICS_SUBMIT_URL =
-            OzonApiBaseUrl.PERFORMANCE.getDefaultBaseUrl() + "/api/client/statistics";
+            OzonApiBaseUrl.PERFORMANCE.getDefaultBaseUrl() + "/api/client/statistics/json";
     private static final String SEARCH_PHRASES_SUBMIT_URL =
             OzonApiBaseUrl.PERFORMANCE.getDefaultBaseUrl() + "/api/client/statistics/phrases/json";
     private static final String STATISTICS_REPORT_URL =
@@ -432,9 +436,20 @@ public class OzonPerformanceApiClient {
             }
             String body = new String(bodyBytes, StandardCharsets.UTF_8);
             String trimmed = body.trim();
+            if (bodyBytes.length >= 2 && bodyBytes[0] == 'P' && bodyBytes[1] == 'K') {
+                return parseProductStatsZip(bodyBytes, fallbackCampaignId);
+            }
             if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
                 JsonNode root = objectMapper.readTree(body);
-                return OzonPerformanceProductStatsResponse.parseRows(root);
+                List<OzonPerformanceProductStatsResponse.Row> rows = OzonPerformanceProductStatsResponse.parseRows(root);
+                if (fallbackCampaignId != null) {
+                    rows.forEach(row -> {
+                        if (row.getCampaignId() == null) {
+                            row.setCampaignId(fallbackCampaignId);
+                        }
+                    });
+                }
+                return rows;
             }
             return OzonPerformanceProductStatsCsvParser.parse(body, fallbackCampaignId);
         } catch (HttpClientErrorException e) {
@@ -631,6 +646,11 @@ public class OzonPerformanceApiClient {
                 log.debug("Ozon Performance campaign objects: 404 for {}, {} ms", url, elapsedMs);
                 return List.of();
             }
+            if (e.getStatusCode().value() == 400 && isCampaignNotFoundError(e)) {
+                log.debug("Ozon Performance campaign objects: кампания не найдена для {}, {} ms",
+                        url, elapsedMs);
+                return List.of();
+            }
             log.warn("Ozon Performance campaign objects: HTTP {} {}, {} ms, тело: {}",
                     e.getStatusCode().value(), e.getStatusText(), elapsedMs,
                     truncateForLog(e.getResponseBodyAsString()));
@@ -640,6 +660,53 @@ public class OzonPerformanceApiClient {
         } catch (Exception e) {
             throw new RestClientException("Ошибка запроса campaign objects: " + e.getMessage(), e);
         }
+    }
+
+    private static boolean isCampaignNotFoundError(HttpClientErrorException e) {
+        String body = e.getResponseBodyAsString();
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        String lower = body.toLowerCase(Locale.ROOT);
+        return lower.contains("не найдена") || lower.contains("not found");
+    }
+
+    private List<OzonPerformanceProductStatsResponse.Row> parseProductStatsZip(
+            byte[] zipBytes,
+            Long fallbackCampaignId
+    ) {
+        List<OzonPerformanceProductStatsResponse.Row> allRows = new ArrayList<>();
+        try (ZipInputStream zipInputStream = new ZipInputStream(new java.io.ByteArrayInputStream(zipBytes))) {
+            ZipEntry entry;
+            while ((entry = zipInputStream.getNextEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                byte[] entryBytes = zipInputStream.readAllBytes();
+                if (entryBytes.length == 0) {
+                    continue;
+                }
+                String entryBody = new String(entryBytes, StandardCharsets.UTF_8).trim();
+                if (entryBody.startsWith("{") || entryBody.startsWith("[")) {
+                    JsonNode root = objectMapper.readTree(entryBody);
+                    List<OzonPerformanceProductStatsResponse.Row> rows = OzonPerformanceProductStatsResponse.parseRows(root);
+                    if (fallbackCampaignId != null) {
+                        rows.forEach(row -> {
+                            if (row.getCampaignId() == null) {
+                                row.setCampaignId(fallbackCampaignId);
+                            }
+                        });
+                    }
+                    allRows.addAll(rows);
+                } else {
+                    allRows.addAll(OzonPerformanceProductStatsCsvParser.parse(entryBody, fallbackCampaignId));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Ozon product stats ZIP: ошибка разбора архива: {}", e.getMessage());
+        }
+        log.info("Ozon product stats ZIP: распознано {} строк SKU", allRows.size());
+        return allRows;
     }
 
     private static HttpHeaders bearerHeaders(String accessToken) {

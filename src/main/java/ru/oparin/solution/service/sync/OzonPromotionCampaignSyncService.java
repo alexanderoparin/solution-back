@@ -13,6 +13,7 @@ import ru.oparin.solution.service.ozon.OzonPerformanceApiClient;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Синхронизация списка РК, объектов (SKU) и дневной статистики Ozon Performance API.
@@ -21,6 +22,9 @@ import java.util.Locale;
 @RequiredArgsConstructor
 @Slf4j
 public class OzonPromotionCampaignSyncService {
+
+    /** Типы кампаний, для которых доступен список SKU через Performance API. */
+    private static final Set<String> CAMPAIGN_OBJECTS_ADV_TYPES = Set.of("SKU");
 
     private final OzonPerformanceApiClient performanceApiClient;
     private final OzonPromotionCampaignService campaignService;
@@ -75,6 +79,7 @@ public class OzonPromotionCampaignSyncService {
             int campaignBatchStart
     ) {
         List<Long> allCampaignIds = campaignRepository.findByCabinet_Id(cabinet.getId()).stream()
+                .filter(this::isProductStatsEligible)
                 .map(OzonPromotionCampaign::getCampaignId)
                 .toList();
         if (allCampaignIds.isEmpty()) {
@@ -132,7 +137,9 @@ public class OzonPromotionCampaignSyncService {
      * Есть ли ещё батчи product-stats после {@code campaignBatchStart}.
      */
     public boolean hasMoreProductStatsBatches(Long cabinetId, int campaignBatchStart) {
-        int total = campaignRepository.findByCabinet_Id(cabinetId).size();
+        int total = (int) campaignRepository.findByCabinet_Id(cabinetId).stream()
+                .filter(this::isProductStatsEligible)
+                .count();
         int batchSize = performanceApiClient.getProductStatsCampaignBatchSize();
         return campaignBatchStart + batchSize < total;
     }
@@ -226,10 +233,24 @@ public class OzonPromotionCampaignSyncService {
     }
 
     private boolean isSearchPhrasesEligible(OzonPromotionCampaign campaign) {
-        if (campaign.getPaymentType() == null) {
+        String advObjectType = campaign.getAdvObjectType();
+        if (advObjectType == null || "SEARCH_PROMO".equals(advObjectType)) {
             return false;
         }
-        return campaign.getPaymentType().trim().toUpperCase(Locale.ROOT).contains("CPC");
+        if (campaign.getPaymentType() != null
+                && campaign.getPaymentType().trim().toUpperCase(Locale.ROOT).contains("CPC")) {
+            return true;
+        }
+        return "SKU".equals(advObjectType);
+    }
+
+    private boolean isCampaignObjectsEligible(OzonPromotionCampaign campaign) {
+        String advObjectType = campaign.getAdvObjectType();
+        return advObjectType != null && CAMPAIGN_OBJECTS_ADV_TYPES.contains(advObjectType);
+    }
+
+    private boolean isProductStatsEligible(OzonPromotionCampaign campaign) {
+        return isCampaignObjectsEligible(campaign);
     }
 
     /**
@@ -238,8 +259,13 @@ public class OzonPromotionCampaignSyncService {
     public int syncCampaignObjects(Cabinet cabinet, String clientId, String clientSecret) {
         List<OzonPromotionCampaign> campaigns = campaignRepository.findByCabinet_Id(cabinet.getId());
         int totalLinks = 0;
+        int skipped = 0;
         for (OzonPromotionCampaign campaign : campaigns) {
             if ("CAMPAIGN_STATE_FINISHED".equals(campaign.getState())) {
+                continue;
+            }
+            if (!isCampaignObjectsEligible(campaign)) {
+                skipped++;
                 continue;
             }
             try {
@@ -248,11 +274,17 @@ public class OzonPromotionCampaignSyncService {
                 totalLinks += campaignArticleService.replaceCampaignSkus(
                         cabinet.getId(), campaign.getCampaignId(), skus);
             } catch (Exception e) {
+                if (isCampaignNotFoundMessage(e.getMessage())) {
+                    log.debug("Ozon campaign objects: кампания {} недоступна в Performance API",
+                            campaign.getCampaignId());
+                    continue;
+                }
                 log.warn("Ozon campaign objects: ошибка для campaignId={}: {}",
                         campaign.getCampaignId(), e.getMessage());
             }
         }
-        log.info("Ozon campaign objects sync: cabinetId={}, всего связей SKU={}", cabinet.getId(), totalLinks);
+        log.info("Ozon campaign objects sync: cabinetId={}, всего связей SKU={}, пропущено типов={}",
+                cabinet.getId(), totalLinks, skipped);
         return totalLinks;
     }
 
@@ -274,5 +306,13 @@ public class OzonPromotionCampaignSyncService {
         log.info("Ozon daily stats sync: получено {} строк для cabinetId={}, период={}..{}",
                 rows.size(), cabinet.getId(), dateFrom, dateTo);
         return statisticsService.saveOrUpdate(rows);
+    }
+
+    private static boolean isCampaignNotFoundMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        String lower = message.toLowerCase(Locale.ROOT);
+        return lower.contains("не найдена") || lower.contains("not found");
     }
 }
