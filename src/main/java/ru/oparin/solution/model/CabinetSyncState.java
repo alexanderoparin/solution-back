@@ -60,6 +60,30 @@ public class CabinetSyncState {
     private LocalDateTime lastOzonCampaignsSyncAt;
 
     /**
+     * Тип подписки Ozon Seller ({@link OzonSellerSubscriptionType}).
+     */
+    @Column(name = "ozon_subscription_type", length = 32)
+    private String ozonSubscriptionType;
+
+    /**
+     * Флаг {@code is_premium} из seller/info.
+     */
+    @Column(name = "ozon_subscription_is_premium")
+    private Boolean ozonSubscriptionIsPremium;
+
+    /**
+     * Расширенная воронка доступна в analytics/data (probe).
+     */
+    @Column(name = "ozon_analytics_funnel_available")
+    private Boolean ozonAnalyticsFunnelAvailable;
+
+    /**
+     * Когда последний раз обновляли данные о подписке Ozon.
+     */
+    @Column(name = "ozon_subscription_checked_at")
+    private LocalDateTime ozonSubscriptionCheckedAt;
+
+    /**
      * Дата создания записи.
      */
     @CreatedDate

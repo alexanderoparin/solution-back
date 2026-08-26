@@ -10,6 +10,7 @@ import ru.oparin.solution.model.OzonProductCard;
 import ru.oparin.solution.model.OzonProductCardAnalytics;
 import ru.oparin.solution.repository.OzonProductCardAnalyticsRepository;
 import ru.oparin.solution.repository.OzonProductCardRepository;
+import ru.oparin.solution.service.OzonSellerSubscriptionService;
 import ru.oparin.solution.service.ozon.OzonProductsApiClient;
 
 import java.math.BigDecimal;
@@ -37,6 +38,7 @@ public class OzonProductAnalyticsSyncService {
     private final OzonProductsApiClient productsApiClient;
     private final OzonProductCardRepository productCardRepository;
     private final OzonProductCardAnalyticsRepository analyticsRepository;
+    private final OzonSellerSubscriptionService ozonSellerSubscriptionService;
 
     /**
      * Загружает все страницы аналитики за период и сохраняет в БД.
@@ -83,6 +85,7 @@ public class OzonProductAnalyticsSyncService {
                         + "пропущено без карточки={} (уник. SKU={}), период={}..{}",
                 cabinet.getId(), layout.metricNames(), pages, rowsTotal, saved, skippedUnknownSku,
                 unknownSkus.size(), dateFrom, dateTo);
+        ozonSellerSubscriptionService.updateFunnelAvailability(cabinet.getId(), layout.useExtendedMetrics());
     }
 
     /**

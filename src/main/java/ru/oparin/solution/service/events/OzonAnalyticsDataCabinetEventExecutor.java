@@ -11,6 +11,7 @@ import ru.oparin.solution.model.OzonApiEvent;
 import ru.oparin.solution.service.CabinetScopeStatusService;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.CabinetUpdateErrorService;
+import ru.oparin.solution.service.OzonSellerSubscriptionService;
 import ru.oparin.solution.service.events.payload.OzonAnalyticsDataCabinetPayload;
 import ru.oparin.solution.service.ozon.OzonApiCategory;
 import ru.oparin.solution.service.sync.OzonProductAnalyticsSyncService;
@@ -31,6 +32,7 @@ public class OzonAnalyticsDataCabinetEventExecutor implements OzonApiEventExecut
     private final OzonProductAnalyticsSyncService analyticsSyncService;
     private final CabinetUpdateErrorService cabinetUpdateErrorService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
+    private final OzonSellerSubscriptionService ozonSellerSubscriptionService;
 
     @Override
     public OzonApiEventExecutionResult execute(OzonApiEvent event) {
@@ -50,6 +52,11 @@ public class OzonAnalyticsDataCabinetEventExecutor implements OzonApiEventExecut
                 : dateTo.minusDays(13);
 
         try {
+            try {
+                ozonSellerSubscriptionService.refreshFromApi(cabinet);
+            } catch (Exception e) {
+                log.warn("Ozon subscription refresh failed for cabinetId={}: {}", cabinet.getId(), e.getMessage());
+            }
             analyticsSyncService.syncAnalytics(cabinet, clientId, apiKey, dateFrom, dateTo);
             cabinetScopeStatusService.recordSuccess(cabinet.getId(), OzonApiCategory.ANALYTICS);
             eventService.markMainCompleted(cabinet.getId());

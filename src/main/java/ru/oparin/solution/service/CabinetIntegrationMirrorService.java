@@ -255,6 +255,18 @@ public class CabinetIntegrationMirrorService {
         if (cabinet.getLastOzonCampaignsSyncAt() != null) {
             state.setLastOzonCampaignsSyncAt(cabinet.getLastOzonCampaignsSyncAt());
         }
+        if (cabinet.getOzonSubscriptionType() != null) {
+            state.setOzonSubscriptionType(cabinet.getOzonSubscriptionType().name());
+        }
+        if (cabinet.getOzonSubscriptionIsPremium() != null) {
+            state.setOzonSubscriptionIsPremium(cabinet.getOzonSubscriptionIsPremium());
+        }
+        if (cabinet.getOzonAnalyticsFunnelAvailable() != null) {
+            state.setOzonAnalyticsFunnelAvailable(cabinet.getOzonAnalyticsFunnelAvailable());
+        }
+        if (cabinet.getOzonSubscriptionCheckedAt() != null) {
+            state.setOzonSubscriptionCheckedAt(cabinet.getOzonSubscriptionCheckedAt());
+        }
         syncStateRepository.save(state);
     }
 
@@ -322,6 +334,14 @@ public class CabinetIntegrationMirrorService {
         }
         if (s.getLastOzonCampaignsSyncAt() != null) {
             cabinet.setLastOzonCampaignsSyncAt(s.getLastOzonCampaignsSyncAt());
+        }
+        if (s.getOzonSubscriptionType() != null) {
+            cabinet.setOzonSubscriptionType(OzonSellerSubscriptionType.fromApiValue(s.getOzonSubscriptionType()));
+        }
+        cabinet.setOzonSubscriptionIsPremium(s.getOzonSubscriptionIsPremium());
+        cabinet.setOzonAnalyticsFunnelAvailable(s.getOzonAnalyticsFunnelAvailable());
+        if (s.getOzonSubscriptionCheckedAt() != null) {
+            cabinet.setOzonSubscriptionCheckedAt(s.getOzonSubscriptionCheckedAt());
         }
     }
 

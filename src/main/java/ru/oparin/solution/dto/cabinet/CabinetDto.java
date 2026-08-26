@@ -34,6 +34,17 @@ public class CabinetDto {
     /** Время последней успешной синхронизации списка РК Ozon. */
     private LocalDateTime lastOzonCampaignsSyncAt;
 
+    /** Тип подписки Ozon Seller (UNSPECIFIED, PREMIUM, PREMIUM_PLUS и т.д.). */
+    private String ozonSubscriptionType;
+    /** Русское название тарифа Ozon для UI. */
+    private String ozonSubscriptionTypeDisplayName;
+    /** Флаг is_premium из seller/info. */
+    private Boolean ozonSubscriptionIsPremium;
+    /** Доступна ли воронка analytics/data (probe). */
+    private Boolean ozonAnalyticsFunnelAvailable;
+    /** Когда последний раз проверяли подписку Ozon. */
+    private LocalDateTime ozonSubscriptionCheckedAt;
+
     /**
      * Информация о WB API ключе кабинета.
      */

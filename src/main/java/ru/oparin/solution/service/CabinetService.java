@@ -14,6 +14,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.dto.ManagedCabinetSortField;
 import ru.oparin.solution.dto.cabinet.*;
+import ru.oparin.solution.dto.ozon.OzonSellerInfoResponse;
 import ru.oparin.solution.dto.wb.WbSellerInfoResponse;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
@@ -63,6 +64,7 @@ public class CabinetService {
     private final CabinetBillingService cabinetBillingService;
     private final CabinetIntegrationMirrorService cabinetIntegrationMirrorService;
     private final CabinetIntegrationRepository cabinetIntegrationRepository;
+    private final OzonSellerSubscriptionService ozonSellerSubscriptionService;
 
     /**
      * Список кабинетов пользователя (продавца), отсортированный по дате создания (новые первые).
@@ -342,8 +344,9 @@ public class CabinetService {
         }
         String cabinetName = normalizeName(trimmedName);
 
-        assertOzonSellerInfoOrThrow(clientId, apiKey);
         assertApiKeyNotUsedByAnotherCabinet(null, apiKey);
+
+        OzonSellerInfoResponse sellerInfo = fetchOzonSellerInfoOrThrow(clientId, apiKey);
 
         Cabinet cabinet = Cabinet.builder()
                 .user(user)
@@ -356,6 +359,7 @@ public class CabinetService {
                 .lastValidatedAt(java.time.LocalDateTime.now())
                 .build();
         cabinet = cabinetRepository.save(cabinet);
+        ozonSellerSubscriptionService.persistFromSellerInfo(cabinet, sellerInfo);
         cabinetBillingService.initializeCabinetBilling(cabinet);
         cabinetIntegrationMirrorService.mirrorFromCabinet(cabinet);
         return toDto(cabinet);
@@ -706,9 +710,9 @@ public class CabinetService {
     /**
      * Проверяет Client-Id + Api-Key через Ozon Seller API до сохранения кабинета.
      */
-    private void assertOzonSellerInfoOrThrow(String clientId, String apiKey) {
+    private OzonSellerInfoResponse fetchOzonSellerInfoOrThrow(String clientId, String apiKey) {
         try {
-            ozonSellerApiClient.getSellerInfo(clientId, apiKey);
+            return ozonSellerApiClient.getSellerInfo(clientId, apiKey);
         } catch (HttpClientErrorException e) {
             throw ozonSellerInfoHttpException(e);
         } catch (RestClientException e) {
@@ -856,6 +860,15 @@ public class CabinetService {
                 .lastDataUpdateRequestedAt(cabinet.getLastDataUpdateRequestedAt())
                 .lastStocksUpdateAt(cabinet.getLastStocksUpdateAt())
                 .lastOzonCampaignsSyncAt(cabinet.getLastOzonCampaignsSyncAt())
+                .ozonSubscriptionType(
+                        cabinet.getOzonSubscriptionType() != null ? cabinet.getOzonSubscriptionType().name() : null)
+                .ozonSubscriptionTypeDisplayName(
+                        cabinet.getOzonSubscriptionType() != null
+                                ? cabinet.getOzonSubscriptionType().getDisplayNameRu()
+                                : null)
+                .ozonSubscriptionIsPremium(cabinet.getOzonSubscriptionIsPremium())
+                .ozonAnalyticsFunnelAvailable(cabinet.getOzonAnalyticsFunnelAvailable())
+                .ozonSubscriptionCheckedAt(cabinet.getOzonSubscriptionCheckedAt())
                 .apiKey(apiKeyInfo)
                 .scopeStatuses(scopeStatuses)
                 .build();

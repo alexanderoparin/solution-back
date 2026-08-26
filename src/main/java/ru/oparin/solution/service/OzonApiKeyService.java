@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
+import ru.oparin.solution.dto.ozon.OzonSellerInfoResponse;
 import ru.oparin.solution.exception.OzonRateLimitDeferException;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
@@ -27,6 +28,7 @@ public class OzonApiKeyService {
     private final CabinetService cabinetService;
     private final OzonSellerApiClient ozonSellerApiClient;
     private final CabinetScopeStatusService cabinetScopeStatusService;
+    private final OzonSellerSubscriptionService ozonSellerSubscriptionService;
 
     /**
      * Проверяет учётные данные Ozon-кабинета и обновляет поля валидации.
@@ -53,7 +55,8 @@ public class OzonApiKeyService {
 
         try {
             log.info("Проверка Ozon API ключа кабинета {} через seller/info, Client-Id={}", cabinetId, clientId);
-            ozonSellerApiClient.getSellerInfo(clientId, apiKey);
+            OzonSellerInfoResponse sellerInfo = ozonSellerApiClient.getSellerInfo(clientId, apiKey);
+            ozonSellerSubscriptionService.persistFromSellerInfo(cabinet, sellerInfo);
             updateValidationStatus(cabinet, true, null);
             cabinetScopeStatusService.recordSuccess(cabinetId, OzonApiCategory.SELLER);
             log.info("Ozon API ключ для кабинета {} признан валидным", cabinetId);

@@ -13,6 +13,28 @@ public class OzonSellerInfoResponse {
 
     private Result result;
 
+    private Subscription subscription;
+
+    /**
+     * Подписка из ответа (если не вложена в {@link #result}).
+     */
+    public Subscription resolveSubscription() {
+        if (result != null && result.getSubscription() != null) {
+            return result.getSubscription();
+        }
+        return subscription;
+    }
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Subscription {
+
+        @JsonProperty("is_premium")
+        private Boolean premium;
+
+        private String type;
+    }
+
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Result {
@@ -24,5 +46,7 @@ public class OzonSellerInfoResponse {
 
         @JsonProperty("is_enabled")
         private Boolean enabled;
+
+        private Subscription subscription;
     }
 }

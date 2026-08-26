@@ -107,6 +107,22 @@ public class Cabinet {
     @Transient
     private LocalDateTime lastOzonCampaignsSyncAt;
 
+    /** Тип подписки Ozon Seller (in-memory). */
+    @Transient
+    private OzonSellerSubscriptionType ozonSubscriptionType;
+
+    /** Флаг is_premium из seller/info (in-memory). */
+    @Transient
+    private Boolean ozonSubscriptionIsPremium;
+
+    /** Доступна ли воронка в analytics/data (in-memory). */
+    @Transient
+    private Boolean ozonAnalyticsFunnelAvailable;
+
+    /** Когда проверяли подписку Ozon (in-memory). */
+    @Transient
+    private LocalDateTime ozonSubscriptionCheckedAt;
+
     /**
      * Тип WB API-токена (in-memory).
      */
