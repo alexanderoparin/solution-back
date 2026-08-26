@@ -13,10 +13,14 @@ import ru.oparin.solution.model.OzonPromotionCampaign;
 import ru.oparin.solution.model.OzonPromotionCampaignSearchPhraseStatistics;
 import ru.oparin.solution.repository.OzonPromotionCampaignSearchPhraseStatisticsRepository;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Сохранение и чтение поисковых запросов (кластеров) Ozon Performance.
@@ -33,6 +37,7 @@ public class OzonPromotionCampaignSearchPhraseStatisticsService {
 
     /**
      * Заменяет статистику по кампании за период данными async-отчёта.
+     * Дубликаты по {@code (date, search_phrase)} агрегируются (сумма метрик).
      *
      * @return число сохранённых строк
      */
@@ -51,35 +56,98 @@ public class OzonPromotionCampaignSearchPhraseStatisticsService {
             log.info("Ozon search phrases: пустой отчёт для campaignId={}", campaign.getCampaignId());
             return 0;
         }
-        List<OzonPromotionCampaignSearchPhraseStatistics> toSave = new ArrayList<>();
+
+        Map<String, OzonPromotionCampaignSearchPhraseStatistics> mergedByKey = new LinkedHashMap<>();
+        int skipped = 0;
         for (OzonPerformanceSearchPhrasesResponse.Row row : rows) {
-            if (row.getSearchPhrase() == null || row.getSearchPhrase().isBlank() || row.getDate() == null) {
+            if (row == null || !row.isValidDataRow()) {
+                skipped++;
                 continue;
             }
-            if (row.isTotalRow()) {
-                continue;
+            String phrase = row.getSearchPhrase().trim();
+            String key = row.getDate() + "|" + phrase.toLowerCase();
+            OzonPromotionCampaignSearchPhraseStatistics existing = mergedByKey.get(key);
+            if (existing == null) {
+                mergedByKey.put(key, OzonPromotionCampaignSearchPhraseStatistics.builder()
+                        .campaign(campaign)
+                        .sku(row.getSku())
+                        .date(row.getDate())
+                        .searchPhrase(phrase)
+                        .avgPos(row.getAvgPos())
+                        .views(row.getViews())
+                        .clicks(row.getClicks())
+                        .ctr(row.getCtr())
+                        .toCart(row.getToCart())
+                        .avgCpc(row.getAvgCpc())
+                        .spend(row.getSpend())
+                        .orders(row.getOrders())
+                        .build());
+            } else {
+                mergeInto(existing, row);
             }
-            toSave.add(OzonPromotionCampaignSearchPhraseStatistics.builder()
-                    .campaign(campaign)
-                    .sku(row.getSku())
-                    .date(row.getDate())
-                    .searchPhrase(row.getSearchPhrase().trim())
-                    .avgPos(row.getAvgPos())
-                    .views(row.getViews())
-                    .clicks(row.getClicks())
-                    .ctr(row.getCtr())
-                    .toCart(row.getToCart())
-                    .avgCpc(row.getAvgCpc())
-                    .spend(row.getSpend())
-                    .orders(row.getOrders())
-                    .build());
         }
+
+        List<OzonPromotionCampaignSearchPhraseStatistics> toSave = new ArrayList<>(mergedByKey.values());
         if (!toSave.isEmpty()) {
             repository.saveAll(toSave);
-            log.info("Ozon search phrases: сохранено {} строк для campaignId={}",
-                    toSave.size(), campaign.getCampaignId());
+            log.info("Ozon search phrases: сохранено {} строк для campaignId={} (вход={}, пропущено={}, дублей={})",
+                    toSave.size(),
+                    campaign.getCampaignId(),
+                    rows.size(),
+                    skipped,
+                    rows.size() - skipped - toSave.size());
         }
         return toSave.size();
+    }
+
+    private static void mergeInto(
+            OzonPromotionCampaignSearchPhraseStatistics target,
+            OzonPerformanceSearchPhrasesResponse.Row row
+    ) {
+        target.setViews(sumInt(target.getViews(), row.getViews()));
+        target.setClicks(sumInt(target.getClicks(), row.getClicks()));
+        target.setToCart(sumInt(target.getToCart(), row.getToCart()));
+        target.setOrders(sumInt(target.getOrders(), row.getOrders()));
+        target.setSpend(sumDecimal(target.getSpend(), row.getSpend()));
+        if (target.getSku() == null && row.getSku() != null) {
+            target.setSku(row.getSku());
+        }
+        target.setAvgPos(preferNonNull(target.getAvgPos(), row.getAvgPos()));
+        Integer clicks = target.getClicks();
+        Integer views = target.getViews();
+        if (clicks != null && views != null && views > 0) {
+            target.setCtr(BigDecimal.valueOf(clicks)
+                    .multiply(BigDecimal.valueOf(100))
+                    .divide(BigDecimal.valueOf(views), 4, RoundingMode.HALF_UP));
+        }
+        BigDecimal spend = target.getSpend();
+        if (spend != null && clicks != null && clicks > 0) {
+            target.setAvgCpc(spend.divide(BigDecimal.valueOf(clicks), 4, RoundingMode.HALF_UP));
+        }
+    }
+
+    private static Integer sumInt(Integer left, Integer right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null) {
+            return left;
+        }
+        return left + right;
+    }
+
+    private static BigDecimal sumDecimal(BigDecimal left, BigDecimal right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null) {
+            return left;
+        }
+        return left.add(right);
+    }
+
+    private static BigDecimal preferNonNull(BigDecimal current, BigDecimal incoming) {
+        return current != null ? current : incoming;
     }
 
     /**
