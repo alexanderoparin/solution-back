@@ -16,6 +16,7 @@ import ru.oparin.solution.repository.*;
 import ru.oparin.solution.service.analytics.*;
 import ru.oparin.solution.service.campaign.BidderStatusResolver;
 import ru.oparin.solution.service.campaign.WbCampaignGoalService;
+import ru.oparin.solution.service.ozon.OzonCampaignTypeLabels;
 import ru.oparin.solution.util.ArticleRatingUtils;
 import ru.oparin.solution.util.PeriodGenerator;
 
@@ -2017,16 +2018,7 @@ public class AnalyticsService {
     }
 
     private static String buildOzonCampaignTypeLabel(String advObjectType, String paymentType) {
-        if (advObjectType == null && paymentType == null) {
-            return null;
-        }
-        if (advObjectType == null) {
-            return paymentType;
-        }
-        if (paymentType == null) {
-            return advObjectType;
-        }
-        return advObjectType + " / " + paymentType;
+        return OzonCampaignTypeLabels.format(advObjectType, paymentType);
     }
 
     /**
