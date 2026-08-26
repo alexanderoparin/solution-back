@@ -1935,6 +1935,15 @@ public class AnalyticsService {
                         .findByCampaign_CampaignIdInAndDateBetween(campaignIds, from, to)
                         .stream()
                         .collect(Collectors.groupingBy(s -> s.getCampaign().getCampaignId()));
+        Map<Long, Integer> cartByCampaign = new HashMap<>();
+        for (OzonPromotionCampaignProductStatistics ps : ozonPromotionCampaignProductStatisticsRepository
+                .findByCampaign_CampaignIdInAndDateBetween(campaignIds, from, to)) {
+            if (ps.getToCart() == null || ps.getToCart() <= 0) {
+                continue;
+            }
+            Long campaignId = ps.getCampaign().getCampaignId();
+            cartByCampaign.merge(campaignId, ps.getToCart(), Integer::sum);
+        }
         Map<Long, Integer> articlesCountByCampaign = new HashMap<>();
         for (Object[] row : ozonCampaignArticleRepository.countByCampaignIdIn(campaignIds)) {
             articlesCountByCampaign.put((Long) row[0], ((Number) row[1]).intValue());
@@ -1944,14 +1953,16 @@ public class AnalyticsService {
                 .map(c -> buildOzonCampaignDto(
                         c,
                         statsByCampaign.getOrDefault(c.getCampaignId(), Collections.emptyList()),
-                        articlesCountByCampaign.getOrDefault(c.getCampaignId(), 0)))
+                        articlesCountByCampaign.getOrDefault(c.getCampaignId(), 0),
+                        cartByCampaign.get(c.getCampaignId())))
                 .collect(Collectors.toList());
     }
 
     private CampaignDto buildOzonCampaignDto(
             OzonPromotionCampaign campaign,
             List<OzonPromotionCampaignStatistics> stats,
-            Integer articlesCount
+            Integer articlesCount,
+            Integer cart
     ) {
         boolean running = "CAMPAIGN_STATE_RUNNING".equals(campaign.getState());
         String type = buildOzonCampaignTypeLabel(campaign.getAdvObjectType(), campaign.getPaymentType());
@@ -1998,6 +2009,7 @@ public class AnalyticsService {
                 .ctr(ctr)
                 .cpc(cpc)
                 .costs(spend)
+                .cart(cart != null && cart > 0 ? cart : null)
                 .orders(orders)
                 .articlesCount(articlesCount)
                 .bidderStatus(resolveOzonBidderStatus(campaign.getState()))
@@ -2605,7 +2617,8 @@ public class AnalyticsService {
                             withMetrics
                                     ? campaignStatsFinal.getOrDefault(c.getCampaignId(), Collections.emptyList())
                                     : Collections.emptyList(),
-                            articlesCountByCampaign.getOrDefault(c.getCampaignId(), 0));
+                            articlesCountByCampaign.getOrDefault(c.getCampaignId(), 0),
+                            null);
                 })
                 .collect(Collectors.toList());
     }
@@ -2621,6 +2634,7 @@ public class AnalyticsService {
         int views = 0;
         int clicks = 0;
         BigDecimal spend = BigDecimal.ZERO;
+        int cart = 0;
         int orders = 0;
         for (OzonPromotionCampaignProductStatistics s : stats) {
             if (s.getViews() != null) {
@@ -2631,6 +2645,9 @@ public class AnalyticsService {
             }
             if (s.getSpend() != null) {
                 spend = spend.add(s.getSpend());
+            }
+            if (s.getToCart() != null) {
+                cart += s.getToCart();
             }
             if (s.getOrders() != null) {
                 orders += s.getOrders();
@@ -2660,6 +2677,7 @@ public class AnalyticsService {
                 .ctr(ctr)
                 .cpc(cpc)
                 .costs(spend)
+                .cart(cart > 0 ? cart : null)
                 .orders(orders)
                 .articlesCount(articlesCount)
                 .bidderStatus(resolveOzonBidderStatus(campaign.getState()))

@@ -26,6 +26,15 @@ public interface OzonPromotionCampaignProductStatisticsRepository
             LocalDate dateTo
     );
 
+    /**
+     * Product-stats по набору кампаний за период (для агрегации корзины/заказов в списке РК).
+     */
+    List<OzonPromotionCampaignProductStatistics> findByCampaign_CampaignIdInAndDateBetween(
+            Collection<Long> campaignIds,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    );
+
     Optional<OzonPromotionCampaignProductStatistics> findByCampaign_CampaignIdAndSkuAndDate(
             Long campaignId,
             Long sku,
