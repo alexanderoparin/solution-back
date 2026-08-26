@@ -381,15 +381,13 @@ public class UsersManagementController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         cabinetService.validateCabinetAccessForUpdate(cabinetId, currentUser);
-        if (request.getApiKey() != null || request.getTokenType() != null) {
-            CabinetDto updated = cabinetService.updateApiKey(cabinetId, request.getApiKey(), request.getTokenType());
-            return ResponseEntity.ok(updated);
-        }
-        if (request.getOzonPerformanceClientId() != null || request.getOzonPerformanceClientSecret() != null) {
-            CabinetDto updated = cabinetService.updateOzonPerformanceCredentials(
-                    cabinetId,
-                    request.getOzonPerformanceClientId(),
-                    request.getOzonPerformanceClientSecret());
+        boolean hasCredentialsUpdate = request.getApiKey() != null
+                || request.getTokenType() != null
+                || request.getOzonClientId() != null
+                || request.getOzonPerformanceClientId() != null
+                || request.getOzonPerformanceClientSecret() != null;
+        if (hasCredentialsUpdate) {
+            CabinetDto updated = cabinetService.updateCredentials(cabinetId, request);
             return ResponseEntity.ok(updated);
         }
         if (request.getName() != null && !request.getName().isBlank()) {

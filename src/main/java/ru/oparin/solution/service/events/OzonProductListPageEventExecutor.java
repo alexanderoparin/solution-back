@@ -10,10 +10,12 @@ import ru.oparin.solution.exception.OzonRateLimitDeferException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetUpdateErrorScope;
 import ru.oparin.solution.model.OzonApiEvent;
+import ru.oparin.solution.service.CabinetScopeStatusService;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.CabinetUpdateErrorService;
 import ru.oparin.solution.service.OzonProductCardService;
 import ru.oparin.solution.service.events.payload.OzonProductListPagePayload;
+import ru.oparin.solution.service.ozon.OzonApiCategory;
 import ru.oparin.solution.service.ozon.OzonProductsApiClient;
 
 import java.time.LocalDateTime;
@@ -32,6 +34,7 @@ public class OzonProductListPageEventExecutor implements OzonApiEventExecutor {
     private final OzonProductsApiClient productsApiClient;
     private final OzonProductCardService productCardService;
     private final CabinetUpdateErrorService cabinetUpdateErrorService;
+    private final CabinetScopeStatusService cabinetScopeStatusService;
 
     @Override
     public OzonApiEventExecutionResult execute(OzonApiEvent event) {
@@ -64,6 +67,8 @@ public class OzonProductListPageEventExecutor implements OzonApiEventExecutor {
 
             eventService.enqueuePricesCabinetEvent(cabinet.getId(), payload.includeStocks(), event.getTriggerSource());
             eventService.enqueueContentRatingCabinetEvent(cabinet.getId(), event.getTriggerSource());
+            cabinetScopeStatusService.recordSuccess(cabinet.getId(), OzonApiCategory.CATALOG);
+            cabinetScopeStatusService.recordSuccess(cabinet.getId(), OzonApiCategory.SELLER);
             log.info("Ozon каталог полностью загружен для cabinetId={}, поставлены цены и контент-рейтинг", cabinet.getId());
             return OzonApiEventExecutionResult.completedSuccessfully();
         } catch (OzonRateLimitDeferException e) {
@@ -77,6 +82,10 @@ public class OzonProductListPageEventExecutor implements OzonApiEventExecutor {
                         "Rate limit Ozon API",
                         LocalDateTime.now().plusSeconds(60)
                 );
+            }
+            if (e.getStatusCode().value() == 401 || e.getStatusCode().value() == 403) {
+                cabinetScopeStatusService.recordFailure(cabinet.getId(), OzonApiCategory.SELLER, e.getMessage());
+                cabinetScopeStatusService.recordFailure(cabinet.getId(), OzonApiCategory.CATALOG, e.getMessage());
             }
             cabinetUpdateErrorService.recordError(cabinet.getId(), CabinetUpdateErrorScope.MAIN, e.getMessage());
             return OzonApiEventExecutionResult.retryableError("Ozon API: " + e.getStatusCode() + " " + e.getMessage());

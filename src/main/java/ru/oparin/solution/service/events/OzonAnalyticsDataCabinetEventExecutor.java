@@ -8,9 +8,11 @@ import ru.oparin.solution.exception.OzonRateLimitDeferException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetUpdateErrorScope;
 import ru.oparin.solution.model.OzonApiEvent;
+import ru.oparin.solution.service.CabinetScopeStatusService;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.CabinetUpdateErrorService;
 import ru.oparin.solution.service.events.payload.OzonAnalyticsDataCabinetPayload;
+import ru.oparin.solution.service.ozon.OzonApiCategory;
 import ru.oparin.solution.service.sync.OzonProductAnalyticsSyncService;
 
 import java.time.LocalDate;
@@ -28,6 +30,7 @@ public class OzonAnalyticsDataCabinetEventExecutor implements OzonApiEventExecut
     private final CabinetService cabinetService;
     private final OzonProductAnalyticsSyncService analyticsSyncService;
     private final CabinetUpdateErrorService cabinetUpdateErrorService;
+    private final CabinetScopeStatusService cabinetScopeStatusService;
 
     @Override
     public OzonApiEventExecutionResult execute(OzonApiEvent event) {
@@ -48,6 +51,7 @@ public class OzonAnalyticsDataCabinetEventExecutor implements OzonApiEventExecut
 
         try {
             analyticsSyncService.syncAnalytics(cabinet, clientId, apiKey, dateFrom, dateTo);
+            cabinetScopeStatusService.recordSuccess(cabinet.getId(), OzonApiCategory.ANALYTICS);
             eventService.markMainCompleted(cabinet.getId());
             log.info("Ozon analytics загружена, main завершён для cabinetId={}, период={}..{}",
                     cabinet.getId(), dateFrom, dateTo);
@@ -63,6 +67,9 @@ public class OzonAnalyticsDataCabinetEventExecutor implements OzonApiEventExecut
                         "Rate limit Ozon API (analytics)",
                         LocalDateTime.now().plusSeconds(60)
                 );
+            }
+            if (e.getStatusCode().value() == 401 || e.getStatusCode().value() == 403) {
+                cabinetScopeStatusService.recordFailure(cabinet.getId(), OzonApiCategory.ANALYTICS, e.getMessage());
             }
             // Без Premium часть метрик недоступна — для базовых revenue/ordered_units обычно ок;
             // 403/400 логируем как retryable, чтобы не ронять весь sync молча.

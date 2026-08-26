@@ -8,8 +8,10 @@ import ru.oparin.solution.exception.OzonRateLimitDeferException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetUpdateErrorScope;
 import ru.oparin.solution.model.OzonApiEvent;
+import ru.oparin.solution.service.CabinetScopeStatusService;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.CabinetUpdateErrorService;
+import ru.oparin.solution.service.ozon.OzonApiCategory;
 import ru.oparin.solution.service.sync.OzonProductStocksSyncService;
 
 import java.time.LocalDateTime;
@@ -23,6 +25,7 @@ public class OzonStocksCabinetEventExecutor implements OzonApiEventExecutor {
     private final CabinetService cabinetService;
     private final OzonProductStocksSyncService stocksSyncService;
     private final CabinetUpdateErrorService cabinetUpdateErrorService;
+    private final CabinetScopeStatusService cabinetScopeStatusService;
 
     @Override
     public OzonApiEventExecutionResult execute(OzonApiEvent event) {
@@ -35,6 +38,7 @@ public class OzonStocksCabinetEventExecutor implements OzonApiEventExecutor {
 
         try {
             stocksSyncService.syncAllStocks(cabinet, clientId, apiKey);
+            cabinetScopeStatusService.recordSuccess(cabinet.getId(), OzonApiCategory.STOCKS);
             eventService.markStocksCompleted(cabinet.getId());
             eventService.enqueueAnalyticsDataCabinetEvent(cabinet.getId(), event.getTriggerSource());
             log.info("Ozon остатки загружены, аналитика поставлена в очередь cabinetId={}", cabinet.getId());
@@ -50,6 +54,9 @@ public class OzonStocksCabinetEventExecutor implements OzonApiEventExecutor {
                         "Rate limit Ozon API (stocks)",
                         LocalDateTime.now().plusSeconds(60)
                 );
+            }
+            if (e.getStatusCode().value() == 401 || e.getStatusCode().value() == 403) {
+                cabinetScopeStatusService.recordFailure(cabinet.getId(), OzonApiCategory.STOCKS, e.getMessage());
             }
             cabinetUpdateErrorService.recordError(cabinet.getId(), CabinetUpdateErrorScope.MAIN, e.getMessage());
             return OzonApiEventExecutionResult.retryableError("Ozon API stocks: " + e.getStatusCode());

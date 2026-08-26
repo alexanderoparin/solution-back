@@ -149,12 +149,21 @@ public class CabinetIntegrationMirrorService {
                         .cabinetId(cabinet.getId())
                         .integrationType(CabinetIntegrationType.WB_API)
                         .build());
-        row.setCredentialPrimary(cabinet.getApiKey());
-        row.setCredentialSecondary(null);
-        row.setMetaJson(tokenTypeMeta(cabinet.getTokenType()));
-        row.setIsValid(cabinet.getIsValid());
-        row.setLastValidatedAt(cabinet.getLastValidatedAt());
-        row.setValidationError(cabinet.getValidationError());
+        if (notBlank(cabinet.getApiKey())) {
+            row.setCredentialPrimary(cabinet.getApiKey());
+        }
+        if (cabinet.getTokenType() != null) {
+            row.setMetaJson(tokenTypeMeta(cabinet.getTokenType()));
+        }
+        if (cabinet.getIsValid() != null) {
+            row.setIsValid(cabinet.getIsValid());
+        }
+        if (cabinet.getLastValidatedAt() != null) {
+            row.setLastValidatedAt(cabinet.getLastValidatedAt());
+        }
+        if (cabinet.getValidationError() != null || Boolean.TRUE.equals(cabinet.getIsValid())) {
+            row.setValidationError(cabinet.getValidationError());
+        }
         integrationRepository.save(row);
     }
 
@@ -165,12 +174,21 @@ public class CabinetIntegrationMirrorService {
                         .cabinetId(cabinet.getId())
                         .integrationType(CabinetIntegrationType.OZON_SELLER)
                         .build());
-        row.setCredentialPrimary(cabinet.getApiKey());
-        row.setCredentialSecondary(cabinet.getOzonClientId());
-        row.setMetaJson(null);
-        row.setIsValid(cabinet.getIsValid());
-        row.setLastValidatedAt(cabinet.getLastValidatedAt());
-        row.setValidationError(cabinet.getValidationError());
+        if (notBlank(cabinet.getApiKey())) {
+            row.setCredentialPrimary(cabinet.getApiKey());
+        }
+        if (notBlank(cabinet.getOzonClientId())) {
+            row.setCredentialSecondary(cabinet.getOzonClientId());
+        }
+        if (cabinet.getIsValid() != null) {
+            row.setIsValid(cabinet.getIsValid());
+        }
+        if (cabinet.getLastValidatedAt() != null) {
+            row.setLastValidatedAt(cabinet.getLastValidatedAt());
+        }
+        if (cabinet.getValidationError() != null || Boolean.TRUE.equals(cabinet.getIsValid())) {
+            row.setValidationError(cabinet.getValidationError());
+        }
         integrationRepository.save(row);
     }
 
@@ -180,30 +198,63 @@ public class CabinetIntegrationMirrorService {
         Optional<CabinetIntegration> existing = integrationRepository
                 .findByCabinetIdAndIntegrationType(cabinet.getId(), CabinetIntegrationType.OZON_PERFORMANCE);
         if (!hasCreds) {
-            existing.ifPresent(integrationRepository::delete);
+            if (existing.isEmpty()) {
+                return;
+            }
+            CabinetIntegration row = existing.get();
+            if (!notBlank(row.getCredentialPrimary()) && !notBlank(row.getCredentialSecondary())) {
+                integrationRepository.delete(row);
+                return;
+            }
+            applyOzonPerformanceValidation(row, cabinet);
+            integrationRepository.save(row);
             return;
         }
         CabinetIntegration row = existing.orElseGet(() -> CabinetIntegration.builder()
                 .cabinetId(cabinet.getId())
                 .integrationType(CabinetIntegrationType.OZON_PERFORMANCE)
                 .build());
-        row.setCredentialPrimary(cabinet.getOzonPerformanceClientSecret());
-        row.setCredentialSecondary(cabinet.getOzonPerformanceClientId());
-        row.setMetaJson(null);
-        row.setIsValid(cabinet.getOzonPerformanceIsValid());
-        row.setLastValidatedAt(cabinet.getOzonPerformanceLastValidatedAt());
-        row.setValidationError(cabinet.getOzonPerformanceValidationError());
+        if (notBlank(cabinet.getOzonPerformanceClientSecret())) {
+            row.setCredentialPrimary(cabinet.getOzonPerformanceClientSecret());
+        }
+        if (notBlank(cabinet.getOzonPerformanceClientId())) {
+            row.setCredentialSecondary(cabinet.getOzonPerformanceClientId());
+        }
+        applyOzonPerformanceValidation(row, cabinet);
         integrationRepository.save(row);
+    }
+
+    private void applyOzonPerformanceValidation(CabinetIntegration row, Cabinet cabinet) {
+        if (cabinet.getOzonPerformanceIsValid() != null) {
+            row.setIsValid(cabinet.getOzonPerformanceIsValid());
+        }
+        if (cabinet.getOzonPerformanceLastValidatedAt() != null) {
+            row.setLastValidatedAt(cabinet.getOzonPerformanceLastValidatedAt());
+        }
+        if (cabinet.getOzonPerformanceValidationError() != null
+                || Boolean.TRUE.equals(cabinet.getOzonPerformanceIsValid())) {
+            row.setValidationError(cabinet.getOzonPerformanceValidationError());
+        }
     }
 
     private void upsertSyncState(Cabinet cabinet) {
         CabinetSyncState state = syncStateRepository.findById(cabinet.getId())
                 .orElseGet(() -> CabinetSyncState.builder().cabinetId(cabinet.getId()).build());
-        state.setLastDataUpdateAt(cabinet.getLastDataUpdateAt());
-        state.setLastDataUpdateRequestedAt(cabinet.getLastDataUpdateRequestedAt());
-        state.setLastStocksUpdateAt(cabinet.getLastStocksUpdateAt());
-        state.setLastStocksUpdateRequestedAt(cabinet.getLastStocksUpdateRequestedAt());
-        state.setLastOzonCampaignsSyncAt(cabinet.getLastOzonCampaignsSyncAt());
+        if (cabinet.getLastDataUpdateAt() != null) {
+            state.setLastDataUpdateAt(cabinet.getLastDataUpdateAt());
+        }
+        if (cabinet.getLastDataUpdateRequestedAt() != null) {
+            state.setLastDataUpdateRequestedAt(cabinet.getLastDataUpdateRequestedAt());
+        }
+        if (cabinet.getLastStocksUpdateAt() != null) {
+            state.setLastStocksUpdateAt(cabinet.getLastStocksUpdateAt());
+        }
+        if (cabinet.getLastStocksUpdateRequestedAt() != null) {
+            state.setLastStocksUpdateRequestedAt(cabinet.getLastStocksUpdateRequestedAt());
+        }
+        if (cabinet.getLastOzonCampaignsSyncAt() != null) {
+            state.setLastOzonCampaignsSyncAt(cabinet.getLastOzonCampaignsSyncAt());
+        }
         syncStateRepository.save(state);
     }
 

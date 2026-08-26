@@ -6,8 +6,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.OzonApiEvent;
+import ru.oparin.solution.service.CabinetScopeStatusService;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.events.payload.OzonCampaignStatsCabinetPayload;
+import ru.oparin.solution.service.ozon.OzonApiCategory;
 import ru.oparin.solution.service.sync.OzonProductStatsSyncResult;
 import ru.oparin.solution.service.sync.OzonPromotionCampaignSyncService;
 
@@ -25,6 +27,7 @@ public class OzonCampaignStatsCabinetEventExecutor implements OzonApiEventExecut
     private final OzonApiEventService eventService;
     private final CabinetService cabinetService;
     private final OzonPromotionCampaignSyncService campaignSyncService;
+    private final CabinetScopeStatusService cabinetScopeStatusService;
 
     @Override
     public OzonApiEventExecutionResult execute(OzonApiEvent event) {
@@ -166,6 +169,8 @@ public class OzonCampaignStatsCabinetEventExecutor implements OzonApiEventExecut
             }
 
             eventService.markCampaignsSyncCompleted(cabinet.getId());
+            cabinetScopeStatusService.recordSuccess(cabinet.getId(), OzonApiCategory.PROMOTION);
+            cabinetScopeStatusService.recordSuccess(cabinet.getId(), OzonApiCategory.PERFORMANCE);
             log.info("Ozon campaign stats sync завершён для cabinetId={}, период={}..{}, daily={}, product={}, phrases={}",
                     cabinet.getId(), dateFrom, dateTo, statsRows, productRowsTotal, searchPhrasesRowsTotal);
             return OzonApiEventExecutionResult.completedSuccessfully();
@@ -177,6 +182,8 @@ public class OzonCampaignStatsCabinetEventExecutor implements OzonApiEventExecut
                 );
             }
             if (e.getStatusCode().value() == 401 || e.getStatusCode().value() == 403) {
+                cabinetScopeStatusService.recordFailure(cabinet.getId(), OzonApiCategory.PERFORMANCE, e.getMessage());
+                cabinetScopeStatusService.recordFailure(cabinet.getId(), OzonApiCategory.PROMOTION, e.getMessage());
                 return OzonApiEventExecutionResult.finalError(
                         "Ozon Performance API: невалидные credentials (HTTP " + e.getStatusCode().value() + ")");
             }

@@ -64,7 +64,9 @@ public class CabinetDto {
         private LocalDateTime lastStocksUpdateAt;
         /** Ozon Performance API client_id. */
         private String ozonPerformanceClientId;
-        /** Задан ли client_secret (сам secret не отдаётся). */
+        /** Ozon Performance API client_secret (маскируется при maskApiKey). */
+        private String ozonPerformanceClientSecret;
+        /** Задан ли client_secret. */
         private Boolean ozonPerformanceConfigured;
         /** Результат проверки Performance credentials. */
         private Boolean ozonPerformanceIsValid;

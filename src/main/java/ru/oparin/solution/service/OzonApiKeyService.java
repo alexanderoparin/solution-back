@@ -11,6 +11,7 @@ import ru.oparin.solution.exception.OzonRateLimitDeferException;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.MarketplaceType;
+import ru.oparin.solution.service.ozon.OzonApiCategory;
 import ru.oparin.solution.service.ozon.OzonSellerApiClient;
 
 import java.time.LocalDateTime;
@@ -25,6 +26,7 @@ public class OzonApiKeyService {
 
     private final CabinetService cabinetService;
     private final OzonSellerApiClient ozonSellerApiClient;
+    private final CabinetScopeStatusService cabinetScopeStatusService;
 
     /**
      * Проверяет учётные данные Ozon-кабинета и обновляет поля валидации.
@@ -36,10 +38,12 @@ public class OzonApiKeyService {
         }
         if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
             updateValidationStatus(cabinet, false, "Api-Key не задан");
+            cabinetScopeStatusService.recordFailure(cabinet.getId(), OzonApiCategory.SELLER, "Api-Key не задан");
             return;
         }
         if (cabinet.getOzonClientId() == null || cabinet.getOzonClientId().isBlank()) {
             updateValidationStatus(cabinet, false, "Client-Id не задан");
+            cabinetScopeStatusService.recordFailure(cabinet.getId(), OzonApiCategory.SELLER, "Client-Id не задан");
             return;
         }
 
@@ -51,6 +55,7 @@ public class OzonApiKeyService {
             log.info("Проверка Ozon API ключа кабинета {} через seller/info, Client-Id={}", cabinetId, clientId);
             ozonSellerApiClient.getSellerInfo(clientId, apiKey);
             updateValidationStatus(cabinet, true, null);
+            cabinetScopeStatusService.recordSuccess(cabinetId, OzonApiCategory.SELLER);
             log.info("Ozon API ключ для кабинета {} признан валидным", cabinetId);
         } catch (OzonRateLimitDeferException e) {
             throw new UserException(
@@ -60,6 +65,7 @@ public class OzonApiKeyService {
         } catch (HttpClientErrorException e) {
             String msg = toUserMessage(e);
             updateValidationStatus(cabinet, false, msg);
+            cabinetScopeStatusService.recordFailure(cabinetId, OzonApiCategory.SELLER, msg);
             log.warn("Ozon seller/info для кабинета {}: HTTP {}", cabinetId, e.getStatusCode());
             if (e.getStatusCode().value() == 429) {
                 throw new UserException(msg, HttpStatus.TOO_MANY_REQUESTS);
@@ -74,10 +80,12 @@ public class OzonApiKeyService {
             }
             String msg = "Ошибка связи с Ozon API. Попробуйте позже.";
             updateValidationStatus(cabinet, false, msg);
+            cabinetScopeStatusService.recordFailure(cabinetId, OzonApiCategory.SELLER, msg);
             log.warn("Ozon seller/info для кабинета {}: {}", cabinetId, e.getMessage());
         } catch (Exception e) {
             String msg = "Ошибка при проверке Api-Key Ozon. Проверьте Client-Id и ключ.";
             updateValidationStatus(cabinet, false, msg);
+            cabinetScopeStatusService.recordFailure(cabinetId, OzonApiCategory.SELLER, msg);
             log.warn("Ozon seller/info для кабинета {}: {}", cabinetId, e.getMessage());
         }
     }

@@ -377,6 +377,9 @@ public class CabinetService {
         if (request.getTokenType() != null) {
             cabinet.setTokenType(request.getTokenType());
         }
+        if (request.getOzonClientId() != null) {
+            resetSellerClientId(cabinet, request.getOzonClientId());
+        }
         if (request.getOzonPerformanceClientId() != null) {
             resetPerformanceValidationAndSetClientId(cabinet, request.getOzonPerformanceClientId());
         }
@@ -435,6 +438,43 @@ public class CabinetService {
             cabinet.setOzonPerformanceClientSecret(trimmed);
         }
         ozonPerformanceApiClient.invalidateTokenCache(cabinet.getId());
+    }
+
+    /**
+     * Обновляет credentials кабинета одним запросом (Seller / WB ключ, тип токена, Performance).
+     * Пустые/отсутствующие поля не меняют соответствующие значения, кроме явной передачи.
+     */
+    @Transactional
+    public CabinetDto updateCredentials(Long cabinetId, UpdateCabinetRequest request) {
+        Cabinet cabinet = findByIdWithUserOrThrow(cabinetId);
+        if (request.getApiKey() != null) {
+            resetValidationAndSetApiKey(cabinet, request.getApiKey());
+        }
+        if (request.getTokenType() != null && cabinet.getMarketplaceType() == MarketplaceType.WB) {
+            cabinet.setTokenType(request.getTokenType());
+        }
+        if (request.getOzonClientId() != null && cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            resetSellerClientId(cabinet, request.getOzonClientId());
+        }
+        if (request.getOzonPerformanceClientId() != null && cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            resetPerformanceValidationAndSetClientId(cabinet, request.getOzonPerformanceClientId());
+        }
+        if (request.getOzonPerformanceClientSecret() != null && cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            resetPerformanceValidationAndSetClientSecret(cabinet, request.getOzonPerformanceClientSecret());
+        }
+        cabinet = save(cabinet);
+        return toDto(cabinet);
+    }
+
+    /**
+     * Сбрасывает валидацию Seller и устанавливает Client-Id Ozon.
+     */
+    public void resetSellerClientId(Cabinet cabinet, String clientId) {
+        String trimmed = clientId != null ? clientId.trim() : null;
+        cabinet.setIsValid(null);
+        cabinet.setValidationError(null);
+        cabinet.setLastValidatedAt(null);
+        cabinet.setOzonClientId(trimmed != null && !trimmed.isBlank() ? trimmed : null);
     }
 
     /**
@@ -603,10 +643,13 @@ public class CabinetService {
 
     /**
      * Сохраняет кабинет (ядро) и credentials/sync в Phase 5 таблицы.
+     * Transient-поля (ключи, метки синка) сохраняются до merge: иначе JPA теряет их на detached entity.
      */
     @Transactional
     public Cabinet save(Cabinet cabinet) {
+        TransientCabinetState transientState = TransientCabinetState.capture(cabinet);
         Cabinet saved = cabinetRepository.save(cabinet);
+        transientState.applyTo(saved);
         cabinetIntegrationMirrorService.persistFromCabinet(saved);
         return saved;
     }
@@ -788,7 +831,10 @@ public class CabinetService {
 
     private CabinetDto toDto(Cabinet cabinet, boolean maskApiKey) {
         CabinetDto.ApiKeyInfo apiKeyInfo = toApiKeyInfo(cabinet, maskApiKey);
-        List<CabinetDto.ScopeStatusDto> scopeStatuses = cabinetScopeStatusService.getStatusesByCabinetId(cabinet.getId())
+        List<CabinetDto.ScopeStatusDto> scopeStatuses = cabinetScopeStatusService
+                .getStatusesByCabinetId(
+                        cabinet.getId(),
+                        cabinet.getMarketplaceType() != null ? cabinet.getMarketplaceType() : MarketplaceType.WB)
                 .stream()
                 .map(s -> CabinetDto.ScopeStatusDto.builder()
                         .category(s.category())
@@ -832,6 +878,9 @@ public class CabinetService {
                 .lastDataUpdateRequestedAt(cabinet.getLastDataUpdateRequestedAt())
                 .lastStocksUpdateAt(cabinet.getLastStocksUpdateAt())
                 .ozonPerformanceClientId(cabinet.getOzonPerformanceClientId())
+                .ozonPerformanceClientSecret(maskApiKey
+                        ? maskApiKey(cabinet.getOzonPerformanceClientSecret())
+                        : cabinet.getOzonPerformanceClientSecret())
                 .ozonPerformanceConfigured(
                         cabinet.getOzonPerformanceClientSecret() != null
                                 && !cabinet.getOzonPerformanceClientSecret().isBlank())
@@ -846,5 +895,69 @@ public class CabinetService {
         final int visible = 8;
         if (apiKey.length() <= visible * 2) return "********";
         return apiKey.substring(0, visible) + "..." + apiKey.substring(apiKey.length() - visible);
+    }
+
+    /**
+     * In-memory overlay {@link Cabinet}: не персистится JPA, но нужен для mirror в integrations/sync_state.
+     */
+    private record TransientCabinetState(
+            String apiKey,
+            String ozonClientId,
+            String ozonPerformanceClientId,
+            String ozonPerformanceClientSecret,
+            Boolean ozonPerformanceIsValid,
+            LocalDateTime ozonPerformanceLastValidatedAt,
+            String ozonPerformanceValidationError,
+            LocalDateTime lastOzonCampaignsSyncAt,
+            CabinetTokenType tokenType,
+            Boolean isValid,
+            LocalDateTime lastValidatedAt,
+            String validationError,
+            LocalDateTime lastDataUpdateAt,
+            LocalDateTime lastDataUpdateRequestedAt,
+            LocalDateTime lastStocksUpdateRequestedAt,
+            LocalDateTime lastStocksUpdateAt
+    ) {
+        static TransientCabinetState capture(Cabinet cabinet) {
+            return new TransientCabinetState(
+                    cabinet.getApiKey(),
+                    cabinet.getOzonClientId(),
+                    cabinet.getOzonPerformanceClientId(),
+                    cabinet.getOzonPerformanceClientSecret(),
+                    cabinet.getOzonPerformanceIsValid(),
+                    cabinet.getOzonPerformanceLastValidatedAt(),
+                    cabinet.getOzonPerformanceValidationError(),
+                    cabinet.getLastOzonCampaignsSyncAt(),
+                    cabinet.getTokenType(),
+                    cabinet.getIsValid(),
+                    cabinet.getLastValidatedAt(),
+                    cabinet.getValidationError(),
+                    cabinet.getLastDataUpdateAt(),
+                    cabinet.getLastDataUpdateRequestedAt(),
+                    cabinet.getLastStocksUpdateRequestedAt(),
+                    cabinet.getLastStocksUpdateAt()
+            );
+        }
+
+        void applyTo(Cabinet cabinet) {
+            cabinet.setApiKey(apiKey);
+            cabinet.setOzonClientId(ozonClientId);
+            cabinet.setOzonPerformanceClientId(ozonPerformanceClientId);
+            cabinet.setOzonPerformanceClientSecret(ozonPerformanceClientSecret);
+            cabinet.setOzonPerformanceIsValid(ozonPerformanceIsValid);
+            cabinet.setOzonPerformanceLastValidatedAt(ozonPerformanceLastValidatedAt);
+            cabinet.setOzonPerformanceValidationError(ozonPerformanceValidationError);
+            cabinet.setLastOzonCampaignsSyncAt(lastOzonCampaignsSyncAt);
+            if (tokenType != null) {
+                cabinet.setTokenType(tokenType);
+            }
+            cabinet.setIsValid(isValid);
+            cabinet.setLastValidatedAt(lastValidatedAt);
+            cabinet.setValidationError(validationError);
+            cabinet.setLastDataUpdateAt(lastDataUpdateAt);
+            cabinet.setLastDataUpdateRequestedAt(lastDataUpdateRequestedAt);
+            cabinet.setLastStocksUpdateRequestedAt(lastStocksUpdateRequestedAt);
+            cabinet.setLastStocksUpdateAt(lastStocksUpdateAt);
+        }
     }
 }

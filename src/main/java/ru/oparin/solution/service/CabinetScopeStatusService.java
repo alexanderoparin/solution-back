@@ -7,8 +7,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetScopeStatus;
+import ru.oparin.solution.model.MarketplaceType;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.CabinetScopeStatusRepository;
+import ru.oparin.solution.service.ozon.OzonApiCategory;
 import ru.oparin.solution.service.wb.WbApiCategory;
 
 import java.time.Duration;
@@ -23,8 +25,8 @@ import java.util.stream.Collectors;
 import static java.util.stream.Collectors.toMap;
 
 /**
- * Фиксация результата доступа к категориям WB API по кабинету.
- * Вызывается после каждого блока обновлений (success) или при 401 (failure).
+ * Фиксация результата доступа к категориям API по кабинету (WB и Ozon).
+ * Вызывается после блоков обновлений (success) или при отказе в доступе (failure).
  */
 @Service
 @RequiredArgsConstructor
@@ -43,23 +45,36 @@ public class CabinetScopeStatusService {
     private final ObjectProvider<WbApiKeyService> wbApiKeyServiceProvider;
 
     /**
-     * Записать успешное завершение блока обновлений по категории для кабинета.
+     * Записать успешное завершение блока обновлений по категории WB для кабинета.
      */
     @Transactional
     public void recordSuccess(Long cabinetId, WbApiCategory category) {
+        recordSuccess(cabinetId, category.name(), category.getDisplayName());
+    }
+
+    /**
+     * Записать успешное завершение блока обновлений по категории Ozon для кабинета.
+     */
+    @Transactional
+    public void recordSuccess(Long cabinetId, OzonApiCategory category) {
+        recordSuccess(cabinetId, category.name(), category.getDisplayName());
+    }
+
+    @Transactional
+    public void recordSuccess(Long cabinetId, String categoryCode, String displayNameForLog) {
         LocalDateTime now = LocalDateTime.now();
-        CabinetScopeStatus status = findOrCreate(cabinetId, category);
+        CabinetScopeStatus status = findOrCreate(cabinetId, categoryCode);
         status.setLastCheckedAt(now);
         status.setSuccess(true);
         status.setErrorMessage(null);
         repository.save(status);
-        log.debug("Кабинет {}: категория {} — успех", cabinetId, category.getDisplayName());
+        log.debug("Кабинет {}: категория {} — успех", cabinetId, displayNameForLog != null ? displayNameForLog : categoryCode);
     }
 
     private static final int MAX_ERROR_MESSAGE_LENGTH = 500;
 
     /**
-     * Записать неуспех (401 или иная ошибка доступа) по категории для кабинета.
+     * Записать неуспех (401 или иная ошибка доступа) по категории WB для кабинета.
      * Для «Маркетплейс» при 401 сразу обновляет статус через /ping (без записи сырого ответа синка).
      */
     @Transactional
@@ -70,7 +85,15 @@ public class CabinetScopeStatusService {
             wbApiKeyServiceProvider.getObject().pingCategoryForCabinet(cabinetId, WbApiCategory.MARKETPLACE);
             return;
         }
-        saveFailure(cabinetId, category, errorMessage);
+        saveFailure(cabinetId, category.name(), errorMessage);
+    }
+
+    /**
+     * Записать неуспех по категории Ozon для кабинета.
+     */
+    @Transactional
+    public void recordFailure(Long cabinetId, OzonApiCategory category, String errorMessage) {
+        saveFailure(cabinetId, category.name(), errorMessage);
     }
 
     /**
@@ -78,17 +101,17 @@ public class CabinetScopeStatusService {
      */
     @Transactional
     public void recordFailureFromPing(Long cabinetId, WbApiCategory category, String errorMessage) {
-        saveFailure(cabinetId, category, errorMessage);
+        saveFailure(cabinetId, category.name(), errorMessage);
     }
 
-    private void saveFailure(Long cabinetId, WbApiCategory category, String errorMessage) {
+    private void saveFailure(Long cabinetId, String categoryCode, String errorMessage) {
         LocalDateTime now = LocalDateTime.now();
-        CabinetScopeStatus status = findOrCreate(cabinetId, category);
+        CabinetScopeStatus status = findOrCreate(cabinetId, categoryCode);
         status.setLastCheckedAt(now);
         status.setSuccess(false);
         status.setErrorMessage(sanitizeErrorMessage(errorMessage));
         repository.save(status);
-        log.debug("Кабинет {}: категория {} — неуспех: {}", cabinetId, category.getDisplayName(), errorMessage);
+        log.debug("Кабинет {}: категория {} — неуспех: {}", cabinetId, categoryCode, errorMessage);
     }
 
     private static boolean isUnauthorizedScopeError(String errorMessage) {
@@ -141,7 +164,7 @@ public class CabinetScopeStatusService {
     /**
      * Категории WB API, по которым показываем статус в профиле (те, что используем в синхронизации).
      */
-    private static final List<WbApiCategory> DISPLAYED_CATEGORIES = List.of(
+    private static final List<WbApiCategory> WB_DISPLAYED_CATEGORIES = List.of(
             WbApiCategory.CONTENT,
             WbApiCategory.ANALYTICS,
             WbApiCategory.PRICES_AND_DISCOUNTS,
@@ -151,32 +174,48 @@ public class CabinetScopeStatusService {
     );
 
     /**
-     * Статусы по всем отображаемым категориям для кабинета (для DTO).
+     * Статусы по отображаемым категориям для кабинета (для DTO).
+     * Набор категорий зависит от маркетплейса.
      * Для категорий, по которым ещё не было проверки, возвращаются null в lastCheckedAt и success.
      */
     @Transactional(readOnly = true)
     public List<CabinetScopeStatusDto> getStatusesByCabinetId(Long cabinetId) {
-        Map<WbApiCategory, CabinetScopeStatusDto> fromDb = repository.findByCabinetIdOrderByCategory(cabinetId)
+        Cabinet cabinet = cabinetRepository.findById(cabinetId).orElse(null);
+        MarketplaceType marketplaceType = cabinet != null && cabinet.getMarketplaceType() != null
+                ? cabinet.getMarketplaceType()
+                : MarketplaceType.WB;
+        return getStatusesByCabinetId(cabinetId, marketplaceType);
+    }
+
+    /**
+     * Статусы по отображаемым категориям для кабинета с явным маркетплейсом.
+     */
+    @Transactional(readOnly = true)
+    public List<CabinetScopeStatusDto> getStatusesByCabinetId(Long cabinetId, MarketplaceType marketplaceType) {
+        Map<String, CabinetScopeStatusDto> fromDb = repository.findByCabinetIdOrderByCategory(cabinetId)
                 .stream()
-                .collect(toMap(CabinetScopeStatus::getCategory, s -> toDto(s)));
-        return DISPLAYED_CATEGORIES.stream()
-                .map(cat -> fromDb.getOrDefault(cat, new CabinetScopeStatusDto(
-                        cat.name(),
-                        cat.getDisplayName(),
-                        null,
-                        null,
-                        null,
-                        null,
-                        false)))
+                .collect(toMap(CabinetScopeStatus::getCategory, this::toDto, (a, b) -> a));
+
+        if (marketplaceType == MarketplaceType.OZON) {
+            return OzonApiCategory.displayed().stream()
+                    .map(cat -> fromDb.getOrDefault(cat.name(), emptyDto(cat.name(), cat.getDisplayName())))
+                    .collect(Collectors.toList());
+        }
+        return WB_DISPLAYED_CATEGORIES.stream()
+                .map(cat -> fromDb.getOrDefault(cat.name(), emptyDto(cat.name(), cat.getDisplayName())))
                 .collect(Collectors.toList());
     }
 
-    private static CabinetScopeStatusDto toDto(CabinetScopeStatus s) {
+    private static CabinetScopeStatusDto emptyDto(String category, String displayName) {
+        return new CabinetScopeStatusDto(category, displayName, null, null, null, null, false);
+    }
+
+    private CabinetScopeStatusDto toDto(CabinetScopeStatus s) {
         LocalDateTime until = s.getWriteBlockedUntil();
         boolean writeReadOnly = until != null && LocalDateTime.now().isBefore(until);
         return new CabinetScopeStatusDto(
-                s.getCategory().name(),
-                s.getCategory().getDisplayName(),
+                s.getCategory(),
+                resolveDisplayName(s.getCategory()),
                 s.getLastCheckedAt(),
                 s.getSuccess(),
                 s.getErrorMessage(),
@@ -184,12 +223,28 @@ public class CabinetScopeStatusService {
                 writeReadOnly);
     }
 
+    private static String resolveDisplayName(String categoryCode) {
+        if (categoryCode == null || categoryCode.isBlank()) {
+            return categoryCode;
+        }
+        try {
+            return WbApiCategory.valueOf(categoryCode).getDisplayName();
+        } catch (IllegalArgumentException ignored) {
+            // Ozon или неизвестный код
+        }
+        try {
+            return OzonApiCategory.valueOf(categoryCode).getDisplayName();
+        } catch (IllegalArgumentException ignored) {
+            return categoryCode;
+        }
+    }
+
     /**
      * Активная блокировка записи по категории «Продвижение» (start/pause РК).
      */
     @Transactional
     public Optional<PromotionWriteBlock> getActivePromotionWriteBlock(Long cabinetId) {
-        return getActiveWriteBlock(cabinetId, WbApiCategory.PROMOTION, true);
+        return getActiveWriteBlock(cabinetId, WbApiCategory.PROMOTION.name(), true);
     }
 
     /**
@@ -197,7 +252,7 @@ public class CabinetScopeStatusService {
      */
     @Transactional
     public void recordPromotionWriteReadOnlyBlock(Long cabinetId) {
-        CabinetScopeStatus status = findOrCreate(cabinetId, WbApiCategory.PROMOTION);
+        CabinetScopeStatus status = findOrCreate(cabinetId, WbApiCategory.PROMOTION.name());
         LocalDateTime now = LocalDateTime.now();
         status.setLastCheckedAt(now);
         status.setWriteBlockedUntil(now.plus(PROMOTION_WRITE_BLOCK_DURATION));
@@ -211,7 +266,7 @@ public class CabinetScopeStatusService {
      */
     @Transactional
     public void clearPromotionWriteBlock(Long cabinetId) {
-        repository.findByCabinetIdAndCategory(cabinetId, WbApiCategory.PROMOTION).ifPresent(status -> {
+        repository.findByCabinetIdAndCategory(cabinetId, WbApiCategory.PROMOTION.name()).ifPresent(status -> {
             status.setWriteBlockedUntil(null);
             if (isPromotionReadOnlyErrorMessage(status.getErrorMessage())) {
                 status.setErrorMessage(null);
@@ -232,10 +287,10 @@ public class CabinetScopeStatusService {
 
     private Optional<PromotionWriteBlock> getActiveWriteBlock(
             Long cabinetId,
-            WbApiCategory category,
+            String categoryCode,
             boolean clearIfExpired
     ) {
-        Optional<CabinetScopeStatus> row = repository.findByCabinetIdAndCategory(cabinetId, category);
+        Optional<CabinetScopeStatus> row = repository.findByCabinetIdAndCategory(cabinetId, categoryCode);
         if (row.isEmpty()) {
             return Optional.empty();
         }
@@ -266,8 +321,8 @@ public class CabinetScopeStatusService {
     public record PromotionWriteBlock(LocalDateTime blockedUntil, String message, long secondsRemaining) {
     }
 
-    private CabinetScopeStatus findOrCreate(Long cabinetId, WbApiCategory category) {
-        Optional<CabinetScopeStatus> existing = repository.findByCabinetIdAndCategory(cabinetId, category);
+    private CabinetScopeStatus findOrCreate(Long cabinetId, String categoryCode) {
+        Optional<CabinetScopeStatus> existing = repository.findByCabinetIdAndCategory(cabinetId, categoryCode);
         if (existing.isPresent()) {
             return existing.get();
         }
@@ -275,7 +330,7 @@ public class CabinetScopeStatusService {
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден: " + cabinetId));
         CabinetScopeStatus status = CabinetScopeStatus.builder()
                 .cabinet(cabinet)
-                .category(category)
+                .category(categoryCode)
                 .lastCheckedAt(LocalDateTime.now())
                 .success(false)
                 .build();

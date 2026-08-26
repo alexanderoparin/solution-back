@@ -2,13 +2,13 @@ package ru.oparin.solution.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-import ru.oparin.solution.service.wb.WbApiCategory;
 
 import java.time.LocalDateTime;
 
 /**
- * Результат последней проверки доступа к категории WB API по кабинету.
- * Обновляется после каждого блока обновлений: при успехе — success=true, при 401 — success=false.
+ * Результат последней проверки доступа к категории API по кабинету (WB или Ozon).
+ * {@code category} — код категории ({@code CONTENT}, {@code SELLER} и т.п.).
+ * Обновляется после блоков обновлений: при успехе — success=true, при отказе — success=false.
  */
 @Entity
 @Table(name = "cabinet_scope_status", schema = "solution",
@@ -35,11 +35,10 @@ public class CabinetScopeStatus {
     private Cabinet cabinet;
 
     /**
-     * Категория WB API (контент, аналитика, продвижение и т.д.).
+     * Код категории API (имя enum WB или Ozon, например {@code CONTENT}, {@code SELLER}).
      */
-    @Enumerated(EnumType.STRING)
     @Column(name = "category", nullable = false, length = 50)
-    private WbApiCategory category;
+    private String category;
 
     /**
      * Время последней проверки доступа к категории.

@@ -30,6 +30,12 @@ public class UpdateCabinetRequest {
     private CabinetTokenType tokenType;
 
     /**
+     * Ozon Seller Client-Id (опционально, только OZON).
+     */
+    @Size(max = 128)
+    private String ozonClientId;
+
+    /**
      * Ozon Performance API client_id (опционально, только OZON).
      */
     @Size(max = 128)

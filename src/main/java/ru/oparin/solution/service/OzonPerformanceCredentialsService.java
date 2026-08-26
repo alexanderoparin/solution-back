@@ -10,6 +10,7 @@ import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.MarketplaceType;
+import ru.oparin.solution.service.ozon.OzonApiCategory;
 import ru.oparin.solution.service.ozon.OzonPerformanceApiClient;
 
 import java.time.LocalDateTime;
@@ -24,6 +25,7 @@ public class OzonPerformanceCredentialsService {
 
     private final CabinetService cabinetService;
     private final OzonPerformanceApiClient performanceApiClient;
+    private final CabinetScopeStatusService cabinetScopeStatusService;
 
     /**
      * Проверяет Performance credentials кабинета и обновляет поля валидации.
@@ -37,10 +39,14 @@ public class OzonPerformanceCredentialsService {
         String clientSecret = cabinet.getOzonPerformanceClientSecret();
         if (clientId == null || clientId.isBlank()) {
             updateValidationStatus(cabinet, false, "Performance client_id не задан");
+            cabinetScopeStatusService.recordFailure(
+                    cabinet.getId(), OzonApiCategory.PERFORMANCE, "Performance client_id не задан");
             return;
         }
         if (clientSecret == null || clientSecret.isBlank()) {
             updateValidationStatus(cabinet, false, "Performance client_secret не задан");
+            cabinetScopeStatusService.recordFailure(
+                    cabinet.getId(), OzonApiCategory.PERFORMANCE, "Performance client_secret не задан");
             return;
         }
 
@@ -50,18 +56,22 @@ public class OzonPerformanceCredentialsService {
             performanceApiClient.requestToken(clientId.trim(), clientSecret.trim());
             performanceApiClient.invalidateTokenCache(cabinetId);
             updateValidationStatus(cabinet, true, null);
+            cabinetScopeStatusService.recordSuccess(cabinetId, OzonApiCategory.PERFORMANCE);
             log.info("Ozon Performance credentials для кабинета {} валидны", cabinetId);
         } catch (HttpClientErrorException e) {
             String msg = toUserMessage(e);
             updateValidationStatus(cabinet, false, msg);
+            cabinetScopeStatusService.recordFailure(cabinetId, OzonApiCategory.PERFORMANCE, msg);
             log.warn("Ozon Performance token для кабинета {}: HTTP {}", cabinetId, e.getStatusCode());
         } catch (RestClientException e) {
             String msg = "Ошибка связи с Ozon Performance API. Попробуйте позже.";
             updateValidationStatus(cabinet, false, msg);
+            cabinetScopeStatusService.recordFailure(cabinetId, OzonApiCategory.PERFORMANCE, msg);
             log.warn("Ozon Performance token для кабинета {}: {}", cabinetId, e.getMessage());
         } catch (Exception e) {
             String msg = "Ошибка при проверке Performance credentials Ozon.";
             updateValidationStatus(cabinet, false, msg);
+            cabinetScopeStatusService.recordFailure(cabinetId, OzonApiCategory.PERFORMANCE, msg);
             log.warn("Ozon Performance token для кабинета {}: {}", cabinetId, e.getMessage());
         }
     }
