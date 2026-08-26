@@ -88,7 +88,7 @@ public class OzonProductsApiClient {
     }
 
     /**
-     * Аналитика продаж по SKU и дню (базовые метрики без Premium).
+     * Аналитика продаж по SKU и дню (метрики воронки + заказы).
      */
     public OzonAnalyticsDataResponse getAnalyticsData(
             String clientId,
@@ -98,10 +98,33 @@ public class OzonProductsApiClient {
             int limit,
             int offset
     ) {
+        return getAnalyticsData(
+                clientId,
+                apiKey,
+                dateFrom,
+                dateTo,
+                limit,
+                offset,
+                List.of("hits_view_pdp", "hits_tocart", "conv_tocart", "ordered_units", "revenue")
+        );
+    }
+
+    /**
+     * Аналитика прод sales с явным списком метрик (порядок важен для разбора ответа).
+     */
+    public OzonAnalyticsDataResponse getAnalyticsData(
+            String clientId,
+            String apiKey,
+            String dateFrom,
+            String dateTo,
+            int limit,
+            int offset,
+            List<String> metrics
+    ) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("date_from", dateFrom);
         body.put("date_to", dateTo);
-        body.put("metrics", List.of("revenue", "ordered_units"));
+        body.put("metrics", metrics);
         body.put("dimension", List.of("sku", "day"));
         body.put("limit", limit > 0 ? limit : 1000);
         body.put("offset", Math.max(0, offset));

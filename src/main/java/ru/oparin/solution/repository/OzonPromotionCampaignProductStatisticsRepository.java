@@ -35,6 +35,20 @@ public interface OzonPromotionCampaignProductStatisticsRepository
             LocalDate dateTo
     );
 
+    /**
+     * Product-stats кабинета за период (для сводной аналитики).
+     */
+    @Query("""
+            SELECT s FROM OzonPromotionCampaignProductStatistics s
+            WHERE s.campaign.cabinet.id = :cabinetId
+              AND s.date BETWEEN :dateFrom AND :dateTo
+            """)
+    List<OzonPromotionCampaignProductStatistics> findByCampaign_Cabinet_IdAndDateBetween(
+            @Param("cabinetId") Long cabinetId,
+            @Param("dateFrom") LocalDate dateFrom,
+            @Param("dateTo") LocalDate dateTo
+    );
+
     Optional<OzonPromotionCampaignProductStatistics> findByCampaign_CampaignIdAndSkuAndDate(
             Long campaignId,
             Long sku,

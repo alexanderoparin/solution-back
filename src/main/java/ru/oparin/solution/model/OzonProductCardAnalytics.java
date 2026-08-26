@@ -70,6 +70,24 @@ public class OzonProductCardAnalytics {
     private BigDecimal revenue;
 
     /**
+     * Просмотры карточки ({@code hits_view_pdp}).
+     */
+    @Column(name = "hits_view_pdp")
+    private Integer hitsViewPdp;
+
+    /**
+     * Добавления в корзину ({@code hits_tocart}).
+     */
+    @Column(name = "hits_tocart")
+    private Integer hitsTocart;
+
+    /**
+     * Конверсия в корзину, % ({@code conv_tocart}).
+     */
+    @Column(name = "conv_tocart", precision = 10, scale = 4)
+    private BigDecimal convTocart;
+
+    /**
      * Дата создания записи.
      */
     @CreatedDate
