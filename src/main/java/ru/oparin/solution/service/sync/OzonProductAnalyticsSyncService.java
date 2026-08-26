@@ -104,8 +104,12 @@ public class OzonProductAnalyticsSyncService {
                     0,
                     EXTENDED_METRICS
             );
-            if (probe != null) {
+            if (probe != null && responseHasExtendedMetrics(probe)) {
                 return MetricsLayout.extended();
+            }
+            if (probe != null) {
+                log.info("Ozon analytics: API вернул меньше {} метрик, используем базовый набор",
+                        EXTENDED_METRICS.size());
             }
         } catch (HttpClientErrorException e) {
             log.info("Ozon analytics: расширенные метрики недоступны (HTTP {}), используем базовый набор",
@@ -115,6 +119,22 @@ public class OzonProductAnalyticsSyncService {
                     e.getMessage());
         }
         return MetricsLayout.basic();
+    }
+
+    /**
+     * Ozon может ответить HTTP 200 на запрос расширенных метрик, но вернуть только ordered_units/revenue.
+     */
+    private static boolean responseHasExtendedMetrics(OzonAnalyticsDataResponse response) {
+        if (response.getResult() == null || response.getResult().getData() == null) {
+            return false;
+        }
+        for (OzonAnalyticsDataResponse.Row row : response.getResult().getData()) {
+            List<Double> metrics = row.getMetrics();
+            if (metrics != null && metrics.size() >= EXTENDED_METRICS.size()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Map<Long, Long> buildSkuToProductIdMap(Long cabinetId) {
@@ -166,6 +186,10 @@ public class OzonProductAnalyticsSyncService {
                 entity.setHitsViewPdp(parsed.hitsViewPdp());
                 entity.setHitsTocart(parsed.hitsTocart());
                 entity.setConvTocart(parsed.convTocart());
+            } else {
+                entity.setHitsViewPdp(null);
+                entity.setHitsTocart(null);
+                entity.setConvTocart(null);
             }
             toSave.add(entity);
         }
