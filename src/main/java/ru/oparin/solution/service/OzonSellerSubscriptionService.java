@@ -151,11 +151,11 @@ public class OzonSellerSubscriptionService {
             return new ResolvedSubscription(OzonSellerSubscriptionType.UNSPECIFIED, false);
         }
 
-        OzonProductsApiClient.PremiumLkProbeResult probeResult = probePremiumLkAccess(cabinetId, clientId, apiKey);
-        if (probeResult == OzonProductsApiClient.PremiumLkProbeResult.HAS_PREMIUM) {
-            return new ResolvedSubscription(sellerInfoType, true);
-        }
-        if (probeResult == OzonProductsApiClient.PremiumLkProbeResult.NO_PREMIUM) {
+        Boolean premiumProbe = probePremiumLkAccess(cabinetId, clientId, apiKey);
+        if (premiumProbe != null) {
+            if (premiumProbe) {
+                return new ResolvedSubscription(sellerInfoType, true);
+            }
             log.info(
                     "Ozon subscription cabinetId={}: seller/info={} is_premium={}, probe Premium=нет → Без Premium",
                     cabinetId,
@@ -165,16 +165,23 @@ public class OzonSellerSubscriptionService {
             return new ResolvedSubscription(OzonSellerSubscriptionType.UNSPECIFIED, false);
         }
 
+        // Ozon seller/info часто отдаёт type=PREMIUM всем; без probe не понижаем до «Без Premium».
         log.info(
-                "Ozon subscription cabinetId={}: probe Premium неоднозначен, используем seller/info={}",
+                "Ozon subscription cabinetId={}: probe Premium неоднозначен, seller/info={} (is_premium={})",
                 cabinetId,
-                sellerInfoType
+                sellerInfoType,
+                sellerInfoPremium
         );
-        boolean isPremium = !Boolean.FALSE.equals(sellerInfoPremium);
-        return new ResolvedSubscription(sellerInfoType, isPremium);
+        if (Boolean.FALSE.equals(sellerInfoPremium)) {
+            return new ResolvedSubscription(OzonSellerSubscriptionType.UNSPECIFIED, false);
+        }
+        return new ResolvedSubscription(sellerInfoType, true);
     }
 
-    private OzonProductsApiClient.PremiumLkProbeResult probePremiumLkAccess(
+    /**
+     * @return {@code true} — Premium подтверждён, {@code false} — бесплатный тариф, {@code null} — неизвестно
+     */
+    private Boolean probePremiumLkAccess(
             Long cabinetId,
             String clientId,
             String apiKey
@@ -183,48 +190,58 @@ public class OzonSellerSubscriptionService {
                 ozonProductsApiClient.probePremiumLkViaAnalyticsDateRange(clientId, apiKey);
         log.info("Ozon subscription cabinetId={}: probe Premium via analytics date range={}",
                 cabinetId, viaAnalytics);
-        if (viaAnalytics != OzonProductsApiClient.PremiumLkProbeResult.INCONCLUSIVE) {
-            return viaAnalytics;
+        if (viaAnalytics == OzonProductsApiClient.PremiumLkProbeResult.HAS_PREMIUM) {
+            return true;
+        }
+        if (viaAnalytics == OzonProductsApiClient.PremiumLkProbeResult.NO_PREMIUM) {
+            return false;
         }
 
-        Long sku = findProbeSku(cabinetId, clientId, apiKey);
-        if (sku == null) {
-            log.info("Ozon subscription cabinetId={}: probe Premium via product-queries пропущен — нет SKU",
-                    cabinetId);
-            return OzonProductsApiClient.PremiumLkProbeResult.INCONCLUSIVE;
+        for (Long sku : findProbeSkus(cabinetId, clientId, apiKey)) {
+            OzonProductsApiClient.PremiumLkProbeResult viaQueries =
+                    ozonProductsApiClient.probePremiumLkViaProductQueriesSort(clientId, apiKey, sku);
+            log.info("Ozon subscription cabinetId={}: probe Premium via product-queries BY_VIEWS={}, SKU={}",
+                    cabinetId, viaQueries, sku);
+            if (viaQueries == OzonProductsApiClient.PremiumLkProbeResult.HAS_PREMIUM) {
+                return true;
+            }
+            if (viaQueries == OzonProductsApiClient.PremiumLkProbeResult.NO_PREMIUM) {
+                return false;
+            }
         }
 
-        OzonProductsApiClient.PremiumLkProbeResult viaQueries =
-                ozonProductsApiClient.probePremiumLkViaProductQueriesSort(clientId, apiKey, sku);
-        log.info("Ozon subscription cabinetId={}: probe Premium via product-queries BY_VIEWS={}, SKU={}",
-                cabinetId, viaQueries, sku);
-        return viaQueries;
+        log.info("Ozon subscription cabinetId={}: probe Premium не дал однозначного ответа", cabinetId);
+        return null;
     }
 
-    private Long findProbeSku(Long cabinetId, String clientId, String apiKey) {
-        List<Long> skusFromDb = ozonProductCardRepository.findSkusByCabinetId(cabinetId, PageRequest.of(0, 1));
-        if (skusFromDb != null && !skusFromDb.isEmpty() && skusFromDb.get(0) != null) {
-            return skusFromDb.get(0);
+    private List<Long> findProbeSkus(Long cabinetId, String clientId, String apiKey) {
+        List<Long> skus = new java.util.ArrayList<>();
+        List<Long> skusFromDb = ozonProductCardRepository.findSkusByCabinetId(cabinetId, PageRequest.of(0, 3));
+        if (skusFromDb != null) {
+            skusFromDb.stream().filter(sku -> sku != null).forEach(skus::add);
+        }
+        if (!skus.isEmpty()) {
+            return skus;
         }
 
         try {
-            OzonProductListResponse response = ozonProductsApiClient.listProducts(clientId, apiKey, "", 1);
+            OzonProductListResponse response = ozonProductsApiClient.listProducts(clientId, apiKey, "", 3);
             if (response == null || response.getResult() == null) {
-                return null;
+                return skus;
             }
             List<OzonProductListResponse.Item> items = response.getResult().getItems();
-            if (items == null || items.isEmpty()) {
-                return null;
+            if (items == null) {
+                return skus;
             }
             for (OzonProductListResponse.Item item : items) {
                 if (item != null && item.getSku() != null) {
-                    return item.getSku();
+                    skus.add(item.getSku());
                 }
             }
         } catch (Exception e) {
             log.warn("Ozon subscription probe: не удалось получить SKU из product/list: {}", e.getMessage());
         }
-        return null;
+        return skus;
     }
 
     private void saveSyncState(

@@ -140,7 +140,8 @@ public class OzonProductsApiClient {
         );
     }
 
-    private static final DateTimeFormatter ANALYTICS_PROBE_INSTANT =
+    private static final DateTimeFormatter ANALYTICS_PROBE_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter PRODUCT_QUERIES_PROBE_INSTANT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(java.time.ZoneOffset.UTC);
 
     /**
@@ -159,20 +160,20 @@ public class OzonProductsApiClient {
      * Probe Premium в ЛК: без Premium analytics/data не принимает период старше ~3 месяцев.
      */
     public PremiumLkProbeResult probePremiumLkViaAnalyticsDateRange(String clientId, String apiKey) {
-        LocalDate recentTo = LocalDate.now();
-        LocalDate recentFrom = recentTo.minusDays(7);
+        LocalDate recentTo = LocalDate.now().minusDays(1);
+        LocalDate recentFrom = recentTo.minusDays(6);
         if (!canQueryAnalyticsPeriod(clientId, apiKey, recentFrom, recentTo)) {
             return PremiumLkProbeResult.INCONCLUSIVE;
         }
 
-        LocalDate oldTo = LocalDate.now().minusDays(100);
-        LocalDate oldFrom = oldTo.minusDays(7);
+        LocalDate oldTo = LocalDate.now().minusDays(91);
+        LocalDate oldFrom = oldTo.minusDays(13);
         try {
             getAnalyticsData(
                     clientId,
                     apiKey,
-                    formatProbeInstant(oldFrom),
-                    formatProbeInstant(oldTo),
+                    formatProbeDate(oldFrom),
+                    formatProbeDate(oldTo),
                     1,
                     0,
                     List.of("ordered_units", "revenue")
@@ -189,21 +190,25 @@ public class OzonProductsApiClient {
     }
 
     /**
-     * Probe Premium: {@code BY_VIEWS} доступен только с Premium+, {@code BY_SEARCHES} — всем.
+     * Probe Premium: {@code BY_VIEWS} доступен только с Premium и выше.
+     * HTTP 400 «нет данных за период» означает, что подписка прошла проверку.
      */
     public PremiumLkProbeResult probePremiumLkViaProductQueriesSort(String clientId, String apiKey, long sku) {
-        LocalDate dateTo = LocalDate.now();
-        LocalDate dateFrom = dateTo.minusDays(28);
-        String dateFromStr = formatProbeInstant(dateFrom);
-        String dateToStr = formatProbeInstant(dateTo);
+        LocalDate dateTo = LocalDate.now().minusDays(1);
+        LocalDate dateFrom = dateTo.minusDays(27);
+        String dateFromStr = formatProductQueriesInstant(dateFrom);
+        String dateToStr = formatProductQueriesInstant(dateTo);
 
-        if (!tryProductQueriesDetails(clientId, apiKey, sku, dateFromStr, dateToStr, "BY_SEARCHES")) {
-            return PremiumLkProbeResult.INCONCLUSIVE;
-        }
         try {
             postProductQueriesDetails(clientId, apiKey, sku, dateFromStr, dateToStr, "BY_VIEWS");
             return PremiumLkProbeResult.HAS_PREMIUM;
         } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().value() == 403) {
+                return PremiumLkProbeResult.NO_PREMIUM;
+            }
+            if (e.getStatusCode().value() == 400 && isNoDataForPeriod(e.getResponseBodyAsString())) {
+                return PremiumLkProbeResult.HAS_PREMIUM;
+            }
             if (isPremiumSubscriptionDenied(e)) {
                 return PremiumLkProbeResult.NO_PREMIUM;
             }
@@ -218,28 +223,12 @@ public class OzonProductsApiClient {
             getAnalyticsData(
                     clientId,
                     apiKey,
-                    formatProbeInstant(dateFrom),
-                    formatProbeInstant(dateTo),
+                    formatProbeDate(dateFrom),
+                    formatProbeDate(dateTo),
                     1,
                     0,
                     List.of("ordered_units", "revenue")
             );
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private boolean tryProductQueriesDetails(
-            String clientId,
-            String apiKey,
-            long sku,
-            String dateFrom,
-            String dateTo,
-            String sortBy
-    ) {
-        try {
-            postProductQueriesDetails(clientId, apiKey, sku, dateFrom, dateTo, sortBy);
             return true;
         } catch (Exception e) {
             return false;
@@ -273,8 +262,22 @@ public class OzonProductsApiClient {
         );
     }
 
-    private static String formatProbeInstant(LocalDate date) {
-        return ANALYTICS_PROBE_INSTANT.format(date.atStartOfDay(java.time.ZoneOffset.UTC));
+    private static String formatProbeDate(LocalDate date) {
+        return ANALYTICS_PROBE_DATE.format(date);
+    }
+
+    private static String formatProductQueriesInstant(LocalDate date) {
+        return PRODUCT_QUERIES_PROBE_INSTANT.format(date.atStartOfDay(java.time.ZoneOffset.UTC));
+    }
+
+    private static boolean isNoDataForPeriod(String body) {
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        String lower = body.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("no data for the specified period")
+                || lower.contains("нет данных")
+                || lower.contains("no data");
     }
 
     private static boolean isPremiumSubscriptionDenied(HttpClientErrorException e) {
