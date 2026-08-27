@@ -140,24 +140,128 @@ public class OzonProductsApiClient {
         );
     }
 
-    private static final DateTimeFormatter ANALYTICS_PROBE_DATE = DateTimeFormatter.ISO_LOCAL_DATE;
+    private static final DateTimeFormatter ANALYTICS_PROBE_INSTANT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(java.time.ZoneOffset.UTC);
 
     /**
-     * Probe Premium в ЛК: сортировка {@code BY_VIEWS} доступна только с Premium и выше.
-     *
-     * @return {@code true} — Premium+ подтверждён; {@code false} — бесплатный тариф (403/400)
+     * Результат probe Premium в ЛК Ozon.
      */
-    public boolean probePremiumProductQueriesAccess(String clientId, String apiKey, long sku) {
+    public enum PremiumLkProbeResult {
+        /** Premium или выше подтверждён. */
+        HAS_PREMIUM,
+        /** Бесплатный тариф подтверждён. */
+        NO_PREMIUM,
+        /** Probe не дал однозначного ответа. */
+        INCONCLUSIVE
+    }
+
+    /**
+     * Probe Premium в ЛК: без Premium analytics/data не принимает период старше ~3 месяцев.
+     */
+    public PremiumLkProbeResult probePremiumLkViaAnalyticsDateRange(String clientId, String apiKey) {
+        LocalDate recentTo = LocalDate.now();
+        LocalDate recentFrom = recentTo.minusDays(7);
+        if (!canQueryAnalyticsPeriod(clientId, apiKey, recentFrom, recentTo)) {
+            return PremiumLkProbeResult.INCONCLUSIVE;
+        }
+
+        LocalDate oldTo = LocalDate.now().minusDays(100);
+        LocalDate oldFrom = oldTo.minusDays(7);
+        try {
+            getAnalyticsData(
+                    clientId,
+                    apiKey,
+                    formatProbeInstant(oldFrom),
+                    formatProbeInstant(oldTo),
+                    1,
+                    0,
+                    List.of("ordered_units", "revenue")
+            );
+            return PremiumLkProbeResult.HAS_PREMIUM;
+        } catch (HttpClientErrorException e) {
+            if (isPremiumSubscriptionDenied(e)) {
+                return PremiumLkProbeResult.NO_PREMIUM;
+            }
+            return PremiumLkProbeResult.INCONCLUSIVE;
+        } catch (Exception e) {
+            return PremiumLkProbeResult.INCONCLUSIVE;
+        }
+    }
+
+    /**
+     * Probe Premium: {@code BY_VIEWS} доступен только с Premium+, {@code BY_SEARCHES} — всем.
+     */
+    public PremiumLkProbeResult probePremiumLkViaProductQueriesSort(String clientId, String apiKey, long sku) {
         LocalDate dateTo = LocalDate.now();
-        LocalDate dateFrom = dateTo.minusDays(7);
+        LocalDate dateFrom = dateTo.minusDays(28);
+        String dateFromStr = formatProbeInstant(dateFrom);
+        String dateToStr = formatProbeInstant(dateTo);
+
+        if (!tryProductQueriesDetails(clientId, apiKey, sku, dateFromStr, dateToStr, "BY_SEARCHES")) {
+            return PremiumLkProbeResult.INCONCLUSIVE;
+        }
+        try {
+            postProductQueriesDetails(clientId, apiKey, sku, dateFromStr, dateToStr, "BY_VIEWS");
+            return PremiumLkProbeResult.HAS_PREMIUM;
+        } catch (HttpClientErrorException e) {
+            if (isPremiumSubscriptionDenied(e)) {
+                return PremiumLkProbeResult.NO_PREMIUM;
+            }
+            return PremiumLkProbeResult.INCONCLUSIVE;
+        } catch (Exception e) {
+            return PremiumLkProbeResult.INCONCLUSIVE;
+        }
+    }
+
+    private boolean canQueryAnalyticsPeriod(String clientId, String apiKey, LocalDate dateFrom, LocalDate dateTo) {
+        try {
+            getAnalyticsData(
+                    clientId,
+                    apiKey,
+                    formatProbeInstant(dateFrom),
+                    formatProbeInstant(dateTo),
+                    1,
+                    0,
+                    List.of("ordered_units", "revenue")
+            );
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean tryProductQueriesDetails(
+            String clientId,
+            String apiKey,
+            long sku,
+            String dateFrom,
+            String dateTo,
+            String sortBy
+    ) {
+        try {
+            postProductQueriesDetails(clientId, apiKey, sku, dateFrom, dateTo, sortBy);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void postProductQueriesDetails(
+            String clientId,
+            String apiKey,
+            long sku,
+            String dateFrom,
+            String dateTo,
+            String sortBy
+    ) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("date_from", dateFrom.format(ANALYTICS_PROBE_DATE));
-        body.put("date_to", dateTo.format(ANALYTICS_PROBE_DATE));
+        body.put("date_from", dateFrom);
+        body.put("date_to", dateTo);
         body.put("limit_by_sku", 15);
         body.put("page", 0);
         body.put("page_size", 1);
         body.put("skus", List.of(String.valueOf(sku)));
-        body.put("sort_by", "BY_VIEWS");
+        body.put("sort_by", sortBy);
         body.put("sort_dir", "DESCENDING");
         postJson(
                 clientId,
@@ -165,9 +269,35 @@ public class OzonProductsApiClient {
                 OzonApiEventType.ANALYTICS_PRODUCT_QUERIES_DETAILS.getDefaultUrl(),
                 body,
                 Object.class,
-                "analytics-product-queries-premium-probe"
+                "analytics-product-queries-probe-" + sortBy.toLowerCase()
         );
-        return true;
+    }
+
+    private static String formatProbeInstant(LocalDate date) {
+        return ANALYTICS_PROBE_INSTANT.format(date.atStartOfDay(java.time.ZoneOffset.UTC));
+    }
+
+    private static boolean isPremiumSubscriptionDenied(HttpClientErrorException e) {
+        int status = e.getStatusCode().value();
+        if (status == 403) {
+            return true;
+        }
+        if (status != 400) {
+            return false;
+        }
+        String body = e.getResponseBodyAsString();
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        String lower = body.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("premium")
+                || lower.contains("subscription")
+                || lower.contains("подписк")
+                || lower.contains("permission")
+                || lower.contains("access denied")
+                || lower.contains("3 month")
+                || lower.contains("three month")
+                || lower.contains("3 месяц");
     }
 
     /**
