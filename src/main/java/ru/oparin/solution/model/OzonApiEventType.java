@@ -33,6 +33,12 @@ public enum OzonApiEventType {
     ANALYTICS_DATA_CABINET(
             OzonApiBaseUrl.SELLER,
             "/v1/analytics/data"),
+    /**
+     * Детализация поисковых запросов по SKU (probe Premium: сортировка BY_VIEWS только с Premium+).
+     */
+    ANALYTICS_PRODUCT_QUERIES_DETAILS(
+            OzonApiBaseUrl.SELLER,
+            "/v1/analytics/product-queries/details"),
     /** Контент-рейтинг товаров по SKU. */
     CONTENT_RATING_CABINET(
             OzonApiBaseUrl.SELLER,

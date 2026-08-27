@@ -1,6 +1,5 @@
 package ru.oparin.solution.dto.ozon;
 
-import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
@@ -39,34 +38,43 @@ public class OzonSellerInfoResponse {
         private Boolean premium;
 
         /**
-         * Тип подписки. В protobuf-JSON Ozon поле называется {@code type_}, в legacy-ответах — {@code type}.
+         * Канонический тип подписки в protobuf-JSON Ozon ({@code type_}).
          */
         @JsonProperty("type_")
-        @JsonAlias("type")
-        private String type;
+        private String typeUnderscore;
 
         /**
-         * Сырое значение типа подписки из seller/info.
+         * Legacy-поле {@code type}; может приходить вместе с {@code type_} и не отражать реальный тариф.
+         */
+        @JsonProperty("type")
+        private String typeLegacy;
+
+        /**
+         * Эффективный тип: при наличии {@code type_} legacy {@code type} игнорируется.
          */
         public String resolveTypeRaw() {
-            return type;
+            if (typeUnderscore != null && !typeUnderscore.isBlank()) {
+                return typeUnderscore;
+            }
+            return typeLegacy;
         }
     }
 
     /**
      * Определяет тариф по блоку subscription из seller/info.
+     * {@code is_premium} без платного {@code type_}/{@code type} не считается подпиской.
      */
     public static OzonSellerSubscriptionType resolveSubscriptionType(Subscription subscription) {
         if (subscription == null) {
             return OzonSellerSubscriptionType.UNKNOWN;
         }
-        if (Boolean.FALSE.equals(subscription.getPremium())) {
-            return OzonSellerSubscriptionType.UNSPECIFIED;
-        }
         OzonSellerSubscriptionType type =
                 OzonSellerSubscriptionType.fromApiValue(subscription.resolveTypeRaw());
-        if (type == OzonSellerSubscriptionType.UNKNOWN && Boolean.TRUE.equals(subscription.getPremium())) {
-            return OzonSellerSubscriptionType.UNKNOWN;
+        if (type == OzonSellerSubscriptionType.UNSPECIFIED || type == OzonSellerSubscriptionType.UNKNOWN) {
+            return OzonSellerSubscriptionType.UNSPECIFIED;
+        }
+        if (Boolean.FALSE.equals(subscription.getPremium())) {
+            return OzonSellerSubscriptionType.UNSPECIFIED;
         }
         return type;
     }

@@ -14,6 +14,8 @@ import ru.oparin.solution.dto.ozon.*;
 import ru.oparin.solution.model.OzonApiEventType;
 
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -136,6 +138,36 @@ public class OzonProductsApiClient {
                 OzonAnalyticsDataResponse.class,
                 "analytics-data"
         );
+    }
+
+    private static final DateTimeFormatter ANALYTICS_PROBE_DATE = DateTimeFormatter.ISO_LOCAL_DATE;
+
+    /**
+     * Probe Premium в ЛК: сортировка {@code BY_VIEWS} доступна только с Premium и выше.
+     *
+     * @return {@code true} — Premium+ подтверждён; {@code false} — бесплатный тариф (403/400)
+     */
+    public boolean probePremiumProductQueriesAccess(String clientId, String apiKey, long sku) {
+        LocalDate dateTo = LocalDate.now();
+        LocalDate dateFrom = dateTo.minusDays(7);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("date_from", dateFrom.format(ANALYTICS_PROBE_DATE));
+        body.put("date_to", dateTo.format(ANALYTICS_PROBE_DATE));
+        body.put("limit_by_sku", 15);
+        body.put("page", 0);
+        body.put("page_size", 1);
+        body.put("skus", List.of(String.valueOf(sku)));
+        body.put("sort_by", "BY_VIEWS");
+        body.put("sort_dir", "DESCENDING");
+        postJson(
+                clientId,
+                apiKey,
+                OzonApiEventType.ANALYTICS_PRODUCT_QUERIES_DETAILS.getDefaultUrl(),
+                body,
+                Object.class,
+                "analytics-product-queries-premium-probe"
+        );
+        return true;
     }
 
     /**

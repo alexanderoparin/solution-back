@@ -42,7 +42,20 @@ class OzonSellerInfoResponseTest {
     }
 
     @Test
-    void parsesLegacyTypeField() throws Exception {
+    void prefersTypeUnderscoreOverLegacyTypeField() throws Exception {
+        OzonSellerInfoResponse info = mapper.readValue(
+                "{\"subscription\":{\"is_premium\":true,\"type_\":\"UNSPECIFIED\",\"type\":\"PREMIUM\"}}",
+                OzonSellerInfoResponse.class);
+
+        OzonSellerInfoResponse.Subscription subscription = info.resolveSubscription();
+
+        assertEquals("UNSPECIFIED", subscription.resolveTypeRaw());
+        assertEquals(OzonSellerSubscriptionType.UNSPECIFIED,
+                OzonSellerInfoResponse.resolveSubscriptionType(subscription));
+    }
+
+    @Test
+    void parsesLegacyTypeFieldWhenTypeUnderscoreAbsent() throws Exception {
         OzonSellerInfoResponse info = mapper.readValue(
                 "{\"result\":{\"subscription\":{\"is_premium\":true,\"type\":\"PREMIUM_PLUS\"}}}",
                 OzonSellerInfoResponse.class);
@@ -51,6 +64,20 @@ class OzonSellerInfoResponseTest {
 
         assertTrue(subscription.getPremium());
         assertEquals(OzonSellerSubscriptionType.PREMIUM_PLUS,
+                OzonSellerInfoResponse.resolveSubscriptionType(subscription));
+    }
+
+    @Test
+    void makesevaLikeResponseWithOnlyLegacyTypeField() throws Exception {
+        OzonSellerInfoResponse info = mapper.readValue(
+                "{\"subscription\":{\"is_premium\":true,\"type\":\"PREMIUM\"}}",
+                OzonSellerInfoResponse.class);
+
+        OzonSellerInfoResponse.Subscription subscription = info.resolveSubscription();
+
+        assertTrue(subscription.getPremium());
+        assertEquals("PREMIUM", subscription.resolveTypeRaw());
+        assertEquals(OzonSellerSubscriptionType.PREMIUM,
                 OzonSellerInfoResponse.resolveSubscriptionType(subscription));
     }
 }
