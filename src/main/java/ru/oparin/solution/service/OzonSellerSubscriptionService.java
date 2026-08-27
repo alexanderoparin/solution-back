@@ -52,17 +52,18 @@ public class OzonSellerSubscriptionService {
             return;
         }
         OzonSellerInfoResponse.Subscription subscription = info != null ? info.resolveSubscription() : null;
-        OzonSellerSubscriptionType type = subscription != null
-                ? OzonSellerSubscriptionType.fromApiValue(subscription.getType())
-                : OzonSellerSubscriptionType.UNKNOWN;
+        OzonSellerSubscriptionType type = OzonSellerInfoResponse.resolveSubscriptionType(subscription);
         Boolean isPremium = subscription != null ? subscription.getPremium() : null;
         LocalDateTime checkedAt = LocalDateTime.now();
 
         applyToCabinet(cabinet, type, isPremium, cabinet.getOzonAnalyticsFunnelAvailable(), checkedAt);
         saveSyncState(cabinet.getId(), type, isPremium, cabinet.getOzonAnalyticsFunnelAvailable(), checkedAt);
 
-        log.info("Ozon subscription cabinetId={}: type={}, isPremium={}",
-                cabinet.getId(), type, isPremium);
+        log.info("Ozon subscription cabinetId={}: rawType={}, type={}, isPremium={}",
+                cabinet.getId(),
+                subscription != null ? subscription.resolveTypeRaw() : null,
+                type,
+                isPremium);
     }
 
     /**
