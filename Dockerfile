@@ -4,13 +4,13 @@ WORKDIR /app
 
 # Копируем pom.xml для кеширования зависимостей
 COPY pom.xml .
-RUN mvn dependency:go-offline -B
+RUN mvn -B dependency:go-offline dependency:resolve dependency:resolve-plugins
 
 # Копируем исходный код
 COPY src ./src
 
-# Собираем JAR файл
-RUN mvn clean package -DskipTests
+# Сборка offline: зависимости уже в слое выше; не зависит от DNS Docker bridge
+RUN mvn -B -o package -DskipTests
 
 # Этап 2: Запуск приложения
 FROM eclipse-temurin:21-jre-alpine
