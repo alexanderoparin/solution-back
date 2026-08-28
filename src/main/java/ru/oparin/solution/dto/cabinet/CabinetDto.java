@@ -34,10 +34,16 @@ public class CabinetDto {
     /** Время последней успешной синхронизации списка РК Ozon. */
     private LocalDateTime lastOzonCampaignsSyncAt;
 
-    /** Тип подписки Ozon Seller (UNSPECIFIED, PREMIUM, PREMIUM_PLUS и т.д.). */
+    /** Тип подписки Ozon Seller для UI (с учётом override и Premium Plus probe). */
     private String ozonSubscriptionType;
     /** Русское название тарифа Ozon для UI. */
     private String ozonSubscriptionTypeDisplayName;
+    /** Автоопределённый тариф из seller/info (консервативно). */
+    private String ozonSubscriptionTypeDetected;
+    /** Ручная настройка тарифа администратором; null — авто. */
+    private String ozonSubscriptionTypeOverride;
+    /** true — отображаемый тариф задан вручную. */
+    private Boolean ozonSubscriptionManual;
     /** Флаг is_premium из seller/info. */
     private Boolean ozonSubscriptionIsPremium;
     /** Доступна ли воронка analytics/data (probe). */

@@ -3,15 +3,20 @@ package ru.oparin.solution.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import ru.oparin.solution.dto.analytics.*;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetAccessSection;
 import ru.oparin.solution.model.WbProductCard;
 import ru.oparin.solution.service.AnalyticsService;
+import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.SellerContextService;
 import ru.oparin.solution.service.WbArticleGoalService;
+import ru.oparin.solution.service.sync.WbSalesFunnelExcelImportService;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -28,6 +33,8 @@ public class AnalyticsController {
     private final AnalyticsService analyticsService;
     private final SellerContextService sellerContextService;
     private final WbArticleGoalService articleGoalService;
+    private final CabinetService cabinetService;
+    private final WbSalesFunnelExcelImportService salesFunnelExcelImportService;
 
     /**
      * Получает список артикулов кабинета/продавца (только справочная информация для фильтра).
@@ -256,6 +263,30 @@ public class AnalyticsController {
         }
 
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Импорт суточной воронки продаж из Excel-выгрузки WB (лист «Товары»).
+     */
+    @PostMapping(value = "/funnel-import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<WbSalesFunnelExcelImportResultDto> importSalesFunnelExcel(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                sellerId,
+                cabinetId,
+                CabinetAccessSection.PRODUCTS
+        );
+        if (context.cabinetId() == null) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(context.cabinetId());
+        WbSalesFunnelExcelImportResultDto result = salesFunnelExcelImportService.importFromExcel(cabinet, file);
+        return ResponseEntity.ok(result);
     }
 
 }

@@ -46,4 +46,10 @@ public class UpdateCabinetRequest {
      */
     @Size(max = 500)
     private String ozonPerformanceClientSecret;
+
+    /**
+     * Ручной тариф Ozon для UI ({@code AUTO} или пусто — сброс override).
+     */
+    @Size(max = 32)
+    private String ozonSubscriptionTypeOverride;
 }

@@ -385,7 +385,8 @@ public class UsersManagementController {
                 || request.getTokenType() != null
                 || request.getOzonClientId() != null
                 || request.getOzonPerformanceClientId() != null
-                || request.getOzonPerformanceClientSecret() != null;
+                || request.getOzonPerformanceClientSecret() != null
+                || request.getOzonSubscriptionTypeOverride() != null;
         if (hasCredentialsUpdate) {
             CabinetDto updated = cabinetService.updateCredentials(cabinetId, request);
             return ResponseEntity.ok(updated);

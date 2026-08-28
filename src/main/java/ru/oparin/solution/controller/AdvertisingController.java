@@ -16,6 +16,7 @@ import ru.oparin.solution.service.campaign.WbCampaignManageAccessService;
 import ru.oparin.solution.service.events.OzonApiEventService;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.WbMainStepPayload;
+import ru.oparin.solution.util.WbSyncPeriods;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -28,8 +29,6 @@ import java.util.Map;
 @RequestMapping("/advertising")
 @RequiredArgsConstructor
 public class AdvertisingController {
-
-    private static final int SYNC_PROMOTION_DEFAULT_PERIOD_DAYS = 14;
 
     private final SellerContextService sellerContextService;
     private final AnalyticsService analyticsService;
@@ -44,7 +43,7 @@ public class AdvertisingController {
 
     /**
      * Список рекламных кампаний текущего кабинета (с агрегацией статистики за период).
-     * Период задаётся dateFrom и dateTo (ISO yyyy-MM-dd). По умолчанию — последние 14 дней.
+     * Период задаётся dateFrom и dateTo (ISO yyyy-MM-dd). По умолчанию — последние 28 дней.
      *
      * @param sellerId ID селлера (опционально, для ADMIN/MANAGER)
      * @param cabinetId ID кабинета (опционально)
@@ -81,7 +80,7 @@ public class AdvertisingController {
 
     /**
      * Поставить в очередь обновление списка РК и статистики за период (цепочка PROMOTION_COUNT → … → fullstats).
-     * Период как у списка кампаний: по умолчанию последние 14 дней до сегодня.
+     * Период как у списка кампаний: по умолчанию последние 28 дней до сегодня.
      */
     @PostMapping("/campaigns/promotion-sync")
     public ResponseEntity<?> enqueuePromotionSync(
@@ -104,7 +103,7 @@ public class AdvertisingController {
                         .body(Map.of("error", "У кабинета не настроены или не проверены Performance credentials Ozon"));
             }
             LocalDate to = dateTo != null ? dateTo : LocalDate.now().minusDays(1);
-            LocalDate from = dateFrom != null ? dateFrom : to.minusDays(SYNC_PROMOTION_DEFAULT_PERIOD_DAYS - 1);
+            LocalDate from = dateFrom != null ? dateFrom : WbSyncPeriods.promotionFrom(to);
             if (from.isAfter(to)) {
                 LocalDate tmp = from;
                 from = to;
@@ -119,7 +118,7 @@ public class AdvertisingController {
                     .body(Map.of("error", "У кабинета нет API-ключа"));
         }
         LocalDate to = dateTo != null ? dateTo : LocalDate.now();
-        LocalDate from = dateFrom != null ? dateFrom : to.minusDays(SYNC_PROMOTION_DEFAULT_PERIOD_DAYS - 1);
+        LocalDate from = dateFrom != null ? dateFrom : WbSyncPeriods.promotionFrom(to);
         if (from.isAfter(to)) {
             LocalDate tmp = from;
             from = to;

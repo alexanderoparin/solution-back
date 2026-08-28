@@ -123,6 +123,10 @@ public class Cabinet {
     @Transient
     private LocalDateTime ozonSubscriptionCheckedAt;
 
+    /** Ручной тариф Ozon для UI (in-memory). */
+    @Transient
+    private String ozonSubscriptionTypeOverride;
+
     /**
      * Тип WB API-токена (in-memory).
      */

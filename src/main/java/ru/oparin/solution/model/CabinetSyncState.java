@@ -84,6 +84,12 @@ public class CabinetSyncState {
     private LocalDateTime ozonSubscriptionCheckedAt;
 
     /**
+     * Ручной тариф Ozon для UI (seller/info не различает Premium в ЛК).
+     */
+    @Column(name = "ozon_subscription_type_override", length = 32)
+    private String ozonSubscriptionTypeOverride;
+
+    /**
      * Дата создания записи.
      */
     @CreatedDate

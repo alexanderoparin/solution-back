@@ -2,22 +2,19 @@ package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.oparin.solution.dto.ozon.OzonProductListResponse;
 import ru.oparin.solution.dto.ozon.OzonSellerInfoResponse;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetSyncState;
 import ru.oparin.solution.model.MarketplaceType;
 import ru.oparin.solution.model.OzonSellerSubscriptionType;
 import ru.oparin.solution.repository.CabinetSyncStateRepository;
-import ru.oparin.solution.repository.OzonProductCardRepository;
-import ru.oparin.solution.service.ozon.OzonProductsApiClient;
+import ru.oparin.solution.service.ozon.OzonPremiumLkProbeResult;
+import ru.oparin.solution.service.ozon.OzonPremiumLkProbeService;
 import ru.oparin.solution.service.ozon.OzonSellerApiClient;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * Хранение тарифа Ozon Seller ({@code seller/info}) и флага доступности воронки analytics.
@@ -28,9 +25,8 @@ import java.util.List;
 public class OzonSellerSubscriptionService {
 
     private final OzonSellerApiClient ozonSellerApiClient;
-    private final OzonProductsApiClient ozonProductsApiClient;
+    private final OzonPremiumLkProbeService premiumLkProbeService;
     private final CabinetSyncStateRepository syncStateRepository;
-    private final OzonProductCardRepository ozonProductCardRepository;
 
     /**
      * Запрашивает seller/info и сохраняет subscription в {@code cabinet_sync_state}.
@@ -46,10 +42,8 @@ public class OzonSellerSubscriptionService {
         if (clientId == null || clientId.isBlank() || apiKey == null || apiKey.isBlank()) {
             return;
         }
-        String trimmedClientId = clientId.trim();
-        String trimmedApiKey = apiKey.trim();
-        OzonSellerInfoResponse info = ozonSellerApiClient.getSellerInfo(trimmedClientId, trimmedApiKey);
-        persistFromSellerInfo(cabinet, info, trimmedClientId, trimmedApiKey);
+        OzonSellerInfoResponse info = ozonSellerApiClient.getSellerInfo(clientId.trim(), apiKey.trim());
+        persistFromSellerInfo(cabinet, info);
     }
 
     /**
@@ -60,56 +54,39 @@ public class OzonSellerSubscriptionService {
         if (cabinet == null || cabinet.getId() == null) {
             return;
         }
-        String clientId = cabinet.getOzonClientId();
-        String apiKey = cabinet.getApiKey();
-        if (clientId == null || clientId.isBlank() || apiKey == null || apiKey.isBlank()) {
-            persistResolvedSubscription(cabinet, info, OzonSellerSubscriptionType.UNKNOWN, null);
-            return;
+        OzonSellerInfoResponse.Subscription subscription = info != null ? info.resolveSubscription() : null;
+        OzonSellerSubscriptionType detectedType =
+                OzonSellerInfoResponse.resolveDetectedSubscriptionType(subscription);
+        Boolean isPremium = subscription != null ? subscription.getPremium() : null;
+
+        if (shouldProbePremiumLk(subscription, detectedType)) {
+            OzonPremiumLkProbeResult probeResult = premiumLkProbeService.probe(
+                    cabinet.getOzonClientId(),
+                    cabinet.getApiKey()
+            );
+            log.info(
+                    "Ozon subscription cabinetId={}: probe Premium LK via analytics lookback={}",
+                    cabinet.getId(),
+                    probeResult
+            );
+            detectedType = applyPremiumLkProbe(detectedType, probeResult);
+            isPremium = applyPremiumLkProbeIsPremium(isPremium, probeResult);
         }
-        persistFromSellerInfo(cabinet, info, clientId.trim(), apiKey.trim());
-    }
 
-    private void persistFromSellerInfo(
-            Cabinet cabinet,
-            OzonSellerInfoResponse info,
-            String clientId,
-            String apiKey
-    ) {
-        OzonSellerInfoResponse.Subscription subscription = info != null ? info.resolveSubscription() : null;
-        OzonSellerSubscriptionType sellerInfoType =
-                OzonSellerInfoResponse.resolveSubscriptionType(subscription);
-        Boolean sellerInfoPremium = subscription != null ? subscription.getPremium() : null;
-
-        ResolvedSubscription resolved = resolveWithPremiumProbe(
-                cabinet.getId(),
-                clientId,
-                apiKey,
-                sellerInfoType,
-                sellerInfoPremium
-        );
-        persistResolvedSubscription(
-                cabinet,
-                info,
-                resolved.type(),
-                resolved.isPremium()
-        );
-    }
-
-    private void persistResolvedSubscription(
-            Cabinet cabinet,
-            OzonSellerInfoResponse info,
-            OzonSellerSubscriptionType type,
-            Boolean isPremium
-    ) {
-        OzonSellerInfoResponse.Subscription subscription = info != null ? info.resolveSubscription() : null;
         LocalDateTime checkedAt = LocalDateTime.now();
 
-        applyToCabinet(cabinet, type, isPremium, cabinet.getOzonAnalyticsFunnelAvailable(), checkedAt);
-        saveSyncState(cabinet.getId(), type, isPremium, cabinet.getOzonAnalyticsFunnelAvailable(), checkedAt);
+        applyToCabinet(cabinet, detectedType, isPremium, cabinet.getOzonAnalyticsFunnelAvailable(), checkedAt);
+        saveSyncState(
+                cabinet.getId(),
+                detectedType,
+                isPremium,
+                cabinet.getOzonAnalyticsFunnelAvailable(),
+                checkedAt
+        );
 
         log.info(
                 "Ozon subscription cabinetId={}: type_={}, typeLegacy={}, rawType={}, sellerInfoType={}, "
-                        + "resolvedType={}, isPremium={}",
+                        + "detectedType={}, isPremium={}",
                 cabinet.getId(),
                 subscription != null ? subscription.getTypeUnderscore() : null,
                 subscription != null ? subscription.getTypeLegacy() : null,
@@ -117,7 +94,7 @@ public class OzonSellerSubscriptionService {
                 subscription != null
                         ? OzonSellerInfoResponse.resolveSubscriptionType(subscription)
                         : OzonSellerSubscriptionType.UNKNOWN,
-                type,
+                detectedType,
                 isPremium
         );
     }
@@ -139,109 +116,28 @@ public class OzonSellerSubscriptionService {
         syncStateRepository.save(state);
     }
 
-    private ResolvedSubscription resolveWithPremiumProbe(
-            Long cabinetId,
-            String clientId,
-            String apiKey,
-            OzonSellerSubscriptionType sellerInfoType,
-            Boolean sellerInfoPremium
-    ) {
-        if (sellerInfoType == OzonSellerSubscriptionType.UNSPECIFIED
-                || sellerInfoType == OzonSellerSubscriptionType.UNKNOWN) {
-            return new ResolvedSubscription(OzonSellerSubscriptionType.UNSPECIFIED, false);
-        }
-
-        Boolean premiumProbe = probePremiumLkAccess(cabinetId, clientId, apiKey);
-        if (premiumProbe != null) {
-            if (premiumProbe) {
-                return new ResolvedSubscription(sellerInfoType, true);
-            }
-            log.info(
-                    "Ozon subscription cabinetId={}: seller/info={} is_premium={}, probe Premium=нет → Без Premium",
-                    cabinetId,
-                    sellerInfoType,
-                    sellerInfoPremium
-            );
-            return new ResolvedSubscription(OzonSellerSubscriptionType.UNSPECIFIED, false);
-        }
-
-        // Ozon seller/info часто отдаёт type=PREMIUM всем; без probe не понижаем до «Без Premium».
-        log.info(
-                "Ozon subscription cabinetId={}: probe Premium неоднозначен, seller/info={} (is_premium={})",
-                cabinetId,
-                sellerInfoType,
-                sellerInfoPremium
-        );
-        if (Boolean.FALSE.equals(sellerInfoPremium)) {
-            return new ResolvedSubscription(OzonSellerSubscriptionType.UNSPECIFIED, false);
-        }
-        return new ResolvedSubscription(sellerInfoType, true);
-    }
-
     /**
-     * @return {@code true} — Premium подтверждён, {@code false} — бесплатный тариф, {@code null} — неизвестно
+     * Ручная настройка тарифа Ozon для UI (seller/info не различает Premium в ЛК).
      */
-    private Boolean probePremiumLkAccess(
-            Long cabinetId,
-            String clientId,
-            String apiKey
-    ) {
-        OzonProductsApiClient.PremiumLkProbeResult viaAnalytics =
-                ozonProductsApiClient.probePremiumLkViaAnalyticsDateRange(clientId, apiKey);
-        log.info("Ozon subscription cabinetId={}: probe Premium via analytics date range={}",
-                cabinetId, viaAnalytics);
-        if (viaAnalytics == OzonProductsApiClient.PremiumLkProbeResult.HAS_PREMIUM) {
-            return true;
+    @Transactional
+    public void updateSubscriptionTypeOverride(Long cabinetId, String overrideRaw) {
+        if (cabinetId == null) {
+            return;
         }
-        if (viaAnalytics == OzonProductsApiClient.PremiumLkProbeResult.NO_PREMIUM) {
-            return false;
-        }
-
-        for (Long sku : findProbeSkus(cabinetId, clientId, apiKey)) {
-            OzonProductsApiClient.PremiumLkProbeResult viaQueries =
-                    ozonProductsApiClient.probePremiumLkViaProductQueriesSort(clientId, apiKey, sku);
-            log.info("Ozon subscription cabinetId={}: probe Premium via product-queries BY_VIEWS={}, SKU={}",
-                    cabinetId, viaQueries, sku);
-            if (viaQueries == OzonProductsApiClient.PremiumLkProbeResult.HAS_PREMIUM) {
-                return true;
+        CabinetSyncState state = syncStateRepository.findById(cabinetId)
+                .orElseGet(() -> CabinetSyncState.builder().cabinetId(cabinetId).build());
+        if (overrideRaw == null
+                || overrideRaw.isBlank()
+                || OzonSubscriptionDisplayResolver.OVERRIDE_AUTO.equalsIgnoreCase(overrideRaw.trim())) {
+            state.setOzonSubscriptionTypeOverride(null);
+        } else {
+            OzonSellerSubscriptionType type = OzonSellerSubscriptionType.fromApiValue(overrideRaw.trim());
+            if (type == OzonSellerSubscriptionType.UNKNOWN) {
+                throw new IllegalArgumentException("Неизвестный тариф Ozon: " + overrideRaw);
             }
-            if (viaQueries == OzonProductsApiClient.PremiumLkProbeResult.NO_PREMIUM) {
-                return false;
-            }
+            state.setOzonSubscriptionTypeOverride(type.name());
         }
-
-        log.info("Ozon subscription cabinetId={}: probe Premium не дал однозначного ответа", cabinetId);
-        return null;
-    }
-
-    private List<Long> findProbeSkus(Long cabinetId, String clientId, String apiKey) {
-        List<Long> skus = new java.util.ArrayList<>();
-        List<Long> skusFromDb = ozonProductCardRepository.findSkusByCabinetId(cabinetId, PageRequest.of(0, 3));
-        if (skusFromDb != null) {
-            skusFromDb.stream().filter(sku -> sku != null).forEach(skus::add);
-        }
-        if (!skus.isEmpty()) {
-            return skus;
-        }
-
-        try {
-            OzonProductListResponse response = ozonProductsApiClient.listProducts(clientId, apiKey, "", 3);
-            if (response == null || response.getResult() == null) {
-                return skus;
-            }
-            List<OzonProductListResponse.Item> items = response.getResult().getItems();
-            if (items == null) {
-                return skus;
-            }
-            for (OzonProductListResponse.Item item : items) {
-                if (item != null && item.getSku() != null) {
-                    skus.add(item.getSku());
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Ozon subscription probe: не удалось получить SKU из product/list: {}", e.getMessage());
-        }
-        return skus;
+        syncStateRepository.save(state);
     }
 
     private void saveSyncState(
@@ -277,6 +173,42 @@ public class OzonSellerSubscriptionService {
         cabinet.setOzonSubscriptionCheckedAt(checkedAt);
     }
 
-    private record ResolvedSubscription(OzonSellerSubscriptionType type, Boolean isPremium) {
+    /**
+     * Probe нужен, когда Ozon не прислал канонический {@code type_} в seller/info.
+     */
+    private static boolean shouldProbePremiumLk(
+            OzonSellerInfoResponse.Subscription subscription,
+            OzonSellerSubscriptionType detectedType
+    ) {
+        if (subscription == null) {
+            return false;
+        }
+        if (subscription.getTypeUnderscore() != null && !subscription.getTypeUnderscore().isBlank()) {
+            return false;
+        }
+        return detectedType == OzonSellerSubscriptionType.UNSPECIFIED
+                || detectedType == OzonSellerSubscriptionType.UNKNOWN;
+    }
+
+    private static OzonSellerSubscriptionType applyPremiumLkProbe(
+            OzonSellerSubscriptionType detectedType,
+            OzonPremiumLkProbeResult probeResult
+    ) {
+        return switch (probeResult) {
+            case HAS_PREMIUM -> OzonSellerSubscriptionType.PREMIUM;
+            case NO_PREMIUM -> OzonSellerSubscriptionType.UNSPECIFIED;
+            case INCONCLUSIVE -> detectedType != null ? detectedType : OzonSellerSubscriptionType.UNSPECIFIED;
+        };
+    }
+
+    private static Boolean applyPremiumLkProbeIsPremium(
+            Boolean sellerInfoIsPremium,
+            OzonPremiumLkProbeResult probeResult
+    ) {
+        return switch (probeResult) {
+            case HAS_PREMIUM -> true;
+            case NO_PREMIUM -> false;
+            case INCONCLUSIVE -> sellerInfoIsPremium;
+        };
     }
 }

@@ -79,6 +79,23 @@ public class OzonSellerInfoResponse {
         return type;
     }
 
+    /**
+     * Консервативное автоопределение: legacy {@code type} без {@code type_} не считается Premium.
+     * Ozon часто отдаёт {@code type: PREMIUM} всем кабинетам, хотя подписка есть только у части.
+     */
+    public static OzonSellerSubscriptionType resolveDetectedSubscriptionType(Subscription subscription) {
+        if (subscription == null) {
+            return OzonSellerSubscriptionType.UNKNOWN;
+        }
+        if (Boolean.FALSE.equals(subscription.getPremium())) {
+            return OzonSellerSubscriptionType.UNSPECIFIED;
+        }
+        if (subscription.getTypeUnderscore() == null || subscription.getTypeUnderscore().isBlank()) {
+            return OzonSellerSubscriptionType.UNSPECIFIED;
+        }
+        return resolveSubscriptionType(subscription);
+    }
+
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Result {

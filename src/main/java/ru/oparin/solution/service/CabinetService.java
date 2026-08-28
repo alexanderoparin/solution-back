@@ -466,7 +466,14 @@ public class CabinetService {
         if (request.getOzonPerformanceClientSecret() != null && cabinet.getMarketplaceType() == MarketplaceType.OZON) {
             resetPerformanceValidationAndSetClientSecret(cabinet, request.getOzonPerformanceClientSecret());
         }
+        if (request.getOzonSubscriptionTypeOverride() != null && cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            ozonSellerSubscriptionService.updateSubscriptionTypeOverride(
+                    cabinetId,
+                    request.getOzonSubscriptionTypeOverride()
+            );
+        }
         cabinet = save(cabinet);
+        cabinetIntegrationMirrorService.overlayOntoCabinet(cabinet);
         return toDto(cabinet);
     }
 
@@ -850,6 +857,15 @@ public class CabinetService {
                         .writeReadOnly(s.writeReadOnly())
                         .build())
                 .toList();
+        OzonSubscriptionDisplayResolver.ResolvedOzonSubscription ozonSubscription =
+                OzonSubscriptionDisplayResolver.resolve(
+                        cabinet.getOzonSubscriptionTypeOverride(),
+                        cabinet.getOzonSubscriptionType() != null
+                                ? cabinet.getOzonSubscriptionType().name()
+                                : null,
+                        cabinet.getOzonAnalyticsFunnelAvailable(),
+                        cabinet.getOzonSubscriptionIsPremium()
+                );
         return CabinetDto.builder()
                 .id(cabinet.getId())
                 .name(cabinet.getName())
@@ -860,13 +876,15 @@ public class CabinetService {
                 .lastDataUpdateRequestedAt(cabinet.getLastDataUpdateRequestedAt())
                 .lastStocksUpdateAt(cabinet.getLastStocksUpdateAt())
                 .lastOzonCampaignsSyncAt(cabinet.getLastOzonCampaignsSyncAt())
-                .ozonSubscriptionType(
-                        cabinet.getOzonSubscriptionType() != null ? cabinet.getOzonSubscriptionType().name() : null)
-                .ozonSubscriptionTypeDisplayName(
+                .ozonSubscriptionType(ozonSubscription.type().name())
+                .ozonSubscriptionTypeDisplayName(ozonSubscription.type().getDisplayNameRu())
+                .ozonSubscriptionTypeDetected(
                         cabinet.getOzonSubscriptionType() != null
-                                ? cabinet.getOzonSubscriptionType().getDisplayNameRu()
+                                ? cabinet.getOzonSubscriptionType().name()
                                 : null)
-                .ozonSubscriptionIsPremium(cabinet.getOzonSubscriptionIsPremium())
+                .ozonSubscriptionTypeOverride(cabinet.getOzonSubscriptionTypeOverride())
+                .ozonSubscriptionManual(ozonSubscription.manual())
+                .ozonSubscriptionIsPremium(ozonSubscription.isPremium())
                 .ozonAnalyticsFunnelAvailable(cabinet.getOzonAnalyticsFunnelAvailable())
                 .ozonSubscriptionCheckedAt(cabinet.getOzonSubscriptionCheckedAt())
                 .apiKey(apiKeyInfo)

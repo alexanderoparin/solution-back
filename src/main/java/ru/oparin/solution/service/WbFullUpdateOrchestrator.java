@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.service.events.WbApiEventService;
+import ru.oparin.solution.util.WbSyncPeriods;
 
 import java.time.LocalDate;
 import java.util.Comparator;
@@ -45,8 +46,8 @@ public class WbFullUpdateOrchestrator {
         }
 
         LocalDate to = LocalDate.now().minusDays(1);
-        LocalDate from = to.minusDays(13);
-        log.info("Период для загрузки аналитики: {} - {}", from, to);
+        LocalDate from = WbSyncPeriods.mainSyncFrom(to);
+        log.info("Период основного синка: {} - {}, воронка WB: {} дн., fullstats: {} дн.", from, to, WbSyncPeriods.FUNNEL_DAYS, WbSyncPeriods.PROMOTION_DAYS);
 
         cabinets.forEach(cabinet -> wbApiEventService.enqueueInitialContentEvent(
                 cabinet.getId(),

@@ -343,6 +343,7 @@ public class CabinetIntegrationMirrorService {
         if (s.getOzonSubscriptionCheckedAt() != null) {
             cabinet.setOzonSubscriptionCheckedAt(s.getOzonSubscriptionCheckedAt());
         }
+        cabinet.setOzonSubscriptionTypeOverride(s.getOzonSubscriptionTypeOverride());
     }
 
     private String tokenTypeMeta(CabinetTokenType tokenType) {

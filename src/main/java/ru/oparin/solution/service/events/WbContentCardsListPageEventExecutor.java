@@ -15,7 +15,9 @@ import ru.oparin.solution.service.WbProductCardService;
 import ru.oparin.solution.service.events.payload.WbContentCardsListPagePayload;
 import ru.oparin.solution.service.events.payload.WbMainStepPayload;
 import ru.oparin.solution.service.wb.WbContentApiClient;
+import ru.oparin.solution.util.WbSyncPeriods;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 
@@ -111,8 +113,19 @@ public class WbContentCardsListPageEventExecutor implements WbApiEventExecutor {
                 .dateTo(payload.dateTo())
                 .includeStocks(payload.includeStocks())
                 .build();
+        LocalDate syncTo = payload.dateTo() != null ? payload.dateTo() : LocalDate.now().minusDays(1);
+        WbMainStepPayload promotionStepPayload = WbMainStepPayload.builder()
+                .dateFrom(WbSyncPeriods.promotionFrom(syncTo))
+                .dateTo(syncTo)
+                .includeStocks(payload.includeStocks())
+                .build();
+        WbMainStepPayload funnelStepPayload = WbMainStepPayload.builder()
+                .dateFrom(WbSyncPeriods.funnelFrom(syncTo))
+                .dateTo(syncTo)
+                .includeStocks(payload.includeStocks())
+                .build();
         eventService.enqueuePricesRequestLevelEvents(cabinetId, mainStepPayload, triggerSource);
-        eventService.enqueuePromotionRequestLevelEvents(cabinetId, mainStepPayload, triggerSource);
+        eventService.enqueuePromotionRequestLevelEvents(cabinetId, promotionStepPayload, triggerSource);
         eventService.enqueueItemRatingSyncCabinetEvent(cabinetId, mainStepPayload, triggerSource);
         eventService.enqueuePromotionCalendarSyncCabinetEvent(cabinetId, mainStepPayload, triggerSource);
 
@@ -128,8 +141,8 @@ public class WbContentCardsListPageEventExecutor implements WbApiEventExecutor {
             eventService.enqueueAnalyticsSalesFunnelEvent(
                     cabinetId,
                     nmId,
-                    payload.dateFrom(),
-                    payload.dateTo(),
+                    funnelStepPayload.dateFrom(),
+                    funnelStepPayload.dateTo(),
                     payload.includeStocks(),
                     triggerSource
             );
