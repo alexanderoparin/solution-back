@@ -50,15 +50,23 @@ public class WbSalesFunnelExcelImportService {
     private final WbProductCardAnalyticsRepository analyticsRepository;
 
     /**
-     * Парсит Excel и upsert-ит записи {@link WbProductCardAnalytics} для кабинета.
+     * Парсит Excel и upsert-ит записи {@link WbProductCardAnalytics} для одного артикула кабинета.
      *
      * @param cabinet кабинет WB
+     * @param nmId    артикул WB — импортируются только строки с этим nmId
      * @param file    xlsx из ЛК WB (воронка продаж → детализация по дням)
      */
     @Transactional
-    public WbSalesFunnelExcelImportResultDto importFromExcel(Cabinet cabinet, MultipartFile file) {
+    public WbSalesFunnelExcelImportResultDto importFromExcel(Cabinet cabinet, Long nmId, MultipartFile file) {
         validateCabinetAndFile(cabinet, file);
+        if (nmId == null) {
+            throw new UserException("Артикул WB обязателен", HttpStatus.BAD_REQUEST);
+        }
         Map<Long, WbProductCard> cardsByNmId = loadCardsByNmId(cabinet.getId());
+        WbProductCard targetCard = cardsByNmId.get(nmId);
+        if (targetCard == null) {
+            throw new UserException("Артикул " + nmId + " не найден в кабинете", HttpStatus.BAD_REQUEST);
+        }
 
         ParsedWorkbook parsed;
         try (InputStream inputStream = file.getInputStream()) {
@@ -79,19 +87,17 @@ public class WbSalesFunnelExcelImportService {
                 skippedInvalid++;
                 continue;
             }
-            WbProductCard card = cardsByNmId.get(row.nmId());
-            if (card == null) {
-                skippedUnknown++;
+            if (!nmId.equals(row.nmId())) {
                 continue;
             }
             minDate = minDate == null || row.date().isBefore(minDate) ? row.date() : minDate;
             maxDate = maxDate == null || row.date().isAfter(maxDate) ? row.date() : maxDate;
 
             Optional<WbProductCardAnalytics> existing = analyticsRepository.findByProductCardNmIdAndDateAndCabinet_Id(
-                    row.nmId(), row.date(), cabinet.getId());
+                    nmId, row.date(), cabinet.getId());
             WbProductCardAnalytics entity = existing.orElseGet(() -> {
                 WbProductCardAnalytics analytics = new WbProductCardAnalytics();
-                analytics.setProductCard(card);
+                analytics.setProductCard(targetCard);
                 analytics.setCabinet(cabinet);
                 analytics.setDate(row.date());
                 return analytics;
@@ -108,14 +114,21 @@ public class WbSalesFunnelExcelImportService {
             }
         }
 
+        if (created + updated == 0) {
+            throw new UserException(
+                    "В файле нет строк воронки для артикула " + nmId + ". Проверьте выгрузку WB и «Артикул WB».",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
         log.info(
-                "Импорт воронки WB из Excel: cabinetId={}, rows={}, imported={}, created={}, updated={}, skippedUnknown={}, skippedInvalid={}",
+                "Импорт воронки WB из Excel: cabinetId={}, nmId={}, rows={}, imported={}, created={}, updated={}, skippedInvalid={}",
                 cabinet.getId(),
+                nmId,
                 parsed.rows().size(),
                 created + updated,
                 created,
                 updated,
-                skippedUnknown,
                 skippedInvalid
         );
 

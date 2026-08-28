@@ -13,7 +13,6 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetAccessSection;
 import ru.oparin.solution.model.WbProductCard;
 import ru.oparin.solution.service.AnalyticsService;
-import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.SellerContextService;
 import ru.oparin.solution.service.WbArticleGoalService;
 import ru.oparin.solution.service.sync.WbSalesFunnelExcelImportService;
@@ -33,7 +32,6 @@ public class AnalyticsController {
     private final AnalyticsService analyticsService;
     private final SellerContextService sellerContextService;
     private final WbArticleGoalService articleGoalService;
-    private final CabinetService cabinetService;
     private final WbSalesFunnelExcelImportService salesFunnelExcelImportService;
 
     /**
@@ -266,10 +264,11 @@ public class AnalyticsController {
     }
 
     /**
-     * Импорт суточной воронки продаж из Excel-выгрузки WB (лист «Товары»).
+     * Импорт суточной воронки продаж из Excel-выгрузки WB (лист «Товары») для одного артикула.
      */
-    @PostMapping(value = "/funnel-import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<WbSalesFunnelExcelImportResultDto> importSalesFunnelExcel(
+    @PostMapping(value = "/article/{nmId}/funnel-import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<WbSalesFunnelExcelImportResultDto> importArticleSalesFunnelExcel(
+            @PathVariable Long nmId,
             @RequestParam("file") MultipartFile file,
             @RequestParam(required = false) Long sellerId,
             @RequestParam(required = false) Long cabinetId,
@@ -281,11 +280,12 @@ public class AnalyticsController {
                 cabinetId,
                 CabinetAccessSection.PRODUCTS
         );
-        if (context.cabinetId() == null) {
+        WbProductCard card = analyticsService.findCardBySeller(nmId, context.user().getId(), context.cabinetId());
+        Cabinet cabinet = card.getCabinet();
+        if (cabinet == null) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         }
-        Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(context.cabinetId());
-        WbSalesFunnelExcelImportResultDto result = salesFunnelExcelImportService.importFromExcel(cabinet, file);
+        WbSalesFunnelExcelImportResultDto result = salesFunnelExcelImportService.importFromExcel(cabinet, nmId, file);
         return ResponseEntity.ok(result);
     }
 
