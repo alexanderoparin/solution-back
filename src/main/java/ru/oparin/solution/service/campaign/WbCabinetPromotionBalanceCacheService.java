@@ -59,6 +59,47 @@ public class WbCabinetPromotionBalanceCacheService {
         return cacheRepository.findById(cabinetId);
     }
 
+    /**
+     * Обновляет кэш баланса, если он устарел (перед deposit с промо).
+     * Ошибки и лимиты WB не пробрасываются — deposit может пойти с устаревшим кэшем и откатом без промо.
+     */
+    @Transactional
+    public void refreshBalanceIfStale(Cabinet cabinet) {
+        if (cabinet == null || cabinet.getId() == null) {
+            return;
+        }
+        Long cabinetId = cabinet.getId();
+        CabinetTokenType tokenType = cabinet.getTokenType() != null ? cabinet.getTokenType() : CabinetTokenType.BASIC;
+        Optional<WbCabinetPromotionBalanceCache> cached = cacheRepository.findById(cabinetId);
+        if (cached.isPresent() && isCacheFresh(cached.get(), tokenType)) {
+            return;
+        }
+        try {
+            refreshBalance(cabinetId);
+        } catch (Exception e) {
+            log.debug("Не удалось обновить баланс перед deposit cabinetId={}: {}", cabinetId, e.getMessage());
+        }
+    }
+
+    /**
+     * Сбрасывает промо в кэше после отказа WB (чтобы не повторять неверный cashback_percent).
+     */
+    @Transactional
+    public void clearPromoCashback(Long cabinetId) {
+        if (cabinetId == null) {
+            return;
+        }
+        cacheRepository.findById(cabinetId).ifPresent(cache -> {
+            if ((cache.getCashbackRub() != null && cache.getCashbackRub() > 0)
+                    || cache.getCashbackPercent() != null) {
+                cache.setCashbackRub(0);
+                cache.setCashbackPercent(null);
+                cacheRepository.save(cache);
+                log.info("Промо-бонусы сброшены в кэше баланса cabinetId={} после ошибки deposit", cabinetId);
+            }
+        });
+    }
+
     private BalanceRefreshResponseDto resolveSources(Long cabinetId, boolean tryRefreshIfMissing, boolean forceRefresh) {
         Cabinet cabinet = cabinetService.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));

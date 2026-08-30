@@ -58,4 +58,29 @@ public final class WbPromotionDepositCashbackSupport {
                 available
         );
     }
+
+    /**
+     * Убирает промо-поля из запроса deposit (повтор только с основным балансом).
+     */
+    public static void stripCashback(WbPromotionBudgetDepositRequest request) {
+        if (request == null) {
+            return;
+        }
+        request.setCashbackSum(null);
+        request.setCashbackPercent(null);
+    }
+
+    /**
+     * Ошибки WB, связанные с промо-бонусами / cashback в deposit.
+     */
+    public static boolean isCashbackRelatedDepositError(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        String lower = message.toLowerCase();
+        return lower.contains("кешбек")
+                || lower.contains("cashback")
+                || lower.contains("промо")
+                || lower.contains("promo");
+    }
 }

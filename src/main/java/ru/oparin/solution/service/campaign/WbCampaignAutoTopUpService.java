@@ -12,7 +12,6 @@ import ru.oparin.solution.model.WbCampaignManagementState;
 import ru.oparin.solution.repository.WbCampaignAutoBudgetSettingsRepository;
 import ru.oparin.solution.repository.WbCampaignManagementStateRepository;
 import ru.oparin.solution.service.WbPromotionCampaignControlWriteService;
-import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -32,12 +31,11 @@ public class WbCampaignAutoTopUpService {
     private final WbCampaignAutoBudgetSettingsRepository autoBudgetRepository;
     private final WbCampaignManagementStateRepository stateRepository;
     private final WbPromotionCampaignControlWriteService promotionControlWriteService;
-    private final WbPromotionApiClient promotionApiClient;
     private final WbCampaignBudgetFetchService budgetFetchService;
     private final WbCampaignChangeLogService changeLogService;
     private final WbCampaignBudgetTimelineService timelineService;
     private final WbCampaignStartBudgetGuard startBudgetGuard;
-    private final WbCabinetPromotionBalanceCacheService balanceCacheService;
+    private final WbCampaignBudgetDepositService budgetDepositService;
 
     /**
      * Пополняет бюджет при необходимости и сохраняет учёт (журнал, timeline, состояние слота).
@@ -96,15 +94,10 @@ public class WbCampaignAutoTopUpService {
                     .type(settings.getSourceType() != null ? settings.getSourceType() : 1)
                     .returnBudget(true)
                     .build();
-            if (settings.isUsePromoCashback()) {
-                WbPromotionDepositCashbackSupport.applyFromCache(
-                        req,
-                        balanceCacheService.findCache(cabinetId).orElse(null)
-                );
-            }
-            // HTTP deposit вне длинной TX.
-            WbPromotionBudgetResponse depositResponse = promotionApiClient.depositCampaignBudget(
-                    cabinet.getApiKey(), advertId, req);
+            // HTTP deposit вне длинной TX; при устаревшем промо — повтор без cashback и отключение флага в настройках.
+            WbCampaignBudgetDepositResult depositResult = budgetDepositService.depositWithPromoFallback(
+                    cabinet, advertId, req, settings.isUsePromoCashback(), true);
+            WbPromotionBudgetResponse depositResponse = depositResult.getResponse();
             int budgetAfterTopUp = budgetFetchService.resolveBudgetAfterTopUp(
                     budgetBeforeTopUp, topUpAmount, depositResponse);
             budgetFetchService.storeBudgetTotal(state, advertId, cabinetId, budgetAfterTopUp);

@@ -17,7 +17,6 @@ import ru.oparin.solution.service.AnalyticsService;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.WbPromotionCampaignControlService;
 import ru.oparin.solution.service.WbPromotionCampaignControlWriteService;
-import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -46,7 +45,7 @@ public class WbCampaignManageService {
     private final WbPromotionCampaignControlService controlService;
     private final WbPromotionCampaignControlWriteService controlWriteService;
     private final CabinetService cabinetService;
-    private final WbPromotionApiClient promotionApiClient;
+    private final WbCampaignBudgetDepositService budgetDepositService;
     private final WbCabinetPromotionBalanceCacheService balanceCacheService;
     private final WbCampaignBudgetTimelineService timelineService;
     private final WbCampaignBudgetFetchService budgetFetchService;
@@ -169,15 +168,10 @@ public class WbCampaignManageService {
                 .returnBudget(true)
                 .build();
         boolean usePromo = request.getUsePromoCashback() == null || request.getUsePromoCashback();
-        if (usePromo) {
-            WbPromotionDepositCashbackSupport.applyFromCache(
-                    depositRequest,
-                    balanceCacheService.findCache(cabinetId).orElse(null)
-            );
-        }
         WbPromotionBudgetResponse depositResponse;
         try {
-            depositResponse = promotionApiClient.depositCampaignBudget(cabinet.getApiKey(), advertId, depositRequest);
+            depositResponse = budgetDepositService.depositWithPromoFallback(
+                    cabinet, advertId, depositRequest, usePromo).getResponse();
         } catch (Exception e) {
             throw new IllegalArgumentException(
                     e.getMessage() != null ? e.getMessage() : "Не удалось пополнить бюджет кампании");
