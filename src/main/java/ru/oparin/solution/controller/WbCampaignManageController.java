@@ -141,19 +141,6 @@ public class WbCampaignManageController {
                 advertId, requireCabinet(context), actor, request.isEnabled()));
     }
 
-    @PostMapping("/auto-budget/unlock")
-    public ResponseEntity<?> unlockAutoBudget(
-            @PathVariable Long advertId,
-            @RequestParam(required = false) Long sellerId,
-            @RequestParam(required = false) Long cabinetId,
-            Authentication authentication
-    ) {
-        SellerContextService.SellerContext context = ctx(sellerId, cabinetId, authentication);
-        User actor = currentUser(authentication);
-        return write(context, authentication, () -> manageService.unlockAutoBudget(
-                advertId, requireCabinet(context), actor));
-    }
-
     @PostMapping("/budget/top-up")
     public ResponseEntity<?> manualTopUp(
             @PathVariable Long advertId,

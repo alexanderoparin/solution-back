@@ -149,18 +149,6 @@ public class WbCampaignManageService {
         return mapAutoBudget(settings);
     }
 
-    @Transactional
-    public CampaignAutoBudgetDto unlockAutoBudget(Long advertId, Long cabinetId, User user) {
-        ensureCampaign(advertId, cabinetId);
-        WbCampaignAutoBudgetSettings settings = getOrCreateAutoBudget(advertId, cabinetId);
-        if (!settings.isLocked()) {
-            return mapAutoBudget(settings);
-        }
-        settings.setLocked(false);
-        autoBudgetRepository.save(settings);
-        return mapAutoBudget(settings);
-    }
-
     /**
      * Единоразовое пополнение бюджета РК через WB API.
      */
