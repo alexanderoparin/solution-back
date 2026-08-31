@@ -90,18 +90,7 @@ public class AnalyticsController {
         SummaryResponseDto response = analyticsService.getSummary(
                 context.user(),
                 context.cabinetId(),
-                request.getPeriods(),
-                request.getExcludedNmIds(),
-                request.getPage(),
-                request.getSize(),
-                request.getSearch(),
-                request.getIncludedNmIds(),
-                request.getFilterToNone(),
-                request.getOnlyWithPhoto(),
-                request.getOnlyPriority(),
-                request.getOnlyInAdvertising(),
-                request.getSortBy(),
-                request.getSortDir()
+                AnalyticsSummaryRequest.from(request)
         );
 
         return ResponseEntity.ok(response);
@@ -134,11 +123,7 @@ public class AnalyticsController {
                 context.user(),
                 context.cabinetId(),
                 decodedMetricName,
-                request.getPeriods(),
-                request.getExcludedNmIds(),
-                request.getOnlyWithPhoto(),
-                request.getOnlyPriority(),
-                request.getOnlyInAdvertising()
+                AnalyticsSummaryRequest.from(request)
         );
 
         return ResponseEntity.ok(response);
