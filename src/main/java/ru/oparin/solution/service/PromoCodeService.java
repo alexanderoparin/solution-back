@@ -63,8 +63,11 @@ public class PromoCodeService {
         if (userId == null) {
             return false;
         }
-        return redemptionRepository.existsActiveFullAccess(
-                userId, PromoGrantType.FULL_ACCESS, LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        if (redemptionRepository.existsActiveFullAccess(userId, PromoGrantType.FULL_ACCESS, now)) {
+            return true;
+        }
+        return redemptionRepository.existsActiveFullAccessNative(userId, now);
     }
 
     /**
@@ -103,7 +106,7 @@ public class PromoCodeService {
             throw new UserException("Промокод недоступен для активации", HttpStatus.BAD_REQUEST);
         }
         if (promo.getMaxRedemptionsPerUser() != null
-                && redemptionRepository.existsByUserIdAndPromoCodeId(userId, promo.getId())) {
+                && redemptionRepository.existsByUser_IdAndPromoCode_Id(userId, promo.getId())) {
             throw new UserException("Вы уже использовали этот промокод", HttpStatus.BAD_REQUEST);
         }
     }

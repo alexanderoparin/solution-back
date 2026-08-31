@@ -9,9 +9,11 @@ import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.SubscriptionRepository;
 import ru.oparin.solution.service.CabinetEntitlementService;
+import ru.oparin.solution.service.PromoCodeService;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 
 /**
  * Проверка entitlement на «Управление РК» на уровне кабинета:
@@ -35,6 +37,7 @@ public class WbCampaignManageAccessService {
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionProperties subscriptionProperties;
     private final CabinetEntitlementService cabinetEntitlementService;
+    private final PromoCodeService promoCodeService;
 
     /**
      * Пользователь-селлер (владелец), если нужен для UI без кабинета.
@@ -240,6 +243,22 @@ public class WbCampaignManageAccessService {
                     .enabled(true)
                     .hasAccess(true)
                     .status(STATUS_AGENCY)
+                    .canActivateFree(false)
+                    .build();
+        }
+        Optional<PromoCodeRedemption> promo = holder != null
+                ? promoCodeService.findActiveFullAccessRedemption(holder.getId())
+                : Optional.empty();
+        if (promo.isPresent()) {
+            LocalDateTime expiresAt = promo.get().getExpiresAt();
+            return CampaignManageAccessDto.builder()
+                    .enabled(true)
+                    .hasAccess(true)
+                    .status(STATUS_PRO)
+                    .expiresAt(expiresAt)
+                    .daysRemaining(expiresAt != null
+                            ? daysBetweenCeil(LocalDateTime.now(), expiresAt)
+                            : null)
                     .canActivateFree(false)
                     .build();
         }

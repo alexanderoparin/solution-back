@@ -18,7 +18,7 @@ public interface PromoCodeRedemptionRepository extends JpaRepository<PromoCodeRe
 
     long countByPromoCodeId(Long promoCodeId);
 
-    boolean existsByUserIdAndPromoCodeId(Long userId, Long promoCodeId);
+    boolean existsByUser_IdAndPromoCode_Id(Long userId, Long promoCodeId);
 
     @Query("""
             SELECT CASE WHEN COUNT(r) > 0 THEN true ELSE false END
@@ -31,6 +31,20 @@ public interface PromoCodeRedemptionRepository extends JpaRepository<PromoCodeRe
     boolean existsActiveFullAccess(@Param("userId") Long userId,
                                    @Param("grantType") PromoGrantType grantType,
                                    @Param("now") LocalDateTime now);
+
+    /**
+     * Native fallback: активный FULL_ACCESS (на случай расхождения enum/JPQL и TIMESTAMP в PostgreSQL).
+     */
+    @Query(value = """
+            SELECT COUNT(*) > 0
+            FROM promo_code_redemptions r
+            INNER JOIN promo_codes p ON p.id = r.promo_code_id
+            WHERE r.user_id = :userId
+              AND p.grant_type = 'FULL_ACCESS'
+              AND r.expires_at > :now
+            """, nativeQuery = true)
+    boolean existsActiveFullAccessNative(@Param("userId") Long userId,
+                                         @Param("now") LocalDateTime now);
 
     @Query("""
             SELECT r FROM PromoCodeRedemption r

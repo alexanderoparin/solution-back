@@ -152,7 +152,14 @@ public class UserController {
             campaignManage = campaignManageAccessService.buildAccessState(user, cabinet);
         } else {
             User subscriptionSeller = resolveSellerForAccess(user, sellerId);
-            campaignManage = campaignManageAccessService.buildAccessState(user, subscriptionSeller);
+            User holder = subscriptionSeller != null ? subscriptionSeller : user;
+            Cabinet defaultCabinet = cabinetRepository.findDefaultByUserId(holder.getId()).orElse(null);
+            if (defaultCabinet != null) {
+                defaultCabinet = cabinetRepository.findByIdWithUser(defaultCabinet.getId()).orElse(defaultCabinet);
+                campaignManage = campaignManageAccessService.buildAccessState(user, defaultCabinet);
+            } else {
+                campaignManage = campaignManageAccessService.buildAccessState(user, subscriptionSeller);
+            }
         }
 
         AccessStatusResponse response = AccessStatusResponse.builder()

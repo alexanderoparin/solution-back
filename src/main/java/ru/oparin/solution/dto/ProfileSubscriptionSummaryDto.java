@@ -16,6 +16,7 @@ public record ProfileSubscriptionSummaryDto(
         LocalDateTime expiresAt,
         LocalDateTime nextBillingAt,
         boolean autoRenew,
-        String freePlanHint
+        String freePlanHint,
+        String promoCode
 ) {
 }
