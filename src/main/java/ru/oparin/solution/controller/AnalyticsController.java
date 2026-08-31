@@ -274,4 +274,28 @@ public class AnalyticsController {
         return ResponseEntity.ok(result);
     }
 
+    /**
+     * Массовый импорт суточной воронки из Excel-выгрузки WB (лист «Товары») для всех артикулов кабинета.
+     */
+    @PostMapping(value = "/funnel-import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<WbSalesFunnelExcelImportResultDto> importCabinetSalesFunnelExcel(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                sellerId,
+                cabinetId,
+                CabinetAccessSection.PRODUCTS
+        );
+        if (context.cabinet() == null) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+        WbSalesFunnelExcelImportResultDto result = salesFunnelExcelImportService.importAllFromExcel(
+                context.cabinet(), file);
+        return ResponseEntity.ok(result);
+    }
+
 }
