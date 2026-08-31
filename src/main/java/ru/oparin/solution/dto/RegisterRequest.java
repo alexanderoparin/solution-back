@@ -56,5 +56,11 @@ public class RegisterRequest {
      * Токен приглашения (если регистрация по invite).
      */
     private String invitationToken;
+
+    /**
+     * Промокод (необязательно).
+     */
+    @Size(max = 64, message = "Промокод слишком длинный")
+    private String promoCode;
 }
 

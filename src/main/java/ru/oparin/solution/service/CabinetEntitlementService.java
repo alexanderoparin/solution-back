@@ -20,6 +20,7 @@ public class CabinetEntitlementService {
     private static final List<String> ACTIVE_STATUSES = List.of("active", "trial");
 
     private final SubscriptionRepository subscriptionRepository;
+    private final PromoCodeService promoCodeService;
 
     /**
      * Полный доступ ко всем разделам без ограничений (как клиент агентства).
@@ -31,6 +32,9 @@ public class CabinetEntitlementService {
         }
         User owner = cabinet.getUser();
         if (owner != null && Boolean.TRUE.equals(owner.getAgencyManaged())) {
+            return true;
+        }
+        if (owner != null && promoCodeService.hasActiveFullAccess(owner.getId())) {
             return true;
         }
         return findActiveMainSubscription(cabinet)

@@ -16,10 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.config.SubscriptionProperties;
 import ru.oparin.solution.dto.*;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.MarketplaceType;
-import ru.oparin.solution.model.Role;
-import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.SubscriptionRepository;
 import ru.oparin.solution.repository.UserRepository;
 
@@ -47,6 +44,7 @@ public class UserService {
     private final AccountTypeService accountTypeService;
     private final CabinetAccessService cabinetAccessService;
     private final CabinetBillingService cabinetBillingService;
+    private final PromoCodeService promoCodeService;
 
     @Lazy
     @Autowired
@@ -78,6 +76,9 @@ public class UserService {
         profileSubscriptionService.createFreeAnalyticsSubscription(user);
         if (request.getInvitationToken() != null && !request.getInvitationToken().isBlank()) {
             cabinetAccessService.acceptInvitation(user, request.getInvitationToken().trim());
+        }
+        if (request.getPromoCode() != null && !request.getPromoCode().isBlank()) {
+            promoCodeService.redeem(request.getPromoCode(), user.getId(), PromoRedemptionSource.REGISTRATION);
         }
         return user;
     }
