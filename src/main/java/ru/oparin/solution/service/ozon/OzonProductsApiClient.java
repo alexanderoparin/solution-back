@@ -121,11 +121,36 @@ public class OzonProductsApiClient {
             int offset,
             List<String> metrics
     ) {
+        return getAnalyticsData(
+                clientId,
+                apiKey,
+                dateFrom,
+                dateTo,
+                limit,
+                offset,
+                metrics,
+                List.of("sku", "day")
+        );
+    }
+
+    /**
+     * Аналитика с явным списком измерений (для probe — только {@code day}).
+     */
+    public OzonAnalyticsDataResponse getAnalyticsData(
+            String clientId,
+            String apiKey,
+            String dateFrom,
+            String dateTo,
+            int limit,
+            int offset,
+            List<String> metrics,
+            List<String> dimension
+    ) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("date_from", dateFrom);
         body.put("date_to", dateTo);
         body.put("metrics", metrics);
-        body.put("dimension", List.of("sku", "day"));
+        body.put("dimension", dimension != null && !dimension.isEmpty() ? dimension : List.of("sku", "day"));
         body.put("limit", limit > 0 ? limit : 1000);
         body.put("offset", Math.max(0, offset));
         return postJson(
