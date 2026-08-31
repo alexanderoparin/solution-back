@@ -79,4 +79,15 @@ public class CabinetEntitlementService {
         return subscriptionRepository.findLastExpiredByCabinetIdAndCodePrefix(
                 cabinet.getId(), PlanCodes.CAMPAIGN_PLAN_PREFIX, LocalDateTime.now());
     }
+
+    /**
+     * Активная активация промокода FULL_ACCESS у владельца кабинета.
+     */
+    @Transactional(readOnly = true)
+    public Optional<PromoCodeRedemption> findActivePromoForCabinet(Cabinet cabinet) {
+        if (cabinet == null || cabinet.getUser() == null || cabinet.getUser().getId() == null) {
+            return Optional.empty();
+        }
+        return promoCodeService.findActiveFullAccessRedemption(cabinet.getUser().getId());
+    }
 }

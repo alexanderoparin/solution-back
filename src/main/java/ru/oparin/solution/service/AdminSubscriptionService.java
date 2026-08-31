@@ -40,6 +40,7 @@ public class AdminSubscriptionService {
     private final WbCabinetAbTestQuotaRepository quotaRepository;
     private final SubscriptionPaymentService subscriptionPaymentService;
     private final WbAbTestQuotaService abTestQuotaService;
+    private final CabinetEntitlementService cabinetEntitlementService;
 
     /**
      * Постраничный обзор тарифов и услуг кабинетов для админки.
@@ -192,12 +193,19 @@ public class AdminSubscriptionService {
     ) {
         User owner = cabinet.getUser();
         boolean agency = owner != null && Boolean.TRUE.equals(owner.getAgencyManaged());
-        boolean unlimited = agency
-                || (main != null && main.getPlan() != null
-                && PlanCodes.PRO_MONTH.equals(main.getPlan().getCode()));
+        boolean unlimited = cabinetEntitlementService.hasUnlimitedAccess(cabinet);
+        var promo = cabinetEntitlementService.findActivePromoForCabinet(cabinet);
 
         MainTariffOverviewDto mainTariff;
-        if (unlimited && (main == null || main.getPlan() == null
+        if (unlimited && promo.isPresent() && !agency) {
+            mainTariff = MainTariffOverviewDto.builder()
+                    .code(PlanCodes.PRO_MONTH)
+                    .name("PRO (промокод " + promo.get().getPromoCode().getCode() + ")")
+                    .status("PROMO")
+                    .expiresAt(promo.get().getExpiresAt())
+                    .unlimitedAccess(true)
+                    .build();
+        } else if (unlimited && (main == null || main.getPlan() == null
                 || !PlanCodes.PRO_MONTH.equals(main.getPlan().getCode()))) {
             mainTariff = MainTariffOverviewDto.builder()
                     .code(PlanCodes.PRO_MONTH)

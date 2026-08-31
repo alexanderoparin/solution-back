@@ -72,37 +72,13 @@ public class CabinetBillingService {
 
         boolean unlimited = entitlementService.hasUnlimitedAccess(cabinet);
         Subscription main = entitlementService.findActiveMainSubscription(cabinet).orElse(null);
-        MainTariffDto mainTariff;
-        if (unlimited && (main == null || main.getPlan() == null
-                || !PlanCodes.PRO_MONTH.equals(main.getPlan().getCode()))) {
-            // agency без PRO-подписки
-            mainTariff = MainTariffDto.builder()
-                    .code(PlanCodes.PRO_MONTH)
-                    .name("PRO (клиент агентства)")
-                    .status("AGENCY")
-                    .expiresAt(null)
-                    .unlimitedAccess(true)
-                    .build();
-        } else if (main != null && main.getPlan() != null) {
-            mainTariff = MainTariffDto.builder()
-                    .code(main.getPlan().getCode())
-                    .name(main.getPlan().getName())
-                    .status(main.getStatus())
-                    .expiresAt(main.getExpiresAt())
-                    .unlimitedAccess(unlimited)
-                    .build();
-        } else {
-            mainTariff = MainTariffDto.builder()
-                    .code(PlanCodes.ANALYTICS_FREE)
-                    .name("Бесплатный доступ")
-                    .status("active")
-                    .expiresAt(null)
-                    .unlimitedAccess(false)
-                    .build();
-        }
+        MainTariffDto mainTariff = buildMainTariff(cabinet, unlimited, main);
+        LocalDateTime promoExpiresAt = entitlementService.findActivePromoForCabinet(cabinet)
+                .map(PromoCodeRedemption::getExpiresAt)
+                .orElse(null);
 
         List<ServiceStatusDto> services = new ArrayList<>();
-        services.add(buildCampaignService(cabinet, unlimited));
+        services.add(buildCampaignService(cabinet, unlimited, promoExpiresAt));
         services.add(buildAbService(cabinet, unlimited));
 
         return CabinetBillingStatusDto.builder()
@@ -114,14 +90,68 @@ public class CabinetBillingService {
                 .build();
     }
 
-    private ServiceStatusDto buildCampaignService(Cabinet cabinet, boolean unlimited) {
+    private MainTariffDto buildMainTariff(Cabinet cabinet, boolean unlimited, Subscription main) {
+        if (!unlimited) {
+            if (main != null && main.getPlan() != null) {
+                return MainTariffDto.builder()
+                        .code(main.getPlan().getCode())
+                        .name(main.getPlan().getName())
+                        .status(main.getStatus())
+                        .expiresAt(main.getExpiresAt())
+                        .unlimitedAccess(false)
+                        .build();
+            }
+            return MainTariffDto.builder()
+                    .code(PlanCodes.ANALYTICS_FREE)
+                    .name("Бесплатный доступ")
+                    .status("active")
+                    .expiresAt(null)
+                    .unlimitedAccess(false)
+                    .build();
+        }
+
+        User owner = cabinet.getUser();
+        boolean agency = owner != null && Boolean.TRUE.equals(owner.getAgencyManaged());
+        var promo = entitlementService.findActivePromoForCabinet(cabinet);
+        if (promo.isPresent() && !agency) {
+            PromoCode promoCode = promo.get().getPromoCode();
+            return MainTariffDto.builder()
+                    .code(PlanCodes.PRO_MONTH)
+                    .name("PRO (промокод " + promoCode.getCode() + ")")
+                    .status("PROMO")
+                    .expiresAt(promo.get().getExpiresAt())
+                    .unlimitedAccess(true)
+                    .build();
+        }
+
+        if (main != null && main.getPlan() != null && PlanCodes.PRO_MONTH.equals(main.getPlan().getCode())) {
+            return MainTariffDto.builder()
+                    .code(main.getPlan().getCode())
+                    .name(main.getPlan().getName())
+                    .status(main.getStatus())
+                    .expiresAt(main.getExpiresAt())
+                    .unlimitedAccess(true)
+                    .build();
+        }
+
+        return MainTariffDto.builder()
+                .code(PlanCodes.PRO_MONTH)
+                .name("PRO (клиент агентства)")
+                .status("AGENCY")
+                .expiresAt(null)
+                .unlimitedAccess(true)
+                .build();
+    }
+
+    private ServiceStatusDto buildCampaignService(Cabinet cabinet, boolean unlimited, LocalDateTime promoExpiresAt) {
         if (unlimited) {
             return ServiceStatusDto.builder()
                     .serviceCode(SERVICE_CAMPAIGN_MANAGE)
                     .name("Управление РК")
                     .connected(true)
                     .planCode(PlanCodes.PRO_MONTH)
-                    .planName("Входит в PRO")
+                    .planName(promoExpiresAt != null ? "Промокод" : "Входит в PRO")
+                    .expiresAt(promoExpiresAt)
                     .status("INCLUDED")
                     .build();
         }

@@ -170,14 +170,18 @@ public class WbCampaignManageAccessService {
         }
 
         if (cabinetEntitlementService.hasUnlimitedAccess(cabinet)) {
-            Subscription pro = cabinetEntitlementService.findActiveMainSubscription(cabinet).orElse(null);
+            LocalDateTime expiresAt = cabinetEntitlementService.findActivePromoForCabinet(cabinet)
+                    .map(PromoCodeRedemption::getExpiresAt)
+                    .orElseGet(() -> cabinetEntitlementService.findActiveMainSubscription(cabinet)
+                            .map(Subscription::getExpiresAt)
+                            .orElse(null));
             return CampaignManageAccessDto.builder()
                     .enabled(true)
                     .hasAccess(true)
                     .status(STATUS_PRO)
-                    .expiresAt(pro != null ? pro.getExpiresAt() : null)
-                    .daysRemaining(pro != null && pro.getExpiresAt() != null
-                            ? daysBetweenCeil(LocalDateTime.now(), pro.getExpiresAt())
+                    .expiresAt(expiresAt)
+                    .daysRemaining(expiresAt != null
+                            ? daysBetweenCeil(LocalDateTime.now(), expiresAt)
                             : null)
                     .canActivateFree(false)
                     .build();
