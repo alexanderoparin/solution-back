@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 import ru.oparin.solution.dto.abtest.*;
 import ru.oparin.solution.model.CabinetAccessSection;
 import ru.oparin.solution.service.SellerContextService;
+import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.abtest.WbAbTestService;
 
 import java.nio.file.Path;
@@ -31,6 +32,7 @@ public class WbAbTestController {
     private final SellerContextService sellerContextService;
     private final WbAbTestService abTestService;
     private final ObjectMapper objectMapper;
+    private final UserService userService;
 
     /**
      * Список А/Б-тестов кабинета.
@@ -163,7 +165,8 @@ public class WbAbTestController {
         }
         WbCreateAbTestRequest request = objectMapper.readValue(requestJson, WbCreateAbTestRequest.class);
         List<MultipartFile> fileList = files != null ? Arrays.asList(files) : List.of();
-        WbAbTestDto created = abTestService.create(ctx.cabinet().getId(), request, fileList);
+        var actor = userService.findByEmail(authentication.getName());
+        WbAbTestDto created = abTestService.create(ctx.cabinet().getId(), request, fileList, actor);
         return ResponseEntity.ok(created);
     }
 
@@ -183,6 +186,7 @@ public class WbAbTestController {
         if (ctx.cabinet() == null) {
             return ResponseEntity.badRequest().build();
         }
-        return ResponseEntity.ok(abTestService.updateStatus(ctx.cabinet().getId(), id, body.getStatus()));
+        var actor = userService.findByEmail(authentication.getName());
+        return ResponseEntity.ok(abTestService.updateStatus(ctx.cabinet().getId(), id, body.getStatus(), actor));
     }
 }

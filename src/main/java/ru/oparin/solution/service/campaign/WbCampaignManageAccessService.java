@@ -69,6 +69,13 @@ public class WbCampaignManageAccessService {
         return cabinetEntitlementService.hasCampaignManageAccess(cabinet);
     }
 
+    public boolean hasCampaignEntitlement(Cabinet cabinet, User actor) {
+        if (!isCampaignManagementEnabled()) {
+            return true;
+        }
+        return cabinetEntitlementService.hasCampaignManageAccess(cabinet, actor);
+    }
+
     /**
      * @deprecated предпочитайте {@link #hasCampaignEntitlement(Cabinet)}.
      */
@@ -107,7 +114,7 @@ public class WbCampaignManageAccessService {
         if (!isCampaignManagementEnabled()) {
             return true;
         }
-        return hasCampaignEntitlement(cabinet);
+        return hasCampaignEntitlement(cabinet, actor);
     }
 
     /**
@@ -172,8 +179,8 @@ public class WbCampaignManageAccessService {
                     .build();
         }
 
-        if (cabinetEntitlementService.hasUnlimitedAccess(cabinet)) {
-            LocalDateTime expiresAt = cabinetEntitlementService.findActivePromoForCabinet(cabinet)
+        if (cabinetEntitlementService.hasUnlimitedAccess(cabinet, actor)) {
+            LocalDateTime expiresAt = cabinetEntitlementService.findActivePromoForAccess(cabinet, actor)
                     .map(PromoCodeRedemption::getExpiresAt)
                     .orElseGet(() -> cabinetEntitlementService.findActiveMainSubscription(cabinet)
                             .map(Subscription::getExpiresAt)

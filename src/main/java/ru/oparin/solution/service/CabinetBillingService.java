@@ -17,6 +17,7 @@ import ru.oparin.solution.repository.SubscriptionRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Статус тарифов/услуг кабинета и инициализация FREE при создании кабинета.
@@ -70,27 +71,31 @@ public class CabinetBillingService {
                 && cabinet.getUser() != null
                 && (actor.getRole() == Role.ADMIN || cabinet.getUser().getId().equals(actor.getId()));
 
-        boolean unlimited = entitlementService.hasUnlimitedAccess(cabinet);
+        boolean unlimited = entitlementService.hasUnlimitedAccess(cabinet, actor);
         Subscription main = entitlementService.findActiveMainSubscription(cabinet).orElse(null);
-        MainTariffDto mainTariff = buildMainTariff(cabinet, unlimited, main);
-        LocalDateTime promoExpiresAt = entitlementService.findActivePromoForCabinet(cabinet)
-                .map(PromoCodeRedemption::getExpiresAt)
-                .orElse(null);
+        var promo = entitlementService.findActivePromoForAccess(cabinet, actor);
+        MainTariffDto mainTariff = buildMainTariff(cabinet, unlimited, main, promo);
+        LocalDateTime promoExpiresAt = promo.map(PromoCodeRedemption::getExpiresAt).orElse(null);
 
         List<ServiceStatusDto> services = new ArrayList<>();
         services.add(buildCampaignService(cabinet, unlimited, promoExpiresAt));
-        services.add(buildAbService(cabinet, unlimited));
+        services.add(buildAbService(cabinet, unlimited, actor));
 
         return CabinetBillingStatusDto.builder()
                 .cabinetId(cabinetId)
                 .mainTariff(mainTariff)
                 .services(services)
-                .abTestQuota(abTestQuotaService.getQuotaDto(cabinet))
+                .abTestQuota(abTestQuotaService.getQuotaDto(cabinet, actor))
                 .canManageBilling(canManage)
                 .build();
     }
 
-    private MainTariffDto buildMainTariff(Cabinet cabinet, boolean unlimited, Subscription main) {
+    private MainTariffDto buildMainTariff(
+            Cabinet cabinet,
+            boolean unlimited,
+            Subscription main,
+            Optional<PromoCodeRedemption> promo
+    ) {
         if (!unlimited) {
             if (main != null && main.getPlan() != null) {
                 return MainTariffDto.builder()
@@ -112,7 +117,6 @@ public class CabinetBillingService {
 
         User owner = cabinet.getUser();
         boolean agency = owner != null && Boolean.TRUE.equals(owner.getAgencyManaged());
-        var promo = entitlementService.findActivePromoForCabinet(cabinet);
         if (promo.isPresent() && !agency) {
             PromoCode promoCode = promo.get().getPromoCode();
             return MainTariffDto.builder()
@@ -177,8 +181,8 @@ public class CabinetBillingService {
                 });
     }
 
-    private ServiceStatusDto buildAbService(Cabinet cabinet, boolean unlimited) {
-        var quota = abTestQuotaService.getQuotaDto(cabinet);
+    private ServiceStatusDto buildAbService(Cabinet cabinet, boolean unlimited, User actor) {
+        var quota = abTestQuotaService.getQuotaDto(cabinet, actor);
         boolean connected = unlimited || Boolean.TRUE.equals(quota.getActivated());
         String planName;
         if (unlimited) {

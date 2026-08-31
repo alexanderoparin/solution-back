@@ -170,6 +170,16 @@ public class WbAbTestService {
      */
     @Transactional
     public WbAbTestDto create(Long cabinetId, WbCreateAbTestRequest request, List<MultipartFile> variantFiles) {
+        return create(cabinetId, request, variantFiles, null);
+    }
+
+    @Transactional
+    public WbAbTestDto create(
+            Long cabinetId,
+            WbCreateAbTestRequest request,
+            List<MultipartFile> variantFiles,
+            User actor
+    ) {
         requireWbCabinetForAbTest(cabinetId);
         validateCreateRequest(request, variantFiles);
         if (abTestRepository.existsByCabinetIdAndNmIdAndStatusIn(
@@ -188,14 +198,14 @@ public class WbAbTestService {
         }
 
         Cabinet cabinet = requireCabinetWithCredentials(cabinetId);
-        if (!abTestQuotaService.canStartWbAbTest(cabinet)) {
+        if (!abTestQuotaService.canStartWbAbTest(cabinet, actor)) {
             throw new ru.oparin.solution.exception.UserException(
                     "Недостаточно квоты А/Б тестов. Купите пакет, чтобы создать тест.",
                     org.springframework.http.HttpStatus.PAYMENT_REQUIRED
             );
         }
         // Резервируем квоту при создании; при failStart вернём.
-        abTestQuotaService.consumeStart(cabinet);
+        abTestQuotaService.consumeStart(cabinet, actor);
         validateTokenAllowsRotation(cabinet, request);
 
         // Без синхронного WB: берём фото из нашей БД; уточнение галереи — в AB_TEST_START.
@@ -337,6 +347,11 @@ public class WbAbTestService {
      */
     @Transactional
     public WbAbTestDto updateStatus(Long cabinetId, Long testId, WbAbTestStatus status) {
+        return updateStatus(cabinetId, testId, status, null);
+    }
+
+    @Transactional
+    public WbAbTestDto updateStatus(Long cabinetId, Long testId, WbAbTestStatus status, User actor) {
         WbAbTest test = requireTest(cabinetId, testId);
         if (status == WbAbTestStatus.DISABLED
                 && (test.getStatus() == WbAbTestStatus.ENABLED || test.getStatus() == WbAbTestStatus.PENDING_START)) {
@@ -353,7 +368,7 @@ public class WbAbTestService {
             if (!Boolean.TRUE.equals(test.getFailedAtStart())) {
                 throw new IllegalArgumentException("Повторный запуск завершённого теста не поддерживается — создайте новый");
             }
-            return restartFailedStart(cabinetId, test);
+            return restartFailedStart(cabinetId, test, actor);
         }
         return toDto(test);
     }
@@ -361,7 +376,7 @@ public class WbAbTestService {
     /**
      * Перезапуск теста, упавшего на старте (после смены токена и т.п.).
      */
-    private WbAbTestDto restartFailedStart(Long cabinetId, WbAbTest test) {
+    private WbAbTestDto restartFailedStart(Long cabinetId, WbAbTest test, User actor) {
         if (abTestRepository.existsByCabinetIdAndNmIdAndStatusIn(
                 cabinetId,
                 test.getNmId(),
@@ -369,13 +384,13 @@ public class WbAbTestService {
             throw new IllegalArgumentException("Для этого артикула уже есть активный или запускающийся А/Б-тест");
         }
         Cabinet cabinet = requireCabinetWithCredentials(cabinetId);
-        if (!abTestQuotaService.canStartWbAbTest(cabinet)) {
+        if (!abTestQuotaService.canStartWbAbTest(cabinet, actor)) {
             throw new ru.oparin.solution.exception.UserException(
                     "Недостаточно квоты А/Б тестов. Купите пакет, чтобы перезапустить тест.",
                     org.springframework.http.HttpStatus.PAYMENT_REQUIRED
             );
         }
-        abTestQuotaService.consumeStart(cabinet);
+        abTestQuotaService.consumeStart(cabinet, actor);
 
         LocalDateTime now = LocalDateTime.now();
         test.setStatus(WbAbTestStatus.PENDING_START);

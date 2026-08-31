@@ -6,10 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.WbAbTestQuotaDto;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.Plan;
-import ru.oparin.solution.model.PlanCodes;
-import ru.oparin.solution.model.WbCabinetAbTestQuota;
+import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.PlanRepository;
 import ru.oparin.solution.repository.WbCabinetAbTestQuotaRepository;
@@ -49,7 +46,12 @@ public class WbAbTestQuotaService {
 
     @Transactional(readOnly = true)
     public WbAbTestQuotaDto getQuotaDto(Cabinet cabinet) {
-        if (cabinetEntitlementService.hasUnlimitedAccess(cabinet)) {
+        return getQuotaDto(cabinet, null);
+    }
+
+    @Transactional(readOnly = true)
+    public WbAbTestQuotaDto getQuotaDto(Cabinet cabinet, User actor) {
+        if (hasUnlimited(cabinet, actor)) {
             return WbAbTestQuotaDto.builder()
                     .remaining(null)
                     .usedStarts(resolveUsed(cabinet.getId()))
@@ -73,7 +75,12 @@ public class WbAbTestQuotaService {
      */
     @Transactional(readOnly = true)
     public boolean canStartWbAbTest(Cabinet cabinet) {
-        if (cabinetEntitlementService.hasUnlimitedAccess(cabinet)) {
+        return canStartWbAbTest(cabinet, null);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canStartWbAbTest(Cabinet cabinet, User actor) {
+        if (hasUnlimited(cabinet, actor)) {
             return true;
         }
         WbCabinetAbTestQuota quota = getOrCreate(cabinet);
@@ -115,7 +122,12 @@ public class WbAbTestQuotaService {
      */
     @Transactional
     public void consumeStart(Cabinet cabinet) {
-        if (cabinetEntitlementService.hasUnlimitedAccess(cabinet)) {
+        consumeStart(cabinet, null);
+    }
+
+    @Transactional
+    public void consumeStart(Cabinet cabinet, User actor) {
+        if (hasUnlimited(cabinet, actor)) {
             WbCabinetAbTestQuota quota = getOrCreate(cabinet);
             quota.setUsedStarts(quota.getUsedStarts() + 1);
             quota.setActivated(true);
@@ -182,5 +194,12 @@ public class WbAbTestQuotaService {
         return quotaRepository.findByCabinetId(cabinetId)
                 .map(WbCabinetAbTestQuota::getUsedStarts)
                 .orElse(0);
+    }
+
+    private boolean hasUnlimited(Cabinet cabinet, User actor) {
+        if (actor != null) {
+            return cabinetEntitlementService.hasUnlimitedAccess(cabinet, actor);
+        }
+        return cabinetEntitlementService.hasUnlimitedAccess(cabinet);
     }
 }
