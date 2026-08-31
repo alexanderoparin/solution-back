@@ -90,6 +90,14 @@ public class WbCampaignManageService {
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден")));
         WbCampaignAutoBudgetSettings settings = getOrCreateAutoBudget(advertId, cabinetId);
         validateAutoBudgetTopUpAmount(request.getTopUpAmount());
+
+        boolean enabledBefore = settings.isEnabled();
+        Integer topUpAmountBefore = settings.getTopUpAmount();
+        Integer sourceTypeBefore = settings.getSourceType();
+        boolean usePromoCashbackBefore = settings.isUsePromoCashback();
+        Integer thresholdRubBefore = settings.getThresholdRub();
+        Integer maxTopUpsPerDayBefore = settings.getMaxTopUpsPerDay();
+
         settings.setEnabled(request.isEnabled());
         settings.setTopUpAmount(request.getTopUpAmount());
         settings.setSourceType(request.getSourceType());
@@ -98,7 +106,19 @@ public class WbCampaignManageService {
         settings.setMaxTopUpsPerDay(request.getMaxTopUpsPerDay());
         settings.setLocked(true);
         autoBudgetRepository.save(settings);
-        changeLogService.log(advertId, cabinetId, user, "Сохранены настройки автопополнения бюджета");
+
+        String changeMessage = formatAutoBudgetChangeMessage(
+                enabledBefore,
+                topUpAmountBefore,
+                sourceTypeBefore,
+                usePromoCashbackBefore,
+                thresholdRubBefore,
+                maxTopUpsPerDayBefore,
+                request
+        );
+        if (changeMessage != null) {
+            changeLogService.log(advertId, cabinetId, user, changeMessage);
+        }
         return mapAutoBudget(settings);
     }
 
@@ -133,9 +153,11 @@ public class WbCampaignManageService {
     public CampaignAutoBudgetDto unlockAutoBudget(Long advertId, Long cabinetId, User user) {
         ensureCampaign(advertId, cabinetId);
         WbCampaignAutoBudgetSettings settings = getOrCreateAutoBudget(advertId, cabinetId);
+        if (!settings.isLocked()) {
+            return mapAutoBudget(settings);
+        }
         settings.setLocked(false);
         autoBudgetRepository.save(settings);
-        changeLogService.log(advertId, cabinetId, user, "Редактирование настроек автопополнения бюджета");
         return mapAutoBudget(settings);
     }
 
@@ -729,6 +751,79 @@ public class WbCampaignManageService {
             case 6 -> "суббота";
             case 7 -> "воскресенье";
             default -> "день " + day;
+        };
+    }
+
+    /**
+     * Текст для журнала: одна запись со списком изменённых полей в скобках.
+     *
+     * @return {@code null}, если значимые настройки не менялись
+     */
+    private static String formatAutoBudgetChangeMessage(
+            boolean enabledBefore,
+            Integer topUpAmountBefore,
+            Integer sourceTypeBefore,
+            boolean usePromoCashbackBefore,
+            Integer thresholdRubBefore,
+            Integer maxTopUpsPerDayBefore,
+            CampaignAutoBudgetRequestDto request
+    ) {
+        List<String> parts = new ArrayList<>();
+        if (enabledBefore != request.isEnabled()) {
+            parts.add("автопополнение: "
+                    + onOffLabel(enabledBefore) + " -> " + onOffLabel(request.isEnabled()));
+        }
+        if (!Objects.equals(topUpAmountBefore, request.getTopUpAmount())) {
+            parts.add("сумма пополнения: "
+                    + formatAutoBudgetRub(topUpAmountBefore) + " -> " + formatAutoBudgetRub(request.getTopUpAmount()));
+        }
+        if (!Objects.equals(sourceTypeBefore, request.getSourceType())) {
+            parts.add("источник: "
+                    + formatAutoBudgetSource(sourceTypeBefore) + " -> "
+                    + formatAutoBudgetSource(request.getSourceType()));
+        }
+        boolean usePromoAfter = request.getUsePromoCashback() == null || request.getUsePromoCashback();
+        if (usePromoCashbackBefore != usePromoAfter) {
+            parts.add("промо-бонусы: "
+                    + onOffLabel(usePromoCashbackBefore) + " -> " + onOffLabel(usePromoAfter));
+        }
+        if (!Objects.equals(thresholdRubBefore, request.getThresholdRub())) {
+            parts.add("порог пополнения: "
+                    + formatAutoBudgetRub(thresholdRubBefore) + " -> "
+                    + formatAutoBudgetRub(request.getThresholdRub()));
+        }
+        if (!Objects.equals(maxTopUpsPerDayBefore, request.getMaxTopUpsPerDay())) {
+            parts.add("макс. пополнений в день: "
+                    + formatAutoBudgetCount(maxTopUpsPerDayBefore) + " -> "
+                    + formatAutoBudgetCount(request.getMaxTopUpsPerDay()));
+        }
+        if (parts.isEmpty()) {
+            return null;
+        }
+        return "Изменены настройки автопополнения (" + String.join(", ", parts) + ")";
+    }
+
+    private static String onOffLabel(boolean enabled) {
+        return enabled ? "вкл" : "выкл";
+    }
+
+    private static String formatAutoBudgetRub(Integer rub) {
+        return rub != null ? rub + " ₽" : "—";
+    }
+
+    private static String formatAutoBudgetCount(Integer count) {
+        return count != null ? String.valueOf(count) : "—";
+    }
+
+    private static String formatAutoBudgetSource(Integer sourceType) {
+        if (sourceType == null) {
+            return "—";
+        }
+        return switch (sourceType) {
+            case 0 -> "Счёт";
+            case 1 -> "Баланс";
+            case 3 -> "Бонусы";
+            default -> "тип " + sourceType;
         };
     }
 }
