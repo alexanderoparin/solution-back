@@ -10,7 +10,7 @@ import java.util.List;
  * Ответ REST API: статистика по поисковым кластерам рекламной кампании за период.
  * <p>
  * Эндпоинт: {@code GET /advertising/campaigns/{id}/normquery-clusters}.
- * Данные читаются из {@code promotion_norm_query_statistics} после синхронизации с WB.
+ * Данные читаются из {@code wb_promotion_norm_query_statistics} после синхронизации с WB.
  */
 @Getter
 @Setter

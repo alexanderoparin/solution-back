@@ -53,7 +53,7 @@ public class WbPromotionNormQueryStatisticsRepositoryImpl implements WbPromotion
                     ELSE 0 END AS cpo
             """;
 
-    private static final String FROM_TABLE = " FROM solution.promotion_norm_query_statistics s ";
+    private static final String FROM_TABLE = " FROM solution.wb_promotion_norm_query_statistics s ";
 
     @PersistenceContext
     private EntityManager entityManager;
