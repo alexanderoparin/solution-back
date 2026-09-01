@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.model.*;
-import ru.oparin.solution.repository.CabinetAccessGrantRepository;
 import ru.oparin.solution.repository.SubscriptionRepository;
 
 import java.time.LocalDateTime;
@@ -13,7 +12,7 @@ import java.util.Optional;
 
 /**
  * Entitlement кабинета: PRO / agency → полный доступ; иначе услуги по подпискам кабинета.
- * Промокод FULL_ACCESS у текущего пользователя действует на кабинеты, к которым у него есть доступ.
+ * Промокод FULL_ACCESS учитывается только у владельца кабинета.
  */
 @Service
 @RequiredArgsConstructor
@@ -23,7 +22,6 @@ public class CabinetEntitlementService {
 
     private final SubscriptionRepository subscriptionRepository;
     private final PromoCodeService promoCodeService;
-    private final CabinetAccessGrantRepository grantRepository;
 
     /**
      * Полный доступ ко всем разделам без ограничений (как клиент агентства).
@@ -47,14 +45,11 @@ public class CabinetEntitlementService {
     }
 
     /**
-     * Полный доступ с учётом промокода текущего пользователя (собственный или выданный кабинет).
+     * Полный доступ с учётом контекста пользователя (промо только у владельца кабинета).
      */
     @Transactional(readOnly = true)
     public boolean hasUnlimitedAccess(Cabinet cabinet, User actor) {
-        if (hasUnlimitedAccess(cabinet)) {
-            return true;
-        }
-        return hasActorPromoAccess(cabinet, actor);
+        return hasUnlimitedAccess(cabinet);
     }
 
     /**
@@ -118,42 +113,10 @@ public class CabinetEntitlementService {
     }
 
     /**
-     * Промокод для отображения billing/access: владелец кабинета или текущий пользователь с доступом.
+     * Промокод для billing/access — только у владельца кабинета.
      */
     @Transactional(readOnly = true)
     public Optional<PromoCodeRedemption> findActivePromoForAccess(Cabinet cabinet, User actor) {
-        Optional<PromoCodeRedemption> ownerPromo = findActivePromoForCabinet(cabinet);
-        if (ownerPromo.isPresent()) {
-            return ownerPromo;
-        }
-        if (hasActorPromoAccess(cabinet, actor)) {
-            return promoCodeService.findActiveFullAccessRedemption(actor.getId());
-        }
-        return Optional.empty();
-    }
-
-    private boolean hasActorPromoAccess(Cabinet cabinet, User actor) {
-        if (cabinet == null || actor == null || actor.getId() == null) {
-            return false;
-        }
-        if (!promoCodeService.hasActiveFullAccess(actor.getId())) {
-            return false;
-        }
-        return actorHasCabinetAccess(actor, cabinet);
-    }
-
-    private boolean actorHasCabinetAccess(User actor, Cabinet cabinet) {
-        if (actor.getRole() == Role.ADMIN) {
-            return true;
-        }
-        User owner = cabinet.getUser();
-        if (owner != null && owner.getId().equals(actor.getId())) {
-            return true;
-        }
-        LocalDateTime now = LocalDateTime.now();
-        return grantRepository.findByCabinet_IdAndUser_Id(cabinet.getId(), actor.getId())
-                .filter(g -> g.getStatus() == CabinetAccessGrantStatus.ACTIVE)
-                .filter(g -> g.getValidUntil() == null || g.getValidUntil().isAfter(now))
-                .isPresent();
+        return findActivePromoForCabinet(cabinet);
     }
 }
