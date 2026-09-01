@@ -16,8 +16,24 @@ RUN mvn -B -o package -DskipTests
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
-# Устанавливаем curl для healthcheck
-RUN apk add --no-cache curl
+# TLS Минцифры (Russian Trusted CA): enter.tochka.com уже на этом корне.
+# Источник: https://developers.tochka.com/docs/tochka-api/certificate
+#   https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt
+#   https://gu-st.ru/content/lending/russian_trusted_sub_ca_pem.crt
+COPY docker/certs/russian_trusted_root_ca.crt /usr/local/share/ca-certificates/russian_trusted_root_ca.crt
+COPY docker/certs/russian_trusted_sub_ca.crt /usr/local/share/ca-certificates/russian_trusted_sub_ca.crt
+RUN apk add --no-cache curl ca-certificates \
+    && update-ca-certificates \
+    && "$JAVA_HOME/bin/keytool" -importcert -noprompt -trustcacerts \
+         -alias russian-trusted-root \
+         -file /usr/local/share/ca-certificates/russian_trusted_root_ca.crt \
+         -keystore "$JAVA_HOME/lib/security/cacerts" \
+         -storepass changeit \
+    && "$JAVA_HOME/bin/keytool" -importcert -noprompt -trustcacerts \
+         -alias russian-trusted-sub \
+         -file /usr/local/share/ca-certificates/russian_trusted_sub_ca.crt \
+         -keystore "$JAVA_HOME/lib/security/cacerts" \
+         -storepass changeit
 
 # Создаем пользователя для безопасности
 RUN addgroup -S spring && adduser -S spring -G spring

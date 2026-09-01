@@ -3,7 +3,6 @@ package ru.oparin.solution.service.sync;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
 import ru.oparin.solution.dto.ozon.OzonAnalyticsDataResponse;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.OzonProductCard;
@@ -30,9 +29,6 @@ public class OzonProductAnalyticsSyncService {
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final int PAGE_LIMIT = 1000;
 
-    private static final List<String> EXTENDED_METRICS = List.of(
-            "hits_view_pdp", "hits_tocart", "conv_tocart", "ordered_units", "revenue"
-    );
     private static final List<String> BASIC_METRICS = List.of("ordered_units", "revenue");
 
     private final OzonProductsApiClient productsApiClient;
@@ -50,7 +46,7 @@ public class OzonProductAnalyticsSyncService {
             return;
         }
 
-        MetricsLayout layout = resolveMetricsLayout(clientId, apiKey, dateFrom, dateTo);
+        MetricsLayout layout = MetricsLayout.basic();
         String dateFromStr = dateFrom.format(DATE_FORMATTER);
         String dateToStr = dateTo.format(DATE_FORMATTER);
         int offset = 0;
@@ -85,59 +81,7 @@ public class OzonProductAnalyticsSyncService {
                         + "пропущено без карточки={} (уник. SKU={}), период={}..{}",
                 cabinet.getId(), layout.metricNames(), pages, rowsTotal, saved, skippedUnknownSku,
                 unknownSkus.size(), dateFrom, dateTo);
-        ozonSellerSubscriptionService.updateFunnelAvailability(cabinet.getId(), layout.useExtendedMetrics());
-    }
-
-    /**
-     * Пробный запрос: расширенные метрики воронки или только ordered_units/revenue.
-     */
-    private MetricsLayout resolveMetricsLayout(
-            String clientId,
-            String apiKey,
-            LocalDate dateFrom,
-            LocalDate dateTo
-    ) {
-        try {
-            OzonAnalyticsDataResponse probe = productsApiClient.getAnalyticsData(
-                    clientId,
-                    apiKey,
-                    dateFrom.format(DATE_FORMATTER),
-                    dateTo.format(DATE_FORMATTER),
-                    1,
-                    0,
-                    EXTENDED_METRICS
-            );
-            if (probe != null && responseHasExtendedMetrics(probe)) {
-                return MetricsLayout.extended();
-            }
-            if (probe != null) {
-                log.info("Ozon analytics: API вернул меньше {} метрик, используем базовый набор",
-                        EXTENDED_METRICS.size());
-            }
-        } catch (HttpClientErrorException e) {
-            log.info("Ozon analytics: расширенные метрики недоступны (HTTP {}), используем базовый набор",
-                    e.getStatusCode().value());
-        } catch (Exception e) {
-            log.info("Ozon analytics: расширенные метрики недоступны ({}), используем базовый набор",
-                    e.getMessage());
-        }
-        return MetricsLayout.basic();
-    }
-
-    /**
-     * Ozon может ответить HTTP 200 на запрос расширенных метрик, но вернуть только ordered_units/revenue.
-     */
-    private static boolean responseHasExtendedMetrics(OzonAnalyticsDataResponse response) {
-        if (response.getResult() == null || response.getResult().getData() == null) {
-            return false;
-        }
-        for (OzonAnalyticsDataResponse.Row row : response.getResult().getData()) {
-            List<Double> metrics = row.getMetrics();
-            if (metrics != null && metrics.size() >= EXTENDED_METRICS.size()) {
-                return true;
-            }
-        }
-        return false;
+        ozonSellerSubscriptionService.updateFunnelAvailability(cabinet.getId(), false);
     }
 
     private Map<Long, Long> buildSkuToProductIdMap(Long cabinetId) {
@@ -212,17 +156,6 @@ public class OzonProductAnalyticsSyncService {
             return null;
         }
         List<Double> metrics = row.getMetrics();
-        if (layout.useExtendedMetrics()) {
-            return new ParsedRow(
-                    sku,
-                    date,
-                    metricAsInt(metrics, layout.orderedUnitsIndex()),
-                    metricAsMoney(metrics, layout.revenueIndex()),
-                    metricAsInt(metrics, layout.hitsViewPdpIndex()),
-                    metricAsInt(metrics, layout.hitsTocartIndex()),
-                    metricAsPercent(metrics, layout.convTocartIndex())
-            );
-        }
         return new ParsedRow(
                 sku,
                 date,
@@ -292,32 +225,16 @@ public class OzonProductAnalyticsSyncService {
     }
 
     private record MetricsLayout(List<String> metricNames, boolean useExtendedMetrics) {
-        static MetricsLayout extended() {
-            return new MetricsLayout(EXTENDED_METRICS, true);
-        }
-
         static MetricsLayout basic() {
             return new MetricsLayout(BASIC_METRICS, false);
         }
 
-        int hitsViewPdpIndex() {
+        int orderedUnitsIndex() {
             return 0;
         }
 
-        int hitsTocartIndex() {
-            return 1;
-        }
-
-        int convTocartIndex() {
-            return 2;
-        }
-
-        int orderedUnitsIndex() {
-            return useExtendedMetrics ? 3 : 0;
-        }
-
         int revenueIndex() {
-            return useExtendedMetrics ? 4 : 1;
+            return 1;
         }
     }
 }

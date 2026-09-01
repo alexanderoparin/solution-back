@@ -58,11 +58,6 @@ public class OzonAnalyticsDataCabinetEventExecutor implements OzonApiEventExecut
                 log.warn("Ozon subscription refresh failed for cabinetId={}: {}", cabinet.getId(), e.getMessage());
             }
             analyticsSyncService.syncAnalytics(cabinet, clientId, apiKey, dateFrom, dateTo);
-            try {
-                ozonSellerSubscriptionService.runPremiumLkProbeIfNeeded(cabinet);
-            } catch (Exception e) {
-                log.warn("Ozon Premium LK probe failed for cabinetId={}: {}", cabinet.getId(), e.getMessage());
-            }
             cabinetScopeStatusService.recordSuccess(cabinet.getId(), OzonApiCategory.ANALYTICS);
             eventService.markMainCompleted(cabinet.getId());
             log.info("Ozon analytics загружена, main завершён для cabinetId={}, период={}..{}",
