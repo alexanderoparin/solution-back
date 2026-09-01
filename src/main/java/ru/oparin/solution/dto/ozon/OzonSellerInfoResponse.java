@@ -80,8 +80,8 @@ public class OzonSellerInfoResponse {
     }
 
     /**
-     * Автоопределение тарифа: при отсутствии {@code type_} доверяем {@code is_premium} из seller/info.
-     * Lookback analytics/data ненадёжен (Ozon отдаёт 400 на старые периоды всем кабинетам).
+     * Консервативное автоопределение: legacy {@code type: PREMIUM} без {@code type_} не считается Premium в ЛК.
+     * Ozon отдаёт одинаковый блок subscription всем кабинетам.
      */
     public static OzonSellerSubscriptionType resolveDetectedSubscriptionType(Subscription subscription) {
         if (subscription == null) {
@@ -94,13 +94,7 @@ public class OzonSellerInfoResponse {
             return resolveSubscriptionType(subscription);
         }
         if (Boolean.TRUE.equals(subscription.getPremium())) {
-            OzonSellerSubscriptionType legacyType =
-                    OzonSellerSubscriptionType.fromApiValue(subscription.getTypeLegacy());
-            if (legacyType != OzonSellerSubscriptionType.UNKNOWN
-                    && legacyType != OzonSellerSubscriptionType.UNSPECIFIED) {
-                return legacyType;
-            }
-            return OzonSellerSubscriptionType.PREMIUM;
+            return OzonSellerSubscriptionType.INCONCLUSIVE;
         }
         return OzonSellerSubscriptionType.UNSPECIFIED;
     }

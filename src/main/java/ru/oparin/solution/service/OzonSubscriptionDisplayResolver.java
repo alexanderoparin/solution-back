@@ -43,6 +43,9 @@ public final class OzonSubscriptionDisplayResolver {
         }
 
         OzonSellerSubscriptionType detected = OzonSellerSubscriptionType.fromApiValue(detectedRaw);
+        if (detected == OzonSellerSubscriptionType.INCONCLUSIVE) {
+            return new ResolvedOzonSubscription(OzonSellerSubscriptionType.INCONCLUSIVE, false, false);
+        }
         if (detected == OzonSellerSubscriptionType.UNSPECIFIED
                 || detected == OzonSellerSubscriptionType.UNKNOWN) {
             return new ResolvedOzonSubscription(OzonSellerSubscriptionType.UNSPECIFIED, false, false);

@@ -6,6 +6,8 @@ package ru.oparin.solution.model;
 public enum OzonSellerSubscriptionType {
 
     UNKNOWN,
+    /** seller/info: is_premium=true, но нет канонического type_ — Premium в ЛК подтвердить нельзя. */
+    INCONCLUSIVE,
     UNSPECIFIED,
     PREMIUM_LITE,
     PREMIUM,
@@ -33,6 +35,7 @@ public enum OzonSellerSubscriptionType {
      */
     public String getDisplayNameRu() {
         return switch (this) {
+            case INCONCLUSIVE -> "Не определено";
             case UNSPECIFIED -> "Без Premium";
             case PREMIUM_LITE -> "Premium Lite";
             case PREMIUM -> "Premium";

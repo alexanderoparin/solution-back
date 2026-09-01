@@ -1,7 +1,7 @@
--- Сброс ложного is_premium=false от удалённого lookback-probe (seller/info отдаёт is_premium=true).
+-- Сброс ложного is_premium=false от удалённого lookback-probe.
+-- Тип подписки выставляется миграцией 117 (INCONCLUSIVE).
 UPDATE solution.cabinet_sync_state css
-SET ozon_subscription_is_premium = TRUE,
-    ozon_subscription_type = 'PREMIUM'
+SET ozon_subscription_is_premium = TRUE
 WHERE css.ozon_subscription_is_premium = FALSE
   AND css.ozon_subscription_type_override IS NULL
   AND EXISTS (
@@ -13,6 +13,3 @@ WHERE css.ozon_subscription_is_premium = FALSE
       WHERE c.id = css.cabinet_id
         AND c.marketplace_type = 'OZON'
   );
-
-COMMENT ON COLUMN solution.cabinet_sync_state.ozon_subscription_type IS
-    'Авто: seller/info (is_premium + type/type_). Lookback analytics probe отключён — ненадёжен.';
