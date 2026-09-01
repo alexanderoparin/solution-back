@@ -1,6 +1,7 @@
 package ru.oparin.solution.service.events;
 
 import lombok.Builder;
+import ru.oparin.solution.model.WbApiEventStatus;
 
 import java.time.LocalDateTime;
 
@@ -11,7 +12,8 @@ public record WbApiEventExecutionResult(
         boolean fallbackUsed,
         String errorMessage,
         LocalDateTime deferUntil,
-        boolean countsAsAttempt
+        boolean countsAsAttempt,
+        WbApiEventStatus terminalStatus
 ) {
     public static WbApiEventExecutionResult completedSuccessfully() {
         return WbApiEventExecutionResult.builder().success(true).countsAsAttempt(false).build();
@@ -32,6 +34,19 @@ public record WbApiEventExecutionResult(
                 .retryable(false)
                 .errorMessage(errorMessage)
                 .countsAsAttempt(false)
+                .build();
+    }
+
+    /**
+     * Запуск РК не выполнен из‑за отсутствия бюджета на WB — терминальный бизнес-статус.
+     */
+    public static WbApiEventExecutionResult skippedNoBudget(String errorMessage) {
+        return WbApiEventExecutionResult.builder()
+                .success(false)
+                .retryable(false)
+                .errorMessage(errorMessage)
+                .countsAsAttempt(false)
+                .terminalStatus(WbApiEventStatus.SKIPPED_NO_BUDGET)
                 .build();
     }
 

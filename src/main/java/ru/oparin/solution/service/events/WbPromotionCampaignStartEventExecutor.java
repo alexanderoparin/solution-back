@@ -67,12 +67,16 @@ public class WbPromotionCampaignStartEventExecutor implements WbApiEventExecutor
             if (e.getMessage() != null && !e.getMessage().contains("429")) {
                 if (WbCampaignStartBudgetGuard.isNoBudgetToStartError(e.getMessage())) {
                     startBudgetGuard.blockStartDueToNoBudget(payload.advertId(), cabinet.getId());
-                    return WbApiEventExecutionResult.finalError(WbCampaignStartBudgetGuard.NO_BUDGET_USER_MESSAGE);
+                    return WbApiEventExecutionResult.skippedNoBudget(WbCampaignStartBudgetGuard.NO_BUDGET_USER_MESSAGE);
                 }
                 return WbApiEventExecutionResult.finalError(e.getMessage());
             }
             return WbEventExecutionErrors.wrapRestClientException(e);
         } catch (Exception e) {
+            if (WbCampaignStartBudgetGuard.isNoBudgetToStartError(e.getMessage())) {
+                startBudgetGuard.blockStartDueToNoBudget(payload.advertId(), cabinet.getId());
+                return WbApiEventExecutionResult.skippedNoBudget(WbCampaignStartBudgetGuard.NO_BUDGET_USER_MESSAGE);
+            }
             return WbEventExecutionErrors.wrapDeferOrRetryable(e);
         }
     }

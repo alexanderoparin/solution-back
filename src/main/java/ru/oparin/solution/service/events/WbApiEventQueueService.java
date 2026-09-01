@@ -263,7 +263,7 @@ public class WbApiEventQueueService {
     }
 
     /**
-     * Обрабатывает ошибку выполнения: retry, defer rate-limit или финальный статус.
+     * Обрабатывает ошибку выполнения: retry, defer rate-limit, {@code SKIPPED_NO_BUDGET} или финальный статус.
      */
     @Transactional
     public void markFailed(WbApiEvent event, WbApiEventExecutionResult result) {
@@ -280,22 +280,22 @@ public class WbApiEventQueueService {
                     event.setStatus(WbApiEventStatus.FAILED_FINAL);
                     event.setFinishedAt(LocalDateTime.now());
                     eventRepository.save(event);
-                    log.warn(
-                            "WB event завершен с ошибкой: id={}, type={}, cabinetId={}, status={}, attempts={}/{}, error={}",
-                            event.getId(),
-                            event.getEventType(),
-                            cabinetId,
-                            event.getStatus(),
-                            event.getAttemptCount(),
-                            event.getMaxAttempts(),
-                            event.getLastError()
-                    );
+                    logTerminalCompletion(event, cabinetId);
                     return;
                 }
             }
             event.setStatus(WbApiEventStatus.DEFERRED_RATE_LIMIT);
             event.setNextAttemptAt(result.deferUntil());
             eventRepository.save(event);
+            return;
+        }
+
+        if (result.terminalStatus() != null) {
+            event.setAttemptCount(event.getAttemptCount() + 1);
+            event.setStatus(result.terminalStatus());
+            event.setFinishedAt(LocalDateTime.now());
+            eventRepository.save(event);
+            logTerminalCompletion(event, cabinetId);
             return;
         }
 
@@ -312,6 +312,19 @@ public class WbApiEventQueueService {
         event.setStatus(result.fallbackUsed() ? WbApiEventStatus.FAILED_WITH_FALLBACK : WbApiEventStatus.FAILED_FINAL);
         event.setFinishedAt(LocalDateTime.now());
         eventRepository.save(event);
+        logTerminalCompletion(event, cabinetId);
+    }
+
+    private void logTerminalCompletion(WbApiEvent event, Long cabinetId) {
+        if (event.getStatus() == WbApiEventStatus.SKIPPED_NO_BUDGET) {
+            log.info(
+                    "WB event пропущен (нет бюджета): id={}, type={}, cabinetId={}",
+                    event.getId(),
+                    event.getEventType(),
+                    cabinetId
+            );
+            return;
+        }
         log.warn(
                 "WB event завершен с ошибкой: id={}, type={}, cabinetId={}, status={}, attempts={}/{}, error={}",
                 event.getId(),
