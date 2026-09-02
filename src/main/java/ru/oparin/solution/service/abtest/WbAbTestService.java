@@ -565,22 +565,56 @@ public class WbAbTestService {
                 && control.getStoredFileName() != null
                 && !control.getStoredFileName().isBlank();
         if (!alreadyResolved) {
-            CardPhotos photos = resolveCardPhotos(cabinet.getApiKey(), test.getNmId());
-            if (photos.mainUrl() == null || photos.mainUrl().isBlank()) {
-                throw new IllegalStateException("Не удалось получить главное фото карточки для контрольного варианта");
-            }
-            test.setOriginalMainPhotoUrl(photos.mainUrl());
-            test.setOriginalGalleryUrlsJson(writeJson(photos.galleryUrls()));
-            abTestRepository.save(test);
-
-            String controlStoredName = downloadAndStoreFromUrl(photos.mainUrl());
-            control.setStoredFileName(controlStoredName);
-            control.setPhotoUrl(photos.mainUrl());
-            control.setPreviewUrl(photos.previewUrl() != null ? photos.previewUrl() : photos.mainUrl());
-            abTestVariantRepository.save(control);
+            resolveControlPhotoForStart(cabinet, test, control);
         }
 
         continueStartWithoutOverwritingGallery(cabinet.getId(), test.getId(), triggerSource);
+    }
+
+    /**
+     * Контрольное фото: предпочитаем Content API (big/hq + галерея), при сбое — URL из БД на create.
+     */
+    private void resolveControlPhotoForStart(Cabinet cabinet, WbAbTest test, WbAbTestVariant control) {
+        CardPhotos photos = tryResolveCardPhotos(cabinet.getApiKey(), test.getNmId());
+        String fallbackMain = firstNonBlank(test.getOriginalMainPhotoUrl(), control.getPhotoUrl());
+
+        String mainUrl;
+        String previewUrl;
+        List<String> gallery;
+        if (photos != null && photos.mainUrl() != null && !photos.mainUrl().isBlank()) {
+            mainUrl = photos.mainUrl();
+            previewUrl = photos.previewUrl() != null ? photos.previewUrl() : photos.mainUrl();
+            gallery = photos.galleryUrls();
+        } else if (fallbackMain != null && !fallbackMain.isBlank()) {
+            log.info(
+                    "Content API не вернул фото nmId={}, используем URL из БД: {}",
+                    test.getNmId(),
+                    fallbackMain);
+            mainUrl = fallbackMain;
+            previewUrl = firstNonBlank(control.getPreviewUrl(), fallbackMain);
+            gallery = readGallery(test.getOriginalGalleryUrlsJson());
+        } else {
+            throw new IllegalStateException("Content API не вернул фото карточки nmId=" + test.getNmId());
+        }
+
+        test.setOriginalMainPhotoUrl(mainUrl);
+        test.setOriginalGalleryUrlsJson(writeJson(gallery != null ? gallery : List.of()));
+        abTestRepository.save(test);
+
+        String controlStoredName = downloadAndStoreFromUrl(mainUrl);
+        control.setStoredFileName(controlStoredName);
+        control.setPhotoUrl(mainUrl);
+        control.setPreviewUrl(previewUrl);
+        abTestVariantRepository.save(control);
+    }
+
+    private CardPhotos tryResolveCardPhotos(String apiKey, Long nmId) {
+        try {
+            return resolveCardPhotos(apiKey, nmId);
+        } catch (Exception e) {
+            log.warn("Content API nmId={}: {}", nmId, e.getMessage());
+            return null;
+        }
     }
 
     /**
