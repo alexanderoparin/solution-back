@@ -120,7 +120,6 @@ public class WbApiEventWriter {
                 .updatedAt(now)
                 .build();
         WbApiEvent saved = eventRepository.save(event);
-        log.debug("Событие с id={} сохранено/обновлено", saved.getId());
         return Optional.of(saved);
     }
 
