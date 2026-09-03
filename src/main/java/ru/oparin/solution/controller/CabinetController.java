@@ -2,6 +2,7 @@ package ru.oparin.solution.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -13,6 +14,7 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.MarketplaceType;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
+import ru.oparin.solution.scheduler.AnalyticsScheduler;
 import ru.oparin.solution.service.*;
 
 import java.util.List;
@@ -23,6 +25,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/cabinets")
 @RequiredArgsConstructor
+@Slf4j
 public class CabinetController {
 
     private final CabinetService cabinetService;
@@ -31,6 +34,7 @@ public class CabinetController {
     private final OzonPerformanceCredentialsService ozonPerformanceCredentialsService;
     private final UserService userService;
     private final CabinetAccessService cabinetAccessService;
+    private final AnalyticsScheduler analyticsScheduler;
 
     @GetMapping("/overview")
     public ResponseEntity<CabinetsOverviewDto> overview(
@@ -192,6 +196,9 @@ public class CabinetController {
         return ResponseEntity.ok(dto);
     }
 
+    /**
+     * Создаёт кабинет и сразу ставит в очередь обновление данных (как кнопка «Обновить данные»).
+     */
     @PostMapping
     public ResponseEntity<CabinetDto> create(
             @Valid @RequestBody CreateCabinetRequest request,
@@ -200,6 +207,7 @@ public class CabinetController {
         User user = userService.findByEmail(authentication.getName());
         validateCanCreateCabinet(user);
         CabinetDto created = cabinetService.create(user.getId(), request);
+        enqueueInitialCabinetUpdate(created);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
@@ -280,6 +288,20 @@ public class CabinetController {
         }
         cabinetService.delete(id, user.getId());
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Ставит в очередь то же обновление, что кнопка «Обновить данные» у продавца
+     * ({@link AnalyticsScheduler#triggerManualUpdateByCabinet}).
+     * Ошибка запуска не откатывает уже созданный кабинет.
+     */
+    private void enqueueInitialCabinetUpdate(CabinetDto created) {
+        try {
+            analyticsScheduler.triggerManualUpdateByCabinet(created.getId(), false, false);
+        } catch (Exception e) {
+            log.warn("Кабинет {} создан, но автоматический запуск обновления не удался: {}",
+                    created.getId(), e.getMessage());
+        }
     }
 
     private void validateCanCreateCabinet(User user) {
