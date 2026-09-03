@@ -1,43 +1,45 @@
 # Solution Backend
 
-REST API и фоновая логика платформы Solution для продавцов Wildberries: аналитика, реклама, кабинеты, подписки, очереди событий WB.
+REST API и фоновая логика Clicki: кабинеты WB и Ozon, аналитика, реклама, очереди событий маркетплейсов, подписки, оплата Точка Банк.
 
-Общий обзор монорепозитория — в [корневом README](../README.md).
+Обзор репозитория — в [корневом README](../README.md).
 
 ## Технологии
 
 - Java 21, Maven
-- Spring Boot 3.3.x (Web, Data JPA, Security, Validation, Mail)
+- Spring Boot **3.3.5** (Web, Data JPA, Security, Validation, Mail)
 - PostgreSQL, Hibernate (`ddl-auto: validate`)
 - JWT (jjwt), BCrypt
-- **ShedLock** — блокировки для распределённых задач
+- ShedLock — блокировки `@Scheduled`
 - Lombok
 
-## Структура `src/main/java/ru/oparin/solution/`
+Автотестов бэкенда в репозитории нет (не добавлять в `src/test/`, если явно не попросили). Проверка — `mvn compile`, логи, ручной прогон.
+
+## Пакеты `src/main/java/ru/oparin/solution/`
 
 | Пакет | Содержимое |
 |--------|------------|
-| `config` | Security, CORS, свойства WB, планировщик, ShedLock |
-| `controller` | REST-контроллеры |
-| `dto` | Запросы/ответы API |
-| `exception` | Обработка ошибок |
+| `config` | Security, CORS, свойства WB/Ozon/Точка, планировщик, ShedLock |
+| `controller` | REST |
+| `dto` | Запросы/ответы |
+| `exception` | Ошибки API |
 | `model` | JPA-сущности |
-| `repository` | Spring Data JPA, при необходимости `spec` |
+| `repository` | Spring Data JPA, `spec` |
 | `security` | JWT, фильтры |
-| `service` | Бизнес-логика; подпакеты `sync`, `events`, `wb`, `analytics` и др. |
-| `scheduler` | `@Scheduled`-задачи |
+| `service` | Бизнес-логика: `analytics` (wb/ozon), `events`, `sync`, `wb`, `ozon`, `campaign`, `abtest`, `tochka` |
+| `scheduler` | `@Scheduled` (ночная синхронизация, retry очередей, fallback оплаты) |
 
-SQL-скрипты схемы: `src/main/resources/sql/` (файлы `001_…` … — применять **по порядку номера**).
+SQL: `src/main/resources/sql/`. Применять **все файлы по имени по возрастанию**. Номера 116 и 117 встречаются дважды — это разные скрипты.
 
-Конфигурация: `src/main/resources/application.yaml` (порт **8080**, контекст **`/api`**).
+Конфиг: `src/main/resources/application.yaml` (порт **8080**, context-path **`/api`**).
 
 ## Запуск локально
 
-Требования: JDK 21, Maven 3.9+, PostgreSQL со схемой `solution` и применёнными SQL-скриптами.
+JDK 21, Maven 3.9+, PostgreSQL со схемой `solution` и накатанными SQL.
 
 ```bash
 cd solution_back
-# задайте переменные окружения: DB_*, JWT_SECRET, при необходимости MAIL_PASSWORD, TOCHKA_*, CORS_ALLOWED_ORIGINS
+# DB_*, JWT_SECRET; при необходимости MAIL_PASSWORD, TOCHKA_*, CORS_ALLOWED_ORIGINS
 mvn spring-boot:run
 ```
 
@@ -46,53 +48,58 @@ mvn spring-boot:run
 
 ## Docker Compose
 
-В этом каталоге лежит **`docker-compose.yml`**: сервисы `backend` и `frontend` (сборка Nginx-образа фронта).
+В этом каталоге `docker-compose.yml`: `backend` + `frontend` (Nginx-образ фронта).
 
-Создайте файл **`.env`** рядом с compose (шаблон `.env.example` в репозитории может отсутствовать — ориентируйтесь на блок `environment` в compose и на `application.yaml`). Минимум: **`DB_HOST`**, **`DB_PASSWORD`**, **`JWT_SECRET`**. Оплата: см. [docs/TOCHKA_SETUP.md](../docs/TOCHKA_SETUP.md).
+`.env` рядом с compose. Минимум: **`DB_HOST`**, **`DB_PASSWORD`**, **`JWT_SECRET`**. Оплата: [docs/TOCHKA_SETUP.md](../docs/TOCHKA_SETUP.md).
 
-Сборка фронта в compose использует контекст **`../solution-front`**. Если в монорепозитории папка называется **`../solution_front`**, поправьте `context` в `docker-compose.yml` или используйте симлинк.
+Контекст сборки фронта в compose: **`../solution-front`**. Если клон называется `solution_front` — поправьте `context` или симлинк.
+
+В runtime-образ импортируются сертификаты НУЦ Минцифры (`docker/certs/`) в JVM `cacerts`. Без них вызовы `enter.tochka.com` падают с `PKIX path building failed`.
 
 ```bash
 cd solution_back
 docker compose up -d --build
 ```
 
-Логи бэкенда: в контейнере `/app/logs/application.log`, на хосте — `./logs` при смонтированном volume.
+Логи: контейнер `/app/logs/application.log`, хост `./logs`.
 
-## REST: префиксы контроллеров
-
-Все пути ниже относительно **`/api`** (context-path).
+## REST (префиксы относительно `/api`)
 
 | Префикс | Назначение |
 |---------|------------|
-| `/auth` | Регистрация, вход, восстановление пароля, подтверждение email |
-| `/health` | Проверка живости |
-| `/user` | Профиль, пароль, ключи, статус доступа |
-| `/cabinets` | Кабинеты WB, привязка ключей, work context для MANAGER |
-| `/analytics` | Сводка, товары, карточка артикула, цели по РК в артикуле |
-| `/advertising` | Список РК, детали, синхронизация промо со WB |
-| `/advertising/campaigns/{id}/notes` | Заметки и файлы к кампании |
+| `/auth` | Регистрация, вход, сброс пароля, подтверждение email |
+| `/health` | Liveness |
+| `/public` | Лендинг (заявка на аудит и т.п.), без JWT |
+| `/public/invitations` | Принятие приглашения в кабинет |
+| `/user` | Профиль, пароль, статус доступа, удаление аккаунта |
+| `/cabinets` | Кабинеты WB/Ozon, ключи, доступы, work context |
+| `/analytics` | Сводка, товары, карточка артикула |
 | `/analytics/article/{nmId}/notes` | Заметки к артикулу |
-| `/subscription` | Тарифы, подписка, оплата (Точка Банк) |
-| `/admin` | Админские операции (тарифы, события WB и т.д.) |
-| `/users` | Управление пользователями (роли, кабинеты) |
-| `/wb-api` | Сервисные вызовы, связанные с WB API |
+| `/advertising` | РК, синхронизация промо |
+| `/advertising/campaigns/{id}/notes` | Заметки к кампании |
+| `/advertising/campaigns/{advertId}/manage` | Биддер, расписание, бюджет (WB) |
+| `/advertising/ab-tests` | А/Б-тесты фото (WB) |
+| `/subscription` | Тарифы, подписка «Управление РК», оплата |
+| `/webhooks/tochka` | Webhook эквайринга (публичный) |
+| `/admin` | Планы, подписки, очереди WB/Ozon, ручной sync |
+| `/admin/promo-codes` | Промокоды |
+| `/users` | Пользователи и доступы к кабинетам |
+| `/wb-api` | Сервисные вызовы WB |
 
-Полный перечень методов — в исходниках классов `*Controller.java`. Отдельной OpenAPI-спеки в проекте нет.
+Методы — в `*Controller.java`. Отдельной OpenAPI-спеки нет.
 
-## Роли
+## Роли и кабинеты
 
-- **SELLER** — владелец кабинета, API-ключи, сотрудники
-- **WORKER** — сотрудник селлера
-- **MANAGER** — доступ к кабинетам клиентов (work context)
-- **ADMIN** — администрирование системы
+- `Role`: **ADMIN**, **USER**.
+- `AccountType`: **SELLER**, **AGENCY**, **EMPLOYEE** (отображение и статистика).
+- Доступ к разделам кабинета — гранты. Кабинет = один маркетплейс (`MarketplaceType.WB` / `OZON`).
 
-## Интеграция с Wildberries
+## Интеграции маркетплейсов
 
-Базовые URL и задержки синхронизации задаются в `application.yaml` (блоки `wb.api`, `wb.*` sync delays). Документация WB: https://dev.wildberries.ru/
+Очереди **WB** (`WbApiEvent*`) и **Ozon** (`OzonApiEvent*`): карточки, цены, остатки, аналитика, реклама. Планировщик ставит пачки событий; диспетчер соблюдает rate-limit API.
 
-В приложении используется очередь/диспетчер **событий WB** (`WbApiEvent*`), планировщики и исполнители синхронизации карточек, цен, остатков, рекламы, отзывов и т.д.
+Документация: [WB](https://dev.wildberries.ru/), [Ozon Seller](https://docs.ozon.ru/api/seller/). Модель продукта: [docs/ozon-wb-product-model.md](../docs/ozon-wb-product-model.md).
 
 ## Логирование
 
-Уровни и файл — в `application.yaml` (`logging.*`). В Docker по умолчанию пишется в `/app/logs/application.log`.
+`application.yaml` → `logging.*`. В Docker по умолчанию `/app/logs/application.log`.
