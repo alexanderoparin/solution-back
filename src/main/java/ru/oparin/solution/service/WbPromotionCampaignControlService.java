@@ -133,6 +133,7 @@ public class WbPromotionCampaignControlService {
 
     /**
      * Пауза по расписанию: для персонального токена — сразу HTTP к WB; при неуспехе — событие в очередь.
+     * {@code Status Unchanged} от WB считается успехом: цель «не активна» уже достигнута.
      */
     public ScheduleControlAttemptResult attemptPauseFromSchedule(Cabinet cabinet, Long advertId) {
         try {
@@ -156,9 +157,47 @@ public class WbPromotionCampaignControlService {
                 promotionControlWriteService.recordReadOnlyTokenBlock(cabinet.getId());
                 return ScheduleControlAttemptResult.failed(WbPromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE);
             }
+            if (isStatusUnchangedError(e.getMessage())) {
+                log.info(
+                        "Пауза по расписанию advertId={}: Status Unchanged на WB — синхронизируем статус",
+                        advertId
+                );
+                try {
+                    reconcileCampaignStatusFromWb(cabinet, advertId);
+                    return ScheduleControlAttemptResult.directSuccess();
+                } catch (Exception syncError) {
+                    log.warn(
+                            "Status Unchanged advertId={}, но синхронизация статуса не удалась: {}",
+                            advertId,
+                            syncError.getMessage()
+                    );
+                    return ScheduleControlAttemptResult.failed(
+                            "Status Unchanged на WB, не удалось обновить статус: " + syncError.getMessage());
+                }
+            }
             log.debug("Прямая пауза по расписанию advertId={} не удалась, очередь: {}", advertId, e.getMessage());
             return toScheduleResult(enqueuePause(cabinet, advertId, TRIGGER_SCHEDULE_PAUSE, false));
         }
+    }
+
+    /**
+     * WB вернул «Status Unchanged»: смена статуса в текущем состоянии невозможна
+     * (обычно РК уже не ACTIVE). Для паузы это целевое состояние.
+     */
+    public static boolean isStatusUnchangedError(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        return message.contains("Status Unchanged");
+    }
+
+    /**
+     * Подтягивает актуальный статус РК с WB после Status Unchanged / рассинхрона.
+     */
+    public void reconcileCampaignStatusFromWb(Cabinet cabinet, Long advertId) {
+        promotionCampaignSyncService.loadAndSaveAdvertsBatch(
+                cabinet, cabinet.getApiKey(), List.of(advertId));
+        promotionControlWriteService.clearBlock(cabinet.getId());
     }
 
     private CampaignControlEnqueueResponse enqueuePause(
