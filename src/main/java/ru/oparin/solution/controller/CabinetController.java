@@ -211,6 +211,25 @@ public class CabinetController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
+    /**
+     * Ручной запуск обновления данных владельцем кабинета (каталог и аналитика, без остатков).
+     * Интервал тот же, что у кнопки «Обновить данные» — не чаще одного раза в 6 часов.
+     */
+    @PostMapping("/{id}/update-data")
+    public ResponseEntity<MessageResponse> triggerDataUpdate(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        if (!cabinetAccessService.isCabinetOwner(user, id)) {
+            throw new UserException("Только владелец может обновить данные кабинета", HttpStatus.FORBIDDEN);
+        }
+        analyticsScheduler.triggerManualUpdateByCabinet(id, false, false);
+        return ResponseEntity.ok(MessageResponse.builder()
+                .message("Обновление данных запущено. Процесс выполняется в фоновом режиме.")
+                .build());
+    }
+
     @PatchMapping("/{id}")
     public ResponseEntity<CabinetDto> update(
             @PathVariable Long id,

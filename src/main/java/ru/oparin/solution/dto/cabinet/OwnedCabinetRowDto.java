@@ -14,6 +14,7 @@ public record OwnedCabinetRowDto(
         LocalDateTime lastValidatedAt,
         Boolean apiKeyValid,
         LocalDateTime lastDataUpdateAt,
+        LocalDateTime lastDataUpdateRequestedAt,
         String apiKeyMasked
 ) {
 }

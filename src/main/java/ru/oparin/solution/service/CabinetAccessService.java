@@ -630,6 +630,7 @@ public class CabinetAccessService {
                 .lastValidatedAt(cabinet.getLastValidatedAt())
                 .apiKeyValid(cabinet.getIsValid())
                 .lastDataUpdateAt(cabinet.getLastDataUpdateAt())
+                .lastDataUpdateRequestedAt(cabinet.getLastDataUpdateRequestedAt())
                 .apiKeyMasked(maskApiKey(cabinet.getApiKey()))
                 .build();
     }
