@@ -98,6 +98,10 @@ public class WbApiEventWriter {
             String triggerSource,
             LocalDateTime nextAttemptAt
     ) {
+        if (cabinet.getDeletionStartedAt() != null) {
+            log.debug("Пропуск WB API event: кабинет {} удаляется", cabinet.getId());
+            return Optional.empty();
+        }
         if (existsActive(dedupKey)) {
             log.debug("WB API event уже существует (dedupKey={}), создание пропущено", dedupKey);
             return Optional.empty();

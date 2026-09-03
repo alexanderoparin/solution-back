@@ -277,8 +277,11 @@ public class CabinetController {
         return valid ? ResponseEntity.ok(body) : ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
+    /**
+     * Запускает фоновое удаление кабинета. Ответ сразу: кабинет скрыт из списков, очистка данных идёт в фоне.
+     */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(
+    public ResponseEntity<MessageResponse> delete(
             @PathVariable Long id,
             Authentication authentication
     ) {
@@ -286,8 +289,11 @@ public class CabinetController {
         if (!cabinetAccessService.isCabinetOwner(user, id)) {
             throw new UserException("Только владелец может удалить кабинет", HttpStatus.FORBIDDEN);
         }
-        cabinetService.delete(id, user.getId());
-        return ResponseEntity.noContent().build();
+        cabinetService.requestDeletion(id, user.getId());
+        return ResponseEntity.accepted()
+                .body(MessageResponse.builder()
+                        .message("Удаление запущено. Кабинет исчезнет из списка, очистка данных займёт несколько минут.")
+                        .build());
     }
 
     /**

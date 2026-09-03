@@ -39,6 +39,7 @@ public final class CabinetManagedSpecifications {
             }
 
             Predicate scope = cb.equal(userJoin.get("role"), Role.USER);
+            scope = cb.and(scope, cb.isNull(root.get("deletionStartedAt")));
 
             if (onlyActiveUsers) {
                 scope = cb.and(scope, cb.isTrue(userJoin.get("isActive")));
@@ -91,6 +92,7 @@ public final class CabinetManagedSpecifications {
             }
 
             Predicate scope = cb.equal(userJoin.get("role"), Role.USER);
+            scope = cb.and(scope, cb.isNull(root.get("deletionStartedAt")));
             Predicate hasWbKey = hasIntegrationCredentials(
                     root, query, cb, CabinetIntegrationType.WB_API, false);
             Predicate hasOzonKey = hasIntegrationCredentials(

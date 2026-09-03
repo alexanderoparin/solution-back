@@ -2,13 +2,17 @@ package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Sort.Order;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
@@ -66,17 +70,21 @@ public class CabinetService {
     private final CabinetIntegrationRepository cabinetIntegrationRepository;
     private final OzonSellerSubscriptionService ozonSellerSubscriptionService;
 
+    @Lazy
+    @Autowired
+    private CabinetService self;
+
     /**
      * Список кабинетов пользователя (продавца), отсортированный по дате создания (новые первые).
      */
     @Transactional(readOnly = true)
     public List<CabinetDto> listByUserId(Long userId) {
-        return findCabinetsByUserId(userId).stream().map(this::toDto).toList();
+        return findActiveCabinetsByUserId(userId).stream().map(this::toDto).toList();
     }
 
     @Transactional(readOnly = true)
     public List<CabinetDto> listByUserId(Long userId, boolean maskApiKey) {
-        return findCabinetsByUserId(userId).stream().map(c -> toDto(c, maskApiKey)).toList();
+        return findActiveCabinetsByUserId(userId).stream().map(c -> toDto(c, maskApiKey)).toList();
     }
 
     /**
@@ -89,9 +97,12 @@ public class CabinetService {
         LocalDateTime now = LocalDateTime.now();
         for (var grant : grantRepository.findActiveGrantedForUser(
                 user.getId(), CabinetAccessGrantStatus.ACTIVE, now)) {
-            Long cabinetId = grant.getCabinet().getId();
+            Cabinet grantedCabinet = grant.getCabinet();
+            if (grantedCabinet.getDeletionStartedAt() != null) {
+                continue;
+            }
+            Long cabinetId = grantedCabinet.getId();
             if (!ids.contains(cabinetId)) {
-                Cabinet grantedCabinet = grant.getCabinet();
                 cabinetIntegrationMirrorService.overlayOntoCabinet(grantedCabinet);
                 result.add(toDto(grantedCabinet, true));
                 ids.add(cabinetId);
@@ -221,12 +232,23 @@ public class CabinetService {
 
     /**
      * Список сущностей кабинетов пользователя (для внутреннего использования в других сервисах).
+     * Включает кабинеты, уже поставленные в очередь на удаление.
      */
     @Transactional(readOnly = true)
     public List<Cabinet> findCabinetsByUserId(Long userId) {
         List<Cabinet> cabinets = cabinetRepository.findByUser_IdOrderByCreatedAtDesc(userId);
         cabinetIntegrationMirrorService.overlayOntoCabinets(cabinets);
         return cabinets;
+    }
+
+    /**
+     * Активные кабинеты пользователя (без поставленных в очередь на удаление).
+     */
+    @Transactional(readOnly = true)
+    public List<Cabinet> findActiveCabinetsByUserId(Long userId) {
+        return findCabinetsByUserId(userId).stream()
+                .filter(c -> c.getDeletionStartedAt() == null)
+                .toList();
     }
 
     /**
@@ -549,9 +571,10 @@ public class CabinetService {
     /**
      * Удаление кабинета и всех связанных данных.
      * Каждый шаг выполняется в своей транзакции (REQUIRES_NEW), чтобы не держать одну большую транзакцию.
+     * Для HTTP используйте {@link #requestDeletion(Long, Long)} — он отвечает сразу и чистит данные в фоне.
      */
     public void delete(Long cabinetId, Long userId) {
-        Cabinet cabinet = findCabinetByIdAndUserId(cabinetId, userId);
+        Cabinet cabinet = loadOwnedCabinet(cabinetId, userId, true);
         log.info("[Удаление кабинета] Начало: «{}» (cabinetId={})", cabinet.getName(), cabinetId);
 
         cabinetDeletionService.deleteStepStatisticsAndArticles(cabinetId);
@@ -577,6 +600,41 @@ public class CabinetService {
         deleteCabinet(cabinet);
 
         log.info("[Удаление кабинета] Готово: «{}» (cabinetId={})", cabinet.getName(), cabinetId);
+    }
+
+    /**
+     * Принимает запрос на удаление: помечает кабинет (скрывает из списков) и запускает очистку в фоне.
+     */
+    public void requestDeletion(Long cabinetId, Long userId) {
+        Cabinet cabinet = loadOwnedCabinet(cabinetId, userId, true);
+        int updated = self.markDeletionStartedIfUnset(cabinetId);
+        if (updated == 0) {
+            log.info("[Удаление кабинета] Уже выполняется: «{}» (cabinetId={})", cabinet.getName(), cabinetId);
+            return;
+        }
+        log.info("[Удаление кабинета] Запрос принят, запуск в фоне: «{}» (cabinetId={})",
+                cabinet.getName(), cabinetId);
+        self.deleteAsync(cabinetId, userId);
+    }
+
+    /**
+     * Атомарно ставит отметку «удаление начато». 0 — кабинет уже в очереди.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int markDeletionStartedIfUnset(Long cabinetId) {
+        return cabinetRepository.markDeletionStartedIfUnset(cabinetId, LocalDateTime.now());
+    }
+
+    /**
+     * Фоновое удаление кабинета (тот же пайплайн, что {@link #delete(Long, Long)}).
+     */
+    @Async("userDeletionExecutor")
+    public void deleteAsync(Long cabinetId, Long userId) {
+        try {
+            delete(cabinetId, userId);
+        } catch (Exception e) {
+            log.error("[Удаление кабинета] Ошибка фонового удаления cabinetId={}: {}", cabinetId, e.getMessage(), e);
+        }
     }
 
     /**
@@ -692,15 +750,25 @@ public class CabinetService {
     }
 
     /**
-     * Возвращает кабинет по ID, если он принадлежит пользователю.
+     * Возвращает кабинет по ID, если он принадлежит пользователю и не поставлен в очередь на удаление.
      */
     public Cabinet findCabinetByIdAndUserId(Long cabinetId, Long userId) {
+        return loadOwnedCabinet(cabinetId, userId, false);
+    }
+
+    /**
+     * Кабинет владельца. {@code includeDeleting} — для фоновой очистки уже помеченного кабинета.
+     */
+    private Cabinet loadOwnedCabinet(Long cabinetId, Long userId, boolean includeDeleting) {
         if (!cabinetRepository.existsByIdAndUser_Id(cabinetId, userId)) {
             throw new UserException("Кабинет не найден или доступ запрещён", HttpStatus.NOT_FOUND);
         }
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new UserException(CABINET_NOT_FOUND, HttpStatus.NOT_FOUND));
         cabinetIntegrationMirrorService.overlayOntoCabinet(cabinet);
+        if (!includeDeleting && cabinet.getDeletionStartedAt() != null) {
+            throw new UserException("Кабинет не найден или доступ запрещён", HttpStatus.NOT_FOUND);
+        }
         return cabinet;
     }
 

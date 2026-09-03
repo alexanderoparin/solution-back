@@ -41,6 +41,7 @@ public class CabinetAccessService {
         List<Cabinet> ownedCabinets = cabinetRepository.findByUser_IdOrderByCreatedAtDesc(currentUser.getId());
         cabinetIntegrationMirrorService.overlayOntoCabinets(ownedCabinets);
         List<OwnedCabinetRowDto> owned = ownedCabinets.stream()
+                .filter(c -> c.getDeletionStartedAt() == null)
                 .filter(c -> matchesSearch(c.getName(), q))
                 .map(this::toOwnedRow)
                 .collect(Collectors.toCollection(ArrayList::new));
@@ -49,6 +50,7 @@ public class CabinetAccessService {
         cabinetIntegrationMirrorService.overlayOntoCabinets(
                 activeGrants.stream().map(CabinetAccessGrant::getCabinet).toList());
         List<GrantedCabinetRowDto> granted = activeGrants.stream()
+                .filter(g -> g.getCabinet().getDeletionStartedAt() == null)
                 .filter(g -> matchesSearch(g.getCabinet().getName(), q))
                 .map(this::toGrantedRow)
                 .collect(Collectors.toCollection(ArrayList::new));

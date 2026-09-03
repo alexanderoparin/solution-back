@@ -53,6 +53,13 @@ public class Cabinet {
     private String name;
 
     /**
+     * Момент постановки кабинета в очередь на удаление.
+     * Пока заполнено, кабинет скрыт из списков и не участвует в синхронизации.
+     */
+    @Column(name = "deletion_started_at")
+    private LocalDateTime deletionStartedAt;
+
+    /**
      * Метки синка (read-only join для сортировки в админке).
      */
     @OneToOne(fetch = FetchType.LAZY)

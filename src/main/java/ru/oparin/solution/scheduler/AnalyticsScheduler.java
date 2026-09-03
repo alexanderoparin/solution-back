@@ -149,7 +149,7 @@ public class AnalyticsScheduler {
         log.info("Ручной запуск обновления данных для продавца (ID: {}, email: {})",
                 seller.getId(), seller.getEmail());
 
-        List<Cabinet> cabinets = cabinetService.findCabinetsByUserId(seller.getId()).stream()
+        List<Cabinet> cabinets = cabinetService.findActiveCabinetsByUserId(seller.getId()).stream()
                 .filter(this::isCabinetEligibleForSync)
                 .toList();
 
@@ -232,6 +232,9 @@ public class AnalyticsScheduler {
     @Transactional
     public void triggerManualUpdateByCabinet(Long cabinetId, boolean skipIntervalCheck, boolean includeStocks) {
         Cabinet cabinet = cabinetService.findByIdWithUserOrThrow(cabinetId);
+        if (cabinet.getDeletionStartedAt() != null) {
+            throw new UserException("Кабинет не найден", HttpStatus.NOT_FOUND);
+        }
         if (!isCabinetEligibleForSync(cabinet)) {
             throw new UserException(
                     cabinet.getMarketplaceType() == MarketplaceType.OZON
@@ -277,6 +280,9 @@ public class AnalyticsScheduler {
     }
 
     private boolean isCabinetEligibleForSync(Cabinet cabinet) {
+        if (cabinet.getDeletionStartedAt() != null) {
+            return false;
+        }
         if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
             return false;
         }
