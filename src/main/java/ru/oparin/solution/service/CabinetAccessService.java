@@ -658,6 +658,7 @@ public class CabinetAccessService {
                 .token(invitation.getToken())
                 .cabinetId(invitation.getCabinet().getId())
                 .cabinetName(invitation.getCabinet().getName())
+                .marketplaceType(invitation.getCabinet().getMarketplaceType())
                 .inviterName(displayName(inviter))
                 .inviterEmail(inviter != null ? inviter.getEmail() : null)
                 .sections(invitation.getSections())
@@ -732,9 +733,9 @@ public class CabinetAccessService {
     }
 
     static String maskApiKey(String apiKey) {
-        if (apiKey == null || apiKey.length() < 12) {
+        if (apiKey == null || apiKey.length() < 10) {
             return apiKey;
         }
-        return apiKey.substring(0, 8) + "..." + apiKey.substring(apiKey.length() - 8);
+        return apiKey.substring(0, 4) + "..." + apiKey.substring(apiKey.length() - 4);
     }
 }

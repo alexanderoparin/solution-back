@@ -2,6 +2,7 @@ package ru.oparin.solution.dto.cabinet;
 
 import lombok.Builder;
 import ru.oparin.solution.model.CabinetAccessSection;
+import ru.oparin.solution.model.MarketplaceType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -14,6 +15,7 @@ public record PendingCabinetInvitationRowDto(
         String token,
         Long cabinetId,
         String cabinetName,
+        MarketplaceType marketplaceType,
         String inviterName,
         String inviterEmail,
         List<CabinetAccessSection> sections,
