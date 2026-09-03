@@ -47,9 +47,7 @@ public class OzonCampaignAnalyticsQuery {
         LocalDate from = range.startDate();
         LocalDate to = range.endDate();
 
-        List<OzonPromotionCampaign> campaigns = ozonPromotionCampaignRepository.findByCabinet_Id(cabinetId).stream()
-                .filter(c -> !"CAMPAIGN_STATE_FINISHED".equals(c.getState()))
-                .collect(Collectors.toList());
+        List<OzonPromotionCampaign> campaigns = ozonPromotionCampaignRepository.findByCabinet_Id(cabinetId);
         if (campaigns.isEmpty()) {
             return Collections.emptyList();
         }
@@ -111,7 +109,6 @@ public class OzonCampaignAnalyticsQuery {
                 .map(OzonCampaignArticle::getCampaign)
                 .filter(Objects::nonNull)
                 .filter(c -> c.getCabinet() != null && Objects.equals(c.getCabinet().getId(), cabinetId))
-                .filter(c -> !"CAMPAIGN_STATE_FINISHED".equals(c.getState()))
                 .distinct()
                 .collect(Collectors.toList());
         if (campaigns.isEmpty()) {

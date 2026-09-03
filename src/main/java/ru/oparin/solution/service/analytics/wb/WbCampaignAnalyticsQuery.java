@@ -40,7 +40,7 @@ public class WbCampaignAnalyticsQuery {
     private final WbArticleCatalogQuery articleCatalogQuery;
 
     /**
-     * Список незавершённых РК кабинета с метриками за период.
+     * Список РК кабинета с метриками за период (включая завершённые).
      */
     @Transactional(readOnly = true)
     public List<CampaignDto> listByCabinet(
@@ -57,9 +57,7 @@ public class WbCampaignAnalyticsQuery {
         LocalDate from = range.startDate();
         LocalDate to = range.endDate();
 
-        List<WbPromotionCampaign> campaigns = campaignRepository.findByCabinet_Id(cabinetId).stream()
-                .filter(c -> c.getStatus() != WbCampaignStatus.FINISHED)
-                .collect(Collectors.toList());
+        List<WbPromotionCampaign> campaigns = campaignRepository.findByCabinet_Id(cabinetId);
         if (campaigns.isEmpty()) {
             return Collections.emptyList();
         }
@@ -103,7 +101,7 @@ public class WbCampaignAnalyticsQuery {
     }
 
     /**
-     * Незавершённые РК артикула для страницы карточки.
+     * РК артикула для страницы карточки (включая завершённые).
      */
     @Transactional(readOnly = true)
     public List<CampaignDto> getCampaignsForArticle(
@@ -117,7 +115,6 @@ public class WbCampaignAnalyticsQuery {
         List<WbPromotionCampaign> campaigns = campaignArticles.stream()
                 .map(WbCampaignArticle::getCampaign)
                 .filter(Objects::nonNull)
-                .filter(campaign -> campaign.getStatus() != WbCampaignStatus.FINISHED)
                 .filter(campaign -> cabinetId == null
                         || (campaign.getCabinet() != null && campaign.getCabinet().getId().equals(cabinetId)))
                 .distinct()

@@ -85,7 +85,7 @@ public class WbPromotionCampaignSyncService {
     }
 
     /**
-     * Один запрос fullstats и сохранение. Завершённые РК ({@link WbCampaignStatus#FINISHED}) из батча исключаются.
+     * Один запрос fullstats и сохранение по advertId батча.
      */
     public void loadAndSaveStatisticsBatch(
             User seller,
@@ -94,9 +94,9 @@ public class WbPromotionCampaignSyncService {
             LocalDate dateFrom,
             LocalDate dateTo
     ) {
-        List<Long> advertIds = excludeFinishedCampaignIds(batchIds);
+        List<Long> advertIds = batchIds == null ? List.of() : batchIds.stream().filter(Objects::nonNull).distinct().toList();
         if (advertIds.isEmpty()) {
-            log.info("Батч fullstats без незавершённых кампаний, запрос WB пропущен");
+            log.info("Батч fullstats пустой, запрос WB пропущен");
             return;
         }
         String dateFromStr = dateFrom.format(DATE_FORMATTER);
@@ -117,43 +117,16 @@ public class WbPromotionCampaignSyncService {
 
     /**
      * AdvertId кампаний кабинета для fullstats и следующих батчей normquery за период.
-     * Завершённые ({@link WbCampaignStatus#FINISHED}) не включаются.
      *
      * @param dateFrom dateTo зарезервированы под контекст периода в очереди; отбор по датам не выполняется
      */
     @SuppressWarnings("unused")
     public List<Long> listCampaignIdsNeedingStatisticsForPeriod(Long cabinetId, LocalDate dateFrom, LocalDate dateTo) {
         return campaignRepository.findByCabinet_Id(cabinetId).stream()
-                .filter(campaign -> campaign.getStatus() != WbCampaignStatus.FINISHED)
                 .map(WbPromotionCampaign::getAdvertId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-    }
-
-    /**
-     * Убирает из батча advertId со статусом «завершена», чтобы не дергать WB fullstats по ним.
-     */
-    private List<Long> excludeFinishedCampaignIds(List<Long> batchIds) {
-        if (batchIds == null || batchIds.isEmpty()) {
-            return List.of();
-        }
-        Set<Long> eligibleIds = campaignRepository.findAllById(batchIds).stream()
-                .filter(campaign -> campaign.getStatus() != WbCampaignStatus.FINISHED)
-                .map(WbPromotionCampaign::getAdvertId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        List<Long> result = new ArrayList<>();
-        for (Long advertId : batchIds) {
-            if (eligibleIds.contains(advertId)) {
-                result.add(advertId);
-            }
-        }
-        int skipped = batchIds.size() - result.size();
-        if (skipped > 0) {
-            log.info("Из батча fullstats исключено завершённых кампаний: {}, к запросу: {}", skipped, result.size());
-        }
-        return result;
     }
 
     public int getCampaignsBatchSize() {
