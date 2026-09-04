@@ -20,10 +20,7 @@ import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -116,17 +113,78 @@ public class WbPromotionCampaignSyncService {
     }
 
     /**
+     * Группа advertId одного ранга для fullstats/normquery: 0 — активные, 1 — пауза, 2 — остальные.
+     *
+     * @param rank ранг синхронизации статистики
+     * @param advertIds идентификаторы кампаний группы в стабильном порядке
+     */
+    public record StatisticsSyncIdGroup(int rank, List<Long> advertIds) {
+    }
+
+    /**
      * AdvertId кампаний кабинета для fullstats и следующих батчей normquery за период.
+     * Порядок: активные, затем пауза, затем остальные.
      *
      * @param dateFrom dateTo зарезервированы под контекст периода в очереди; отбор по датам не выполняется
      */
     @SuppressWarnings("unused")
     public List<Long> listCampaignIdsNeedingStatisticsForPeriod(Long cabinetId, LocalDate dateFrom, LocalDate dateTo) {
-        return campaignRepository.findByCabinet_Id(cabinetId).stream()
-                .map(WbPromotionCampaign::getAdvertId)
-                .filter(Objects::nonNull)
-                .distinct()
+        return listCampaignIdGroupsForStatisticsSync(cabinetId).stream()
+                .map(StatisticsSyncIdGroup::advertIds)
+                .flatMap(List::stream)
                 .toList();
+    }
+
+    /**
+     * AdvertId кабинета, сгруппированные для статистики: активные, пауза, остальные.
+     * Группы не смешиваются; внутри группы порядок стабилен по advertId.
+     *
+     * @param cabinetId идентификатор кабинета
+     * @return непустые группы в порядке приоритета синхронизации
+     */
+    public List<StatisticsSyncIdGroup> listCampaignIdGroupsForStatisticsSync(Long cabinetId) {
+        List<WbPromotionCampaign> campaigns = new ArrayList<>(campaignRepository.findByCabinet_Id(cabinetId));
+        campaigns.sort(Comparator
+                .comparingInt((WbPromotionCampaign campaign) -> statisticsSyncRank(campaign.getStatus()))
+                .thenComparing(WbPromotionCampaign::getAdvertId, Comparator.nullsLast(Long::compareTo)));
+
+        LinkedHashSet<Long> seen = new LinkedHashSet<>();
+        List<Long> currentIds = new ArrayList<>();
+        int currentRank = -1;
+        List<StatisticsSyncIdGroup> groups = new ArrayList<>();
+        for (WbPromotionCampaign campaign : campaigns) {
+            Long advertId = campaign.getAdvertId();
+            if (advertId == null || !seen.add(advertId)) {
+                continue;
+            }
+            int rank = statisticsSyncRank(campaign.getStatus());
+            if (currentRank >= 0 && rank != currentRank) {
+                groups.add(new StatisticsSyncIdGroup(currentRank, List.copyOf(currentIds)));
+                currentIds = new ArrayList<>();
+            }
+            currentRank = rank;
+            currentIds.add(advertId);
+        }
+        if (!currentIds.isEmpty()) {
+            groups.add(new StatisticsSyncIdGroup(currentRank, List.copyOf(currentIds)));
+        }
+        return groups;
+    }
+
+    /**
+     * Ранг очереди статистики: активные раньше паузы, пауза раньше остальных.
+     *
+     * @param status статус РК из БД
+     * @return 0 — активна, 1 — пауза, 2 — остальные
+     */
+    public static int statisticsSyncRank(WbCampaignStatus status) {
+        if (status == WbCampaignStatus.ACTIVE) {
+            return 0;
+        }
+        if (status == WbCampaignStatus.PAUSED) {
+            return 1;
+        }
+        return 2;
     }
 
     public int getCampaignsBatchSize() {

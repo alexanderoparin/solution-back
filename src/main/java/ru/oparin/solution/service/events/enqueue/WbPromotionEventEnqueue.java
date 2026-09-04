@@ -13,8 +13,10 @@ import ru.oparin.solution.service.events.WbApiEventQueueService;
 import ru.oparin.solution.service.events.WbApiEventWriter;
 import ru.oparin.solution.service.events.payload.*;
 import ru.oparin.solution.service.sync.WbPromotionCampaignSyncService;
+import ru.oparin.solution.service.sync.WbPromotionCampaignSyncService.StatisticsSyncIdGroup;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -26,6 +28,9 @@ public class WbPromotionEventEnqueue {
 
     private static final int MAX_ATTEMPTS = 5;
     private static final int PRIORITY = 85;
+    private static final int STATS_PRIORITY_ACTIVE = 87;
+    private static final int STATS_PRIORITY_PAUSED = 86;
+    private static final int STATS_PRIORITY_REST = 85;
     private static final int CONTROL_PRIORITY = 95;
 
     private final WbApiEventWriter writer;
@@ -126,12 +131,9 @@ public class WbPromotionEventEnqueue {
         )) {
             return;
         }
-        List<Long> needing = promotionCampaignSyncService.listCampaignIdsNeedingStatisticsForPeriod(
-                cabinetId,
-                payload.dateFrom(),
-                payload.dateTo()
-        );
-        if (needing.isEmpty()) {
+        List<StatisticsSyncIdGroup> groups = promotionCampaignSyncService.listCampaignIdGroupsForStatisticsSync(
+                cabinetId);
+        if (groups.isEmpty()) {
             queueService.tryFinalizeMain(cabinetId, excludeAdvertBatchEventId);
             return;
         }
@@ -147,10 +149,13 @@ public class WbPromotionEventEnqueue {
         Cabinet cabinet = writer.requireCabinet(cabinetId);
         int statBatchSize = promotionCampaignSyncService.getStatisticsBatchSize(
                 cabinet.getTokenType() != null ? cabinet.getTokenType() : CabinetTokenType.BASIC);
-        for (int i = 0, batchIndex = 0; i < needing.size(); i += statBatchSize, batchIndex++) {
-            int end = Math.min(i + statBatchSize, needing.size());
-            List<Long> batch = needing.subList(i, end);
-            enqueuePromotionStatsBatchEvent(cabinet, batch, batchIndex, payload, triggerSource);
+        int batchIndex = 0;
+        for (StatisticsSyncIdGroup group : groups) {
+            int priority = statsBatchPriority(group.rank());
+            for (List<Long> batch : chunk(group.advertIds(), statBatchSize)) {
+                enqueuePromotionStatsBatchEvent(cabinet, batch, batchIndex, payload, triggerSource, priority);
+                batchIndex++;
+            }
         }
     }
 
@@ -194,9 +199,9 @@ public class WbPromotionEventEnqueue {
         )) {
             return;
         }
-        List<Long> campaignIds = promotionCampaignSyncService.listCampaignIdsNeedingStatisticsForPeriod(
-                cabinetId, dateFrom, dateTo);
-        if (campaignIds.isEmpty()) {
+        List<StatisticsSyncIdGroup> groups = promotionCampaignSyncService.listCampaignIdGroupsForStatisticsSync(
+                cabinetId);
+        if (groups.isEmpty()) {
             queueService.tryFinalizeMain(cabinetId, excludeStatsBatchEventId);
             return;
         }
@@ -217,10 +222,13 @@ public class WbPromotionEventEnqueue {
                 .dateTo(dateTo)
                 .includeStocks(includeStocks)
                 .build();
-        for (int i = 0, batchIndex = 0; i < campaignIds.size(); i += batchSize, batchIndex++) {
-            int end = Math.min(i + batchSize, campaignIds.size());
-            List<Long> batch = campaignIds.subList(i, end);
-            enqueuePromotionNormQueryStatsBatchEvent(cabinet, batch, batchIndex, payload, triggerSource);
+        int batchIndex = 0;
+        for (StatisticsSyncIdGroup group : groups) {
+            int priority = statsBatchPriority(group.rank());
+            for (List<Long> batch : chunk(group.advertIds(), batchSize)) {
+                enqueuePromotionNormQueryStatsBatchEvent(cabinet, batch, batchIndex, payload, triggerSource, priority);
+                batchIndex++;
+            }
         }
     }
 
@@ -324,7 +332,8 @@ public class WbPromotionEventEnqueue {
             List<Long> campaignIds,
             int batchIndex,
             WbMainStepPayload payload,
-            String triggerSource
+            String triggerSource,
+            int priority
     ) {
         String dedupKey = promotionStatsDedupPrefix(cabinet.getId(), payload.dateFrom(), payload.dateTo()) + batchIndex;
         WbPromotionStatsBatchPayload batchPayload = WbPromotionStatsBatchPayload.builder()
@@ -341,7 +350,7 @@ public class WbPromotionEventEnqueue {
                 batchPayload,
                 dedupKey,
                 MAX_ATTEMPTS,
-                PRIORITY,
+                priority,
                 triggerSource,
                 null
         );
@@ -352,7 +361,8 @@ public class WbPromotionEventEnqueue {
             List<Long> campaignIds,
             int batchIndex,
             WbMainStepPayload payload,
-            String triggerSource
+            String triggerSource,
+            int priority
     ) {
         String dedupKey = promotionNormQueryStatsDedupPrefix(cabinet.getId(), payload.dateFrom(), payload.dateTo())
                 + batchIndex;
@@ -370,10 +380,45 @@ public class WbPromotionEventEnqueue {
                 batchPayload,
                 dedupKey,
                 MAX_ATTEMPTS,
-                PRIORITY,
+                priority,
                 triggerSource,
                 null
         );
+    }
+
+    /**
+     * Приоритет батча статистики: активные выше паузы, пауза выше остальных.
+     *
+     * @param rank 0 — активна, 1 — пауза, 2 — остальные
+     * @return приоритет события очереди
+     */
+    private static int statsBatchPriority(int rank) {
+        if (rank == 0) {
+            return STATS_PRIORITY_ACTIVE;
+        }
+        if (rank == 1) {
+            return STATS_PRIORITY_PAUSED;
+        }
+        return STATS_PRIORITY_REST;
+    }
+
+    /**
+     * Нарезает список ID на батчи заданного размера без выхода за границы списка.
+     *
+     * @param ids исходные идентификаторы одной группы статуса
+     * @param size максимальный размер HTTP-батча
+     * @return подсписки в исходном порядке
+     */
+    private static List<List<Long>> chunk(List<Long> ids, int size) {
+        List<List<Long>> batches = new ArrayList<>();
+        if (ids == null || ids.isEmpty() || size <= 0) {
+            return batches;
+        }
+        for (int i = 0; i < ids.size(); i += size) {
+            int end = Math.min(i + size, ids.size());
+            batches.add(ids.subList(i, end));
+        }
+        return batches;
     }
 
     private static String promotionPeriodKey(Long cabinetId, LocalDate from, LocalDate to) {
