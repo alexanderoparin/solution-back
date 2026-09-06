@@ -207,7 +207,11 @@ public class UserController {
     }
 
     private User getCurrentUser(Authentication authentication) {
-        return userService.findByEmail(authentication.getName());
+        User user = userService.findByEmail(authentication.getName());
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
+            throw new UserException("Аккаунт деактивирован", HttpStatus.UNAUTHORIZED);
+        }
+        return user;
     }
 
     private void validateCabinetOwner(User user) {

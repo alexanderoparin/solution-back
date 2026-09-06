@@ -350,12 +350,33 @@ public class UserService {
         if (userToDelete.getRole() == Role.ADMIN) {
             throw new UserException("Нельзя удалить другого администратора", HttpStatus.FORBIDDEN);
         }
+        userToDelete.setIsActive(false);
+        userRepository.save(userToDelete);
         log.info("[Удаление пользователя] Запрос принят, запуск фонового удаления: {} (userId={})", userToDelete.getEmail(), userId);
         self.runDeletionAsync(userId);
     }
 
     /**
-     * Фоновое удаление пользователя: подчинённые (рекурсивно), кабинеты (каждый в своей транзакции), затем запись пользователя (в своей транзакции).
+     * Деактивация пользователя в отдельной транзакции перед удалением,
+     * чтобы заблокировать дальнейшие входы и действия в системе.
+     *
+     * @param userId идентификатор пользователя
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void deactivateUser(Long userId) {
+        User user = userRepository.findById(userId).orElse(null);
+        if (user != null && Boolean.TRUE.equals(user.getIsActive())) {
+            user.setIsActive(false);
+            userRepository.save(user);
+            log.info("[Удаление пользователя]   → Пользователь деактивирован: {} (userId={})", user.getEmail(), userId);
+        }
+    }
+
+    /**
+     * Фоновое удаление пользователя: деактивация, подчинённые (рекурсивно),
+     * кабинеты (каждый в своей транзакции), затем запись пользователя (в своей транзакции).
+     *
+     * @param userId идентификатор пользователя
      */
     @Async("userDeletionExecutor")
     public void runDeletionAsync(Long userId) {
@@ -366,30 +387,40 @@ public class UserService {
         }
         log.info("[Удаление пользователя] Начало фонового удаления: {} (userId={})", userToDelete.getEmail(), userId);
 
-        List<User> subordinates = List.of();
-        if (!subordinates.isEmpty()) {
-            log.info("[Удаление пользователя]   → Подчинённых: {} шт.", subordinates.size());
-        }
-        for (User sub : subordinates) {
-            log.info("[Удаление пользователя]   → Удаляю подчинённого: {} (userId={})", sub.getEmail(), sub.getId());
-            self.runDeletionAsync(sub.getId());
-        }
+        try {
+            self.deactivateUser(userId);
 
-        List<Cabinet> cabinets = cabinetService.findCabinetsByUserId(userId);
-        if (!cabinets.isEmpty()) {
-            log.info("[Удаление пользователя]   → Кабинетов: {} шт.", cabinets.size());
-        }
-        for (Cabinet cabinet : cabinets) {
-            log.info("[Удаление пользователя]   → Кабинет «{}» (cabinetId={})", cabinet.getName(), cabinet.getId());
-            cabinetService.delete(cabinet.getId(), userId);
-        }
+            List<User> subordinates = List.of();
+            if (!subordinates.isEmpty()) {
+                log.info("[Удаление пользователя]   → Подчинённых: {} шт.", subordinates.size());
+            }
+            for (User sub : subordinates) {
+                log.info("[Удаление пользователя]   → Удаляю подчинённого: {} (userId={})", sub.getEmail(), sub.getId());
+                self.runDeletionAsync(sub.getId());
+            }
 
-        self.deleteUserRecord(userId);
-        log.info("[Удаление пользователя] Готово: {} (userId={}) удалён", userToDelete.getEmail(), userId);
+            List<Cabinet> cabinets = cabinetService.findCabinetsByUserId(userId);
+            if (!cabinets.isEmpty()) {
+                log.info("[Удаление пользователя]   → Кабинетов: {} шт.", cabinets.size());
+            }
+            for (Cabinet cabinet : cabinets) {
+                log.info("[Удаление пользователя]   → Кабинет «{}» (cabinetId={})", cabinet.getName(), cabinet.getId());
+                cabinetService.delete(cabinet.getId(), userId);
+            }
+
+            self.deleteUserRecord(userId);
+            log.info("[Удаление пользователя] Готово: {} (userId={}) удалён", userToDelete.getEmail(), userId);
+        } catch (Exception e) {
+            log.error("[Удаление пользователя] Ошибка при фоновом удалении пользователя {} (userId={}): {}",
+                    userToDelete.getEmail(), userId, e.getMessage(), e);
+        }
     }
 
     /**
      * Удаление записи пользователя в БД в отдельной транзакции.
+     * Предварительно удаляет связанные сущности, требующие явной очистки (активации промокодов).
+     *
+     * @param userId идентификатор пользователя
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void deleteUserRecord(Long userId) {
@@ -398,6 +429,7 @@ public class UserService {
             return;
         }
         log.info("[Удаление пользователя]   → Удаляю запись пользователя в БД: {} (userId={})", user.getEmail(), userId);
+        promoCodeService.deleteRedemptionsByUserId(userId);
         userRepository.delete(user);
     }
 

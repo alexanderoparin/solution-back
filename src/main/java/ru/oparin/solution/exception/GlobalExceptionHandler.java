@@ -88,6 +88,20 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Обработка DisabledException (аккаунт деактивирован / заблокирован).
+     *
+     * @param ex исключение
+     * @return ответ с ошибкой
+     */
+    @ExceptionHandler(org.springframework.security.authentication.DisabledException.class)
+    public ResponseEntity<ErrorResponse> handleDisabledException(
+            org.springframework.security.authentication.DisabledException ex) {
+        log.warn("Попытка входа в деактивированный аккаунт: {}", ex.getMessage());
+        ErrorResponse error = createErrorResponse("Аккаунт деактивирован");
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
+    }
+
+    /**
      * Обработка BadCredentialsException (неверный пароль).
      *
      * @param ex исключение

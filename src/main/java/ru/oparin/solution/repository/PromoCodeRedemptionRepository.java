@@ -3,6 +3,7 @@ package ru.oparin.solution.repository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.oparin.solution.model.PromoCodeRedemption;
@@ -19,6 +20,15 @@ public interface PromoCodeRedemptionRepository extends JpaRepository<PromoCodeRe
     long countByPromoCodeId(Long promoCodeId);
 
     boolean existsByUser_IdAndPromoCode_Id(Long userId, Long promoCodeId);
+
+    /**
+     * Удаляет все активации промокодов конкретного пользователя.
+     *
+     * @param userId идентификатор пользователя
+     */
+    @Modifying
+    @Query("DELETE FROM PromoCodeRedemption r WHERE r.user.id = :userId")
+    void deleteByUserId(@Param("userId") Long userId);
 
     @Query("""
             SELECT CASE WHEN COUNT(r) > 0 THEN true ELSE false END

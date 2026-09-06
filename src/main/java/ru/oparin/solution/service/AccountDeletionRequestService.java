@@ -31,11 +31,15 @@ public class AccountDeletionRequestService {
 
     @Transactional(readOnly = true)
     public AccountDeletionStatusDto getStatus(Long userId) {
-        return repository.findByUser_IdAndStatus(userId, AccountDeletionRequestStatus.PENDING)
+        return repository.findFirstByUser_IdOrderByCreatedAtDesc(userId)
+                .filter(r -> r.getStatus() == AccountDeletionRequestStatus.PENDING
+                        || r.getStatus() == AccountDeletionRequestStatus.APPROVED)
                 .map(r -> AccountDeletionStatusDto.builder()
                         .hasPendingRequest(true)
                         .status(r.getStatus())
-                        .message("Запрос на удаление отправлен и ожидает обработки. "
+                        .message(r.getStatus() == AccountDeletionRequestStatus.APPROVED
+                                ? "Заявка на удаление одобрена. Аккаунт удаляется."
+                                : "Запрос на удаление отправлен и ожидает обработки. "
                                 + "Если запрос был отправлен по ошибке, обратитесь в поддержку corp@click-i.ru")
                         .build())
                 .orElse(AccountDeletionStatusDto.builder()
@@ -56,8 +60,9 @@ public class AccountDeletionRequestService {
         if (request.reason() == null) {
             throw new UserException("Укажите причину удаления", HttpStatus.BAD_REQUEST);
         }
-        if (repository.findByUser_IdAndStatus(user.getId(), AccountDeletionRequestStatus.PENDING).isPresent()) {
-            throw new UserException("Заявка на удаление уже отправлена", HttpStatus.CONFLICT);
+        if (repository.existsByUser_IdAndStatusIn(user.getId(),
+                List.of(AccountDeletionRequestStatus.PENDING, AccountDeletionRequestStatus.APPROVED))) {
+            throw new UserException("Заявка на удаление уже обрабатывается", HttpStatus.CONFLICT);
         }
         AccountDeletionRequest saved = repository.save(AccountDeletionRequest.builder()
                 .user(user)
@@ -91,6 +96,10 @@ public class AccountDeletionRequestService {
         request.setProcessedByUser(admin);
         request.setProcessedByEmail(admin.getEmail());
         repository.save(request);
+
+        // Деактивируем пользователя сразу при одобрении заявки
+        targetUser.setIsActive(false);
+
         userService.runDeletionAsync(targetUser.getId());
     }
 

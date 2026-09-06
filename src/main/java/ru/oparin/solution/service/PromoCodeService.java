@@ -82,6 +82,19 @@ public class PromoCodeService {
                 userId, PromoGrantType.FULL_ACCESS, LocalDateTime.now());
     }
 
+    /**
+     * Удаляет все записи об активации промокодов для указанного пользователя.
+     *
+     * @param userId идентификатор пользователя
+     */
+    @Transactional
+    public void deleteRedemptionsByUserId(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        redemptionRepository.deleteByUserId(userId);
+    }
+
     private void validatePromoAvailable(PromoCode promo) {
         if (!promo.isActive()) {
             throw new UserException("Промокод не найден или недействителен", HttpStatus.BAD_REQUEST);

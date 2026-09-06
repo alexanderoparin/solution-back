@@ -12,6 +12,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.UserService;
 
@@ -75,8 +76,20 @@ public class EmailConfirmationAccessFilter extends OncePerRequestFilter {
         User user;
         try {
             user = userService.findByEmail(auth.getName());
+        } catch (UserException e) {
+            if (e.getHttpStatus() == HttpStatus.NOT_FOUND) {
+                sendUnauthorizedResponse(response, "Пользователь не найден.");
+                return;
+            }
+            filterChain.doFilter(request, response);
+            return;
         } catch (Exception e) {
             filterChain.doFilter(request, response);
+            return;
+        }
+
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
+            sendUnauthorizedResponse(response, "Аккаунт деактивирован.");
             return;
         }
 
@@ -90,6 +103,15 @@ public class EmailConfirmationAccessFilter extends OncePerRequestFilter {
         response.setCharacterEncoding("UTF-8");
         response.getWriter().write(objectMapper.writeValueAsString(
                 Map.of("message", "Подтвердите почту для доступа к сервису. Откройте профиль и запросите письмо со ссылкой.")
+        ));
+    }
+
+    private void sendUnauthorizedResponse(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpStatus.UNAUTHORIZED.value());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write(objectMapper.writeValueAsString(
+                Map.of("message", message, "error", message)
         ));
     }
 }
