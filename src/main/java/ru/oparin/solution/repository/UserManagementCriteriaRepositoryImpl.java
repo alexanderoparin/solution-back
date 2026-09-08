@@ -27,6 +27,7 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
     private static final String USER_ID_FIELD = "id";
     private static final String USER_EMAIL_FIELD = "email";
     private static final String CABINET_USER_FIELD = "user";
+    private static final String USER_LAST_SEEN_AT_FIELD = "lastSeenAt";
     private static final String SYNC_LAST_UPDATE_AT_FIELD = "lastDataUpdateAt";
     private static final String SYNC_LAST_UPDATE_REQUESTED_AT_FIELD = "lastDataUpdateRequestedAt";
 
@@ -89,12 +90,30 @@ public class UserManagementCriteriaRepositoryImpl implements UserManagementCrite
         return predicates;
     }
 
+    /**
+     * Применяет правила сортировки к запросу выборки пользователей.
+     * Для дат последних визитов и обновлений пустые значения (null) ранжируются в конец списка.
+     */
     private void applySorting(CriteriaBuilder cb,
                               CriteriaQuery<User> cq,
                               Root<User> root,
                               UserSortField sortBy,
                               Sort.Direction sortDir) {
         boolean asc = sortDir == Sort.Direction.ASC;
+
+        if (sortBy == UserSortField.LAST_SEEN_AT) {
+            Expression<LocalDateTime> lastSeenExpr = root.get(USER_LAST_SEEN_AT_FIELD);
+            Expression<Integer> nullRank = cb.<Integer>selectCase()
+                    .when(cb.isNull(lastSeenExpr), 1)
+                    .otherwise(0);
+
+            cq.orderBy(
+                    cb.asc(nullRank),
+                    asc ? cb.asc(lastSeenExpr) : cb.desc(lastSeenExpr),
+                    cb.asc(root.get(USER_ID_FIELD))
+            );
+            return;
+        }
 
         if (sortBy == UserSortField.LAST_DATA_UPDATE_AT || sortBy == UserSortField.LAST_DATA_UPDATE_REQUESTED_AT) {
             String field = sortBy == UserSortField.LAST_DATA_UPDATE_AT

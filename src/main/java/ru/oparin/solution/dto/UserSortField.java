@@ -3,6 +3,9 @@ package ru.oparin.solution.dto;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * Поля сортировки для списка пользователей в админке.
+ */
 @Getter
 @RequiredArgsConstructor
 public enum UserSortField {
@@ -12,6 +15,7 @@ public enum UserSortField {
     IS_ACTIVE("isActive"),
     OWNER_EMAIL("ownerEmail"),
     CREATED_AT("createdAt"),
+    LAST_SEEN_AT("lastSeenAt"),
     LAST_DATA_UPDATE_AT("lastDataUpdateAt"),
     LAST_DATA_UPDATE_REQUESTED_AT("lastDataUpdateRequestedAt");
 

@@ -34,6 +34,7 @@ public class EmailConfirmationAccessFilter extends OncePerRequestFilter {
             "/api/user/password",
             "/api/user/deletion-request",
             "/api/user/send-email-confirmation",
+            "/api/feedback",
             "/api/auth/login",
             "/api/auth/register",
             "/api/auth/forgot-password",

@@ -173,6 +173,29 @@ public class EmailService {
     }
 
     /**
+     * Отправляет на корпоративную почту сообщение о баге, замечании или предложении.
+     *
+     * @param user    автор сообщения
+     * @param message текст обратной связи
+     * @param pageUrl адрес страницы, с которой отправлена форма (может быть пустым)
+     */
+    public void sendBugReportEmail(User user, String message, String pageUrl) {
+        String userLabel = user.getName() != null && !user.getName().isBlank()
+                ? user.getName() + " (" + user.getEmail() + ")"
+                : user.getEmail();
+        StringBuilder text = new StringBuilder();
+        text.append("Обратная связь из сервиса (баг / замечание / предложение).\n\n");
+        text.append("Пользователь: ").append(userLabel).append('\n');
+        text.append("ID пользователя: ").append(user.getId()).append('\n');
+        if (pageUrl != null && !pageUrl.isBlank()) {
+            text.append("Страница: ").append(pageUrl.trim()).append('\n');
+        }
+        text.append("\nСообщение:\n").append(message.trim()).append('\n');
+        text.append("\n— ").append(brandName);
+        sendLandingInboxEmail("Найден баг", text.toString(), "обратную связь (баг)");
+    }
+
+    /**
      * Уведомление на корпоративную почту о новой заявке на удаление аккаунта.
      *
      * @param user       пользователь, подавший заявку
