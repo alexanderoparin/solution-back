@@ -312,6 +312,10 @@ public class CabinetService {
         return createWbCabinet(user, request);
     }
 
+    /**
+     * Создаёт кабинет WB. Без названия ходим в seller-info; если имя указано (в т.ч. после 429),
+     * токен сохраняется без проверки WB.
+     */
     private CabinetDto createWbCabinet(User user, CreateCabinetRequest request) {
         if (request.getApiKey() == null || request.getApiKey().isBlank()) {
             throw new UserException("Укажите API-токен WB", HttpStatus.BAD_REQUEST);
@@ -326,7 +330,6 @@ public class CabinetService {
 
         final String cabinetName;
         if (hasName) {
-            assertSellerInfoOrThrow(trimmedApiKey);
             cabinetName = normalizeName(trimmedName);
         } else {
             cabinetName = resolveCabinetNameFromWb(trimmedApiKey);
@@ -772,16 +775,6 @@ public class CabinetService {
         return cabinet;
     }
 
-    private void assertSellerInfoOrThrow(String apiKey) {
-        try {
-            wbCommonApiClient.getSellerInfo(apiKey);
-        } catch (HttpClientErrorException e) {
-            throw sellerInfoHttpException(e);
-        } catch (RestClientException e) {
-            throw new UserException(WB_SELLER_INFO_ERROR, HttpStatus.BAD_REQUEST);
-        }
-    }
-
     /**
      * Проверяет Client-Id + Api-Key через Ozon Seller API до сохранения кабинета.
      */
@@ -822,7 +815,7 @@ public class CabinetService {
                 return nameFromWb;
             }
             throw new UserException(
-                    "WB не вернул название продавца. Укажите название кабинета вручную.",
+                    "WB не вернул название продавца. Укажите название кабинета вручную — сохраним токен без проверки WB.",
                     HttpStatus.BAD_REQUEST);
         } catch (HttpClientErrorException e) {
             throw sellerInfoHttpException(e);
@@ -841,13 +834,14 @@ public class CabinetService {
             Integer retry = Wb429RateLimitHeadersLogger.parseRetryAfterSeconds(e);
             if (retry != null && retry > 0) {
                 return new UserException(
-                        "Превышен лимит запросов к WB API. Повторите попытку примерно через: "
+                        "Превышен лимит запросов к WB API. Укажите название кабинета — сохраним токен без проверки. "
+                                + "Повторить запрос к WB можно примерно через: "
                                 + formatSecondsAsHoursMinutesSeconds(retry) + ".",
                         HttpStatus.TOO_MANY_REQUESTS,
                         retry);
             }
             return new UserException(
-                    "Превышен лимит запросов к WB API. Повторите попытку позже.",
+                    "Превышен лимит запросов к WB API. Укажите название кабинета — сохраним токен без проверки.",
                     HttpStatus.TOO_MANY_REQUESTS);
         }
         if (status == HttpStatus.UNAUTHORIZED.value()) {

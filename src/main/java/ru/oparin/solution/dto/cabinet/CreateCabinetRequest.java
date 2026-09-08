@@ -18,6 +18,10 @@ public class CreateCabinetRequest {
      */
     private MarketplaceType marketplaceType;
 
+    /**
+     * Название кабинета. Для Ozon обязательно. Для WB без имени берётся из seller-info;
+     * если имя передано, токен сохраняется без запроса к WB (нужно при 429 на базовом токене).
+     */
     @Size(min = 1, max = 255)
     private String name;
 
