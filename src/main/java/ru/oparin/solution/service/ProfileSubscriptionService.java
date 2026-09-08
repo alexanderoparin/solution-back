@@ -27,7 +27,8 @@ public class ProfileSubscriptionService {
     private final PromoCodeService promoCodeService;
 
     /**
-     * Краткая сводка: детали смотрите на странице подписки выбранного кабинета.
+     * Краткая сводка для профиля: промокод либо бесплатный доступ по умолчанию
+     * (детали кабинета — на странице подписки после его создания).
      */
     @Transactional(readOnly = true)
     public ProfileSubscriptionSummaryDto buildSummary(User user) {
@@ -49,9 +50,9 @@ public class ProfileSubscriptionService {
                     .build();
         }
         return ProfileSubscriptionSummaryDto.builder()
-                .planName("По кабинетам")
+                .planName("Бесплатный доступ")
                 .planCode(PlanCodes.ANALYTICS_FREE)
-                .statusLabel("См. подписку кабинета")
+                .statusLabel("Активен")
                 .active(true)
                 .autoRenew(false)
                 .freePlanHint(FREE_HINT)
