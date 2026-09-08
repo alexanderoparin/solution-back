@@ -1,15 +1,21 @@
 package ru.oparin.solution.service;
 
+import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailAuthenticationException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 import ru.oparin.solution.dto.LandingLeadSource;
 import ru.oparin.solution.model.AccountDeletionReason;
 import ru.oparin.solution.model.User;
+
+import java.nio.file.Paths;
+import java.util.List;
 
 /**
  * Сервис отправки писем (восстановление пароля и т.д.).
@@ -178,8 +184,9 @@ public class EmailService {
      * @param user    автор сообщения
      * @param message текст обратной связи
      * @param pageUrl адрес страницы, с которой отправлена форма (может быть пустым)
+     * @param images  скриншоты для вложения (может быть пустым)
      */
-    public void sendBugReportEmail(User user, String message, String pageUrl) {
+    public void sendBugReportEmail(User user, String message, String pageUrl, List<MultipartFile> images) {
         String userLabel = user.getName() != null && !user.getName().isBlank()
                 ? user.getName() + " (" + user.getEmail() + ")"
                 : user.getEmail();
@@ -190,9 +197,65 @@ public class EmailService {
         if (pageUrl != null && !pageUrl.isBlank()) {
             text.append("Страница: ").append(pageUrl.trim()).append('\n');
         }
+        int attachmentCount = images == null ? 0 : images.size();
+        if (attachmentCount > 0) {
+            text.append("Вложений: ").append(attachmentCount).append('\n');
+        }
         text.append("\nСообщение:\n").append(message.trim()).append('\n');
         text.append("\n— ").append(brandName);
-        sendLandingInboxEmail("Найден баг", text.toString(), "обратную связь (баг)");
+        sendBugReportInboxEmail(text.toString(), images);
+    }
+
+    /**
+     * Письмо «Найден баг» на корпоративную почту, при необходимости со скриншотами.
+     *
+     * @param text   тело письма
+     * @param images вложения
+     */
+    private void sendBugReportInboxEmail(String text, List<MultipartFile> images) {
+        try {
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            boolean multipart = images != null && !images.isEmpty();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, multipart, "UTF-8");
+            helper.setFrom(fromEmail);
+            helper.setTo(auditInboxEmail);
+            helper.setSubject("Найден баг");
+            helper.setText(text);
+            if (multipart) {
+                int index = 1;
+                for (MultipartFile image : images) {
+                    helper.addAttachment(attachmentFileName(image, index), image);
+                    index++;
+                }
+            }
+            mailSender.send(mimeMessage);
+            log.info("Обратная связь (баг) отправлена на {}", auditInboxEmail);
+        } catch (MailAuthenticationException e) {
+            log.error("Ошибка SMTP-аутентификации при отправке обратной связи (баг): {}", e.getMessage());
+            throw new RuntimeException("Не удалось отправить запрос. Попробуйте позже.", e);
+        } catch (Exception e) {
+            log.error("Ошибка отправки обратной связи (баг): {}", e.getMessage(), e);
+            throw new RuntimeException("Не удалось отправить запрос. Попробуйте позже.", e);
+        }
+    }
+
+    /**
+     * Безопасное имя вложения для письма.
+     *
+     * @param file  исходный файл
+     * @param index порядковый номер, если имени нет
+     * @return имя файла без пути
+     */
+    private static String attachmentFileName(MultipartFile file, int index) {
+        String original = file.getOriginalFilename();
+        if (original == null || original.isBlank()) {
+            return "screenshot-" + index + ".png";
+        }
+        String name = Paths.get(original).getFileName().toString().trim();
+        if (name.isBlank()) {
+            return "screenshot-" + index + ".png";
+        }
+        return name;
     }
 
     /**

@@ -7,6 +7,7 @@ import lombok.Setter;
 
 /**
  * Сообщение об ошибке или предложение из шапки сервиса.
+ * Скриншоты передаются отдельной multipart-частью {@code files}.
  */
 @Getter
 @Setter
