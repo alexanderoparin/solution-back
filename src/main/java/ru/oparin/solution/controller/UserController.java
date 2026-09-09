@@ -240,6 +240,7 @@ public class UserController {
                 .createdAt(user.getCreatedAt())
                 .subscription(profileSubscriptionService.buildSummary(user))
                 .deletionRequest(accountDeletionRequestService.getStatus(user.getId()))
+                .agencyManaged(Boolean.TRUE.equals(user.getAgencyManaged()))
                 .build();
     }
 }

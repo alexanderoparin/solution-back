@@ -28,4 +28,6 @@ public class UserProfileResponse {
     private LocalDateTime createdAt;
     private ProfileSubscriptionSummaryDto subscription;
     private AccountDeletionStatusDto deletionRequest;
+    /** Клиент агентства: полный PRO-доступ без отдельной подписки. */
+    private Boolean agencyManaged;
 }
