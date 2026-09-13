@@ -83,7 +83,7 @@ public class AdvertisingController {
      * Постраничный список РК кабинета: фильтры, сортировка и пагинация на сервере.
      *
      * @param page     номер страницы с нуля, по умолчанию 0
-     * @param size     размер страницы, по умолчанию 50
+     * @param size     размер страницы, по умолчанию 20
      * @param sortBy   поле сортировки (createdAt, name, views, …)
      * @param sortDir  asc или desc
      * @param search   подстрока названия или ID
@@ -97,7 +97,7 @@ public class AdvertisingController {
             @RequestParam(required = false) LocalDate dateFrom,
             @RequestParam(required = false) LocalDate dateTo,
             @RequestParam(required = false, defaultValue = "0") int page,
-            @RequestParam(required = false, defaultValue = "50") int size,
+            @RequestParam(required = false, defaultValue = "20") int size,
             @RequestParam(required = false, defaultValue = "createdAt") String sortBy,
             @RequestParam(required = false, defaultValue = "desc") String sortDir,
             @RequestParam(required = false) String search,
