@@ -77,6 +77,15 @@ public class WbPromotionCampaignControlService {
         }
         try {
             applyStartOnWb(cabinet, advertId);
+            WbPromotionCampaign afterStart = findCampaignOrThrow(cabinet.getId(), advertId);
+            if (afterStart.getStatus() != WbCampaignStatus.ACTIVE) {
+                log.info(
+                        "После start РК advertId={} статус на WB={}, успех не подтверждаем",
+                        advertId,
+                        afterStart.getStatus()
+                );
+                return ScheduleControlAttemptResult.failed(WbCampaignStartBudgetGuard.NO_BUDGET_USER_MESSAGE);
+            }
             return ScheduleControlAttemptResult.directSuccess();
         } catch (WbApiUnauthorizedScopeException e) {
             return handleUnauthorizedForSchedule(cabinet, e);

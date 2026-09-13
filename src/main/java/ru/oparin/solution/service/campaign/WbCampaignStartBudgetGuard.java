@@ -19,6 +19,13 @@ public class WbCampaignStartBudgetGuard {
     private static final ZoneId SCHEDULE_ZONE = ZoneId.of("Europe/Moscow");
     private static final long NO_BUDGET_RECHECK_INTERVAL_HOURS = 1;
 
+    /**
+     * Минимальный остаток бюджета WB (₽), при котором разрешаем автозапуск по расписанию.
+     * Остаток 1–49 ₽ WB иногда принимает как старт, но кампания сразу «мёртвая» —
+     * у нас при этом ошибочно остаётся статус «запущена».
+     */
+    public static final int MIN_BUDGET_TO_START_RUB = 50;
+
     /** Сообщение для пользователя и журнала при отсутствии бюджета. */
     public static final String NO_BUDGET_USER_MESSAGE = "нет бюджета для запуска";
 
@@ -34,6 +41,13 @@ public class WbCampaignStartBudgetGuard {
         }
         return message.contains("no budget to start")
                 || NO_BUDGET_USER_MESSAGE.equalsIgnoreCase(message.trim());
+    }
+
+    /**
+     * {@code true}, если остатка бюджета недостаточно для автозапуска.
+     */
+    public static boolean isBudgetTooLowToStart(int budgetTotal) {
+        return budgetTotal < MIN_BUDGET_TO_START_RUB;
     }
 
     /**
@@ -97,7 +111,7 @@ public class WbCampaignStartBudgetGuard {
      * Снимает блокировку после пополнения бюджета.
      */
     public void clearBlockIfBudgetAvailable(WbCampaignManagementState state, int budgetTotal) {
-        if (state != null && budgetTotal > 0 && state.isStartBlockedNoBudget()) {
+        if (state != null && !isBudgetTooLowToStart(budgetTotal) && state.isStartBlockedNoBudget()) {
             state.setStartBlockedNoBudget(false);
             state.setStartNoBudgetCheckedAt(null);
         }

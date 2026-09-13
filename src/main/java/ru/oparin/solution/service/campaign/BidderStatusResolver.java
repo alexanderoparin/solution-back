@@ -60,7 +60,21 @@ public class BidderStatusResolver {
         if (wbActive) {
             return BidderStatus.RUNNING;
         }
+        if (isNoBudgetInSlot(effectiveState)) {
+            return BidderStatus.NO_BUDGET;
+        }
         return BidderStatus.WAITING;
+    }
+
+    /**
+     * В слоте РК не активна из‑за нулевого/заблокированного бюджета.
+     */
+    private static boolean isNoBudgetInSlot(WbCampaignManagementState state) {
+        if (state.isStartBlockedNoBudget()) {
+            return true;
+        }
+        Integer lastBudget = state.getLastBudgetTotal();
+        return lastBudget != null && lastBudget <= 0;
     }
 
     /**

@@ -70,7 +70,7 @@ public class CampaignDto {
     /** Количество артикулов в кампании. */
     private Integer articlesCount;
 
-    /** Статус автоматики биддера: OFF, WAITING, RUNNING, SLOT_LIMIT, NO_ACCESS, NO_SLOTS. */
+    /** Статус автоматики биддера: OFF, WAITING, RUNNING, SLOT_LIMIT, NO_BUDGET, NO_ACCESS, NO_SLOTS. */
     private String bidderStatus;
 }
 

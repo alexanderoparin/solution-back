@@ -38,6 +38,16 @@ public class WbCampaignAutoTopUpService {
     private final WbCampaignBudgetDepositService budgetDepositService;
 
     /**
+     * Автопополнение включено и настроено (сумма и порог заданы).
+     */
+    public boolean isAutoTopUpEnabled(Long advertId) {
+        return autoBudgetRepository.findById(advertId)
+                .filter(WbCampaignAutoBudgetSettings::isEnabled)
+                .filter(s -> s.getTopUpAmount() != null && s.getThresholdRub() != null)
+                .isPresent();
+    }
+
+    /**
      * Пополняет бюджет при необходимости и сохраняет учёт (журнал, timeline, состояние слота).
      *
      * @return сумма пополнения в рублях, если deposit выполнен

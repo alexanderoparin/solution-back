@@ -5,6 +5,9 @@ import org.springframework.stereotype.Component;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
 import ru.oparin.solution.model.WbApiEvent;
+import ru.oparin.solution.model.WbCampaignStatus;
+import ru.oparin.solution.model.WbPromotionCampaign;
+import ru.oparin.solution.repository.WbPromotionCampaignRepository;
 import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.WbPromotionCampaignControlWriteService;
 import ru.oparin.solution.service.campaign.WbCampaignScheduleControlNotifier;
@@ -29,6 +32,7 @@ public class WbPromotionCampaignStartEventExecutor implements WbApiEventExecutor
     private final WbPromotionCampaignControlWriteService promotionControlWriteService;
     private final WbCampaignScheduleControlNotifier scheduleControlNotifier;
     private final WbCampaignStartBudgetGuard startBudgetGuard;
+    private final WbPromotionCampaignRepository campaignRepository;
 
     @Override
     public WbApiEventExecutionResult execute(WbApiEvent event) {
@@ -45,6 +49,16 @@ public class WbPromotionCampaignStartEventExecutor implements WbApiEventExecutor
             promotionCampaignSyncService.loadAndSaveAdvertsBatch(
                     cabinet, cabinet.getApiKey(), List.of(payload.advertId()));
             promotionControlWriteService.clearBlock(cabinet.getId());
+
+            WbCampaignStatus status = campaignRepository
+                    .findByAdvertIdAndCabinet_Id(payload.advertId(), cabinet.getId())
+                    .map(WbPromotionCampaign::getStatus)
+                    .orElse(null);
+            if (status != WbCampaignStatus.ACTIVE) {
+                startBudgetGuard.blockStartDueToNoBudget(payload.advertId(), cabinet.getId());
+                return WbApiEventExecutionResult.skippedNoBudget(WbCampaignStartBudgetGuard.NO_BUDGET_USER_MESSAGE);
+            }
+
             scheduleControlNotifier.onStartSucceededOnWb(payload.advertId(), cabinet.getId());
             return WbApiEventExecutionResult.completedSuccessfully();
         } catch (WbApiUnauthorizedScopeException e) {

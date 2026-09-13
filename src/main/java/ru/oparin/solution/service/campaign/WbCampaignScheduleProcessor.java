@@ -89,16 +89,22 @@ public class WbCampaignScheduleProcessor {
                 } else {
                     checkSlotBudgetCap(state, slot, cabinet);
                     if (!SlotBudgetSpendUtils.isSlotBudgetExhausted(state, slot.getId())) {
-                        WbPromotionCampaign campaignForStart = campaign;
+                        WbPromotionCampaign campaignForControl = campaign;
                         Optional<Integer> toppedUp = autoTopUpService.tryTopUpInNewTransaction(
                                 advertId, cabinetId, cabinet);
                         if (toppedUp.isPresent()) {
                             reloadStateAfterTopUp(state, advertId, toppedUp.get());
                             // WB мог сам поставить РК на паузу при нулевом бюджете, а в БД остался ACTIVE —
                             // без свежего статуса ensureRunning не перезапустит кампанию после deposit.
-                            campaignForStart = refreshCampaignStatusFromWb(cabinet, advertId).orElse(campaign);
+                            campaignForControl = refreshCampaignStatusFromWb(cabinet, advertId).orElse(campaign);
                         }
-                        ensureRunning(campaignForStart, cabinet, advertId, state, now);
+                        if (campaignForControl.getStatus() == WbCampaignStatus.ACTIVE) {
+                            // Бюджет кончился, автопополнение выключено/не сработало — останавливаем РК.
+                            pauseActiveCampaignIfBudgetDepleted(
+                                    campaignForControl, cabinet, advertId, state, now, toppedUp.isPresent());
+                        } else {
+                            ensureRunning(campaignForControl, cabinet, advertId, state, now);
+                        }
                     }
                 }
             }
@@ -201,7 +207,7 @@ public class WbCampaignScheduleProcessor {
         if (state.isStartBlockedNoBudget()) {
             Optional<Integer> budget = budgetFetchService.fetchBudgetForDecision(cabinet, advertId, state);
             startBudgetGuard.markNoBudgetChecked(state, now);
-            if (budget.isEmpty() || budget.get() <= 0) {
+            if (budget.isEmpty() || WbCampaignStartBudgetGuard.isBudgetTooLowToStart(budget.get())) {
                 return;
             }
             startBudgetGuard.clearBlockIfBudgetAvailable(state, budget.get());
@@ -225,13 +231,59 @@ public class WbCampaignScheduleProcessor {
         }
     }
 
+    /**
+     * Активная РК без бюджета: после неуспешного/выключенного автопополнения ставим на паузу.
+     * Иначе статус «запущена» остаётся, хотя на WB кампания уже не крутится.
+     *
+     * @param toppedUpThisTick {@code true}, если в этом тике deposit уже прошёл
+     */
+    private void pauseActiveCampaignIfBudgetDepleted(
+            WbPromotionCampaign campaign,
+            Cabinet cabinet,
+            Long advertId,
+            WbCampaignManagementState state,
+            ZonedDateTime now,
+            boolean toppedUpThisTick
+    ) {
+        if (toppedUpThisTick) {
+            return;
+        }
+        Integer cachedBudget = state.getLastBudgetTotal();
+        if (cachedBudget != null && cachedBudget > 0) {
+            return;
+        }
+        Optional<Integer> budget = budgetFetchService.fetchBudgetForDecision(cabinet, advertId, state);
+        if (budget.isEmpty()) {
+            return;
+        }
+        if (budget.get() > 0) {
+            startBudgetGuard.clearBlockIfBudgetAvailable(state, budget.get());
+            return;
+        }
+
+        boolean autoTopUpOn = autoTopUpService.isAutoTopUpEnabled(advertId);
+        String pauseReason = autoTopUpOn
+                ? "РК остановлена: закончился бюджет (автопополнение не выполнено)"
+                : "РК остановлена: закончился бюджет, автопополнение выключено";
+
+        WbPromotionCampaign fresh = refreshCampaignStatusFromWb(cabinet, advertId).orElse(campaign);
+        if (fresh.getStatus() != WbCampaignStatus.ACTIVE) {
+            // На WB уже не активна — только выравниваем журнал/график.
+            scheduleControlNotifier.onPauseSucceededOnWb(advertId, cabinet.getId());
+        } else {
+            ensurePaused(cabinet, advertId, state, pauseReason);
+        }
+        startBudgetGuard.blockStartDueToNoBudget(state, advertId, cabinet.getId(), now);
+    }
+
     private boolean isBudgetTooLowToStart(Cabinet cabinet, Long advertId, WbCampaignManagementState state) {
         Optional<Integer> budget = budgetFetchService.fetchBudgetForDecision(cabinet, advertId, state);
         if (budget.isPresent()) {
             startBudgetGuard.clearBlockIfBudgetAvailable(state, budget.get());
-            return budget.get() <= 0;
+            return WbCampaignStartBudgetGuard.isBudgetTooLowToStart(budget.get());
         }
-        return state.getLastBudgetTotal() != null && state.getLastBudgetTotal() <= 0;
+        return state.getLastBudgetTotal() != null
+                && WbCampaignStartBudgetGuard.isBudgetTooLowToStart(state.getLastBudgetTotal());
     }
 
     private void handleScheduleStartResult(
