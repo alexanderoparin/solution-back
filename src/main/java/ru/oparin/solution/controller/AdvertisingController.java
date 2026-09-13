@@ -87,8 +87,10 @@ public class AdvertisingController {
      * @param sortBy   поле сортировки (createdAt, name, views, …)
      * @param sortDir  asc или desc
      * @param search   подстрока названия или ID
-     * @param type     отображаемый тип кампании
-     * @param statuses active, paused, finished; пустой список — нет строк
+     * @param type             отображаемый тип кампании
+     * @param statuses         active, paused, finished; пустой список — нет строк
+     * @param excludeFinished  исключить завершённые РК (статус WB 7), для управления РК
+     * @param bidderStatus     all / running / waiting / off — фильтр автоматики биддера
      */
     @GetMapping("/campaigns/page")
     public ResponseEntity<CampaignPageResponse> listCampaignsPage(
@@ -103,6 +105,8 @@ public class AdvertisingController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) List<String> statuses,
+            @RequestParam(required = false, defaultValue = "false") boolean excludeFinished,
+            @RequestParam(required = false) String bidderStatus,
             Authentication authentication
     ) {
         SellerContextService.SellerContext context = sellerContextService.createContext(
@@ -121,7 +125,7 @@ public class AdvertisingController {
                     resolvedCabinetId, dateFrom, dateTo, context.user(), null);
         }
         return ResponseEntity.ok(CampaignListPaging.toPage(
-                campaigns, search, statuses, type, sortBy, sortDir, page, size));
+                campaigns, search, statuses, type, sortBy, sortDir, page, size, excludeFinished, bidderStatus));
     }
 
     /**

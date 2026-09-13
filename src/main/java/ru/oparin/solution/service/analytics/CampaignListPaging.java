@@ -43,7 +43,37 @@ public final class CampaignListPaging {
             int page,
             int size
     ) {
+        return toPage(all, search, statuses, type, sortBy, sortDir, page, size, false, null);
+    }
+
+    /**
+     * Постраничная выдача с опциями управления РК: без завершённых и фильтр по статусу биддера.
+     *
+     * @param excludeFinished  исключить РК со статусом WB 7 (завершена)
+     * @param bidderStatus     all / running / waiting / off; {@code null} или all — без фильтра
+     */
+    public static CampaignPageResponse toPage(
+            List<CampaignDto> all,
+            String search,
+            List<String> statuses,
+            String type,
+            String sortBy,
+            String sortDir,
+            int page,
+            int size,
+            boolean excludeFinished,
+            String bidderStatus
+    ) {
         List<CampaignDto> source = all == null ? List.of() : all;
+        if (excludeFinished) {
+            List<CampaignDto> withoutFinished = new ArrayList<>();
+            for (CampaignDto campaign : source) {
+                if (!isFinished(campaign)) {
+                    withoutFinished.add(campaign);
+                }
+            }
+            source = withoutFinished;
+        }
         Collator ruCollator = Collator.getInstance(new Locale("ru"));
         List<String> types = source.stream()
                 .map(CampaignDto::getType)
@@ -56,6 +86,9 @@ public final class CampaignListPaging {
         List<CampaignDto> filtered = new ArrayList<>();
         for (CampaignDto campaign : source) {
             if (!matchesStatuses(campaign, statusFilter)) {
+                continue;
+            }
+            if (!matchesBidderStatus(campaign, bidderStatus)) {
                 continue;
             }
             if (type != null && !type.isBlank() && !type.equals(campaign.getType())) {
@@ -143,6 +176,34 @@ public final class CampaignListPaging {
         return !statusName.contains("актив") && !statusName.contains("завершен");
     }
 
+    /**
+     * Завершённая РК в WB (как на «Управление РК»: {@code status != 7}).
+     */
+    private static boolean isFinished(CampaignDto campaign) {
+        return Integer.valueOf(7).equals(campaign.getStatus());
+    }
+
+    private static boolean matchesBidderStatus(CampaignDto campaign, String bidderStatus) {
+        if (bidderStatus == null || bidderStatus.isBlank()) {
+            return true;
+        }
+        String key = bidderStatus.trim().toLowerCase(Locale.ROOT);
+        if ("all".equals(key)) {
+            return true;
+        }
+        String value = campaign.getBidderStatus() == null ? "" : campaign.getBidderStatus();
+        if ("running".equals(key)) {
+            return "RUNNING".equals(value);
+        }
+        if ("waiting".equals(key)) {
+            return "WAITING".equals(value) || "SLOT_LIMIT".equals(value) || "NO_BUDGET".equals(value);
+        }
+        if ("off".equals(key)) {
+            return "OFF".equals(value);
+        }
+        return true;
+    }
+
     private static boolean matchesSearch(CampaignDto campaign, String search) {
         if (search == null || search.isBlank()) {
             return true;
@@ -162,6 +223,7 @@ public final class CampaignListPaging {
             case "type" -> Comparator.comparing(CampaignListPaging::typeOrEmpty, ruCollator);
             case "articlesCount" -> Comparator.comparingInt(campaign -> nullToZero(campaign.getArticlesCount()));
             case "status" -> Comparator.comparingInt(campaign -> campaign.getStatus() == null ? -1 : campaign.getStatus());
+            case "bidderStatus" -> Comparator.comparing(CampaignListPaging::bidderStatusOrEmpty, ruCollator);
             case "views" -> Comparator.comparingInt(campaign -> nullToZero(campaign.getViews()));
             case "clicks" -> Comparator.comparingInt(campaign -> nullToZero(campaign.getClicks()));
             case "ctr" -> Comparator.comparing(CampaignListPaging::ctrOrZero);
@@ -195,6 +257,10 @@ public final class CampaignListPaging {
 
     private static String typeOrEmpty(CampaignDto campaign) {
         return campaign.getType() == null ? "" : campaign.getType();
+    }
+
+    private static String bidderStatusOrEmpty(CampaignDto campaign) {
+        return campaign.getBidderStatus() == null ? "" : campaign.getBidderStatus();
     }
 
     private static int nullToZero(Integer value) {
