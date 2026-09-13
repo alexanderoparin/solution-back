@@ -8,6 +8,7 @@ import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.model.WbApiEventType;
+import ru.oparin.solution.service.CabinetIntegrationMirrorService;
 import ru.oparin.solution.service.events.WbApiEventExecutors;
 import ru.oparin.solution.service.events.WbApiEventWriter;
 import ru.oparin.solution.service.events.payload.WbItemRatingSyncStepPayload;
@@ -28,6 +29,7 @@ public class WbSidecarEventEnqueue {
     private static final int PRIORITY = 84;
 
     private final WbApiEventWriter writer;
+    private final CabinetIntegrationMirrorService cabinetIntegrationMirrorService;
 
     /**
      * Первый шаг item-rating sync (BASIC-токен пропускается).
@@ -39,9 +41,10 @@ public class WbSidecarEventEnqueue {
             log.debug("WB API item-rating sync уже существует (dedupKey={}), создание пропущено", cabinetDedupKey);
             return;
         }
-        Cabinet cabinet = writer.requireCabinet(cabinetId);
+        Cabinet cabinet = requireCabinetWithTokenOverlay(cabinetId);
         if (!CabinetTokenType.effective(cabinet.getTokenType()).supportsItemRating()) {
-            log.debug("Пропуск item-rating sync: cabinetId={}, tokenType=BASIC", cabinetId);
+            log.debug("Пропуск item-rating sync: cabinetId={}, tokenType={}",
+                    cabinetId, CabinetTokenType.effective(cabinet.getTokenType()));
             return;
         }
         WbItemRatingSyncStepPayload stepPayload = WbItemRatingSyncStepPayload.builder()
@@ -51,7 +54,8 @@ public class WbSidecarEventEnqueue {
                 .dateTo(payload.dateTo())
                 .includeStocks(payload.includeStocks())
                 .build();
-        enqueueItemRatingStepEvent(cabinet, stepPayload, triggerSource, LocalDateTime.now(), PRIORITY);
+        // Первый шаг дедупим на уровне кабинета+период (тот же ключ, что в existsActive выше).
+        enqueueItemRatingStepEvent(cabinet, stepPayload, triggerSource, LocalDateTime.now(), PRIORITY, cabinetDedupKey);
     }
 
     /**
@@ -63,17 +67,32 @@ public class WbSidecarEventEnqueue {
             WbItemRatingSyncStepPayload payload,
             String triggerSource
     ) {
-        Cabinet cabinet = writer.requireCabinet(cabinetId);
+        Cabinet cabinet = requireCabinetWithTokenOverlay(cabinetId);
         if (!CabinetTokenType.effective(cabinet.getTokenType()).supportsItemRating()) {
-            log.debug("Пропуск следующего шага item-rating: cabinetId={}, tokenType=BASIC", cabinetId);
+            log.debug("Пропуск следующего шага item-rating: cabinetId={}, tokenType={}",
+                    cabinetId, CabinetTokenType.effective(cabinet.getTokenType()));
             return;
         }
-        CabinetTokenType tokenType = cabinet.getTokenType() != null ? cabinet.getTokenType() : CabinetTokenType.BASIC;
+        CabinetTokenType tokenType = CabinetTokenType.effective(cabinet.getTokenType());
         long delayMs = WbApiEventType.ANALYTICS_ITEM_RATING_CABINET.getRequestDelayMs(tokenType);
         LocalDateTime nextAttemptAt = LocalDateTime.now().plusNanos(delayMs * 1_000_000L);
         log.info("Запланирован следующий шаг item-rating: cabinetId={}, offset={}, delayMs={}, nextAttemptAt={}",
                 cabinetId, payload.offset(), delayMs, nextAttemptAt);
-        enqueueItemRatingStepEvent(cabinet, payload, triggerSource, nextAttemptAt, PRIORITY);
+        String stepDedupKey = "ITEM_RATING_SYNC_STEP:"
+                + cabinet.getId() + ":"
+                + payload.syncStartedAt() + ":"
+                + payload.offset();
+        enqueueItemRatingStepEvent(cabinet, payload, triggerSource, nextAttemptAt, PRIORITY, stepDedupKey);
+    }
+
+    /**
+     * Кабинет с overlay credentials/tokenType из cabinet_integrations
+     * ({@code tokenType} на сущности — {@code @Transient}, без overlay всегда BASIC).
+     */
+    private Cabinet requireCabinetWithTokenOverlay(Long cabinetId) {
+        Cabinet cabinet = writer.requireCabinet(cabinetId);
+        cabinetIntegrationMirrorService.overlayOntoCabinet(cabinet);
+        return cabinet;
     }
 
     /**
@@ -100,12 +119,9 @@ public class WbSidecarEventEnqueue {
             WbItemRatingSyncStepPayload payload,
             String triggerSource,
             LocalDateTime nextAttemptAt,
-            int priority
+            int priority,
+            String dedupKey
     ) {
-        String dedupKey = "ITEM_RATING_SYNC_STEP:"
-                + cabinet.getId() + ":"
-                + payload.syncStartedAt() + ":"
-                + payload.offset();
         Optional<WbApiEvent> created = writer.insertIfAbsent(
                 cabinet,
                 WbApiEventType.ANALYTICS_ITEM_RATING_CABINET,
