@@ -12,6 +12,7 @@ import ru.oparin.solution.model.CabinetAccessSection;
 import ru.oparin.solution.model.MarketplaceType;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.*;
+import ru.oparin.solution.service.analytics.CampaignListPaging;
 import ru.oparin.solution.service.campaign.WbCampaignManageAccessService;
 import ru.oparin.solution.service.events.OzonApiEventService;
 import ru.oparin.solution.service.events.WbApiEventService;
@@ -76,6 +77,51 @@ public class AdvertisingController {
         List<CampaignDto> campaigns = analyticsService.listCampaignsByCabinet(
                 resolvedCabinetId, dateFrom, dateTo, context.user(), nmId);
         return ResponseEntity.ok(campaigns);
+    }
+
+    /**
+     * Постраничный список РК кабинета: фильтры, сортировка и пагинация на сервере.
+     *
+     * @param page     номер страницы с нуля, по умолчанию 0
+     * @param size     размер страницы, по умолчанию 50
+     * @param sortBy   поле сортировки (createdAt, name, views, …)
+     * @param sortDir  asc или desc
+     * @param search   подстрока названия или ID
+     * @param type     отображаемый тип кампании
+     * @param statuses active, paused, finished; пустой список — нет строк
+     */
+    @GetMapping("/campaigns/page")
+    public ResponseEntity<CampaignPageResponse> listCampaignsPage(
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) Long cabinetId,
+            @RequestParam(required = false) LocalDate dateFrom,
+            @RequestParam(required = false) LocalDate dateTo,
+            @RequestParam(required = false, defaultValue = "0") int page,
+            @RequestParam(required = false, defaultValue = "50") int size,
+            @RequestParam(required = false, defaultValue = "createdAt") String sortBy,
+            @RequestParam(required = false, defaultValue = "desc") String sortDir,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) List<String> statuses,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                sellerId,
+                cabinetId,
+                CabinetAccessSection.AD_CAMPAIGNS
+        );
+        Long resolvedCabinetId = context.cabinet() != null ? context.cabinet().getId() : null;
+        Cabinet cabinet = context.cabinet();
+        List<CampaignDto> campaigns;
+        if (cabinet != null && cabinet.getMarketplaceType() == MarketplaceType.OZON) {
+            campaigns = analyticsService.listOzonCampaignsByCabinet(resolvedCabinetId, dateFrom, dateTo);
+        } else {
+            campaigns = analyticsService.listCampaignsByCabinet(
+                    resolvedCabinetId, dateFrom, dateTo, context.user(), null);
+        }
+        return ResponseEntity.ok(CampaignListPaging.toPage(
+                campaigns, search, statuses, type, sortBy, sortDir, page, size));
     }
 
     /**
