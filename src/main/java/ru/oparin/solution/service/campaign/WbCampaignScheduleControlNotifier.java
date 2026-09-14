@@ -3,6 +3,8 @@ package ru.oparin.solution.service.campaign;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import ru.oparin.solution.model.WbCampaignAutoBudgetSettings;
+import ru.oparin.solution.repository.WbCampaignAutoBudgetSettingsRepository;
 
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -16,6 +18,7 @@ public class WbCampaignScheduleControlNotifier {
 
     private final WbCampaignChangeLogService changeLogService;
     private final WbCampaignBudgetTimelineService timelineService;
+    private final WbCampaignAutoBudgetSettingsRepository autoBudgetRepository;
 
     /** Последняя категория сообщения в истории (ключ: cabinetId:advertId). */
     private final ConcurrentHashMap<String, String> lastHistoryCategory = new ConcurrentHashMap<>();
@@ -29,14 +32,30 @@ public class WbCampaignScheduleControlNotifier {
 
     /**
      * Запуск невозможен: на WB нет бюджета для старта.
+     * Текст зависит от автопополнения: не предлагаем включать его, если оно уже работает.
      */
     public void onStartBlockedNoBudget(Long advertId, Long cabinetId) {
-        writeHistoryOnce(
-                advertId,
-                cabinetId,
-                "start_no_budget",
-                "Запуск РК не выполнен: нет бюджета. Пополните бюджет кампании или включите автопополнение"
-        );
+        writeHistoryOnce(advertId, cabinetId, "start_no_budget", noBudgetStartMessage(advertId));
+    }
+
+    /**
+     * Подсказка пользователю: при включённом автопополнении не хватает денег на балансе кабинета.
+     */
+    private String noBudgetStartMessage(Long advertId) {
+        if (isAutoTopUpConfigured(advertId)) {
+            return "Запуск РК не выполнен: нет бюджета. Автопополнение включено — пополните баланс кабинета";
+        }
+        return "Запуск РК не выполнен: нет бюджета. Пополните бюджет кампании или включите автопополнение";
+    }
+
+    private boolean isAutoTopUpConfigured(Long advertId) {
+        if (advertId == null) {
+            return false;
+        }
+        return autoBudgetRepository.findById(advertId)
+                .filter(WbCampaignAutoBudgetSettings::isEnabled)
+                .filter(settings -> settings.getTopUpAmount() != null && settings.getThresholdRub() != null)
+                .isPresent();
     }
 
     /**
