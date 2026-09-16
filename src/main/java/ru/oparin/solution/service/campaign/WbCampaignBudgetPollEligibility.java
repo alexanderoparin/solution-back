@@ -22,7 +22,7 @@ public class WbCampaignBudgetPollEligibility {
     private final BidderStatusResolver bidderStatusResolver;
 
     /**
-     * {@code true}, если в тике планировщика для РК допустим опрос бюджета (round-robin / trail).
+     * {@code true}, если в тике планировщика для РК нужен опрос бюджета (слот / trail).
      */
     public boolean needsBudgetPoll(WbCampaignManagementState state, Long advertId, Long cabinetId, ZonedDateTime now) {
         if (!state.isScheduleEnabled() || state.isManualStopped()) {

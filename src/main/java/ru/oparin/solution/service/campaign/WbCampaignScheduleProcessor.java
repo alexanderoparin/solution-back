@@ -154,9 +154,7 @@ public class WbCampaignScheduleProcessor {
     private void onSlotEnter(WbCampaignManagementState state, WbCampaignScheduleSlot slot, Cabinet cabinet) {
         startBudgetGuard.resetForNewSlot(state);
         budgetTrailService.clearTrail(state);
-        if (!budgetPollCoordinator.isTickLeader(cabinet.getId(), state.getCampaignId())) {
-            budgetPollCoordinator.grantMandatoryPoll(cabinet.getId(), state.getCampaignId());
-        }
+        budgetPollCoordinator.grantMandatoryPoll(cabinet.getId(), state.getCampaignId());
         budgetFetchService.fetchBudgetForSlotEnter(cabinet, state.getCampaignId(), state)
                 .ifPresent(fetched -> SlotBudgetSpendUtils.beginSlotSession(state, slot.getId(), fetched));
     }

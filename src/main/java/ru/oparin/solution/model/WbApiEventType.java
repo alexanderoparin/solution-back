@@ -93,12 +93,15 @@ public enum WbApiEventType {
             "/adv/v1/balance",
             3_600L,
             1L),
-    /** Бюджет кампании (GET /adv/v1/budget). */
+    /**
+     * Остатки бюджетов кампаний (POST /api/advert/v2/budget).
+     * Персональный токен: интервал 3 с; базовый: 15 мин (лимит WB 4 запроса/час).
+     */
     PROMOTION_BUDGET_GET(
             WbApiBaseUrl.PROMOTION,
-            "/adv/v1/budget",
-            3_600L,
-            1L),
+            "/api/advert/v2/budget",
+            900L,
+            3L),
     /** Пополнение бюджета кампании (POST /adv/v1/budget/deposit). */
     PROMOTION_BUDGET_DEPOSIT(
             WbApiBaseUrl.PROMOTION,

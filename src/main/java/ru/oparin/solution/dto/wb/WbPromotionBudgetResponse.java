@@ -4,7 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.*;
 
 /**
- * Ответ GET /adv/v1/budget.
+ * Остаток бюджета одной РК: ответ POST /adv/v1/budget/deposit при {@code return=true}
+ * и проекция элемента POST /api/advert/v2/budget.
  */
 @Getter
 @Setter

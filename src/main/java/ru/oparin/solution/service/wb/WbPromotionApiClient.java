@@ -15,10 +15,10 @@ import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.WbApiEventType;
 import ru.oparin.solution.service.WbPromotionCampaignControlWriteService;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.Callable;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -43,9 +43,14 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     private static final String CAMPAIGN_START_OPERATION = "запуск кампании";
     private static final String CAMPAIGN_PAUSE_OPERATION = "пауза кампании";
     private static final String BALANCE_OPERATION = "баланс продвижения";
-    private static final String BUDGET_OPERATION = "бюджет кампании";
+    private static final String BUDGET_OPERATION = "бюджеты кампаний";
     private static final String BUDGET_DEPOSIT_OPERATION = "пополнение бюджета кампании";
     private static final int ADVERTS_V2_BATCH_SIZE = 50;
+    /** Лимит ID в POST /api/advert/v2/budget. */
+    private static final int BUDGET_V2_BATCH_SIZE = 50;
+    private static final Pattern UNKNOWN_ADVERT_ID = Pattern.compile(
+            "advert not found or not belong to the supplier:\\s*(\\d+)",
+            Pattern.CASE_INSENSITIVE);
 
     @Value("${wb.retries.max-429-basic}")
     private int maxRetries429Basic;
@@ -485,6 +490,15 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         if (WbApiEventType.PROMOTION_CAMPAIGN_PAUSE.getUri().equals(endpoint)) {
             return WbApiEventType.PROMOTION_CAMPAIGN_PAUSE;
         }
+        if (WbApiEventType.PROMOTION_BUDGET_GET.getUri().equals(endpoint)) {
+            return WbApiEventType.PROMOTION_BUDGET_GET;
+        }
+        if (WbApiEventType.PROMOTION_BUDGET_DEPOSIT.getUri().equals(endpoint)) {
+            return WbApiEventType.PROMOTION_BUDGET_DEPOSIT;
+        }
+        if (WbApiEventType.PROMOTION_BALANCE.getUri().equals(endpoint)) {
+            return WbApiEventType.PROMOTION_BALANCE;
+        }
         return WbApiEventType.PROMOTION_COUNT;
     }
 
@@ -502,16 +516,47 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
     }
 
     /**
-     * Бюджет кампании (GET /adv/v1/budget).
+     * Остаток бюджета одной кампании (POST /api/advert/v2/budget с одним ID).
      */
     public WbPromotionBudgetResponse getCampaignBudget(String apiKey, long advertId) {
+        Integer total = getCampaignBudgets(apiKey, List.of(advertId)).get(advertId);
+        if (total == null) {
+            return WbPromotionBudgetResponse.builder().build();
+        }
+        return WbPromotionBudgetResponse.builder().total(total).build();
+    }
+
+    /**
+     * Остатки бюджетов кампаний (POST /api/advert/v2/budget), пачки до 50 ID.
+     * Чужой или несуществующий ID выкидывается, запрос повторяется по оставшимся.
+     *
+     * @return advertId → total ₽; завершённые РК в мапе отсутствуют
+     */
+    public Map<Long, Integer> getCampaignBudgets(String apiKey, List<Long> advertIds) {
+        if (advertIds == null || advertIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> distinct = advertIds.stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .collect(Collectors.toList());
+        if (distinct.isEmpty()) {
+            return Map.of();
+        }
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
-        return executeWith429Retry(
-                BUDGET_OPERATION,
-                WbApiEventType.PROMOTION_BUDGET_GET.getUri(),
-                BUDGET_OPERATION,
-                tokenType,
-                () -> executeWithConnectionRetry(BUDGET_OPERATION, () -> getCampaignBudgetOnce(apiKey, advertId)));
+        Map<Long, Integer> totals = new LinkedHashMap<>();
+        for (int from = 0; from < distinct.size(); from += BUDGET_V2_BATCH_SIZE) {
+            int to = Math.min(from + BUDGET_V2_BATCH_SIZE, distinct.size());
+            List<Long> chunk = List.copyOf(distinct.subList(from, to));
+            totals.putAll(executeWith429Retry(
+                    BUDGET_OPERATION,
+                    WbApiEventType.PROMOTION_BUDGET_GET.getUri(),
+                    BUDGET_OPERATION,
+                    tokenType,
+                    () -> executeWithConnectionRetry(BUDGET_OPERATION,
+                            () -> getCampaignBudgetsDroppingUnknown(apiKey, chunk))));
+        }
+        return totals;
     }
 
     /**
@@ -586,25 +631,81 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         }
     }
 
-    private WbPromotionBudgetResponse getCampaignBudgetOnce(String apiKey, long advertId) {
+    /**
+     * Повторяет пачку, выкидывая ID, которые WB не находит или которые чужие.
+     */
+    private Map<Long, Integer> getCampaignBudgetsDroppingUnknown(String apiKey, List<Long> advertIds) {
+        Set<Long> remaining = new LinkedHashSet<>(advertIds);
+        while (!remaining.isEmpty()) {
+            try {
+                return getCampaignBudgetsOnce(apiKey, List.copyOf(remaining));
+            } catch (HttpClientErrorException e) {
+                throwIf401ScopeNotAllowed(e);
+                if (e.getStatusCode().value() == 429) {
+                    throw e;
+                }
+                Long unknownId = extractUnknownAdvertId(e, remaining);
+                if (unknownId == null || !remaining.remove(unknownId)) {
+                    logWbApiError(BUDGET_OPERATION, e);
+                    throw new RestClientException("Ошибка при получении бюджетов: " + e.getMessage(), e);
+                }
+                log.warn("WB v2 budget: пропускаем advertId={} ({})", unknownId, e.getStatusCode().value());
+            }
+        }
+        return Map.of();
+    }
+
+    private Map<Long, Integer> getCampaignBudgetsOnce(String apiKey, List<Long> advertIds) {
         HttpHeaders headers = createAuthHeaders(apiKey);
-        HttpEntity<String> entity = new HttpEntity<>(headers);
-        String url = UriComponentsBuilder.fromHttpUrl(WbApiEventType.PROMOTION_BUDGET_GET.getDefaultUrl())
-                .queryParam("id", advertId)
-                .toUriString();
-        logWbApiCall(url, BUDGET_OPERATION);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        WbPromotionBudgetBatchRequest body = WbPromotionBudgetBatchRequest.builder()
+                .advertIds(advertIds)
+                .build();
+        HttpEntity<WbPromotionBudgetBatchRequest> entity = new HttpEntity<>(body, headers);
+        String url = WbApiEventType.PROMOTION_BUDGET_GET.getDefaultUrl();
+        logWbApiCall(url, BUDGET_OPERATION + " ids=" + advertIds.size());
         try {
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
             validateResponse(response);
-            return objectMapper.readValue(response.getBody(), WbPromotionBudgetResponse.class);
+            WbPromotionBudgetBatchResponse parsed = objectMapper.readValue(
+                    response.getBody(), WbPromotionBudgetBatchResponse.class);
+            Map<Long, Integer> totals = new LinkedHashMap<>();
+            if (parsed != null && parsed.getAdverts() != null) {
+                for (WbPromotionBudgetBatchResponse.AdvertBudget item : parsed.getAdverts()) {
+                    if (item != null && item.getAdvertId() != null && item.getTotal() != null) {
+                        totals.put(item.getAdvertId(), item.getTotal());
+                    }
+                }
+            }
+            return totals;
         } catch (HttpClientErrorException e) {
-            throwIf401ScopeNotAllowed(e);
-            logWbApiError(BUDGET_OPERATION, e);
-            throw new RestClientException("Ошибка при получении бюджета: " + e.getMessage(), e);
+            throw e;
         } catch (Exception e) {
             logIoErrorOrFull(BUDGET_OPERATION, e);
-            throw new RestClientException("Ошибка при получении бюджета: " + e.getMessage(), e);
+            throw new RestClientException("Ошибка при получении бюджетов: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * ID из 400 «advert not found or not belong to the supplier: N» либо единственный ID при 404.
+     */
+    private Long extractUnknownAdvertId(HttpClientErrorException e, Set<Long> remaining) {
+        int status = e.getStatusCode().value();
+        String body = e.getResponseBodyAsString();
+        if (body != null && !body.isBlank()) {
+            Matcher matcher = UNKNOWN_ADVERT_ID.matcher(body);
+            if (matcher.find()) {
+                try {
+                    return Long.parseLong(matcher.group(1));
+                } catch (NumberFormatException ignored) {
+                    return null;
+                }
+            }
+        }
+        if (status == 404 && remaining.size() == 1) {
+            return remaining.iterator().next();
+        }
+        return null;
     }
 
     private WbPromotionBudgetResponse depositCampaignBudgetOnce(String apiKey, long advertId, WbPromotionBudgetDepositRequest request) {

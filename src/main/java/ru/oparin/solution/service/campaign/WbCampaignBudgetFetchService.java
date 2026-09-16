@@ -14,8 +14,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 
 /**
  * Получение бюджета РК из WB с учётом лимитов и кэша в состоянии управления.
@@ -35,7 +34,7 @@ public class WbCampaignBudgetFetchService {
 
     /**
      * Возвращает бюджет кампании: из кэша состояния, если лимит не позволяет запрос, иначе — свежий ответ WB.
-     * В тике планировщика HTTP к WB разрешён только лидеру очереди кабинета ({@link WbCabinetBudgetPollCoordinator}).
+     * В тике планировщика HTTP к WB разрешён кандидатам кабинета ({@link WbCabinetBudgetPollCoordinator}).
      */
     public Optional<Integer> fetchBudgetTotal(Cabinet cabinet, Long advertId, WbCampaignManagementState state) {
         return fetchBudgetTotalInternal(cabinet, advertId, state, false);
@@ -94,12 +93,7 @@ public class WbCampaignBudgetFetchService {
                         ? Optional.of(state.getLastBudgetTotal())
                         : Optional.empty();
             }
-            if (state != null) {
-                state.setLastBudgetTotal(budget.getTotal());
-                state.setLastBudgetCheckedAt(LocalDateTime.now(ZONE));
-                startBudgetGuard.clearBlockIfBudgetAvailable(state, budget.getTotal());
-            }
-            timelineService.recordSnapshot(advertId, cabinet.getId(), budget.getTotal());
+            storeBudgetTotal(state, advertId, cabinet.getId(), budget.getTotal());
             budgetPollCoordinator.markBudgetPolledThisTick(cabinet.getId(), advertId);
             return Optional.of(budget.getTotal());
         } catch (Exception e) {
@@ -128,7 +122,7 @@ public class WbCampaignBudgetFetchService {
     }
 
     /**
-     * Кэш после единственного HTTP-опроса в текущем тике планировщика (пауза endpoint ~1 с не мешает).
+     * Кэш после HTTP-опроса в текущем тике планировщика (пакетный POST v2).
      */
     private Optional<Integer> cachedBudgetFromThisSchedulerTick(
             Long cabinetId,
@@ -166,6 +160,36 @@ public class WbCampaignBudgetFetchService {
             return Optional.empty();
         }
         return Optional.of(state.getLastBudgetTotal());
+    }
+
+    /**
+     * Пакетный опрос остатков для кандидатов кабинета (POST /api/advert/v2/budget).
+     * ID без строки в ответе (завершённые) помечаются опрошенными без смены кэша.
+     */
+    public void fetchBudgetsForCampaigns(Cabinet cabinet, List<WbCampaignManagementState> states) {
+        if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank() || states == null || states.isEmpty()) {
+            return;
+        }
+        List<Long> advertIds = new ArrayList<>();
+        for (WbCampaignManagementState state : states) {
+            if (state != null && state.getCampaignId() != null) {
+                advertIds.add(state.getCampaignId());
+            }
+        }
+        if (advertIds.isEmpty()) {
+            return;
+        }
+        Map<Long, Integer> totals = promotionApiClient.getCampaignBudgets(cabinet.getApiKey(), advertIds);
+        for (WbCampaignManagementState state : states) {
+            if (state != null && state.getCampaignId() != null) {
+                Long advertId = state.getCampaignId();
+                Integer total = totals.get(advertId);
+                if (total != null) {
+                    storeBudgetTotal(state, advertId, cabinet.getId(), total);
+                }
+                budgetPollCoordinator.markBudgetPolledThisTick(cabinet.getId(), advertId);
+            }
+        }
     }
 
     /**

@@ -2,12 +2,15 @@ package ru.oparin.solution.service.campaign;
 
 import org.springframework.stereotype.Component;
 
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
- * Очередь опроса бюджета WB в рамках одного кабинета: за тик планировщика
- * реальный HTTP-запрос к {@code /adv/v1/budget} разрешён только выбранным РК (round-robin).
+ * Очередь опроса бюджета WB в рамках одного кабинета за тик планировщика.
+ * HTTP к {@code POST /api/advert/v2/budget} разрешён кандидатам (слот / trail)
+ * и внеочередным РК ({@link #grantMandatoryPoll}).
  * <p>
  * Вне тика планировщика ({@link #endSchedulerTick}) ограничение не действует — ручные вызовы идут как раньше.
  */
@@ -15,53 +18,26 @@ import java.util.concurrent.ConcurrentHashMap;
 public class WbCabinetBudgetPollCoordinator {
 
     private static final ThreadLocal<Set<String>> API_GRANTED = new ThreadLocal<>();
-    private static final ThreadLocal<Map<Long, Long>> TICK_LEADER_BY_CABINET = new ThreadLocal<>();
-    /** РК, по которым в текущем тике уже был успешный HTTP GET /adv/v1/budget. */
+    /** РК, по которым в текущем тике уже был успешный HTTP POST /api/advert/v2/budget. */
     private static final ThreadLocal<Set<String>> BUDGET_POLLED_THIS_TICK = new ThreadLocal<>();
 
-    private final ConcurrentHashMap<Long, Integer> roundRobinIndexByCabinet = new ConcurrentHashMap<>();
-
     /**
-     * Начинает тик планировщика: для каждого кабинета выбирает одну РК для опроса бюджета.
+     * Начинает тик планировщика: все кандидаты кабинета получают право на опрос бюджета.
      *
      * @param candidatesByCabinet advertId кандидатов по cabinetId (в активном слоте или на budget trail)
      */
     public void beginSchedulerTick(Map<Long, List<Long>> candidatesByCabinet) {
         Set<String> granted = new HashSet<>();
-        Map<Long, Long> leaders = new HashMap<>();
         for (Map.Entry<Long, List<Long>> entry : candidatesByCabinet.entrySet()) {
             Long cabinetId = entry.getKey();
-            List<Long> sorted = entry.getValue().stream().sorted().toList();
-            if (sorted.isEmpty()) {
-                continue;
+            for (Long advertId : entry.getValue()) {
+                if (advertId != null) {
+                    granted.add(slotKey(cabinetId, advertId));
+                }
             }
-            int index = roundRobinIndexByCabinet.getOrDefault(cabinetId, 0);
-            Long leader = sorted.get(index % sorted.size());
-            roundRobinIndexByCabinet.put(cabinetId, (index + 1) % sorted.size());
-            leaders.put(cabinetId, leader);
-            granted.add(slotKey(cabinetId, leader));
         }
         API_GRANTED.set(granted);
-        TICK_LEADER_BY_CABINET.set(leaders);
         BUDGET_POLLED_THIS_TICK.set(new HashSet<>());
-    }
-
-    /**
-     * Лидер round-robin для кабинета в текущем тике планировщика.
-     */
-    public Optional<Long> getTickLeader(Long cabinetId) {
-        Map<Long, Long> leaders = TICK_LEADER_BY_CABINET.get();
-        if (leaders == null) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(leaders.get(cabinetId));
-    }
-
-    /**
-     * {@code true}, если РК выбрана лидером очереди бюджета в текущем тике.
-     */
-    public boolean isTickLeader(Long cabinetId, Long advertId) {
-        return getTickLeader(cabinetId).filter(advertId::equals).isPresent();
     }
 
     /**
@@ -72,6 +48,18 @@ public class WbCabinetBudgetPollCoordinator {
         if (granted != null) {
             granted.add(slotKey(cabinetId, advertId));
         }
+    }
+
+    /**
+     * Снимает разрешение HTTP у всех РК кабинета (пакетный опрос не удался — не разгоняем одиночные запросы).
+     */
+    public void revokeCabinet(Long cabinetId) {
+        Set<String> granted = API_GRANTED.get();
+        if (granted == null || cabinetId == null) {
+            return;
+        }
+        String prefix = cabinetId + ":";
+        granted.removeIf(key -> key.startsWith(prefix));
     }
 
     /**
@@ -87,7 +75,7 @@ public class WbCabinetBudgetPollCoordinator {
     }
 
     /**
-     * Помечает успешный опрос бюджета WB в текущем тике планировщика (один HTTP на РК за тик).
+     * Помечает успешный опрос бюджета WB в текущем тике планировщика.
      */
     public void markBudgetPolledThisTick(Long cabinetId, Long advertId) {
         Set<String> polled = BUDGET_POLLED_THIS_TICK.get();
@@ -106,7 +94,6 @@ public class WbCabinetBudgetPollCoordinator {
 
     public void endSchedulerTick() {
         API_GRANTED.remove();
-        TICK_LEADER_BY_CABINET.remove();
         BUDGET_POLLED_THIS_TICK.remove();
     }
 
