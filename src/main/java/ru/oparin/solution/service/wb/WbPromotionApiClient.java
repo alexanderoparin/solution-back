@@ -663,7 +663,10 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
                 .build();
         HttpEntity<WbPromotionBudgetBatchRequest> entity = new HttpEntity<>(body, headers);
         String url = WbApiEventType.PROMOTION_BUDGET_GET.getDefaultUrl();
-        logWbApiCall(url, BUDGET_OPERATION + " ids=" + advertIds.size());
+        String advertIdList = advertIds.stream()
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));
+        logWbApiCall(url, BUDGET_OPERATION + " ids=" + advertIdList);
         try {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
             validateResponse(response);
