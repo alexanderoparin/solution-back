@@ -9,11 +9,14 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import ru.oparin.solution.dto.analytics.*;
+import ru.oparin.solution.dto.analytics.manage.CampaignCabinetResolveDto;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetAccessSection;
+import ru.oparin.solution.model.User;
 import ru.oparin.solution.model.WbProductCard;
 import ru.oparin.solution.service.AnalyticsService;
 import ru.oparin.solution.service.SellerContextService;
+import ru.oparin.solution.service.UserService;
 import ru.oparin.solution.service.WbArticleGoalService;
 import ru.oparin.solution.service.sync.WbSalesFunnelExcelImportService;
 
@@ -33,6 +36,7 @@ public class AnalyticsController {
     private final SellerContextService sellerContextService;
     private final WbArticleGoalService articleGoalService;
     private final WbSalesFunnelExcelImportService salesFunnelExcelImportService;
+    private final UserService userService;
 
     /**
      * Получает список артикулов кабинета/продавца (только справочная информация для фильтра).
@@ -127,6 +131,20 @@ public class AnalyticsController {
         );
 
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Кабинет владельца артикула для автопереключения по прямой ссылке.
+     */
+    @GetMapping("/article/{nmId}/cabinet")
+    public ResponseEntity<CampaignCabinetResolveDto> resolveArticleCabinet(
+            @PathVariable Long nmId,
+            Authentication authentication
+    ) {
+        User currentUser = userService.findByEmail(authentication.getName());
+        return analyticsService.resolveArticleCabinet(nmId, currentUser)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     /**

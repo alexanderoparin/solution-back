@@ -16,6 +16,17 @@ public interface OzonProductCardRepository extends JpaRepository<OzonProductCard
 
     Optional<OzonProductCard> findByCabinet_IdAndProductId(Long cabinetId, Long productId);
 
+    /**
+     * Карточка Ozon по product_id с кабинетом и владельцем (resolve по прямой ссылке).
+     */
+    @Query("""
+            SELECT c FROM OzonProductCard c
+            JOIN FETCH c.cabinet cab
+            JOIN FETCH cab.user
+            WHERE c.productId = :productId
+            """)
+    Optional<OzonProductCard> findByProductIdWithCabinetOwner(@Param("productId") Long productId);
+
     List<OzonProductCard> findByCabinet_IdAndSkuIn(Long cabinetId, Collection<Long> skus);
 
     @Query("SELECT c.sku FROM OzonProductCard c WHERE c.cabinet.id = :cabinetId AND c.sku IS NOT NULL ORDER BY c.sku ASC")

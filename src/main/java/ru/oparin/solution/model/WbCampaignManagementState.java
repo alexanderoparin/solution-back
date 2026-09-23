@@ -72,6 +72,12 @@ public class WbCampaignManagementState {
     private LocalDateTime lastBudgetCheckedAt;
 
     /**
+     * Время последней сверки статуса РК с WB (МСК) в активном слоте.
+     */
+    @Column(name = "last_status_checked_at")
+    private LocalDateTime lastStatusCheckedAt;
+
+    /**
      * Число автопополнений за текущие сутки.
      */
     @Column(name = "top_ups_today_count", nullable = false)

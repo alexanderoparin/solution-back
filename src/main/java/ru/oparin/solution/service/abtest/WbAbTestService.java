@@ -16,6 +16,7 @@ import ru.oparin.solution.dto.abtest.WbAbTestDto;
 import ru.oparin.solution.dto.abtest.WbAbTestVariantDto;
 import ru.oparin.solution.dto.abtest.WbCreateAbTestRequest;
 import ru.oparin.solution.dto.abtest.WbUpdateAbTestSettingsRequest;
+import ru.oparin.solution.dto.analytics.manage.CampaignCabinetResolveDto;
 import ru.oparin.solution.dto.wb.WbCardDto;
 import ru.oparin.solution.dto.wb.WbCardsListRequest;
 import ru.oparin.solution.dto.wb.WbCardsListResponse;
@@ -23,6 +24,7 @@ import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.*;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.EntityCabinetResolveSupport;
 import ru.oparin.solution.service.WbAbTestQuotaService;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.WbAbTestStartPayload;
@@ -105,6 +107,7 @@ public class WbAbTestService {
     private final WbApiEventService wbApiEventService;
     private final WbAbTestQuotaService abTestQuotaService;
     private final ObjectMapper objectMapper;
+    private final EntityCabinetResolveSupport entityCabinetResolveSupport;
 
     @Value("${app.uploads.directory}")
     private String uploadsDirectory;
@@ -121,6 +124,28 @@ public class WbAbTestService {
     @Lazy
     @Autowired
     private WbAbTestService self;
+
+    /**
+     * Кабинет владельца А/Б-теста для автопереключения по прямой ссылке.
+     *
+     * @param testId ID теста
+     * @param currentUser текущий пользователь
+     * @return кабинет или empty
+     */
+    @Transactional(readOnly = true)
+    public Optional<CampaignCabinetResolveDto> resolveAccessibleCabinet(Long testId, User currentUser) {
+        if (testId == null || currentUser == null) {
+            return Optional.empty();
+        }
+        WbAbTest test = abTestRepository.findById(testId).orElse(null);
+        if (test == null) {
+            return Optional.empty();
+        }
+        return entityCabinetResolveSupport.resolveIfAccessible(
+                test.getCabinetId(),
+                currentUser,
+                CabinetAccessSection.AD_CAMPAIGNS);
+    }
 
     /**
      * Список тестов кабинета.

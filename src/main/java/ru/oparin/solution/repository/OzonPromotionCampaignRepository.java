@@ -20,6 +20,17 @@ public interface OzonPromotionCampaignRepository extends JpaRepository<OzonPromo
     java.util.Optional<OzonPromotionCampaign> findByCampaignIdAndCabinet_Id(Long campaignId, Long cabinetId);
 
     /**
+     * Кампания с кабинетом и владельцем (resolve по прямой ссылке).
+     */
+    @Query("""
+            SELECT c FROM OzonPromotionCampaign c
+            JOIN FETCH c.cabinet cab
+            JOIN FETCH cab.user
+            WHERE c.campaignId = :campaignId
+            """)
+    java.util.Optional<OzonPromotionCampaign> findByCampaignIdWithCabinetOwner(@Param("campaignId") Long campaignId);
+
+    /**
      * Выборка только campaign_id по кабинету пачкой (для пакетного удаления).
      */
     @Query("SELECT c.campaignId FROM OzonPromotionCampaign c WHERE c.cabinet.id = :cabinetId")

@@ -55,4 +55,34 @@ public class WbCampaignSchedulePollPlanner {
         }
         return byCabinet;
     }
+
+    /**
+     * Кандидаты на сверку статуса с WB: в активном слоте, в БД ещё ACTIVE, интервал сверки истёк.
+     */
+    public Map<Long, List<Long>> collectStatusReconcileCandidates(
+            List<WbCampaignManagementState> states,
+            ZonedDateTime now
+    ) {
+        Map<Long, List<Long>> byCabinet = new LinkedHashMap<>();
+        for (WbCampaignManagementState state : states) {
+            if (!state.isScheduleEnabled() || state.isManualStopped()) {
+                continue;
+            }
+            Long advertId = state.getCampaignId();
+            Long cabinetId = state.getCabinetId();
+            Cabinet cabinet = cabinetService.findById(cabinetId).orElse(null);
+            if (cabinet == null || cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
+                continue;
+            }
+            WbPromotionCampaign campaign = campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).orElse(null);
+            if (campaign == null || campaign.getStatus() != WbCampaignStatus.ACTIVE) {
+                continue;
+            }
+            if (!pollEligibility.needsStatusReconcile(state, advertId, cabinetId, now)) {
+                continue;
+            }
+            byCabinet.computeIfAbsent(cabinetId, ignored -> new ArrayList<>()).add(advertId);
+        }
+        return byCabinet;
+    }
 }

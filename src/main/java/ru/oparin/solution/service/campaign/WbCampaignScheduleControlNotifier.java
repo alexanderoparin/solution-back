@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import ru.oparin.solution.model.WbCampaignAutoBudgetSettings;
+import ru.oparin.solution.model.WbCampaignStatus;
 import ru.oparin.solution.repository.WbCampaignAutoBudgetSettingsRepository;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -97,6 +98,33 @@ public class WbCampaignScheduleControlNotifier {
         changeLogService.log(advertId, cabinetId, null, "РК остановлена");
         timelineService.recordStop(advertId, cabinetId);
         log.info("РК advertId={} cabinetId={}: успешная остановка", advertId, cabinetId);
+    }
+
+    /**
+     * На WB РК уже не активна, хотя в Clicki ещё числилась запущенной (пауза вне нашего pause).
+     */
+    public void onPausedDetectedOnWb(Long advertId, Long cabinetId, WbCampaignStatus wbStatus) {
+        String statusLabel = wbStatus != null ? wbStatus.getDescription() : "неактивна";
+        String key = historyKey(cabinetId, advertId);
+        String category = "pause_detected_wb";
+        String prev = lastHistoryCategory.put(key, category);
+        if (category.equals(prev)) {
+            log.debug("РК advertId={} cabinetId={}: пауза на WB уже зафиксирована", advertId, cabinetId);
+            return;
+        }
+        changeLogService.log(
+                advertId,
+                cabinetId,
+                null,
+                "РК остановлена на стороне WB («" + statusLabel + "»)"
+        );
+        timelineService.recordStop(advertId, cabinetId);
+        log.info(
+                "РК advertId={} cabinetId={}: обнаружена пауза на WB (статус «{}»)",
+                advertId,
+                cabinetId,
+                statusLabel
+        );
     }
 
     private void writeHistoryOnce(Long advertId, Long cabinetId, String category, String message) {

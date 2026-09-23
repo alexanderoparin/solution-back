@@ -4,12 +4,18 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.analytics.*;
+import ru.oparin.solution.dto.analytics.manage.CampaignCabinetResolveDto;
+import ru.oparin.solution.model.CabinetAccessSection;
+import ru.oparin.solution.model.OzonProductCard;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.model.WbProductCard;
+import ru.oparin.solution.repository.OzonProductCardRepository;
+import ru.oparin.solution.repository.WbProductCardRepository;
 import ru.oparin.solution.service.analytics.*;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Фасад аналитики: маршрутизация к query-сервисам каталога, сводной, карточки, рекламы и остатков.
@@ -23,6 +29,38 @@ public class AnalyticsService {
     private final ArticleAnalyticsQuery articleAnalyticsQuery;
     private final CampaignAnalyticsQuery campaignAnalyticsQuery;
     private final AnalyticsStockQuery analyticsStockQuery;
+    private final WbProductCardRepository wbProductCardRepository;
+    private final OzonProductCardRepository ozonProductCardRepository;
+    private final EntityCabinetResolveSupport entityCabinetResolveSupport;
+
+    /**
+     * Кабинет владельца артикула (WB nmId или Ozon productId) для автопереключения по ссылке.
+     *
+     * @param articleId nmId WB / productId Ozon из URL
+     * @param currentUser текущий пользователь
+     * @return кабинет или empty
+     */
+    @Transactional(readOnly = true)
+    public Optional<CampaignCabinetResolveDto> resolveArticleCabinet(Long articleId, User currentUser) {
+        if (articleId == null || currentUser == null) {
+            return Optional.empty();
+        }
+        WbProductCard wbCard = wbProductCardRepository.findByNmIdWithCabinetAndUser(articleId).orElse(null);
+        if (wbCard != null) {
+            return entityCabinetResolveSupport.resolveIfAccessible(
+                    wbCard.getCabinet(),
+                    currentUser,
+                    CabinetAccessSection.PRODUCTS);
+        }
+        OzonProductCard ozonCard = ozonProductCardRepository.findByProductIdWithCabinetOwner(articleId).orElse(null);
+        if (ozonCard != null) {
+            return entityCabinetResolveSupport.resolveIfAccessible(
+                    ozonCard.getCabinet(),
+                    currentUser,
+                    CabinetAccessSection.PRODUCTS);
+        }
+        return Optional.empty();
+    }
 
     /**
      * Сводная аналитика для продавца (при cabinetId != null — только по выбранному кабинету).

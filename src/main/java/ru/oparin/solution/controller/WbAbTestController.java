@@ -73,6 +73,20 @@ public class WbAbTestController {
     }
 
     /**
+     * Кабинет владельца А/Б-теста для автопереключения по прямой ссылке.
+     */
+    @GetMapping("/{id}/cabinet")
+    public ResponseEntity<ru.oparin.solution.dto.analytics.manage.CampaignCabinetResolveDto> resolveCabinet(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        var currentUser = userService.findByEmail(authentication.getName());
+        return abTestService.resolveAccessibleCabinet(id, currentUser)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
      * Изменение настроек ротации / остановки / поведения по завершении.
      */
     @PatchMapping("/{id}/settings")

@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Планировщик: расписание слотов, лимит бюджета слота, автопополнение.
+ * Планировщик: расписание слотов, лимит бюджета слота, автопополнение, сверка статуса с WB.
  * Каждая кампания обрабатывается в отдельной транзакции ({@link WbCampaignScheduleProcessor}).
  */
 @Component
@@ -29,6 +29,7 @@ public class WbCampaignScheduleOrchestrator {
     private final WbCampaignSchedulePollPlanner pollPlanner;
     private final WbCabinetBudgetPollCoordinator budgetPollCoordinator;
     private final CabinetBudgetBatchPollExecutor batchPollExecutor;
+    private final CabinetStatusReconcileExecutor statusReconcileExecutor;
 
     @Scheduled(cron = "0 * * * * *")
     @SchedulerLock(name = "campaignScheduleOrchestrator", lockAtLeastFor = "30s", lockAtMostFor = "55s")
@@ -36,10 +37,14 @@ public class WbCampaignScheduleOrchestrator {
         List<WbCampaignManagementState> states = stateRepository.findAll();
         ZonedDateTime now = ZonedDateTime.now(ZONE);
         Map<Long, List<Long>> pollCandidates = pollPlanner.collectBudgetPollCandidates(states, now);
+        Map<Long, List<Long>> statusCandidates = pollPlanner.collectStatusReconcileCandidates(states, now);
         budgetPollCoordinator.beginSchedulerTick(pollCandidates);
         try {
             for (Map.Entry<Long, List<Long>> entry : pollCandidates.entrySet()) {
                 batchPollExecutor.pollCabinet(entry.getKey(), entry.getValue());
+            }
+            for (Map.Entry<Long, List<Long>> entry : statusCandidates.entrySet()) {
+                statusReconcileExecutor.reconcileCabinet(entry.getKey(), entry.getValue(), now);
             }
             for (WbCampaignManagementState state : states) {
                 if (!state.isScheduleEnabled()) {

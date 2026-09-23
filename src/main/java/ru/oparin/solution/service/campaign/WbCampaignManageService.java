@@ -9,14 +9,8 @@ import ru.oparin.solution.dto.analytics.manage.*;
 import ru.oparin.solution.dto.wb.WbPromotionBudgetDepositRequest;
 import ru.oparin.solution.dto.wb.WbPromotionBudgetResponse;
 import ru.oparin.solution.model.*;
-import ru.oparin.solution.repository.WbCampaignAutoBudgetSettingsRepository;
-import ru.oparin.solution.repository.WbCampaignManagementStateRepository;
-import ru.oparin.solution.repository.WbCampaignScheduleSlotRepository;
-import ru.oparin.solution.repository.WbPromotionCampaignRepository;
-import ru.oparin.solution.service.AnalyticsService;
-import ru.oparin.solution.service.CabinetService;
-import ru.oparin.solution.service.WbPromotionCampaignControlService;
-import ru.oparin.solution.service.WbPromotionCampaignControlWriteService;
+import ru.oparin.solution.repository.*;
+import ru.oparin.solution.service.*;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -54,6 +48,42 @@ public class WbCampaignManageService {
     private final BidderStatusResolver bidderStatusResolver;
     private final WbCampaignBudgetTrailService budgetTrailService;
     private final WbCampaignStartBudgetGuard startBudgetGuard;
+    private final EntityCabinetResolveSupport entityCabinetResolveSupport;
+    private final OzonPromotionCampaignRepository ozonPromotionCampaignRepository;
+
+    /**
+     * Находит кабинет владельца РК (WB или Ozon), если текущий пользователь может открыть страницу кампании.
+     * Доступ: ADMIN, владелец, grant с AD_CAMPAIGNS или CAMPAIGN_MANAGE.
+     *
+     * @param advertId ID кампании (WB advertId / Ozon campaignId)
+     * @param currentUser текущий пользователь
+     * @return кабинет и селлер либо empty
+     */
+    @Transactional(readOnly = true)
+    public Optional<CampaignCabinetResolveDto> resolveAccessibleCabinet(Long advertId, User currentUser) {
+        if (advertId == null || currentUser == null) {
+            return Optional.empty();
+        }
+        WbPromotionCampaign wbCampaign = campaignRepository.findByAdvertIdWithCabinetOwner(advertId).orElse(null);
+        if (wbCampaign != null) {
+            return entityCabinetResolveSupport.resolveIfAccessible(
+                    wbCampaign.getCabinet(),
+                    currentUser,
+                    CabinetAccessSection.AD_CAMPAIGNS,
+                    CabinetAccessSection.CAMPAIGN_MANAGE);
+        }
+        OzonPromotionCampaign ozonCampaign = ozonPromotionCampaignRepository
+                .findByCampaignIdWithCabinetOwner(advertId)
+                .orElse(null);
+        if (ozonCampaign != null) {
+            return entityCabinetResolveSupport.resolveIfAccessible(
+                    ozonCampaign.getCabinet(),
+                    currentUser,
+                    CabinetAccessSection.AD_CAMPAIGNS,
+                    CabinetAccessSection.CAMPAIGN_MANAGE);
+        }
+        return Optional.empty();
+    }
 
     @Transactional
     public CampaignManageResponseDto getManage(Long advertId, Long cabinetId, User seller) {

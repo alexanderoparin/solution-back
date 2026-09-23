@@ -37,6 +37,17 @@ public interface WbPromotionCampaignRepository extends JpaRepository<WbPromotion
      */
     Optional<WbPromotionCampaign> findByAdvertIdAndCabinet_Id(Long advertId, Long cabinetId);
 
+    /**
+     * Кампания с кабинетом и владельцем (для resolve по прямой ссылке).
+     */
+    @Query("""
+            SELECT c FROM WbPromotionCampaign c
+            JOIN FETCH c.cabinet cab
+            JOIN FETCH cab.user
+            WHERE c.advertId = :advertId
+            """)
+    Optional<WbPromotionCampaign> findByAdvertIdWithCabinetOwner(@Param("advertId") Long advertId);
+
     void deleteByCabinet_Id(Long cabinetId);
 }
 

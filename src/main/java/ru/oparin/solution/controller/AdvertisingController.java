@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.oparin.solution.dto.analytics.*;
+import ru.oparin.solution.dto.analytics.manage.CampaignCabinetResolveDto;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.CabinetAccessSection;
@@ -14,6 +15,7 @@ import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.*;
 import ru.oparin.solution.service.analytics.CampaignListPaging;
 import ru.oparin.solution.service.campaign.WbCampaignManageAccessService;
+import ru.oparin.solution.service.campaign.WbCampaignManageService;
 import ru.oparin.solution.service.events.OzonApiEventService;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.WbMainStepPayload;
@@ -41,6 +43,7 @@ public class AdvertisingController {
     private final WbPromotionCampaignControlWriteService promotionCampaignControlWriteService;
     private final WbCampaignManageAccessService campaignManageAccessService;
     private final UserService userService;
+    private final WbCampaignManageService campaignManageService;
 
     /**
      * Список рекламных кампаний текущего кабинета (с агрегацией статистики за период).
@@ -321,6 +324,21 @@ public class AdvertisingController {
                     + minutes + " мин.";
         }
         return "Превышен лимит запросов к WB API. Повторите через " + seconds + " сек.";
+    }
+
+    /**
+     * Кабинет владельца РК для автопереключения контекста по прямой ссылке.
+     * 404 — кампания не найдена или нет доступа к её кабинету.
+     */
+    @GetMapping("/campaigns/{id}/cabinet")
+    public ResponseEntity<CampaignCabinetResolveDto> resolveCampaignCabinet(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        User currentUser = userService.findByEmail(authentication.getName());
+        return campaignManageService.resolveAccessibleCabinet(id, currentUser)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     /**

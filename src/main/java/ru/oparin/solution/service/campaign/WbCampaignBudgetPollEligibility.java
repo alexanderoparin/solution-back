@@ -12,11 +12,14 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Правила, когда планировщику нужен опрос бюджета WB для РК.
+ * Правила, когда планировщику нужен опрос бюджета / сверка статуса WB для РК.
  */
 @Service
 @RequiredArgsConstructor
 public class WbCampaignBudgetPollEligibility {
+
+    /** Интервал сверки статуса ACTIVE-РК с WB в активном слоте. */
+    public static final int STATUS_RECONCILE_INTERVAL_MINUTES = 5;
 
     private final WbCampaignScheduleSlotRepository slotRepository;
     private final BidderStatusResolver bidderStatusResolver;
@@ -37,6 +40,28 @@ public class WbCampaignBudgetPollEligibility {
         }
         LocalDateTime trailUntil = state.getBudgetTrailUntil();
         return trailUntil != null && !nowLocal.isAfter(trailUntil);
+    }
+
+    /**
+     * {@code true}, если пора сверить статус РК с WB (активный слот, интервал истёк).
+     */
+    public boolean needsStatusReconcile(
+            WbCampaignManagementState state,
+            Long advertId,
+            Long cabinetId,
+            ZonedDateTime now
+    ) {
+        if (!state.isScheduleEnabled() || state.isManualStopped()) {
+            return false;
+        }
+        if (findActiveSlotNow(advertId, cabinetId, now).isEmpty()) {
+            return false;
+        }
+        LocalDateTime lastChecked = state.getLastStatusCheckedAt();
+        if (lastChecked == null) {
+            return true;
+        }
+        return !lastChecked.plusMinutes(STATUS_RECONCILE_INTERVAL_MINUTES).isAfter(now.toLocalDateTime());
     }
 
     /**
