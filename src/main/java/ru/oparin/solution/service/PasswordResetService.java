@@ -10,6 +10,7 @@ import ru.oparin.solution.model.PasswordResetToken;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.PasswordResetTokenRepository;
 import ru.oparin.solution.repository.UserRepository;
+import ru.oparin.solution.util.EmailNormalizer;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -38,7 +39,8 @@ public class PasswordResetService {
      */
     @Transactional
     public void forgotPassword(String email) {
-        Optional<User> userOpt = userRepository.findByEmail(email);
+        String normalized = EmailNormalizer.normalize(email);
+        Optional<User> userOpt = userRepository.findByEmail(normalized);
         if (userOpt.isEmpty()) {
             throw new UserException(
                     "Аккаунт с таким email не найден. Проверьте введенный адрес и попробуйте еще раз",

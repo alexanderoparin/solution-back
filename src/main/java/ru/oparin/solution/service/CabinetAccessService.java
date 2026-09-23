@@ -12,6 +12,7 @@ import ru.oparin.solution.repository.CabinetAccessGrantRepository;
 import ru.oparin.solution.repository.CabinetAccessInvitationRepository;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.UserRepository;
+import ru.oparin.solution.util.EmailNormalizer;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -211,11 +212,11 @@ public class CabinetAccessService {
     public void grantAccess(User owner, Long cabinetId, GrantCabinetAccessRequest request) {
         ensureCanManage(owner, cabinetId);
         validateGrantRequest(request);
-        String email = request.email().trim().toLowerCase();
+        String email = EmailNormalizer.normalize(request.email());
         Cabinet cabinet = cabinetRepository.findById(cabinetId)
                 .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
 
-        if (email.equalsIgnoreCase(owner.getEmail())) {
+        if (EmailNormalizer.equalsIgnoreCase(email, owner.getEmail())) {
             throw new UserException("Нельзя выдать доступ самому себе", HttpStatus.BAD_REQUEST);
         }
         Optional<User> existingUser = userRepository.findByEmail(email);
@@ -382,7 +383,7 @@ public class CabinetAccessService {
             invitationRepository.save(invitation);
             throw new UserException("Срок действия приглашения истёк", HttpStatus.BAD_REQUEST);
         }
-        if (!user.getEmail().equalsIgnoreCase(invitation.getEmail())) {
+        if (!EmailNormalizer.equalsIgnoreCase(user.getEmail(), invitation.getEmail())) {
             throw new UserException("Приглашение отправлено на другой email", HttpStatus.FORBIDDEN);
         }
         LocalDateTime now = LocalDateTime.now();
@@ -419,7 +420,7 @@ public class CabinetAccessService {
             invitationRepository.save(invitation);
             throw new UserException("Срок действия приглашения истёк", HttpStatus.BAD_REQUEST);
         }
-        if (!user.getEmail().equalsIgnoreCase(invitation.getEmail())) {
+        if (!EmailNormalizer.equalsIgnoreCase(user.getEmail(), invitation.getEmail())) {
             throw new UserException("Приглашение отправлено на другой email", HttpStatus.FORBIDDEN);
         }
         invitation.setStatus(CabinetAccessInvitationStatus.DECLINED);
@@ -489,7 +490,7 @@ public class CabinetAccessService {
             throw new UserException("Повторно выдать можно только отозванный доступ", HttpStatus.BAD_REQUEST);
         }
         User grantee = grant.getUser();
-        String email = grantee.getEmail().trim().toLowerCase();
+        String email = EmailNormalizer.normalize(grantee.getEmail());
         AccountType accountType = resolveAccountTypeForReinvite(grantee.getId());
 
         invitationRepository.findPendingByCabinetAndEmail(cabinetId, email, CabinetAccessInvitationStatus.PENDING)

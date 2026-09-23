@@ -12,6 +12,7 @@ import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.Role;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.UserRepository;
+import ru.oparin.solution.util.EmailNormalizer;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -35,10 +36,11 @@ public class CustomUserDetailsService implements UserDetailsService {
      */
     @Override
     public UserDetails loadUserByUsername(String email) {
-        User user = userRepository.findByEmail(email)
+        String normalized = EmailNormalizer.normalize(email);
+        User user = userRepository.findByEmail(normalized)
                 .orElseThrow(() -> {
-                    log.warn("Пользователь не найден: {}", email);
-                    return new UserException("Пользователь не найден: " + email, HttpStatus.NOT_FOUND);
+                    log.warn("Пользователь не найден: {}", normalized);
+                    return new UserException("Пользователь не найден: " + normalized, HttpStatus.NOT_FOUND);
                 });
 
         return new org.springframework.security.core.userdetails.User(

@@ -13,6 +13,7 @@ import ru.oparin.solution.dto.LoginRequest;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.security.JwtTokenProvider;
+import ru.oparin.solution.util.EmailNormalizer;
 
 /**
  * Сервис аутентификации пользователей.
@@ -73,9 +74,10 @@ public class AuthService {
      * Аутентифицирует пользователя по email и паролю.
      */
     private Authentication authenticateUser(LoginRequest request) {
+        String email = EmailNormalizer.normalize(request.getEmail());
         return authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
-                        request.getEmail(),
+                        email,
                         request.getPassword()
                 )
         );

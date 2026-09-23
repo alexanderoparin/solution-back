@@ -19,6 +19,7 @@ import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.SubscriptionRepository;
 import ru.oparin.solution.repository.UserRepository;
+import ru.oparin.solution.util.EmailNormalizer;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -55,7 +56,8 @@ public class UserService {
      */
     @Transactional
     public User registerUser(RegisterRequest request) {
-        validateEmailNotExists(request.getEmail());
+        String email = EmailNormalizer.normalize(request.getEmail());
+        validateEmailNotExists(email);
         if (request.getAccountTypes() == null || request.getAccountTypes().isEmpty()) {
             throw new UserException("Укажите тип аккаунта", HttpStatus.BAD_REQUEST);
         }
@@ -63,7 +65,7 @@ public class UserService {
         boolean marketingConsent = Boolean.TRUE.equals(request.getMarketingConsent());
         User user = User.builder()
                 .name(request.getName())
-                .email(request.getEmail())
+                .email(email)
                 .password(encodedPassword)
                 .role(Role.USER)
                 .isActive(true)
@@ -90,16 +92,17 @@ public class UserService {
     }
 
     /**
-     * Поиск пользователя по email.
+     * Поиск пользователя по email без учёта регистра.
      *
      * @param email email пользователя
      * @return найденный пользователь
      * @throws UserException если пользователь не найден
      */
     public User findByEmail(String email) {
-        return userRepository.findByEmail(email)
+        String normalized = EmailNormalizer.normalize(email);
+        return userRepository.findByEmail(normalized)
                 .orElseThrow(() -> new UserException(
-                        "Пользователь не найден: " + email,
+                        "Пользователь не найден: " + normalized,
                         HttpStatus.NOT_FOUND
                 ));
     }
@@ -142,12 +145,13 @@ public class UserService {
     }
 
     /**
-     * Проверяет, что пользователь с таким email не существует.
+     * Проверяет, что пользователь с таким email не существует (без учёта регистра).
      */
     private void validateEmailNotExists(String email) {
-        if (userRepository.existsByEmail(email)) {
+        String normalized = EmailNormalizer.normalize(email);
+        if (userRepository.existsByEmail(normalized)) {
             throw new UserException(
-                    "Пользователь с таким email уже существует: " + email, 
+                    "Пользователь с таким email уже существует: " + normalized,
                     HttpStatus.CONFLICT
             );
         }
@@ -165,7 +169,7 @@ public class UserService {
      */
     private User createSellerUser(String email, String encodedPassword, boolean marketingConsent) {
         return User.builder()
-                .email(email)
+                .email(EmailNormalizer.normalize(email))
                 .password(encodedPassword)
                 .role(Role.USER)
                 .isActive(true)
@@ -268,10 +272,11 @@ public class UserService {
     @Transactional
     public User createUser(CreateUserRequest request, User currentUser) {
         validateCanCreateUser(currentUser, request.getRole());
-        validateEmailNotExists(request.getEmail());
+        String email = EmailNormalizer.normalize(request.getEmail());
+        validateEmailNotExists(email);
         Role role = request.getRole() == Role.ADMIN ? Role.ADMIN : Role.USER;
         User newUser = User.builder()
-                .email(request.getEmail())
+                .email(email)
                 .password(encodePassword(request.getPassword()))
                 .role(role)
                 .isActive(true)
@@ -287,9 +292,13 @@ public class UserService {
     public User updateUser(Long userId, UpdateUserRequest request, User currentUser) {
         User userToUpdate = findById(userId);
         validateCanManageUser(currentUser, userToUpdate);
-        if (!userToUpdate.getEmail().equals(request.getEmail())) {
-            validateEmailNotExists(request.getEmail());
-            userToUpdate.setEmail(request.getEmail());
+        String newEmail = EmailNormalizer.normalize(request.getEmail());
+        if (!EmailNormalizer.equalsIgnoreCase(userToUpdate.getEmail(), newEmail)) {
+            validateEmailNotExists(newEmail);
+            userToUpdate.setEmail(newEmail);
+        } else if (!Objects.equals(userToUpdate.getEmail(), newEmail)) {
+            // Тот же адрес в другом регистре — приводим к каноническому виду.
+            userToUpdate.setEmail(newEmail);
         }
         if (request.getIsActive() != null) {
             userToUpdate.setIsActive(request.getIsActive());

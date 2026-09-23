@@ -19,20 +19,26 @@ import java.util.Optional;
 @Repository
 public interface UserRepository extends JpaRepository<User, Long>, UserManagementCriteriaRepository {
     /**
-     * Поиск пользователя по email.
+     * Поиск пользователя по email без учёта регистра.
      *
      * @param email email пользователя
      * @return пользователь или пусто
      */
-    Optional<User> findByEmail(String email);
+    @Query("select u from User u where lower(u.email) = lower(:email)")
+    Optional<User> findByEmail(@Param("email") String email);
 
     /**
-     * Проверка существования пользователя с указанным email.
+     * Проверка существования пользователя с указанным email без учёта регистра.
      *
      * @param email email пользователя
      * @return true если пользователь существует
      */
-    boolean existsByEmail(String email);
+    @Query("""
+            select case when count(u) > 0 then true else false end
+            from User u
+            where lower(u.email) = lower(:email)
+            """)
+    boolean existsByEmail(@Param("email") String email);
 
     /**
      * Поиск активных пользователей по роли.
