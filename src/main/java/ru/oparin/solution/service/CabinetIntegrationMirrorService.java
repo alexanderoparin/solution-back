@@ -155,15 +155,7 @@ public class CabinetIntegrationMirrorService {
         if (cabinet.getTokenType() != null) {
             row.setMetaJson(tokenTypeMeta(cabinet.getTokenType()));
         }
-        if (cabinet.getIsValid() != null) {
-            row.setIsValid(cabinet.getIsValid());
-        }
-        if (cabinet.getLastValidatedAt() != null) {
-            row.setLastValidatedAt(cabinet.getLastValidatedAt());
-        }
-        if (cabinet.getValidationError() != null || Boolean.TRUE.equals(cabinet.getIsValid())) {
-            row.setValidationError(cabinet.getValidationError());
-        }
+        applySellerApiValidation(row, cabinet);
         integrationRepository.save(row);
     }
 
@@ -180,16 +172,18 @@ public class CabinetIntegrationMirrorService {
         if (notBlank(cabinet.getOzonClientId())) {
             row.setCredentialSecondary(cabinet.getOzonClientId());
         }
-        if (cabinet.getIsValid() != null) {
-            row.setIsValid(cabinet.getIsValid());
-        }
-        if (cabinet.getLastValidatedAt() != null) {
-            row.setLastValidatedAt(cabinet.getLastValidatedAt());
-        }
-        if (cabinet.getValidationError() != null || Boolean.TRUE.equals(cabinet.getIsValid())) {
-            row.setValidationError(cabinet.getValidationError());
-        }
+        applySellerApiValidation(row, cabinet);
         integrationRepository.save(row);
+    }
+
+    /**
+     * Пишет статус валидации ключа целиком, включая {@code null}
+     * (сброс при смене API-ключа: иначе в БД остаётся старый {@code is_valid=false}).
+     */
+    private void applySellerApiValidation(CabinetIntegration row, Cabinet cabinet) {
+        row.setIsValid(cabinet.getIsValid());
+        row.setLastValidatedAt(cabinet.getLastValidatedAt());
+        row.setValidationError(cabinet.getValidationError());
     }
 
     private void upsertOzonPerformanceIntegration(Cabinet cabinet) {
@@ -225,16 +219,10 @@ public class CabinetIntegrationMirrorService {
     }
 
     private void applyOzonPerformanceValidation(CabinetIntegration row, Cabinet cabinet) {
-        if (cabinet.getOzonPerformanceIsValid() != null) {
-            row.setIsValid(cabinet.getOzonPerformanceIsValid());
-        }
-        if (cabinet.getOzonPerformanceLastValidatedAt() != null) {
-            row.setLastValidatedAt(cabinet.getOzonPerformanceLastValidatedAt());
-        }
-        if (cabinet.getOzonPerformanceValidationError() != null
-                || Boolean.TRUE.equals(cabinet.getOzonPerformanceIsValid())) {
-            row.setValidationError(cabinet.getOzonPerformanceValidationError());
-        }
+        // Как у Seller: null должен уходить в БД при сбросе credentials.
+        row.setIsValid(cabinet.getOzonPerformanceIsValid());
+        row.setLastValidatedAt(cabinet.getOzonPerformanceLastValidatedAt());
+        row.setValidationError(cabinet.getOzonPerformanceValidationError());
     }
 
     private void upsertSyncState(Cabinet cabinet) {

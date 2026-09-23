@@ -2,6 +2,7 @@ package ru.oparin.solution.service.events;
 
 import org.springframework.web.client.RestClientException;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
+import ru.oparin.solution.util.WbTokenAuthErrors;
 
 /**
  * Преобразование исключений из WB-вызовов в результат выполнения события.
@@ -25,23 +26,30 @@ public final class WbEventExecutionErrors {
     }
 
     /**
-     * Обрабатывает {@link RestClientException}: defer в цепочке, иначе retryable.
+     * Обрабатывает {@link RestClientException}: defer в цепочке, 401 → final, иначе retryable.
      */
     public static WbApiEventExecutionResult wrapRestClientException(RestClientException exception) {
-        WbApiEventExecutionResult deferResult = deferResultIfPresent(exception);
-        if (deferResult != null) {
-            return deferResult;
-        }
-        return WbApiEventExecutionResult.retryableError(exception.getMessage());
+        return wrapDeferOrRetryable(exception);
     }
 
     /**
-     * Если в цепочке есть {@link WbRateLimitDeferException} — отложить событие; иначе retryable.
+     * Если в цепочке есть {@link WbRateLimitDeferException} — отложить;
+     * при 401 / отозванном токене — сразу final без ретраев; иначе retryable.
      */
     public static WbApiEventExecutionResult wrapDeferOrRetryable(Throwable throwable) {
         WbApiEventExecutionResult deferResult = deferResultIfPresent(throwable);
         if (deferResult != null) {
             return deferResult;
+        }
+        if (WbTokenAuthErrors.isUnauthorizedNoRetry(throwable)) {
+            String detail = throwable.getMessage() != null
+                    ? throwable.getMessage()
+                    : WbTokenAuthErrors.INVALID_KEY_USER_MESSAGE;
+            if (WbTokenAuthErrors.isTokenFullyInvalid(throwable)) {
+                return WbApiEventExecutionResult.finalError(
+                        WbTokenAuthErrors.INVALID_KEY_USER_MESSAGE + " (" + detail + ")");
+            }
+            return WbApiEventExecutionResult.finalError(detail);
         }
         return WbApiEventExecutionResult.retryableError(throwable.getMessage());
     }

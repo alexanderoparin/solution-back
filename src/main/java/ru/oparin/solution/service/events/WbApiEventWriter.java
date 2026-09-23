@@ -11,6 +11,7 @@ import ru.oparin.solution.model.WbApiEventStatus;
 import ru.oparin.solution.model.WbApiEventType;
 import ru.oparin.solution.repository.CabinetRepository;
 import ru.oparin.solution.repository.WbApiEventRepository;
+import ru.oparin.solution.service.CabinetIntegrationMirrorService;
 import ru.oparin.solution.service.WbProductCardService;
 
 import java.time.LocalDateTime;
@@ -38,6 +39,7 @@ public class WbApiEventWriter {
     private final CabinetRepository cabinetRepository;
     private final WbProductCardService productCardService;
     private final ObjectMapper objectMapper;
+    private final CabinetIntegrationMirrorService cabinetIntegrationMirrorService;
 
     /**
      * {@code true}, если уже есть активное событие с этим {@code dedupKey}.
@@ -100,6 +102,16 @@ public class WbApiEventWriter {
     ) {
         if (cabinet.getDeletionStartedAt() != null) {
             log.debug("Пропуск WB API event: кабинет {} удаляется", cabinet.getId());
+            return Optional.empty();
+        }
+        cabinetIntegrationMirrorService.overlayOntoCabinet(cabinet);
+        if (Boolean.FALSE.equals(cabinet.getIsValid())) {
+            log.info(
+                    "Пропуск WB API event: кабинет {} с невалидным API-ключом (type={}, trigger={})",
+                    cabinet.getId(),
+                    eventType,
+                    triggerSource
+            );
             return Optional.empty();
         }
         if (existsActive(dedupKey)) {

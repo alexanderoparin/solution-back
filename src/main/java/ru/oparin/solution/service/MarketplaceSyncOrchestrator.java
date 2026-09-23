@@ -47,6 +47,11 @@ public class MarketplaceSyncOrchestrator {
         if (cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
             throw new UserException("У кабинета не задан API-ключ", HttpStatus.BAD_REQUEST);
         }
+        if (Boolean.FALSE.equals(cabinet.getIsValid())) {
+            throw new UserException(
+                    "API-ключ кабинета невалиден. Обновите ключ в настройках кабинета.",
+                    HttpStatus.BAD_REQUEST);
+        }
         if (cabinet.getMarketplaceType() == MarketplaceType.OZON
                 && (cabinet.getOzonClientId() == null || cabinet.getOzonClientId().isBlank())) {
             throw new UserException("Для Ozon-кабинета не задан Client-Id", HttpStatus.BAD_REQUEST);

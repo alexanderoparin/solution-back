@@ -9,13 +9,12 @@ import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.model.WbApiEventStatus;
 import ru.oparin.solution.model.WbApiEventType;
 import ru.oparin.solution.repository.WbApiEventRepository;
+import ru.oparin.solution.service.CabinetService;
 import ru.oparin.solution.service.CabinetSyncStateService;
+import ru.oparin.solution.util.WbTokenAuthErrors;
 
 import java.time.LocalDateTime;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -32,6 +31,13 @@ public class WbApiEventQueueService {
             WbApiEventStatus.DEFERRED_RATE_LIMIT
     );
 
+    private static final Set<WbApiEventStatus> ACTIVE_QUEUE_STATUSES = Set.of(
+            WbApiEventStatus.CREATED,
+            WbApiEventStatus.FAILED_RETRYABLE,
+            WbApiEventStatus.DEFERRED_RATE_LIMIT,
+            WbApiEventStatus.RUNNING
+    );
+
     private static final List<WbApiEventType> MAIN_EVENT_TYPES = List.of(
             WbApiEventType.ANALYTICS_SALES_FUNNEL_NMID,
             WbApiEventType.PRICES_CABINET_WITH_SPP,
@@ -46,6 +52,7 @@ public class WbApiEventQueueService {
     private final WbApiEventRepository eventRepository;
     private final CabinetSyncStateService cabinetSyncStateService;
     private final WbEventsProperties wbEventsProperties;
+    private final CabinetService cabinetService;
 
     /**
      * Due-события для poll: не больше одного на пару (кабинет, тип события).
@@ -252,6 +259,27 @@ public class WbApiEventQueueService {
     }
 
     /**
+     * Снимает активную очередь кабинета (CREATED / retry / defer / RUNNING).
+     *
+     * @param excludeEventId событие, которое уже переводится в FAILED_FINAL отдельно; может быть {@code null}
+     * @return число отменённых событий
+     */
+    @Transactional
+    public int cancelActiveEventsForCabinet(Long cabinetId, Long excludeEventId, String reason) {
+        if (cabinetId == null) {
+            return 0;
+        }
+        return eventRepository.cancelActiveForCabinet(
+                cabinetId,
+                ACTIVE_QUEUE_STATUSES,
+                WbApiEventStatus.CANCELLED,
+                reason,
+                LocalDateTime.now(),
+                excludeEventId
+        );
+    }
+
+    /**
      * Помечает событие успешным.
      */
     @Transactional
@@ -280,6 +308,7 @@ public class WbApiEventQueueService {
                     event.setStatus(WbApiEventStatus.FAILED_FINAL);
                     event.setFinishedAt(LocalDateTime.now());
                     eventRepository.save(event);
+                    handleTerminalAuthFailure(event, cabinetId, result.errorMessage());
                     logTerminalCompletion(event, cabinetId);
                     return;
                 }
@@ -312,7 +341,32 @@ public class WbApiEventQueueService {
         event.setStatus(result.fallbackUsed() ? WbApiEventStatus.FAILED_WITH_FALLBACK : WbApiEventStatus.FAILED_FINAL);
         event.setFinishedAt(LocalDateTime.now());
         eventRepository.save(event);
+        if (event.getStatus() == WbApiEventStatus.FAILED_FINAL) {
+            handleTerminalAuthFailure(event, cabinetId, result.errorMessage());
+        }
         logTerminalCompletion(event, cabinetId);
+    }
+
+    /**
+     * При отозванном/невалидном токене: {@code is_valid=false} и отмена оставшейся очереди кабинета.
+     */
+    private void handleTerminalAuthFailure(WbApiEvent event, Long cabinetId, String errorMessage) {
+        if (cabinetId == null || !WbTokenAuthErrors.isTokenFullyInvalidMessage(errorMessage)) {
+            return;
+        }
+        cabinetService.markWbApiKeyInvalid(cabinetId, WbTokenAuthErrors.INVALID_KEY_USER_MESSAGE);
+        int cancelled = cancelActiveEventsForCabinet(
+                cabinetId,
+                event.getId(),
+                "Отменено: " + WbTokenAuthErrors.INVALID_KEY_USER_MESSAGE
+        );
+        if (cancelled > 0) {
+            log.warn(
+                    "Очередь WB кабинета {} снята из‑за невалидного токена: отменено событий {}",
+                    cabinetId,
+                    cancelled
+            );
+        }
     }
 
     private void logTerminalCompletion(WbApiEvent event, Long cabinetId) {

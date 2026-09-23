@@ -107,6 +107,32 @@ public interface WbApiEventRepository extends JpaRepository<WbApiEvent, Long> {
 
     long countByStatus(WbApiEventStatus status);
 
+    /**
+     * Массовая отмена активных событий кабинета (очередь при мёртвом токене).
+     *
+     * @return число обновлённых строк
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update WbApiEvent e
+               set e.status = :cancelledStatus,
+                   e.lastError = :reason,
+                   e.finishedAt = :now,
+                   e.updatedAt = :now,
+                   e.startedAt = null
+             where e.cabinet.id = :cabinetId
+               and e.status in :activeStatuses
+               and (:excludeEventId is null or e.id <> :excludeEventId)
+            """)
+    int cancelActiveForCabinet(
+            @Param("cabinetId") Long cabinetId,
+            @Param("activeStatuses") Collection<WbApiEventStatus> activeStatuses,
+            @Param("cancelledStatus") WbApiEventStatus cancelledStatus,
+            @Param("reason") String reason,
+            @Param("now") LocalDateTime now,
+            @Param("excludeEventId") Long excludeEventId
+    );
+
     @Query("""
             select e.eventType, count(e)
               from WbApiEvent e

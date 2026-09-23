@@ -13,12 +13,15 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 import ru.oparin.solution.config.WbEventsProperties;
 import ru.oparin.solution.exception.WbRateLimitDeferException;
+import ru.oparin.solution.model.Cabinet;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.model.WbApiEventType;
 import ru.oparin.solution.repository.WbProductCardRepository;
+import ru.oparin.solution.service.CabinetIntegrationMirrorService;
 import ru.oparin.solution.service.events.payload.WbAnalyticsSalesFunnelPayload;
 import ru.oparin.solution.service.events.payload.WbStocksByNmIdPayload;
 import ru.oparin.solution.service.wb.WbApiEventAttemptContext;
+import ru.oparin.solution.util.WbTokenAuthErrors;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -35,6 +38,7 @@ public class WbApiEventDispatcher {
     private final ApplicationContext applicationContext;
     private final WbEventsProperties wbEventsProperties;
     private final WbProductCardRepository productCardRepository;
+    private final CabinetIntegrationMirrorService cabinetIntegrationMirrorService;
     @Qualifier("cabinetUpdateExecutor")
     private final ThreadPoolTaskExecutor cabinetUpdateExecutor;
 
@@ -309,6 +313,9 @@ public class WbApiEventDispatcher {
             return EventExecutionOutcome.TIMEOUT;
         }
         try {
+            if (failFastIfApiKeyInvalid(event)) {
+                return resolveOutcomeAfterRunning(event.getId(), EventExecutionOutcome.EXECUTED);
+            }
             LocalDateTime deferUntil = rateLimitService.acquireOrDefer(event);
             if (deferUntil != null) {
                 eventService.markFailed(
@@ -343,9 +350,28 @@ public class WbApiEventDispatcher {
                 return resolveOutcomeAfterRunning(event.getId(), EventExecutionOutcome.DEFERRED_RATE_LIMIT);
             }
             log.error("Ошибка выполнения WB API события id={}, type={}: {}", event.getId(), event.getEventType(), e.getMessage(), e);
-            eventService.markFailedIfRunning(event.getId(), WbApiEventExecutionResult.retryableError(e.getMessage()));
+            eventService.markFailedIfRunning(event.getId(), WbEventExecutionErrors.wrapDeferOrRetryable(e));
             return resolveOutcomeAfterRunning(event.getId(), EventExecutionOutcome.EXECUTED);
         }
+    }
+
+    /**
+     * Кабинет с {@code is_valid=false}: не ходим в WB, событие → FAILED_FINAL, очередь снимаем.
+     */
+    private boolean failFastIfApiKeyInvalid(WbApiEvent event) {
+        Cabinet cabinet = event.getCabinet();
+        if (cabinet == null) {
+            return false;
+        }
+        cabinetIntegrationMirrorService.overlayOntoCabinet(cabinet);
+        if (!Boolean.FALSE.equals(cabinet.getIsValid())) {
+            return false;
+        }
+        eventService.markFailed(
+                event,
+                WbApiEventExecutionResult.finalError(WbTokenAuthErrors.INVALID_KEY_USER_MESSAGE)
+        );
+        return true;
     }
 
     private EventExecutionOutcome resolveOutcomeAfterRunning(long eventId, EventExecutionOutcome outcome) {

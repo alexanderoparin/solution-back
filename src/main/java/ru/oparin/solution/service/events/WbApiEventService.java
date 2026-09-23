@@ -396,6 +396,14 @@ public class WbApiEventService {
     }
 
     /**
+     * Снимает активную очередь кабинета при невалидном токене.
+     */
+    @Transactional
+    public int cancelActiveEventsForCabinet(Long cabinetId, Long excludeEventId, String reason) {
+        return queueService.cancelActiveEventsForCabinet(cabinetId, excludeEventId, reason);
+    }
+
+    /**
      * Обрабатывает ошибку выполнения: retry, defer rate-limit или финальный статус.
      */
     @Transactional

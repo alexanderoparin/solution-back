@@ -727,6 +727,29 @@ public class CabinetService {
     }
 
     /**
+     * Помечает WB API-ключ кабинета невалидным ({@code cabinet_integrations.is_valid = false}).
+     */
+    @Transactional
+    public void markWbApiKeyInvalid(Long cabinetId, String validationError) {
+        Cabinet cabinet = findById(cabinetId).orElse(null);
+        if (cabinet == null) {
+            return;
+        }
+        String error = validationError != null && !validationError.isBlank()
+                ? validationError
+                : "API-ключ невалиден или истек. Проверьте правильность ключа и его срок действия.";
+        if (Boolean.FALSE.equals(cabinet.getIsValid())
+                && error.equals(cabinet.getValidationError())) {
+            return;
+        }
+        cabinet.setIsValid(false);
+        cabinet.setValidationError(error);
+        cabinet.setLastValidatedAt(LocalDateTime.now());
+        save(cabinet);
+        log.warn("WB API-ключ кабинета {} помечен невалидным: {}", cabinetId, error);
+    }
+
+    /**
      * Находит кабинет по ID (без проверки владельца).
      */
     @Transactional(readOnly = true)
