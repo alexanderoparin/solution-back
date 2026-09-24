@@ -21,10 +21,8 @@ public class WbCampaignStartBudgetGuard {
 
     /**
      * Минимальный остаток бюджета WB (₽), при котором разрешаем автозапуск по расписанию.
-     * Остаток 1–49 ₽ WB иногда принимает как старт, но кампания сразу «мёртвая» —
-     * у нас при этом ошибочно остаётся статус «запущена».
      */
-    public static final int MIN_BUDGET_TO_START_RUB = 50;
+    public static final int MIN_BUDGET_TO_START_RUB = 1;
 
     /** Сообщение для пользователя и журнала при отсутствии бюджета. */
     public static final String NO_BUDGET_USER_MESSAGE = "нет бюджета для запуска";
