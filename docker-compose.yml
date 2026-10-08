@@ -20,7 +20,8 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       # JWT
       - JWT_SECRET=${JWT_SECRET}
-      - JWT_EXPIRATION=${JWT_EXPIRATION:-86400000}
+      # 28 суток в мс. 86400000 = 1 сутки — из-за этого клиенты логинились каждый день.
+      - JWT_EXPIRATION=${JWT_EXPIRATION:-2419200000}
       # Точка Банк (интернет-эквайринг)
       - TOCHKA_ENABLED=${TOCHKA_ENABLED:-true}
       - TOCHKA_SANDBOX=${TOCHKA_SANDBOX:-false}
