@@ -70,6 +70,24 @@ public class WbSaleFunnelResponse {
         private BigDecimal ordersSumRub;
 
         /**
+         * Выкупили товаров, шт.
+         */
+        @JsonProperty("buyoutsCount")
+        private Integer buyoutsCount;
+
+        /**
+         * Выкупили на сумму, руб.
+         */
+        @JsonProperty("buyoutsSumRub")
+        private BigDecimal buyoutsSumRub;
+
+        /**
+         * Процент выкупа, %.
+         */
+        @JsonProperty("buyoutPercent")
+        private BigDecimal buyoutPercent;
+
+        /**
          * Конверсия из переходов в корзину, %.
          */
         @JsonProperty("addToCartConversion")

@@ -76,6 +76,24 @@ public class WbProductCardAnalytics {
     private BigDecimal ordersSum;
 
     /**
+     * Выкупили товаров, шт.
+     */
+    @Column(name = "buyouts")
+    private Integer buyouts;
+
+    /**
+     * Выкупили на сумму, руб.
+     */
+    @Column(name = "buyouts_sum", precision = 19, scale = 2)
+    private BigDecimal buyoutsSum;
+
+    /**
+     * Процент выкупа, %.
+     */
+    @Column(name = "buyout_percent", precision = 10, scale = 4)
+    private BigDecimal buyoutPercent;
+
+    /**
      * Дата создания записи.
      */
     @CreatedDate

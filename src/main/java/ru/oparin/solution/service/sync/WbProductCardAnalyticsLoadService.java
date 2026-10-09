@@ -147,6 +147,9 @@ public class WbProductCardAnalyticsLoadService {
         analytics.setAddToCart(dailyData.getAddToCartCount());
         analytics.setOrders(dailyData.getOrdersCount());
         analytics.setOrdersSum(dailyData.getOrdersSumRub());
+        analytics.setBuyouts(dailyData.getBuyoutsCount());
+        analytics.setBuyoutsSum(dailyData.getBuyoutsSumRub());
+        analytics.setBuyoutPercent(dailyData.getBuyoutPercent());
         analyticsRepository.save(analytics);
 
         return existing.isEmpty();

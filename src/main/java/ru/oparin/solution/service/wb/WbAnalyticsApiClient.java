@@ -246,6 +246,9 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
                         .addToCartCount(item.getCartCount())
                         .ordersCount(item.getOrderCount())
                         .ordersSumRub(item.getOrderSum())
+                        .buyoutsCount(item.getBuyoutCount())
+                        .buyoutsSumRub(item.getBuyoutSum())
+                        .buyoutPercent(item.getBuyoutPercent())
                         .addToCartConversion(item.getAddToCartConversion())
                         .cartToOrderConversion(item.getCartToOrderConversion())
                         .build();

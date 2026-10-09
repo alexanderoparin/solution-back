@@ -45,6 +45,21 @@ public interface WbPromotionNormQueryStatisticsRepository
             @Param("nmId") Long nmId
     );
 
+    /**
+     * Строки normquery по артикулу кабинета за период (для средней позиции).
+     */
+    @Query("SELECT s FROM WbPromotionNormQueryStatistics s "
+            + "WHERE s.nmId = :nmId "
+            + "AND s.campaign.cabinet.id = :cabinetId "
+            + "AND s.date BETWEEN :dateFrom AND :dateTo "
+            + "AND s.avgPos IS NOT NULL")
+    List<WbPromotionNormQueryStatistics> findByCabinetIdAndNmIdAndDateBetweenWithAvgPos(
+            @Param("cabinetId") Long cabinetId,
+            @Param("nmId") Long nmId,
+            @Param("dateFrom") LocalDate dateFrom,
+            @Param("dateTo") LocalDate dateTo
+    );
+
     interface NormQueryClusterAggregateRow {
         String getNormQuery();
 

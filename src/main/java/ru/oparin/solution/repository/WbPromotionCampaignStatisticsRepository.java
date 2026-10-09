@@ -103,6 +103,20 @@ public interface WbPromotionCampaignStatisticsRepository extends JpaRepository<W
     );
 
     /**
+     * Статистика рекламы по артикулу кабинета за период (все РК).
+     */
+    @Query("SELECT s FROM WbPromotionCampaignStatistics s "
+            + "WHERE s.nmId = :nmId "
+            + "AND s.campaign.cabinet.id = :cabinetId "
+            + "AND s.date BETWEEN :dateFrom AND :dateTo")
+    List<WbPromotionCampaignStatistics> findByCabinetIdAndNmIdAndDateBetween(
+            @Param("cabinetId") Long cabinetId,
+            @Param("nmId") Long nmId,
+            @Param("dateFrom") LocalDate dateFrom,
+            @Param("dateTo") LocalDate dateTo
+    );
+
+    /**
      * Статистика по артикулу в рамках одной рекламной кампании за период.
      */
     @Query("SELECT s FROM WbPromotionCampaignStatistics s "
