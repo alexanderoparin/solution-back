@@ -103,17 +103,15 @@ public class AdminPromoCodeService {
         requireAdmin(admin);
         PromoCode promo = promoCodeRepository.findById(promoId)
                 .orElseThrow(() -> new UserException("Промокод не найден", HttpStatus.NOT_FOUND));
-        boolean previousActive = promo.isActive();
         promo.setActive(active);
         PromoCode saved = promoCodeRepository.save(promo);
         log.info(
-                "Админ id={} email={} {} промокод id={} code={} (было active={})",
+                "Админ id={} email={} {} промокод id={} code={}",
                 admin.getId(),
                 admin.getEmail(),
                 active ? "включил" : "выключил",
                 saved.getId(),
-                saved.getCode(),
-                previousActive);
+                saved.getCode());
         return toPromoDto(saved);
     }
 
