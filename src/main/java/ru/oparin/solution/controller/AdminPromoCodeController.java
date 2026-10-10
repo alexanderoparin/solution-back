@@ -6,10 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-import ru.oparin.solution.dto.CreatePromoCodeRequest;
-import ru.oparin.solution.dto.PageResponse;
-import ru.oparin.solution.dto.PromoCodeAdminDto;
-import ru.oparin.solution.dto.PromoCodeRedemptionAdminDto;
+import ru.oparin.solution.dto.*;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.service.AdminPromoCodeService;
 import ru.oparin.solution.service.UserService;
@@ -46,6 +43,19 @@ public class AdminPromoCodeController {
         User admin = currentAdmin();
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(adminPromoCodeService.createPromoCode(admin, request));
+    }
+
+    /**
+     * Включение или выключение промокода.
+     */
+    @PatchMapping("/{promoId}/active")
+    public ResponseEntity<PromoCodeAdminDto> setActive(
+            @PathVariable Long promoId,
+            @Valid @RequestBody SetPromoCodeActiveRequest request
+    ) {
+        User admin = currentAdmin();
+        return ResponseEntity.ok(
+                adminPromoCodeService.setActive(admin, promoId, Boolean.TRUE.equals(request.getActive())));
     }
 
     /**

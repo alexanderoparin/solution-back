@@ -1,6 +1,7 @@
 package ru.oparin.solution.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -21,6 +22,7 @@ import java.util.List;
 /**
  * Админ-операции с промокодами и активациями.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AdminPromoCodeService {
@@ -57,22 +59,61 @@ public class AdminPromoCodeService {
         if (request.getValidFrom() != null
                 && request.getValidTo() != null
                 && request.getValidTo().isBefore(request.getValidFrom())) {
-            throw new UserException("Дата окончания не может быть раньше даты начала", HttpStatus.BAD_REQUEST);
+            throw new UserException("Окончание действия не может быть раньше начала", HttpStatus.BAD_REQUEST);
         }
 
         PromoGrantType grantType = request.getGrantType() != null
                 ? request.getGrantType()
                 : PromoGrantType.FULL_ACCESS;
 
+        boolean active = request.getActive() == null || Boolean.TRUE.equals(request.getActive());
         PromoCode saved = promoCodeRepository.save(PromoCode.builder()
                 .code(normalizedCode)
                 .description(blankToNull(request.getDescription()))
                 .durationDays(request.getDurationDays())
                 .grantType(grantType)
-                .active(request.getActive() == null || Boolean.TRUE.equals(request.getActive()))
+                .active(active)
                 .validFrom(request.getValidFrom())
                 .validTo(request.getValidTo())
                 .build());
+        log.info(
+                "Админ id={} email={} создал промокод id={} code={} active={} durationDays={} grantType={} validFrom={} validTo={}",
+                admin.getId(),
+                admin.getEmail(),
+                saved.getId(),
+                saved.getCode(),
+                saved.isActive(),
+                saved.getDurationDays(),
+                saved.getGrantType(),
+                saved.getValidFrom(),
+                saved.getValidTo());
+        return toPromoDto(saved);
+    }
+
+    /**
+     * Включение или выключение промокода.
+     *
+     * @param admin   администратор
+     * @param promoId идентификатор промокода
+     * @param active  новый статус
+     * @return обновлённый промокод
+     */
+    @Transactional
+    public PromoCodeAdminDto setActive(User admin, Long promoId, boolean active) {
+        requireAdmin(admin);
+        PromoCode promo = promoCodeRepository.findById(promoId)
+                .orElseThrow(() -> new UserException("Промокод не найден", HttpStatus.NOT_FOUND));
+        boolean previousActive = promo.isActive();
+        promo.setActive(active);
+        PromoCode saved = promoCodeRepository.save(promo);
+        log.info(
+                "Админ id={} email={} {} промокод id={} code={} (было active={})",
+                admin.getId(),
+                admin.getEmail(),
+                active ? "включил" : "выключил",
+                saved.getId(),
+                saved.getCode(),
+                previousActive);
         return toPromoDto(saved);
     }
 
