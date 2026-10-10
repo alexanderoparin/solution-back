@@ -1,12 +1,12 @@
 package ru.oparin.solution.controller;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import ru.oparin.solution.dto.CreatePromoCodeRequest;
 import ru.oparin.solution.dto.PageResponse;
 import ru.oparin.solution.dto.PromoCodeAdminDto;
 import ru.oparin.solution.dto.PromoCodeRedemptionAdminDto;
@@ -32,9 +32,20 @@ public class AdminPromoCodeController {
      */
     @GetMapping
     public ResponseEntity<List<PromoCodeAdminDto>> listPromoCodes() {
-        User admin = userService.findByEmail(
-                SecurityContextHolder.getContext().getAuthentication().getName());
+        User admin = currentAdmin();
         return ResponseEntity.ok(adminPromoCodeService.listPromoCodes(admin));
+    }
+
+    /**
+     * Создание промокода.
+     */
+    @PostMapping
+    public ResponseEntity<PromoCodeAdminDto> createPromoCode(
+            @Valid @RequestBody CreatePromoCodeRequest request
+    ) {
+        User admin = currentAdmin();
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(adminPromoCodeService.createPromoCode(admin, request));
     }
 
     /**
@@ -46,8 +57,12 @@ public class AdminPromoCodeController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String code
     ) {
-        User admin = userService.findByEmail(
-                SecurityContextHolder.getContext().getAuthentication().getName());
+        User admin = currentAdmin();
         return ResponseEntity.ok(adminPromoCodeService.pageRedemptions(admin, page, size, code));
+    }
+
+    private User currentAdmin() {
+        return userService.findByEmail(
+                SecurityContextHolder.getContext().getAuthentication().getName());
     }
 }

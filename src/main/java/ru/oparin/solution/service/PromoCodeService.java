@@ -115,11 +115,7 @@ public class PromoCodeService {
     }
 
     private void validateUserCanRedeem(PromoCode promo, Long userId) {
-        if (promo.getMaxRedemptionsPerUser() != null && promo.getMaxRedemptionsPerUser() <= 0) {
-            throw new UserException("Промокод недоступен для активации", HttpStatus.BAD_REQUEST);
-        }
-        if (promo.getMaxRedemptionsPerUser() != null
-                && redemptionRepository.existsByUser_IdAndPromoCode_Id(userId, promo.getId())) {
+        if (redemptionRepository.existsByUser_IdAndPromoCode_Id(userId, promo.getId())) {
             throw new UserException("Вы уже использовали этот промокод", HttpStatus.BAD_REQUEST);
         }
     }

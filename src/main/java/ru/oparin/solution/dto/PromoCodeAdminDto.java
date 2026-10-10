@@ -22,7 +22,6 @@ public class PromoCodeAdminDto {
     private Integer durationDays;
     private String grantType;
     private boolean active;
-    private Integer maxRedemptionsPerUser;
     private Integer maxRedemptionsTotal;
     private LocalDateTime validFrom;
     private LocalDateTime validTo;
