@@ -7,7 +7,6 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.oparin.solution.model.PromoCodeRedemption;
-import ru.oparin.solution.model.PromoGrantType;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -28,43 +27,40 @@ public interface PromoCodeRedemptionRepository extends JpaRepository<PromoCodeRe
     @Query("DELETE FROM PromoCodeRedemption r WHERE r.user.id = :userId")
     void deleteByUserId(@Param("userId") Long userId);
 
+    /**
+     * Есть ли у пользователя хотя бы одна неистёкшая активация промокода.
+     */
     @Query("""
             SELECT CASE WHEN COUNT(r) > 0 THEN true ELSE false END
             FROM PromoCodeRedemption r
-            JOIN r.promoCode p
             WHERE r.user.id = :userId
-              AND p.grantType = :grantType
               AND r.expiresAt > :now
             """)
-    boolean existsActiveFullAccess(@Param("userId") Long userId,
-                                   @Param("grantType") PromoGrantType grantType,
-                                   @Param("now") LocalDateTime now);
+    boolean existsActiveByUserId(@Param("userId") Long userId, @Param("now") LocalDateTime now);
 
     /**
-     * Native fallback: активный FULL_ACCESS (на случай расхождения enum/JPQL и TIMESTAMP в PostgreSQL).
+     * Native fallback на случай расхождения JPQL и TIMESTAMP в PostgreSQL.
      */
     @Query(value = """
             SELECT COUNT(*) > 0
             FROM promo_code_redemptions r
-            INNER JOIN promo_codes p ON p.id = r.promo_code_id
             WHERE r.user_id = :userId
-              AND p.grant_type = 'FULL_ACCESS'
               AND r.expires_at > :now
             """, nativeQuery = true)
-    boolean existsActiveFullAccessNative(@Param("userId") Long userId,
-                                         @Param("now") LocalDateTime now);
+    boolean existsActiveByUserIdNative(@Param("userId") Long userId, @Param("now") LocalDateTime now);
 
+    /**
+     * Последняя активная активация промокода пользователя.
+     */
     @Query("""
             SELECT r FROM PromoCodeRedemption r
             JOIN FETCH r.promoCode p
             WHERE r.user.id = :userId
-              AND p.grantType = :grantType
               AND r.expiresAt > :now
             ORDER BY r.expiresAt DESC
             """)
-    Optional<PromoCodeRedemption> findFirstActiveByUserIdAndGrantType(
+    Optional<PromoCodeRedemption> findFirstActiveByUserId(
             @Param("userId") Long userId,
-            @Param("grantType") PromoGrantType grantType,
             @Param("now") LocalDateTime now);
 
     @Query("""

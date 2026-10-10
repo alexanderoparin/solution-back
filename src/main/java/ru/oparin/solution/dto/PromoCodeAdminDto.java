@@ -20,7 +20,6 @@ public class PromoCodeAdminDto {
     private String code;
     private String description;
     private Integer durationDays;
-    private String grantType;
     private boolean active;
     private LocalDateTime validFrom;
     private LocalDateTime validTo;

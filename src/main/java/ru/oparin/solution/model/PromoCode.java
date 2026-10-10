@@ -35,10 +35,6 @@ public class PromoCode {
     @Column(name = "duration_days", nullable = false)
     private Integer durationDays;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "grant_type", nullable = false, length = 32)
-    private PromoGrantType grantType;
-
     @Column(nullable = false)
     private boolean active;
 

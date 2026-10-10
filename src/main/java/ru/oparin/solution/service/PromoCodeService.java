@@ -5,7 +5,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.*;
+import ru.oparin.solution.model.PromoCode;
+import ru.oparin.solution.model.PromoCodeRedemption;
+import ru.oparin.solution.model.PromoRedemptionSource;
+import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.PromoCodeRedemptionRepository;
 import ru.oparin.solution.repository.PromoCodeRepository;
 import ru.oparin.solution.repository.UserRepository;
@@ -56,30 +59,29 @@ public class PromoCodeService {
     }
 
     /**
-     * Есть ли у пользователя активный промо-доступ типа FULL_ACCESS.
+     * Есть ли у пользователя активный (неистёкший) промо-доступ.
      */
     @Transactional(readOnly = true)
-    public boolean hasActiveFullAccess(Long userId) {
+    public boolean hasActivePromo(Long userId) {
         if (userId == null) {
             return false;
         }
         LocalDateTime now = LocalDateTime.now();
-        if (redemptionRepository.existsActiveFullAccess(userId, PromoGrantType.FULL_ACCESS, now)) {
+        if (redemptionRepository.existsActiveByUserId(userId, now)) {
             return true;
         }
-        return redemptionRepository.existsActiveFullAccessNative(userId, now);
+        return redemptionRepository.existsActiveByUserIdNative(userId, now);
     }
 
     /**
-     * Активная активация FULL_ACCESS для профиля или админки.
+     * Активная активация промокода для профиля или админки.
      */
     @Transactional(readOnly = true)
-    public Optional<PromoCodeRedemption> findActiveFullAccessRedemption(Long userId) {
+    public Optional<PromoCodeRedemption> findActiveRedemption(Long userId) {
         if (userId == null) {
             return Optional.empty();
         }
-        return redemptionRepository.findFirstActiveByUserIdAndGrantType(
-                userId, PromoGrantType.FULL_ACCESS, LocalDateTime.now());
+        return redemptionRepository.findFirstActiveByUserId(userId, LocalDateTime.now());
     }
 
     /**

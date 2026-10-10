@@ -12,7 +12,10 @@ import ru.oparin.solution.dto.PageResponse;
 import ru.oparin.solution.dto.PromoCodeAdminDto;
 import ru.oparin.solution.dto.PromoCodeRedemptionAdminDto;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.*;
+import ru.oparin.solution.model.PromoCode;
+import ru.oparin.solution.model.PromoCodeRedemption;
+import ru.oparin.solution.model.Role;
+import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.PromoCodeRedemptionRepository;
 import ru.oparin.solution.repository.PromoCodeRepository;
 
@@ -62,29 +65,23 @@ public class AdminPromoCodeService {
             throw new UserException("Окончание действия не может быть раньше начала", HttpStatus.BAD_REQUEST);
         }
 
-        PromoGrantType grantType = request.getGrantType() != null
-                ? request.getGrantType()
-                : PromoGrantType.FULL_ACCESS;
-
         boolean active = request.getActive() == null || Boolean.TRUE.equals(request.getActive());
         PromoCode saved = promoCodeRepository.save(PromoCode.builder()
                 .code(normalizedCode)
                 .description(blankToNull(request.getDescription()))
                 .durationDays(request.getDurationDays())
-                .grantType(grantType)
                 .active(active)
                 .validFrom(request.getValidFrom())
                 .validTo(request.getValidTo())
                 .build());
         log.info(
-                "Админ id={} email={} создал промокод id={} code={} active={} durationDays={} grantType={} validFrom={} validTo={}",
+                "Админ id={} email={} создал промокод id={} code={} active={} durationDays={} validFrom={} validTo={}",
                 admin.getId(),
                 admin.getEmail(),
                 saved.getId(),
                 saved.getCode(),
                 saved.isActive(),
                 saved.getDurationDays(),
-                saved.getGrantType(),
                 saved.getValidFrom(),
                 saved.getValidTo());
         return toPromoDto(saved);
@@ -164,7 +161,6 @@ public class AdminPromoCodeService {
                 .code(promo.getCode())
                 .description(promo.getDescription())
                 .durationDays(promo.getDurationDays())
-                .grantType(promo.getGrantType().name())
                 .active(promo.isActive())
                 .validFrom(promo.getValidFrom())
                 .validTo(promo.getValidTo())

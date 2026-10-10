@@ -4,7 +4,6 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
-import ru.oparin.solution.model.PromoGrantType;
 
 import java.time.LocalDateTime;
 
@@ -29,10 +28,6 @@ public class CreatePromoCodeRequest {
     @NotNull(message = "Укажите срок действия в днях")
     @Min(value = 1, message = "Срок действия должен быть не меньше 1 дня")
     private Integer durationDays;
-
-    /** Тип выдаваемого доступа. */
-    @Builder.Default
-    private PromoGrantType grantType = PromoGrantType.FULL_ACCESS;
 
     /** Доступен ли код для активации. */
     @Builder.Default

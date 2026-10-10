@@ -254,7 +254,7 @@ public class WbCampaignManageAccessService {
                     .build();
         }
         Optional<PromoCodeRedemption> promo = holder != null
-                ? promoCodeService.findActiveFullAccessRedemption(holder.getId())
+                ? promoCodeService.findActiveRedemption(holder.getId())
                 : Optional.empty();
         if (promo.isPresent()) {
             LocalDateTime expiresAt = promo.get().getExpiresAt();

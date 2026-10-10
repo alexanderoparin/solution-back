@@ -5,7 +5,6 @@ CREATE TABLE IF NOT EXISTS solution.promo_codes (
     code                    VARCHAR(64) NOT NULL,
     description             TEXT,
     duration_days           INT NOT NULL,
-    grant_type              VARCHAR(32) NOT NULL,
     active                  BOOLEAN NOT NULL DEFAULT TRUE,
     valid_from              TIMESTAMP,
     valid_to                TIMESTAMP,
@@ -16,7 +15,6 @@ CREATE TABLE IF NOT EXISTS solution.promo_codes (
 COMMENT ON TABLE solution.promo_codes IS 'Справочник промокодов';
 COMMENT ON COLUMN solution.promo_codes.code IS 'Код промо (хранится в верхнем регистре)';
 COMMENT ON COLUMN solution.promo_codes.duration_days IS 'Срок доступа в днях с момента активации';
-COMMENT ON COLUMN solution.promo_codes.grant_type IS 'Тип доступа: FULL_ACCESS и др.';
 COMMENT ON COLUMN solution.promo_codes.active IS 'Промокод доступен для активации';
 COMMENT ON COLUMN solution.promo_codes.valid_from IS 'Начало периода, когда код можно ввести';
 COMMENT ON COLUMN solution.promo_codes.valid_to IS 'Конец периода, когда код можно ввести';
@@ -39,12 +37,11 @@ COMMENT ON COLUMN solution.promo_code_redemptions.source IS 'Контекст а
 CREATE INDEX IF NOT EXISTS idx_promo_code_redemptions_user_id ON solution.promo_code_redemptions (user_id);
 CREATE INDEX IF NOT EXISTS idx_promo_code_redemptions_expires_at ON solution.promo_code_redemptions (expires_at);
 
-INSERT INTO solution.promo_codes (code, description, duration_days, grant_type, active)
+INSERT INTO solution.promo_codes (code, description, duration_days, active)
 VALUES (
     'FOCUS',
     'Фокус-группа менеджеров: полный доступ 14 дней',
     14,
-    'FULL_ACCESS',
     TRUE
 )
 ON CONFLICT (code) DO NOTHING;

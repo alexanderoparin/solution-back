@@ -12,7 +12,7 @@ import java.util.Optional;
 
 /**
  * Entitlement кабинета: PRO / agency → полный доступ; иначе услуги по подпискам кабинета.
- * Промокод FULL_ACCESS учитывается только у владельца кабинета.
+ * Активный промокод учитывается только у владельца кабинета.
  */
 @Service
 @RequiredArgsConstructor
@@ -36,7 +36,7 @@ public class CabinetEntitlementService {
         if (owner != null && Boolean.TRUE.equals(owner.getAgencyManaged())) {
             return true;
         }
-        if (owner != null && promoCodeService.hasActiveFullAccess(owner.getId())) {
+        if (owner != null && promoCodeService.hasActivePromo(owner.getId())) {
             return true;
         }
         return findActiveMainSubscription(cabinet)
@@ -102,14 +102,14 @@ public class CabinetEntitlementService {
     }
 
     /**
-     * Активная активация промокода FULL_ACCESS у владельца кабинета.
+     * Активная активация промокода у владельца кабинета.
      */
     @Transactional(readOnly = true)
     public Optional<PromoCodeRedemption> findActivePromoForCabinet(Cabinet cabinet) {
         if (cabinet == null || cabinet.getUser() == null || cabinet.getUser().getId() == null) {
             return Optional.empty();
         }
-        return promoCodeService.findActiveFullAccessRedemption(cabinet.getUser().getId());
+        return promoCodeService.findActiveRedemption(cabinet.getUser().getId());
     }
 
     /**

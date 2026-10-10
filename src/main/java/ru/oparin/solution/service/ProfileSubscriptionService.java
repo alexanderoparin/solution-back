@@ -27,13 +27,13 @@ public class ProfileSubscriptionService {
     private final PromoCodeService promoCodeService;
 
     /**
-     * Краткая сводка для профиля: активный промокод FULL_ACCESS, иначе тарифы смотрите у кабинета.
+     * Краткая сводка для профиля: активный промокод, иначе тарифы смотрите у кабинета.
      * Бесплатный доступ создаётся вместе с кабинетом, не на пользователе.
      */
     @Transactional(readOnly = true)
     public ProfileSubscriptionSummaryDto buildSummary(User user) {
         Optional<PromoCodeRedemption> promo = user != null && user.getId() != null
-                ? promoCodeService.findActiveFullAccessRedemption(user.getId())
+                ? promoCodeService.findActiveRedemption(user.getId())
                 : Optional.empty();
         if (promo.isPresent()) {
             String code = promo.get().getPromoCode().getCode();
