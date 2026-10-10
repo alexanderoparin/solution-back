@@ -42,9 +42,6 @@ public class PromoCode {
     @Column(nullable = false)
     private boolean active;
 
-    @Column(name = "max_redemptions_total")
-    private Integer maxRedemptionsTotal;
-
     @Column(name = "valid_from")
     private LocalDateTime validFrom;
 

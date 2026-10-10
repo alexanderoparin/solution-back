@@ -59,9 +59,6 @@ public class AdminPromoCodeService {
                 && request.getValidTo().isBefore(request.getValidFrom())) {
             throw new UserException("Дата окончания не может быть раньше даты начала", HttpStatus.BAD_REQUEST);
         }
-        if (request.getMaxRedemptionsTotal() != null && request.getMaxRedemptionsTotal() < 1) {
-            throw new UserException("Общий лимит активаций должен быть не меньше 1", HttpStatus.BAD_REQUEST);
-        }
 
         PromoGrantType grantType = request.getGrantType() != null
                 ? request.getGrantType()
@@ -73,7 +70,6 @@ public class AdminPromoCodeService {
                 .durationDays(request.getDurationDays())
                 .grantType(grantType)
                 .active(request.getActive() == null || Boolean.TRUE.equals(request.getActive()))
-                .maxRedemptionsTotal(request.getMaxRedemptionsTotal())
                 .validFrom(request.getValidFrom())
                 .validTo(request.getValidTo())
                 .build());
@@ -131,7 +127,6 @@ public class AdminPromoCodeService {
                 .durationDays(promo.getDurationDays())
                 .grantType(promo.getGrantType().name())
                 .active(promo.isActive())
-                .maxRedemptionsTotal(promo.getMaxRedemptionsTotal())
                 .validFrom(promo.getValidFrom())
                 .validTo(promo.getValidTo())
                 .createdAt(promo.getCreatedAt())

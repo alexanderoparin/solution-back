@@ -17,8 +17,6 @@ import java.util.Optional;
  */
 public interface PromoCodeRedemptionRepository extends JpaRepository<PromoCodeRedemption, Long> {
 
-    long countByPromoCodeId(Long promoCodeId);
-
     boolean existsByUser_IdAndPromoCode_Id(Long userId, Long promoCodeId);
 
     /**

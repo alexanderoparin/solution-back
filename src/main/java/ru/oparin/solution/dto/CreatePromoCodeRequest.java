@@ -38,9 +38,6 @@ public class CreatePromoCodeRequest {
     @Builder.Default
     private Boolean active = true;
 
-    /** Общий лимит активаций (null — без лимита). */
-    private Integer maxRedemptionsTotal;
-
     /** Начало периода, когда код можно ввести. */
     private LocalDateTime validFrom;
 

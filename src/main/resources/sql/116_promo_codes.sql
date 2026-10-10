@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS solution.promo_codes (
     duration_days           INT NOT NULL,
     grant_type              VARCHAR(32) NOT NULL,
     active                  BOOLEAN NOT NULL DEFAULT TRUE,
-    max_redemptions_total   INT,
     valid_from              TIMESTAMP,
     valid_to                TIMESTAMP,
     created_at              TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -19,7 +18,6 @@ COMMENT ON COLUMN solution.promo_codes.code IS 'Код промо (хранит�
 COMMENT ON COLUMN solution.promo_codes.duration_days IS 'Срок доступа в днях с момента активации';
 COMMENT ON COLUMN solution.promo_codes.grant_type IS 'Тип доступа: FULL_ACCESS и др.';
 COMMENT ON COLUMN solution.promo_codes.active IS 'Промокод доступен для активации';
-COMMENT ON COLUMN solution.promo_codes.max_redemptions_total IS 'Общий лимит активаций (NULL — без лимита)';
 COMMENT ON COLUMN solution.promo_codes.valid_from IS 'Начало периода, когда код можно ввести';
 COMMENT ON COLUMN solution.promo_codes.valid_to IS 'Конец периода, когда код можно ввести';
 

@@ -106,12 +106,6 @@ public class PromoCodeService {
         if (promo.getValidTo() != null && now.isAfter(promo.getValidTo())) {
             throw new UserException("Срок действия промокода истёк", HttpStatus.BAD_REQUEST);
         }
-        if (promo.getMaxRedemptionsTotal() != null) {
-            long total = redemptionRepository.countByPromoCodeId(promo.getId());
-            if (total >= promo.getMaxRedemptionsTotal()) {
-                throw new UserException("Лимит использований промокода исчерпан", HttpStatus.BAD_REQUEST);
-            }
-        }
     }
 
     private void validateUserCanRedeem(PromoCode promo, Long userId) {
