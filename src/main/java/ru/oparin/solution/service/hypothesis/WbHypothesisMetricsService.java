@@ -172,10 +172,16 @@ public class WbHypothesisMetricsService {
         }
 
         Map<WbHypothesisCriterion, BigDecimal> map = new EnumMap<>(WbHypothesisCriterion.class);
-        map.put(WbHypothesisCriterion.ORDERS, BigDecimal.valueOf(orders));
-        map.put(WbHypothesisCriterion.VIEWS, BigDecimal.valueOf(views));
+        // Нет строк аналитики за период = нет данных (null), а не ноль.
+        // Иначе «пустая» выгрузка выглядит как ухудшение (0 ↓ -N).
+        if (!funnel.isEmpty()) {
+            map.put(WbHypothesisCriterion.ORDERS, BigDecimal.valueOf(orders));
+        }
+        if (!ads.isEmpty()) {
+            map.put(WbHypothesisCriterion.VIEWS, BigDecimal.valueOf(views));
+        }
 
-        if (views > 0) {
+        if (!ads.isEmpty() && views > 0) {
             map.put(
                     WbHypothesisCriterion.CTR,
                     BigDecimal.valueOf(clicks)
@@ -183,26 +189,26 @@ public class WbHypothesisMetricsService {
                             .divide(BigDecimal.valueOf(views), SCALE, RoundingMode.HALF_UP)
             );
         }
-        if (clicks > 0) {
+        if (!ads.isEmpty() && clicks > 0) {
             map.put(
                     WbHypothesisCriterion.CPC,
                     costs.divide(BigDecimal.valueOf(clicks), SCALE, RoundingMode.HALF_UP)
             );
         }
-        if (orders > 0) {
+        if (!funnel.isEmpty() && orders > 0) {
             map.put(
                     WbHypothesisCriterion.CPO,
                     costs.divide(BigDecimal.valueOf(orders), SCALE, RoundingMode.HALF_UP)
             );
         }
-        if (ordersSum.compareTo(BigDecimal.ZERO) > 0) {
+        if (!funnel.isEmpty() && ordersSum.compareTo(BigDecimal.ZERO) > 0) {
             map.put(
                     WbHypothesisCriterion.DRR,
                     costs.multiply(BigDecimal.valueOf(100))
                             .divide(ordersSum, SCALE, RoundingMode.HALF_UP)
             );
         }
-        if (orders > 0 && buyouts > 0) {
+        if (!funnel.isEmpty() && orders > 0 && buyouts > 0) {
             map.put(
                     WbHypothesisCriterion.BUYOUT_PERCENT,
                     BigDecimal.valueOf(buyouts)
