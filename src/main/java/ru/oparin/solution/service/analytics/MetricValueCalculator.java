@@ -51,7 +51,8 @@ public class MetricValueCalculator {
             case ORDER_CONVERSION -> calculateOrderConversion(card.getNmId(), cardCabinetId, period);
             case VIEWS, CLICKS, COSTS, CPC,
                  CTR, CPO, DRR ->
-                    calculateAdvertisingMetric(metricName, period, sellerId, cardCabinetId, card.getNmId(), advertisingStatsCache);
+                    calculateAdvertisingMetric(
+                            metricName, period, sellerId, cardCabinetId, card.getNmId(), advertisingStatsCache);
             default -> null;
         };
     }
@@ -109,25 +110,19 @@ public class MetricValueCalculator {
             Long nmId,
             Map<PeriodDto, WbCampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
     ) {
-        WbCampaignStatisticsAggregator.AdvertisingStats stats;
-        if (advertisingStatsCache != null && advertisingStatsCache.containsKey(period)) {
-            stats = advertisingStatsCache.get(period);
-        } else {
-            List<Long> campaignIds = getCampaignIds(sellerId, cabinetId);
-            stats = statisticsAggregator.aggregateStats(campaignIds, period);
-        }
+        WbCampaignStatisticsAggregator.AdvertisingStats stats = resolveAdvertisingStats(
+                period, sellerId, cabinetId, nmId, advertisingStatsCache);
 
         // СРО и ДРР по тем же «Заказали»/«Заказали на сумму», что в таблице (воронка по артикулу)
         if (nmId != null && (CPO.equals(metricName) || DRR.equals(metricName))) {
-            WbCampaignStatisticsAggregator.AdvertisingStats articleStats = getAdvertisingStatsForArticle(sellerId, cabinetId, period, nmId);
-            if (articleStats != null && articleStats.sum() != null) {
+            if (stats.sum() != null) {
                 int funnelOrders = sumField(nmId, cabinetId, period, WbProductCardAnalytics::getOrders);
                 BigDecimal funnelOrdersSum = sumAmount(nmId, cabinetId, period);
                 if (CPO.equals(metricName) && funnelOrders > 0) {
-                    return MathUtils.divideSafely(articleStats.sum(), BigDecimal.valueOf(funnelOrders));
+                    return MathUtils.divideSafely(stats.sum(), BigDecimal.valueOf(funnelOrders));
                 }
                 if (DRR.equals(metricName) && funnelOrdersSum.compareTo(BigDecimal.ZERO) > 0) {
-                    return MathUtils.calculatePercentage(articleStats.sum(), funnelOrdersSum);
+                    return MathUtils.calculatePercentage(stats.sum(), funnelOrdersSum);
                 }
             }
         }
@@ -144,11 +139,24 @@ public class MetricValueCalculator {
         };
     }
 
-    private WbCampaignStatisticsAggregator.AdvertisingStats getAdvertisingStatsForArticle(Long sellerId, Long cabinetId, PeriodDto period, Long nmId) {
+    /**
+     * Для карточки артикула — только статистика этого nmId; иначе — по всем кампаниям кабинета/продавца.
+     */
+    private WbCampaignStatisticsAggregator.AdvertisingStats resolveAdvertisingStats(
+            PeriodDto period,
+            Long sellerId,
+            Long cabinetId,
+            Long nmId,
+            Map<PeriodDto, WbCampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache
+    ) {
+        if (advertisingStatsCache != null && advertisingStatsCache.containsKey(period)) {
+            return advertisingStatsCache.get(period);
+        }
+        if (nmId != null) {
+            return statisticsAggregator.aggregateStatsForArticle(cabinetId, sellerId, nmId, period);
+        }
         List<Long> campaignIds = getCampaignIds(sellerId, cabinetId);
-        Map<Long, WbCampaignStatisticsAggregator.AdvertisingStats> byArticle =
-                statisticsAggregator.aggregateStatsByArticle(campaignIds, period);
-        return byArticle.get(nmId);
+        return statisticsAggregator.aggregateStats(campaignIds, period);
     }
 
     private BigDecimal calculateCpc(WbCampaignStatisticsAggregator.AdvertisingStats stats) {
@@ -173,7 +181,6 @@ public class MetricValueCalculator {
         if (stats.sum().compareTo(BigDecimal.ZERO) == 0 || stats.ordersSum().compareTo(BigDecimal.ZERO) == 0) {
             return null;
         }
-        // ДРР (доля рекламных расходов) = (расходы / сумма заказов) * 100
         return MathUtils.calculatePercentage(stats.sum(), stats.ordersSum());
     }
 

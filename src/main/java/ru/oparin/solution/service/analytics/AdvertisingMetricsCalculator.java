@@ -46,11 +46,10 @@ public class AdvertisingMetricsCalculator {
             PeriodDto period,
             Set<Long> nmIdsFilter
     ) {
-        List<Long> campaignIds = getCampaignIds(sellerId, cabinetId);
         WbCampaignStatisticsAggregator.AdvertisingStats stats;
-        if (nmIdsFilter != null && !nmIdsFilter.isEmpty()) {
+        if (nmIdsFilter != null && !nmIdsFilter.isEmpty() && cabinetId != null) {
             Map<Long, WbCampaignStatisticsAggregator.AdvertisingStats> byArticle =
-                    statisticsAggregator.aggregateStatsByArticle(campaignIds, period);
+                    statisticsAggregator.aggregateStatsByArticles(cabinetId, nmIdsFilter, period);
             int views = 0;
             int clicks = 0;
             BigDecimal sum = BigDecimal.ZERO;
@@ -68,6 +67,7 @@ public class AdvertisingMetricsCalculator {
             }
             stats = new WbCampaignStatisticsAggregator.AdvertisingStats(views, clicks, sum, orders, ordersSum);
         } else {
+            List<Long> campaignIds = getCampaignIds(sellerId, cabinetId);
             stats = statisticsAggregator.aggregateStats(campaignIds, period);
         }
         setBasicMetrics(metrics, stats);

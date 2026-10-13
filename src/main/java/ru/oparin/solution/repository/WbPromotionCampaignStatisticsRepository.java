@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.WbPromotionCampaignStatistics;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -112,6 +113,46 @@ public interface WbPromotionCampaignStatisticsRepository extends JpaRepository<W
     List<WbPromotionCampaignStatistics> findByCabinetIdAndNmIdAndDateBetween(
             @Param("cabinetId") Long cabinetId,
             @Param("nmId") Long nmId,
+            @Param("dateFrom") LocalDate dateFrom,
+            @Param("dateTo") LocalDate dateTo
+    );
+
+    /**
+     * Статистика рекламы по артикулу продавца за период (все кабинеты/РК продавца).
+     */
+    @Query("SELECT s FROM WbPromotionCampaignStatistics s "
+            + "WHERE s.nmId = :nmId "
+            + "AND s.campaign.cabinet.user.id = :sellerId "
+            + "AND s.date BETWEEN :dateFrom AND :dateTo")
+    List<WbPromotionCampaignStatistics> findBySellerIdAndNmIdAndDateBetween(
+            @Param("sellerId") Long sellerId,
+            @Param("nmId") Long nmId,
+            @Param("dateFrom") LocalDate dateFrom,
+            @Param("dateTo") LocalDate dateTo
+    );
+
+    /**
+     * Статистика рекламы по списку артикулов кабинета за период.
+     */
+    @Query("SELECT s FROM WbPromotionCampaignStatistics s "
+            + "WHERE s.nmId IN :nmIds "
+            + "AND s.campaign.cabinet.id = :cabinetId "
+            + "AND s.date BETWEEN :dateFrom AND :dateTo")
+    List<WbPromotionCampaignStatistics> findByCabinetIdAndNmIdInAndDateBetween(
+            @Param("cabinetId") Long cabinetId,
+            @Param("nmIds") Collection<Long> nmIds,
+            @Param("dateFrom") LocalDate dateFrom,
+            @Param("dateTo") LocalDate dateTo
+    );
+
+    /**
+     * Статистика всех РК кабинета за период (для разбивки по артикулам на сводке).
+     */
+    @Query("SELECT s FROM WbPromotionCampaignStatistics s "
+            + "WHERE s.campaign.cabinet.id = :cabinetId "
+            + "AND s.date BETWEEN :dateFrom AND :dateTo")
+    List<WbPromotionCampaignStatistics> findByCabinetIdAndDateBetween(
+            @Param("cabinetId") Long cabinetId,
             @Param("dateFrom") LocalDate dateFrom,
             @Param("dateTo") LocalDate dateTo
     );

@@ -144,11 +144,16 @@ public class WbAnalyticsSummaryQuery {
                 request.getOnlyPriority(),
                 request.getOnlyInAdvertising()
         );
-        List<Long> campaignIds = campaignAnalyticsQuery.getCampaignIdsForCabinet(seller.getId(), cabinetId);
-
         Map<PeriodDto, Map<Long, WbCampaignStatisticsAggregator.AdvertisingStats>> statsByPeriodByArticle = new HashMap<>();
         for (PeriodDto period : periods) {
-            statsByPeriodByArticle.put(period, campaignStatisticsAggregator.aggregateStatsByArticle(campaignIds, period));
+            if (cabinetId != null) {
+                statsByPeriodByArticle.put(
+                        period, campaignStatisticsAggregator.aggregateStatsByArticleForCabinet(cabinetId, period));
+            } else {
+                List<Long> campaignIds = campaignAnalyticsQuery.getCampaignIdsForCabinet(seller.getId(), null);
+                statsByPeriodByArticle.put(
+                        period, campaignStatisticsAggregator.aggregateStatsByArticle(campaignIds, period));
+            }
         }
         Map<PeriodDto, Map<Long, BigDecimal>> funnelOrdersAmountByPeriodByArticle =
                 MetricNames.DRR.equals(metricName)

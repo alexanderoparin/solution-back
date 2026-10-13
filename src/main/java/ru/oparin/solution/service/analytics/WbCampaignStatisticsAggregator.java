@@ -8,6 +8,8 @@ import ru.oparin.solution.model.WbPromotionCampaignStatistics;
 import ru.oparin.solution.repository.WbPromotionCampaignStatisticsRepository;
 
 import java.math.BigDecimal;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -26,13 +28,14 @@ public class WbCampaignStatisticsAggregator {
      * Агрегирует статистику кампаний за период.
      */
     public AdvertisingStats aggregateStats(List<Long> campaignIds, PeriodDto period) {
-        // Оптимизированный запрос: получаем статистику для всех кампаний одним запросом
+        if (campaignIds == null || campaignIds.isEmpty()) {
+            return emptyStats();
+        }
         List<WbPromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
                 campaignIds,
                 period.getDateFrom(),
                 period.getDateTo()
         );
-        
         return aggregateCampaignStatistics(allStats);
     }
 
@@ -45,21 +48,81 @@ public class WbCampaignStatisticsAggregator {
                 period.getDateFrom(),
                 period.getDateTo()
         );
-        
         return aggregateCampaignStatistics(stats);
     }
 
     /**
-     * Агрегирует статистику по артикулам (nmId) за период: по каждому артикулу суммируются данные
-     * по всем кампаниям из campaignIds.
+     * Статистика рекламы одного артикула за период (по кабинету или продавцу).
+     * Без загрузки всех кампаний кабинета.
      */
+    public AdvertisingStats aggregateStatsForArticle(Long cabinetId, Long sellerId, Long nmId, PeriodDto period) {
+        if (nmId == null || period == null) {
+            return emptyStats();
+        }
+        List<WbPromotionCampaignStatistics> stats;
+        if (cabinetId != null) {
+            stats = campaignStatisticsRepository.findByCabinetIdAndNmIdAndDateBetween(
+                    cabinetId, nmId, period.getDateFrom(), period.getDateTo());
+        } else if (sellerId != null) {
+            stats = campaignStatisticsRepository.findBySellerIdAndNmIdAndDateBetween(
+                    sellerId, nmId, period.getDateFrom(), period.getDateTo());
+        } else {
+            return emptyStats();
+        }
+        return aggregateCampaignStatistics(stats);
+    }
+
+    /**
+     * Агрегирует статистику по артикулам кабинета за период.
+     */
+    public Map<Long, AdvertisingStats> aggregateStatsByArticleForCabinet(Long cabinetId, PeriodDto period) {
+        if (cabinetId == null || period == null) {
+            return Collections.emptyMap();
+        }
+        List<WbPromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCabinetIdAndDateBetween(
+                cabinetId, period.getDateFrom(), period.getDateTo());
+        return groupByArticle(allStats);
+    }
+
+    /**
+     * Агрегирует статистику по указанным артикулам кабинета за период.
+     */
+    public Map<Long, AdvertisingStats> aggregateStatsByArticles(
+            Long cabinetId,
+            Collection<Long> nmIds,
+            PeriodDto period
+    ) {
+        if (cabinetId == null || nmIds == null || nmIds.isEmpty() || period == null) {
+            return Collections.emptyMap();
+        }
+        List<WbPromotionCampaignStatistics> allStats =
+                campaignStatisticsRepository.findByCabinetIdAndNmIdInAndDateBetween(
+                        cabinetId, nmIds, period.getDateFrom(), period.getDateTo());
+        return groupByArticle(allStats);
+    }
+
+    /**
+     * Агрегирует статистику по артикулам за период: по каждому артикулу суммируются данные
+     * по всем кампаниям из campaignIds.
+     *
+     * @deprecated предпочтительнее {@link #aggregateStatsByArticleForCabinet} / {@link #aggregateStatsByArticles}
+     */
+    @Deprecated
     public Map<Long, AdvertisingStats> aggregateStatsByArticle(List<Long> campaignIds, PeriodDto period) {
+        if (campaignIds == null || campaignIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
         List<WbPromotionCampaignStatistics> allStats = campaignStatisticsRepository.findByCampaignAdvertIdInAndDateBetween(
                 campaignIds,
                 period.getDateFrom(),
                 period.getDateTo()
         );
+        return groupByArticle(allStats);
+    }
+
+    private Map<Long, AdvertisingStats> groupByArticle(List<WbPromotionCampaignStatistics> allStats) {
         return allStats.stream()
+                .filter(s -> s.getNmId() != null)
                 .collect(Collectors.groupingBy(WbPromotionCampaignStatistics::getNmId))
                 .entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> aggregateCampaignStatistics(e.getValue())));
@@ -87,6 +150,10 @@ public class WbCampaignStatisticsAggregator {
         return new AdvertisingStats(views, clicks, sum, orders, ordersSum);
     }
 
+    private static AdvertisingStats emptyStats() {
+        return new AdvertisingStats(0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO);
+    }
+
     /**
      * Статистика рекламы.
      */
@@ -99,4 +166,3 @@ public class WbCampaignStatisticsAggregator {
     ) {
     }
 }
-

@@ -84,7 +84,7 @@ public class WbArticleAnalyticsQuery {
         return ArticleResponseDto.builder()
                 .article(mapToArticleDetail(card, itemRatingSupported))
                 .periods(periods)
-                .metrics(calculateAllMetrics(card, periods, seller.getId(), cardCabinetId))
+                .metrics(calculateAllMetrics(card, periods, seller.getId(), cardCabinetId, nmId))
                 .dailyData(dailyData)
                 .campaigns(campaignAnalyticsQuery.getCampaignsForArticle(
                         nmId, cardCabinetId, campaignDateFrom, campaignDateTo))
@@ -123,10 +123,11 @@ public class WbArticleAnalyticsQuery {
             WbProductCard card,
             List<PeriodDto> periods,
             Long sellerId,
-            Long cabinetId
+            Long cabinetId,
+            Long nmId
     ) {
         Map<PeriodDto, WbCampaignStatisticsAggregator.AdvertisingStats> advertisingStatsCache =
-                preloadAdvertisingStats(sellerId, cabinetId, periods);
+                preloadAdvertisingStats(sellerId, cabinetId, nmId, periods);
 
         List<MetricDto> metrics = new ArrayList<>();
         for (String metricName : MetricNames.getAllMetrics()) {
@@ -157,15 +158,19 @@ public class WbArticleAnalyticsQuery {
         return metrics;
     }
 
+    /**
+     * Кэш рекламной воронки только по текущему артикулу (без IN по всем РК кабинета).
+     */
     private Map<PeriodDto, WbCampaignStatisticsAggregator.AdvertisingStats> preloadAdvertisingStats(
             Long sellerId,
             Long cabinetId,
+            Long nmId,
             List<PeriodDto> periods
     ) {
-        List<Long> campaignIds = campaignAnalyticsQuery.getCampaignIdsForCabinet(sellerId, cabinetId);
         Map<PeriodDto, WbCampaignStatisticsAggregator.AdvertisingStats> cache = new HashMap<>();
         for (PeriodDto period : periods) {
-            cache.put(period, campaignStatisticsAggregator.aggregateStats(campaignIds, period));
+            cache.put(period, campaignStatisticsAggregator.aggregateStatsForArticle(
+                    cabinetId, sellerId, nmId, period));
         }
         return cache;
     }
