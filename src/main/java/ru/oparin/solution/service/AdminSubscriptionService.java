@@ -369,7 +369,7 @@ public class AdminSubscriptionService {
      * @param page   номер страницы (с 0)
      * @param size   размер страницы
      * @param email  фильтр по email (подстрока)
-     * @param status фильтр по статусу (pending/success/failed/refunded)
+     * @param status фильтр по статусу (pending/success/failed/refunded/expired)
      * @return страница платежей
      */
     @Transactional(readOnly = true)

@@ -23,8 +23,8 @@ public class PaymentScheduler {
     private final PaymentRepository paymentRepository;
 
     /**
-     * Каждый день в 06:00 помечает как неуспешные все платежи,
-     * которые находятся в ожидании более 6 часов.
+     * Каждый день в 06:00 помечает как {@link PaymentStatus#EXPIRED} все платежи,
+     * которые находятся в ожидании более 6 часов (не оплачены вовремя).
      */
     @Scheduled(cron = "0 0 6 * * ?")
     @Transactional
@@ -40,10 +40,10 @@ public class PaymentScheduler {
         }
 
         log.info("Найдено {} платежей в статусе '{}' старше 6 часов. Помечаем как '{}'.",
-                oldPendingPayments.size(), PaymentStatus.PENDING.getDbValue(), PaymentStatus.FAILED.getDbValue());
+                oldPendingPayments.size(), PaymentStatus.PENDING.getDbValue(), PaymentStatus.EXPIRED.getDbValue());
 
         for (Payment payment : oldPendingPayments) {
-            payment.setStatus(PaymentStatus.FAILED.getDbValue());
+            payment.setStatus(PaymentStatus.EXPIRED.getDbValue());
         }
 
         paymentRepository.saveAll(oldPendingPayments);
