@@ -362,6 +362,45 @@ public class AdminSubscriptionService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Постраничный список всех платежей для админки.
+     *
+     * @param admin  администратор
+     * @param page   номер страницы (с 0)
+     * @param size   размер страницы
+     * @param email  фильтр по email (подстрока)
+     * @param status фильтр по статусу (pending/success/failed/refunded)
+     * @return страница платежей
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<AdminPaymentDto> pagePayments(
+            User admin,
+            int page,
+            int size,
+            String email,
+            String status
+    ) {
+        if (admin == null || admin.getRole() != Role.ADMIN) {
+            throw new UserException("Доступ только для ADMIN", HttpStatus.FORBIDDEN);
+        }
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        String emailFilter = email != null && !email.isBlank() ? email.trim() : null;
+        String statusFilter = status != null && !status.isBlank() ? status.trim() : null;
+        PageRequest pageable = PageRequest.of(safePage, safeSize, Sort.by(Order.desc("createdAt")));
+        Page<Payment> paymentPage = paymentRepository.findAllForAdmin(emailFilter, statusFilter, pageable);
+        List<AdminPaymentDto> rows = paymentPage.getContent().stream()
+                .map(this::toAdminPaymentDto)
+                .collect(Collectors.toList());
+        return PageResponse.<AdminPaymentDto>builder()
+                .content(rows)
+                .totalElements(paymentPage.getTotalElements())
+                .totalPages(paymentPage.getTotalPages())
+                .size(paymentPage.getSize())
+                .number(paymentPage.getNumber())
+                .build();
+    }
+
     private SubscriptionDto toSubscriptionDto(Subscription s) {
         String planName = s.getPlan() != null ? s.getPlan().getName() : null;
         Long planId = s.getPlan() != null ? s.getPlan().getId() : null;
@@ -390,6 +429,25 @@ public class AdminSubscriptionService {
                 .status(p.getStatus())
                 .paidAt(p.getPaidAt())
                 .createdAt(p.getCreatedAt())
+                .build();
+    }
+
+    private AdminPaymentDto toAdminPaymentDto(Payment p) {
+        User user = p.getUser();
+        Cabinet cabinet = p.getCabinet();
+        return AdminPaymentDto.builder()
+                .id(p.getId())
+                .createdAt(p.getCreatedAt())
+                .userEmail(user != null ? user.getEmail() : null)
+                .cabinetId(cabinet != null ? cabinet.getId() : null)
+                .cabinetName(cabinet != null ? cabinet.getName() : null)
+                .planName(p.getPlanName())
+                .amount(p.getAmount())
+                .currency(p.getCurrency())
+                .status(p.getStatus())
+                .paidAt(p.getPaidAt())
+                .externalId(p.getExternalId())
+                .description(p.getDescription())
                 .build();
     }
 }

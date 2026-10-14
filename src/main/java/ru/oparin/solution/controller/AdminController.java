@@ -324,6 +324,21 @@ public class AdminController {
         return ResponseEntity.ok(adminSubscriptionService.getPaymentsByUserId(userId));
     }
 
+    /**
+     * Постраничный список всех платежей (вкладка «Платежи» в тарифах).
+     */
+    @GetMapping("/payments")
+    public ResponseEntity<PageResponse<AdminPaymentDto>> getPayments(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String email,
+            @RequestParam(required = false) String status
+    ) {
+        User admin = userService.findByEmail(
+                SecurityContextHolder.getContext().getAuthentication().getName());
+        return ResponseEntity.ok(adminSubscriptionService.pagePayments(admin, page, size, email, status));
+    }
+
     /** Ручное назначение/продление подписки кабинету. */
     @PostMapping("/subscription/extend")
     public ResponseEntity<SubscriptionDto> extendSubscription(@Valid @RequestBody ExtendSubscriptionRequest request) {
