@@ -88,6 +88,8 @@ wb:
 app:
   frontend-url: "https://click-i.ru"
   brand-name: "Clicki"
+  scheduling:
+    enabled: ${APP_SCHEDULING_ENABLED:true}
   mail:
     from: corp@click-i.ru
     audit-to: corp@click-i.ru

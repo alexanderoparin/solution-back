@@ -4,21 +4,17 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.hypothesis.WbHypothesisCriterionValueDto;
-import ru.oparin.solution.model.WbHypothesisCriterion;
-import ru.oparin.solution.model.WbProductCardAnalytics;
-import ru.oparin.solution.model.WbPromotionCampaignStatistics;
-import ru.oparin.solution.model.WbPromotionNormQueryStatistics;
+import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.WbProductCardAnalyticsRepository;
+import ru.oparin.solution.repository.WbProductPriceHistoryRepository;
 import ru.oparin.solution.repository.WbPromotionCampaignStatisticsRepository;
 import ru.oparin.solution.repository.WbPromotionNormQueryStatisticsRepository;
+import ru.oparin.solution.service.analytics.MathUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Агрегация метрик артикула за период для гипотез.
@@ -32,6 +28,7 @@ public class WbHypothesisMetricsService {
     private final WbProductCardAnalyticsRepository productCardAnalyticsRepository;
     private final WbPromotionCampaignStatisticsRepository campaignStatisticsRepository;
     private final WbPromotionNormQueryStatisticsRepository normQueryStatisticsRepository;
+    private final WbProductPriceHistoryRepository productPriceHistoryRepository;
 
     /**
      * Считает значения выбранных критериев: baseline vs check.
@@ -120,6 +117,8 @@ public class WbHypothesisMetricsService {
                 .findByCabinetIdAndNmIdAndDateBetweenWithAvgPos(cabinetId, nmId, from, to);
 
         long orders = 0;
+        long openCard = 0;
+        long addToCart = 0;
         BigDecimal ordersSum = BigDecimal.ZERO;
         long buyouts = 0;
         BigDecimal buyoutPercentSum = BigDecimal.ZERO;
@@ -127,6 +126,8 @@ public class WbHypothesisMetricsService {
 
         for (WbProductCardAnalytics row : funnel) {
             orders += nullToZero(row.getOrders());
+            openCard += nullToZero(row.getOpenCard());
+            addToCart += nullToZero(row.getAddToCart());
             if (row.getOrdersSum() != null) {
                 ordersSum = ordersSum.add(row.getOrdersSum());
             }
@@ -224,7 +225,64 @@ public class WbHypothesisMetricsService {
         if (avgPos != null) {
             map.put(WbHypothesisCriterion.AVG_POS, avgPos);
         }
+        if (!funnel.isEmpty()) {
+            BigDecimal cartConversion = MathUtils.calculatePercentage(addToCart, openCard);
+            if (cartConversion != null) {
+                map.put(WbHypothesisCriterion.CART_CONVERSION, cartConversion);
+            }
+            BigDecimal orderConversion = MathUtils.calculatePercentage(orders, addToCart);
+            if (orderConversion != null) {
+                map.put(WbHypothesisCriterion.ORDER_CONVERSION, orderConversion);
+            }
+        }
+        BigDecimal spp = averageSpp(cabinetId, nmId, from, to);
+        if (spp != null) {
+            map.put(WbHypothesisCriterion.SPP, spp);
+        }
         return map;
+    }
+
+    /**
+     * Средний СПП (%) за период по истории цен: по каждому дню берётся запись без sizeId, иначе первая с СПП.
+     */
+    private BigDecimal averageSpp(Long cabinetId, Long nmId, LocalDate from, LocalDate to) {
+        List<WbProductPriceHistory> prices = productPriceHistoryRepository
+                .findByNmIdAndDateBetweenAndCabinet_Id(nmId, from, to, cabinetId);
+        if (prices.isEmpty()) {
+            return null;
+        }
+        Map<LocalDate, List<WbProductPriceHistory>> byDate = new LinkedHashMap<>();
+        for (WbProductPriceHistory row : prices) {
+            byDate.computeIfAbsent(row.getDate(), ignored -> new ArrayList<>()).add(row);
+        }
+        BigDecimal sum = BigDecimal.ZERO;
+        int days = 0;
+        for (List<WbProductPriceHistory> dayRows : byDate.values()) {
+            Integer spp = pickDaySpp(dayRows);
+            if (spp == null) {
+                continue;
+            }
+            sum = sum.add(BigDecimal.valueOf(spp));
+            days++;
+        }
+        if (days == 0) {
+            return null;
+        }
+        return sum.divide(BigDecimal.valueOf(days), SCALE, RoundingMode.HALF_UP);
+    }
+
+    private static Integer pickDaySpp(List<WbProductPriceHistory> dayRows) {
+        for (WbProductPriceHistory row : dayRows) {
+            if (row.getSizeId() == null && row.getSppDiscount() != null) {
+                return row.getSppDiscount();
+            }
+        }
+        for (WbProductPriceHistory row : dayRows) {
+            if (row.getSppDiscount() != null) {
+                return row.getSppDiscount();
+            }
+        }
+        return null;
     }
 
     private static int nullToZero(Integer value) {

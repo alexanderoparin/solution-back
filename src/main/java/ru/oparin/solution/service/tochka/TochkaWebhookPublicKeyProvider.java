@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
+import ru.oparin.solution.config.TochkaProperties;
 
 import java.math.BigInteger;
 import java.security.KeyFactory;
@@ -17,6 +18,7 @@ import java.util.Base64;
 /**
  * Публичный ключ Точка Банк для проверки подписи входящих webhook (RS256).
  * При недоступности URL (SSL/сеть) приложение стартует; ключ подгружается лениво при первом webhook.
+ * При {@code tochka.enabled=false} загрузка при старте не выполняется.
  *
  * @see <a href="https://enter.tochka.com/doc/openapi/static/keys/public">Публичный ключ Open API</a>
  */
@@ -28,6 +30,7 @@ public class TochkaWebhookPublicKeyProvider {
     private static final String PUBLIC_KEY_URL = "https://enter.tochka.com/doc/openapi/static/keys/public";
 
     private final ObjectMapper objectMapper;
+    private final TochkaProperties tochkaProperties;
 
     private final RestTemplate restTemplate = new RestTemplate();
 
@@ -37,9 +40,14 @@ public class TochkaWebhookPublicKeyProvider {
 
     /**
      * Пытается загрузить JWK при старте; ошибка не валит контекст (локальный SSL/сеть).
+     * Если Точка выключена — пропускаем (локальная разработка без сертификатов песочницы).
      */
     @PostConstruct
     void loadPublicKeyOnStartup() {
+        if (!tochkaProperties.isEnabled()) {
+            log.debug("Tochka webhook: tochka.enabled=false — загрузка публичного ключа пропущена");
+            return;
+        }
         tryLoadPublicKey();
         if (publicKey == null) {
             log.warn("Tochka webhook: публичный ключ не загружен при старте ({}). "

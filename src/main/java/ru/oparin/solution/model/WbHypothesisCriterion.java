@@ -16,7 +16,10 @@ public enum WbHypothesisCriterion {
     CPO("cpo", "CPO", true),
     VIEWS("views", "Показы", false),
     BUYOUT_PERCENT("buyout_percent", "Процент выкупа", false),
-    AVG_POS("avg_pos", "Средние позиции", true);
+    AVG_POS("avg_pos", "Средние позиции", true),
+    CART_CONVERSION("cart_conversion", "Конверсия в корзину", false),
+    ORDER_CONVERSION("order_conversion", "Конверсия в заказ", false),
+    SPP("spp", "СПП", false);
 
     private final String key;
     private final String labelRu;
