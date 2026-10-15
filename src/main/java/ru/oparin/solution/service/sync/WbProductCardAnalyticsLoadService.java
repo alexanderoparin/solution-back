@@ -149,7 +149,13 @@ public class WbProductCardAnalyticsLoadService {
         analytics.setOrdersSum(dailyData.getOrdersSumRub());
         analytics.setBuyouts(dailyData.getBuyoutsCount());
         analytics.setBuyoutsSum(dailyData.getBuyoutsSumRub());
-        analytics.setBuyoutPercent(dailyData.getBuyoutPercent());
+        // Если выкупов за день не было — процент не считаем (null), а не 0 от WB.
+        Integer buyouts = dailyData.getBuyoutsCount();
+        if (buyouts == null || buyouts <= 0) {
+            analytics.setBuyoutPercent(null);
+        } else {
+            analytics.setBuyoutPercent(dailyData.getBuyoutPercent());
+        }
         analyticsRepository.save(analytics);
 
         return existing.isEmpty();

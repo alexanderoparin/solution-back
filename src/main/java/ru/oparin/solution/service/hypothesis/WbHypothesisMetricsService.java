@@ -120,21 +120,12 @@ public class WbHypothesisMetricsService {
         long openCard = 0;
         long addToCart = 0;
         BigDecimal ordersSum = BigDecimal.ZERO;
-        long buyouts = 0;
-        BigDecimal buyoutPercentSum = BigDecimal.ZERO;
-        int buyoutPercentDays = 0;
-
         for (WbProductCardAnalytics row : funnel) {
             orders += nullToZero(row.getOrders());
             openCard += nullToZero(row.getOpenCard());
             addToCart += nullToZero(row.getAddToCart());
             if (row.getOrdersSum() != null) {
                 ordersSum = ordersSum.add(row.getOrdersSum());
-            }
-            buyouts += nullToZero(row.getBuyouts());
-            if (row.getBuyoutPercent() != null) {
-                buyoutPercentSum = buyoutPercentSum.add(row.getBuyoutPercent());
-                buyoutPercentDays++;
             }
         }
 
@@ -207,19 +198,6 @@ public class WbHypothesisMetricsService {
                     WbHypothesisCriterion.DRR,
                     costs.multiply(BigDecimal.valueOf(100))
                             .divide(ordersSum, SCALE, RoundingMode.HALF_UP)
-            );
-        }
-        if (!funnel.isEmpty() && orders > 0 && buyouts > 0) {
-            map.put(
-                    WbHypothesisCriterion.BUYOUT_PERCENT,
-                    BigDecimal.valueOf(buyouts)
-                            .multiply(BigDecimal.valueOf(100))
-                            .divide(BigDecimal.valueOf(orders), SCALE, RoundingMode.HALF_UP)
-            );
-        } else if (buyoutPercentDays > 0) {
-            map.put(
-                    WbHypothesisCriterion.BUYOUT_PERCENT,
-                    buyoutPercentSum.divide(BigDecimal.valueOf(buyoutPercentDays), SCALE, RoundingMode.HALF_UP)
             );
         }
         if (avgPos != null) {

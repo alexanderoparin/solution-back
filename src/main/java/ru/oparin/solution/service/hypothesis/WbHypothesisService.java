@@ -475,7 +475,15 @@ public class WbHypothesisService {
         try {
             List<String> keys = objectMapper.readValue(json, new TypeReference<>() {
             });
-            return parseCriteria(keys);
+            // Неизвестные/устаревшие ключи (например buyout_percent) пропускаем.
+            LinkedHashSet<WbHypothesisCriterion> set = new LinkedHashSet<>();
+            for (String key : keys) {
+                WbHypothesisCriterion criterion = WbHypothesisCriterion.fromKey(key);
+                if (criterion != null) {
+                    set.add(criterion);
+                }
+            }
+            return List.copyOf(set);
         } catch (Exception e) {
             log.warn("Не удалось прочитать критерии гипотезы: {}", e.getMessage());
             return List.of();
