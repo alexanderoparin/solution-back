@@ -58,10 +58,11 @@ public class TochkaPaymentFallbackScheduler {
             if (remote.getStatus() == null) {
                 return;
             }
-            log.debug("Tochka fallback poll paymentId={} status={}", payment.getId(), remote.getStatus());
+            log.info("Tochka fallback poll paymentId={} operationId={} status={}",
+                    payment.getId(), operationId, remote.getStatus());
             subscriptionPaymentService.completePaymentByOperationId(operationId, remote.getStatus());
         } catch (Exception e) {
-            log.debug("Tochka fallback poll skipped for paymentId={}: {}", payment.getId(), e.getMessage());
+            log.warn("Tochka fallback poll skipped for paymentId={}: {}", payment.getId(), e.getMessage());
         }
     }
 }
