@@ -153,6 +153,11 @@ public class TochkaApiClient {
                 .build();
     }
 
+    /**
+     * Разбирает ответ Get Payment Operation Info.
+     * Статус лежит в {@code Data.Operation[0]}, а не в корне {@code Data}
+     * (см. ответ Точка.API: {@code {"Data":{"Operation":[{"status":"APPROVED",...}]}}}).
+     */
     private TochkaPaymentOperationStatus parsePaymentStatusResponse(String responseBody, String operationId)
             throws Exception {
         JsonNode root = objectMapper.readTree(responseBody);
@@ -160,11 +165,23 @@ public class TochkaApiClient {
         if (data.isMissingNode() || data.isNull()) {
             data = root;
         }
+        JsonNode operation = resolveOperationNode(data);
         return TochkaPaymentOperationStatus.builder()
                 .operationId(operationId)
-                .status(textOrNull(data, "status"))
-                .paymentLinkId(textOrNull(data, "paymentLinkId"))
+                .status(textOrNull(operation, "status"))
+                .paymentLinkId(textOrNull(operation, "paymentLinkId"))
                 .build();
+    }
+
+    /**
+     * Возвращает узел операции: {@code Data.Operation[0]} либо сам {@code Data}, если массив отсутствует.
+     */
+    private static JsonNode resolveOperationNode(JsonNode data) {
+        JsonNode operations = data.path("Operation");
+        if (operations.isArray() && !operations.isEmpty()) {
+            return operations.get(0);
+        }
+        return data;
     }
 
     private static String textOrNull(JsonNode node, String field) {
