@@ -176,6 +176,8 @@ public class SubscriptionPaymentService {
             }
             applySuccessfulPayment(payment);
             paymentRepository.save(payment);
+            log.info("Платёж id={} отмечен success, tochkaStatus={}, cabinetId={}",
+                    payment.getId(), tochkaStatus, payment.getCabinet() != null ? payment.getCabinet().getId() : null);
             return;
         }
 
