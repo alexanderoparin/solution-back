@@ -143,7 +143,6 @@ public class WbHypothesisService {
                 .description(trimToNull(request.getDescription()))
                 .checkFrom(request.getCheckFrom())
                 .checkTo(request.getCheckTo())
-                .workflowStatus(parseWorkflow(request.getWorkflowStatus()))
                 .criteriaJson(writeCriteria(parseCriteria(request.getCriteria())))
                 .createdByUserId(userId)
                 .verdictManual(false)
@@ -164,7 +163,6 @@ public class WbHypothesisService {
         entity.setDescription(trimToNull(request.getDescription()));
         entity.setCheckFrom(request.getCheckFrom());
         entity.setCheckTo(request.getCheckTo());
-        entity.setWorkflowStatus(parseWorkflow(request.getWorkflowStatus()));
         entity.setCriteriaJson(writeCriteria(parseCriteria(request.getCriteria())));
         if (!entity.isVerdictManual()) {
             entity.setVerdict(null);
@@ -268,7 +266,6 @@ public class WbHypothesisService {
                 .checkTo(row.getCheckTo())
                 .baselineFrom(baselineFrom)
                 .baselineTo(baselineTo)
-                .workflowStatus(row.getWorkflowStatus().name())
                 .displayStatus(displayStatus.name())
                 .verdict(row.getVerdict() != null ? row.getVerdict().name() : null)
                 .verdictManual(row.isVerdictManual())
@@ -298,12 +295,6 @@ public class WbHypothesisService {
         }
 
         LocalDate today = LocalDate.now();
-        if (row.getWorkflowStatus() == WbHypothesisWorkflowStatus.PREPARATION && today.isBefore(row.getCheckFrom())) {
-            return WbHypothesisDisplayStatus.PREPARATION;
-        }
-        if (row.getWorkflowStatus() == WbHypothesisWorkflowStatus.PREPARATION) {
-            return WbHypothesisDisplayStatus.PREPARATION;
-        }
         if (today.isBefore(row.getCheckFrom())) {
             return WbHypothesisDisplayStatus.PREPARATION;
         }
@@ -404,7 +395,6 @@ public class WbHypothesisService {
         }
         productCardRepository.findByNmIdAndCabinet_Id(request.getNmId(), cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Артикул не найден в кабинете"));
-        parseWorkflow(request.getWorkflowStatus());
         parseCriteria(request.getCriteria());
     }
 
@@ -487,14 +477,6 @@ public class WbHypothesisService {
         } catch (Exception e) {
             log.warn("Не удалось прочитать критерии гипотезы: {}", e.getMessage());
             return List.of();
-        }
-    }
-
-    private static WbHypothesisWorkflowStatus parseWorkflow(String raw) {
-        try {
-            return WbHypothesisWorkflowStatus.valueOf(raw.trim().toUpperCase(Locale.ROOT));
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Некорректный статус: " + raw);
         }
     }
 

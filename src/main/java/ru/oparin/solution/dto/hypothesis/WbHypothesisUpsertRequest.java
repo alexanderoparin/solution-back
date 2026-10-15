@@ -32,9 +32,6 @@ public class WbHypothesisUpsertRequest {
     @NotNull
     private LocalDate checkTo;
 
-    @NotBlank
-    private String workflowStatus;
-
     @NotEmpty
     private List<String> criteria;
 }

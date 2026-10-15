@@ -66,13 +66,6 @@ public class WbHypothesis {
     private LocalDate checkTo;
 
     /**
-     * Пользовательский статус жизненного цикла.
-     */
-    @Enumerated(EnumType.STRING)
-    @Column(name = "workflow_status", nullable = false, length = 32)
-    private WbHypothesisWorkflowStatus workflowStatus;
-
-    /**
      * JSON-массив ключей критериев.
      */
     @Column(name = "criteria_json", nullable = false, columnDefinition = "TEXT")

@@ -28,7 +28,6 @@ public class WbHypothesisDto {
     private LocalDate checkTo;
     private LocalDate baselineFrom;
     private LocalDate baselineTo;
-    private String workflowStatus;
     private String displayStatus;
     private String verdict;
     private boolean verdictManual;
