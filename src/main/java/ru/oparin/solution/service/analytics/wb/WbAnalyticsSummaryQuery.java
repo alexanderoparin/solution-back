@@ -155,10 +155,13 @@ public class WbAnalyticsSummaryQuery {
                         period, campaignStatisticsAggregator.aggregateStatsByArticle(campaignIds, period));
             }
         }
-        Map<PeriodDto, Map<Long, BigDecimal>> funnelOrdersAmountByPeriodByArticle =
-                MetricNames.DRR.equals(metricName)
-                        ? preloadFunnelOrdersAmountByArticle(visibleCards, cabinetId, periods)
-                        : Collections.emptyMap();
+        boolean needFunnelOrders = MetricNames.CPO.equals(metricName) || MetricNames.DRR.equals(metricName);
+        Map<PeriodDto, Map<Long, Integer>> funnelOrdersByPeriodByArticle = needFunnelOrders
+                ? preloadFunnelOrdersCountByArticle(visibleCards, cabinetId, periods)
+                : Collections.emptyMap();
+        Map<PeriodDto, Map<Long, BigDecimal>> funnelOrdersAmountByPeriodByArticle = needFunnelOrders
+                ? preloadFunnelOrdersAmountByArticle(visibleCards, cabinetId, periods)
+                : Collections.emptyMap();
 
         List<ArticleMetricDto> articleMetrics = new ArrayList<>();
         WbCampaignStatisticsAggregator.AdvertisingStats emptyStats = new WbCampaignStatisticsAggregator.AdvertisingStats(
@@ -176,9 +179,20 @@ public class WbAnalyticsSummaryQuery {
                         .getOrDefault(period, Collections.emptyMap())
                         .getOrDefault(nmId, emptyStats);
                 Object value = calculateAdvertisingMetricValue(
-                        metricName, stats, period, nmId, funnelOrdersAmountByPeriodByArticle);
+                        metricName,
+                        stats,
+                        period,
+                        nmId,
+                        funnelOrdersByPeriodByArticle,
+                        funnelOrdersAmountByPeriodByArticle);
                 BigDecimal changePercent = calculateArticleAdvertisingChangePercent(
-                        nmId, metricName, period, periods, statsByPeriodByArticle, funnelOrdersAmountByPeriodByArticle);
+                        nmId,
+                        metricName,
+                        period,
+                        periods,
+                        statsByPeriodByArticle,
+                        funnelOrdersByPeriodByArticle,
+                        funnelOrdersAmountByPeriodByArticle);
 
                 periodValues.add(PeriodMetricValueDto.builder()
                         .periodId(period.getId())
@@ -262,6 +276,7 @@ public class WbAnalyticsSummaryQuery {
             PeriodDto period,
             List<PeriodDto> allPeriodsSortedByDate,
             Map<PeriodDto, Map<Long, WbCampaignStatisticsAggregator.AdvertisingStats>> statsByPeriodByArticle,
+            Map<PeriodDto, Map<Long, Integer>> funnelOrdersByPeriodByArticle,
             Map<PeriodDto, Map<Long, BigDecimal>> funnelOrdersAmountByPeriodByArticle
     ) {
         PeriodDto previousPeriod = AnalyticsPercentChange.findPreviousPeriodByDateOrder(period, allPeriodsSortedByDate);
@@ -277,19 +292,45 @@ public class WbAnalyticsSummaryQuery {
                 .getOrDefault(previousPeriod, Collections.emptyMap())
                 .getOrDefault(nmId, empty);
         Object currentValue = calculateAdvertisingMetricValue(
-                metricName, currentStats, period, nmId, funnelOrdersAmountByPeriodByArticle);
+                metricName,
+                currentStats,
+                period,
+                nmId,
+                funnelOrdersByPeriodByArticle,
+                funnelOrdersAmountByPeriodByArticle);
         Object previousValue = calculateAdvertisingMetricValue(
-                metricName, previousStats, previousPeriod, nmId, funnelOrdersAmountByPeriodByArticle);
+                metricName,
+                previousStats,
+                previousPeriod,
+                nmId,
+                funnelOrdersByPeriodByArticle,
+                funnelOrdersAmountByPeriodByArticle);
         return AnalyticsPercentChange.between(metricName, currentValue, previousValue);
     }
 
+    /**
+     * СРО/ДРР в развороте артикула — по заказам воронки, как в итоговой строке сводки.
+     */
     private Object calculateAdvertisingMetricValue(
             String metricName,
             WbCampaignStatisticsAggregator.AdvertisingStats stats,
             PeriodDto period,
             Long nmId,
+            Map<PeriodDto, Map<Long, Integer>> funnelOrdersByPeriodByArticle,
             Map<PeriodDto, Map<Long, BigDecimal>> funnelOrdersAmountByPeriodByArticle
     ) {
+        if (MetricNames.CPO.equals(metricName)) {
+            BigDecimal costs = stats.sum();
+            if (costs == null || costs.compareTo(BigDecimal.ZERO) == 0) {
+                return null;
+            }
+            Integer funnelOrders = funnelOrdersByPeriodByArticle
+                    .getOrDefault(period, Collections.emptyMap())
+                    .get(nmId);
+            if (funnelOrders != null && funnelOrders > 0) {
+                return costs.divide(BigDecimal.valueOf(funnelOrders), 2, RoundingMode.HALF_UP);
+            }
+        }
         if (MetricNames.DRR.equals(metricName)) {
             BigDecimal costs = stats.sum();
             if (costs == null || costs.compareTo(BigDecimal.ZERO) == 0) {
@@ -331,6 +372,41 @@ public class WbAnalyticsSummaryQuery {
             }
             default -> null;
         };
+    }
+
+    private Map<PeriodDto, Map<Long, Integer>> preloadFunnelOrdersCountByArticle(
+            List<WbProductCard> cards,
+            Long cabinetId,
+            List<PeriodDto> periods
+    ) {
+        List<Long> nmIds = cards.stream()
+                .map(WbProductCard::getNmId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (nmIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<PeriodDto, Map<Long, Integer>> result = new HashMap<>();
+        for (PeriodDto period : periods) {
+            List<WbProductCardAnalytics> analytics = cabinetId != null
+                    ? analyticsRepository.findByCabinet_IdAndProductCardNmIdInAndDateBetween(
+                    cabinetId, nmIds, period.getDateFrom(), period.getDateTo())
+                    : analyticsRepository.findByProductCardNmIdInAndDateBetween(
+                    nmIds, period.getDateFrom(), period.getDateTo());
+            Map<Long, Integer> ordersByNmId = new HashMap<>();
+            for (WbProductCardAnalytics item : analytics) {
+                if (item.getProductCard() == null || item.getProductCard().getNmId() == null) {
+                    continue;
+                }
+                Long nmId = item.getProductCard().getNmId();
+                int orders = item.getOrders() != null ? item.getOrders() : 0;
+                ordersByNmId.merge(nmId, orders, Integer::sum);
+            }
+            result.put(period, ordersByNmId);
+        }
+        return result;
     }
 
     private Map<PeriodDto, Map<Long, BigDecimal>> preloadFunnelOrdersAmountByArticle(
