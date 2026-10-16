@@ -11,6 +11,8 @@ public class CampaignAutoBudgetDto {
     private boolean enabled;
     private Integer topUpAmount;
     private Integer sourceType;
+    /** Запасной источник при ошибке основного; null — не использовать. */
+    private Integer backupSourceType;
     /** Использовать промо-бонусы при автопополнении (type 0/1). */
     private boolean usePromoCashback;
     private Integer thresholdRub;

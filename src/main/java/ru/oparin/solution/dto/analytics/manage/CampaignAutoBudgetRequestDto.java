@@ -13,6 +13,8 @@ public class CampaignAutoBudgetRequestDto {
     private boolean enabled;
     private Integer topUpAmount;
     private Integer sourceType;
+    /** Запасной источник; null — не использовать. */
+    private Integer backupSourceType;
     /** Использовать промо-бонусы; null = true (совместимость). */
     private Boolean usePromoCashback;
     private Integer thresholdRub;

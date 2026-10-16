@@ -98,16 +98,13 @@ public class WbCampaignAutoTopUpService {
 
         int budgetBeforeTopUp = budgetTotal.get();
         int topUpAmount = settings.getTopUpAmount();
+        int primarySourceType = settings.getSourceType() != null ? settings.getSourceType() : 1;
+        Integer backupSourceType = settings.getBackupSourceType();
+
         try {
-            WbPromotionBudgetDepositRequest req = WbPromotionBudgetDepositRequest.builder()
-                    .sum(topUpAmount)
-                    .type(settings.getSourceType() != null ? settings.getSourceType() : 1)
-                    .returnBudget(true)
-                    .build();
-            // HTTP deposit вне длинной TX; при устаревшем промо — повтор без cashback и отключение флага в настройках.
-            WbCampaignBudgetDepositResult depositResult = budgetDepositService.depositWithPromoFallback(
-                    cabinet, advertId, req, settings.isUsePromoCashback(), true);
-            WbPromotionBudgetResponse depositResponse = depositResult.getResponse();
+            DepositAttemptResult attempt = depositWithOptionalBackup(
+                    cabinet, advertId, settings, topUpAmount, primarySourceType, backupSourceType);
+            WbPromotionBudgetResponse depositResponse = attempt.depositResult().getResponse();
             int budgetAfterTopUp = budgetFetchService.resolveBudgetAfterTopUp(
                     budgetBeforeTopUp, topUpAmount, depositResponse);
             budgetFetchService.storeBudgetTotal(state, advertId, cabinetId, budgetAfterTopUp);
@@ -117,22 +114,92 @@ public class WbCampaignAutoTopUpService {
             SlotBudgetSpendUtils.addSlotTopUp(state, topUpAmount);
             stateRepository.save(state);
 
-            String cashbackNote = req.getCashbackSum() != null && req.getCashbackSum() > 0
-                    ? (", из них промо " + req.getCashbackSum() + " ₽ до " + req.getCashbackPercent() + "%")
+            String cashbackNote = attempt.request().getCashbackSum() != null && attempt.request().getCashbackSum() > 0
+                    ? (", из них промо " + attempt.request().getCashbackSum() + " ₽ до "
+                    + attempt.request().getCashbackPercent() + "%")
                     : "";
+            String sourceNote = attempt.usedBackup()
+                    ? ", источник: запасной (" + formatSourceLabel(attempt.sourceType()) + ")"
+                    : ", источник: " + formatSourceLabel(attempt.sourceType());
             changeLogService.log(advertId, cabinetId, null,
                     "Бюджет пополнен автоматически на " + topUpAmount + " ₽ ("
-                            + budgetBeforeTopUp + " ₽ -> " + budgetAfterTopUp + " ₽)" + cashbackNote);
+                            + budgetBeforeTopUp + " ₽ -> " + budgetAfterTopUp + " ₽)"
+                            + cashbackNote + sourceNote);
             timelineService.recordTopUp(advertId, cabinetId, topUpAmount, budgetAfterTopUp);
             stateRepository.save(state);
 
-            log.info("Автопополнение advertId={}: зачислено {} ₽{}, остаток бюджета РК {}",
-                    advertId, topUpAmount, cashbackNote, budgetAfterTopUp);
+            log.info("Автопополнение advertId={}: зачислено {} ₽{}{}, остаток бюджета РК {}",
+                    advertId, topUpAmount, cashbackNote, sourceNote, budgetAfterTopUp);
             return Optional.of(topUpAmount);
         } catch (Exception e) {
             log.warn("Автопополнение advertId={}: {}", advertId, e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * Deposit с основного источника; при ошибке — один retry с запасным (если задан и отличается).
+     * Каждый цикл снова начинается с основного (без «залипания» на запасном).
+     */
+    private DepositAttemptResult depositWithOptionalBackup(
+            Cabinet cabinet,
+            Long advertId,
+            WbCampaignAutoBudgetSettings settings,
+            int topUpAmount,
+            int primarySourceType,
+            Integer backupSourceType
+    ) {
+        try {
+            return depositOnce(cabinet, advertId, settings, topUpAmount, primarySourceType, false);
+        } catch (Exception primaryError) {
+            boolean canUseBackup = backupSourceType != null && !backupSourceType.equals(primarySourceType);
+            if (!canUseBackup) {
+                throw primaryError;
+            }
+            log.warn(
+                    "Автопополнение advertId={}: основной источник {} недоступен ({}), пробуем запасной {}",
+                    advertId,
+                    formatSourceLabel(primarySourceType),
+                    primaryError.getMessage(),
+                    formatSourceLabel(backupSourceType)
+            );
+            return depositOnce(cabinet, advertId, settings, topUpAmount, backupSourceType, true);
+        }
+    }
+
+    private DepositAttemptResult depositOnce(
+            Cabinet cabinet,
+            Long advertId,
+            WbCampaignAutoBudgetSettings settings,
+            int topUpAmount,
+            int sourceType,
+            boolean usedBackup
+    ) {
+        WbPromotionBudgetDepositRequest req = WbPromotionBudgetDepositRequest.builder()
+                .sum(topUpAmount)
+                .type(sourceType)
+                .returnBudget(true)
+                .build();
+        WbCampaignBudgetDepositResult depositResult = budgetDepositService.depositWithPromoFallback(
+                cabinet, advertId, req, settings.isUsePromoCashback(), true);
+        return new DepositAttemptResult(req, depositResult, sourceType, usedBackup);
+    }
+
+    private static String formatSourceLabel(int sourceType) {
+        return switch (sourceType) {
+            case 0 -> "Счёт";
+            case 1 -> "Баланс";
+            case 3 -> "Бонусы";
+            default -> "тип " + sourceType;
+        };
+    }
+
+    private record DepositAttemptResult(
+            WbPromotionBudgetDepositRequest request,
+            WbCampaignBudgetDepositResult depositResult,
+            int sourceType,
+            boolean usedBackup
+    ) {
     }
 
     private void resetTopUpCounterIfNewDay(WbCampaignManagementState state, LocalDate today) {

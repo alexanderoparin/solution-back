@@ -53,6 +53,13 @@ public class WbCampaignAutoBudgetSettings {
     private Integer sourceType;
 
     /**
+     * Запасной источник WB при ошибке основного: 0 счёт, 1 баланс, 3 бонусы;
+     * {@code null} — не использовать.
+     */
+    @Column(name = "backup_source_type")
+    private Integer backupSourceType;
+
+    /**
      * Подставлять промо-бонусы ({@code cashback_sum}/{@code cashback_percent}) при deposit
      * для источников счёт/баланс.
      */

@@ -120,10 +120,12 @@ public class WbCampaignManageService {
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден")));
         WbCampaignAutoBudgetSettings settings = getOrCreateAutoBudget(advertId, cabinetId);
         validateAutoBudgetTopUpAmount(request.getTopUpAmount());
+        validateBackupSourceType(request.getSourceType(), request.getBackupSourceType());
 
         boolean enabledBefore = settings.isEnabled();
         Integer topUpAmountBefore = settings.getTopUpAmount();
         Integer sourceTypeBefore = settings.getSourceType();
+        Integer backupSourceTypeBefore = settings.getBackupSourceType();
         boolean usePromoCashbackBefore = settings.isUsePromoCashback();
         Integer thresholdRubBefore = settings.getThresholdRub();
         Integer maxTopUpsPerDayBefore = settings.getMaxTopUpsPerDay();
@@ -131,6 +133,7 @@ public class WbCampaignManageService {
         settings.setEnabled(request.isEnabled());
         settings.setTopUpAmount(request.getTopUpAmount());
         settings.setSourceType(request.getSourceType());
+        settings.setBackupSourceType(request.getBackupSourceType());
         settings.setUsePromoCashback(request.getUsePromoCashback() == null || request.getUsePromoCashback());
         settings.setThresholdRub(request.getThresholdRub());
         settings.setMaxTopUpsPerDay(request.getMaxTopUpsPerDay());
@@ -141,6 +144,7 @@ public class WbCampaignManageService {
                 enabledBefore,
                 topUpAmountBefore,
                 sourceTypeBefore,
+                backupSourceTypeBefore,
                 usePromoCashbackBefore,
                 thresholdRubBefore,
                 maxTopUpsPerDayBefore,
@@ -661,6 +665,18 @@ public class WbCampaignManageService {
         }
     }
 
+    /**
+     * Запасной источник опционален; если задан — не должен совпадать с основным.
+     */
+    private void validateBackupSourceType(Integer sourceType, Integer backupSourceType) {
+        if (backupSourceType == null) {
+            return;
+        }
+        if (sourceType != null && backupSourceType.equals(sourceType)) {
+            throw new IllegalArgumentException("Запасной источник должен отличаться от основного");
+        }
+    }
+
     private void validateAutoBudgetTopUpAmount(Integer topUpAmount) {
         if (topUpAmount != null && topUpAmount < MIN_TOP_UP_AMOUNT_RUB) {
             throw new IllegalArgumentException(
@@ -679,6 +695,7 @@ public class WbCampaignManageService {
                 .enabled(s.isEnabled())
                 .topUpAmount(s.getTopUpAmount())
                 .sourceType(s.getSourceType())
+                .backupSourceType(s.getBackupSourceType())
                 .usePromoCashback(s.isUsePromoCashback())
                 .thresholdRub(s.getThresholdRub())
                 .maxTopUpsPerDay(s.getMaxTopUpsPerDay())
@@ -781,6 +798,7 @@ public class WbCampaignManageService {
             boolean enabledBefore,
             Integer topUpAmountBefore,
             Integer sourceTypeBefore,
+            Integer backupSourceTypeBefore,
             boolean usePromoCashbackBefore,
             Integer thresholdRubBefore,
             Integer maxTopUpsPerDayBefore,
@@ -799,6 +817,11 @@ public class WbCampaignManageService {
             parts.add("источник: "
                     + formatAutoBudgetSource(sourceTypeBefore) + " -> "
                     + formatAutoBudgetSource(request.getSourceType()));
+        }
+        if (!Objects.equals(backupSourceTypeBefore, request.getBackupSourceType())) {
+            parts.add("запасной источник: "
+                    + formatAutoBudgetSource(backupSourceTypeBefore) + " -> "
+                    + formatAutoBudgetSource(request.getBackupSourceType()));
         }
         boolean usePromoAfter = request.getUsePromoCashback() == null || request.getUsePromoCashback();
         if (usePromoCashbackBefore != usePromoAfter) {
