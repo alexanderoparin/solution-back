@@ -6,6 +6,7 @@ import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import ru.oparin.solution.service.UploadsCleanupResult;
 import ru.oparin.solution.service.UploadsCleanupService;
 
 /**
@@ -15,6 +16,8 @@ import ru.oparin.solution.service.UploadsCleanupService;
 @RequiredArgsConstructor
 @Slf4j
 public class UploadsCleanupScheduler {
+
+    private static final long BYTES_IN_MIB = 1024L * 1024L;
 
     private final UploadsCleanupService uploadsCleanupService;
 
@@ -31,9 +34,20 @@ public class UploadsCleanupScheduler {
             return;
         }
 
-        int deleted = uploadsCleanupService.cleanupOrphanedFiles();
-        if (deleted > 0) {
-            log.info("Очистка каталога загрузок: удалено осиротевших файлов: {}", deleted);
+        UploadsCleanupResult result = uploadsCleanupService.cleanupOrphanedFiles();
+        if (result.deletedFiles() > 0) {
+            log.info(
+                    "Очистка каталога загрузок: удалено осиротевших файлов: {}, освобождено: {} МБ",
+                    result.deletedFiles(),
+                    formatMb(result.freedBytes())
+            );
+        } else {
+            log.info("Очистка каталога загрузок: осиротевших файлов не найдено");
         }
+    }
+
+    /** Объём в мегабайтах (1 МБ = 1024² байт), два знака после запятой. */
+    private static String formatMb(long bytes) {
+        return String.format(java.util.Locale.ROOT, "%.2f", bytes / (double) BYTES_IN_MIB);
     }
 }

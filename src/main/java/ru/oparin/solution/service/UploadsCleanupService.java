@@ -37,20 +37,22 @@ public class UploadsCleanupService {
     private int orphanMinAgeHours;
 
     /**
-     * Удаляет с диска файлы из каталога загрузок, которых нет в {@code wb_article_note_files} и {@code campaign_note_files}.
+     * Удаляет с диска файлы из каталога загрузок, которых нет в {@code wb_article_note_files},
+     * {@code campaign_note_files} и вариантах А/Б-тестов.
      *
-     * @return количество удалённых файлов
+     * @return число удалённых файлов и суммарный освобождённый объём
      */
-    public int cleanupOrphanedFiles() {
+    public UploadsCleanupResult cleanupOrphanedFiles() {
         Path uploadsRoot = Paths.get(uploadsDirectory).toAbsolutePath().normalize();
         if (!Files.isDirectory(uploadsRoot)) {
             log.warn("Каталог загрузок не найден, очистка пропущена: {}", uploadsRoot);
-            return 0;
+            return UploadsCleanupResult.empty();
         }
 
         Set<String> referencedPaths = loadReferencedPaths();
         Instant modifiedBefore = Instant.now().minus(orphanMinAgeHours, ChronoUnit.HOURS);
         int deleted = 0;
+        long freedBytes = 0L;
 
         try (Stream<Path> files = Files.list(uploadsRoot)) {
             for (Path filePath : files.filter(Files::isRegularFile).toList()) {
@@ -65,15 +67,17 @@ public class UploadsCleanupService {
                 if (!isOlderThan(normalizedPath, modifiedBefore)) {
                     continue;
                 }
-                if (deleteFile(normalizedPath)) {
+                long fileSize = readFileSize(normalizedPath);
+                if (deleteFile(normalizedPath, fileSize)) {
                     deleted++;
+                    freedBytes += fileSize;
                 }
             }
         } catch (IOException e) {
             log.error("Ошибка при обходе каталога загрузок: {}", uploadsRoot, e);
         }
 
-        return deleted;
+        return new UploadsCleanupResult(deleted, freedBytes);
     }
 
     private Set<String> loadReferencedPaths() {
@@ -106,10 +110,19 @@ public class UploadsCleanupService {
         }
     }
 
-    private boolean deleteFile(Path filePath) {
+    private long readFileSize(Path filePath) {
+        try {
+            return Files.size(filePath);
+        } catch (IOException e) {
+            log.warn("Не удалось прочитать размер файла перед удалением: {}", filePath, e);
+            return 0L;
+        }
+    }
+
+    private boolean deleteFile(Path filePath, long fileSizeBytes) {
         try {
             Files.delete(filePath);
-            log.info("Удалён осиротевший файл загрузок: {}", filePath);
+            log.info("Удалён осиротевший файл загрузок: {} ({} байт)", filePath, fileSizeBytes);
             return true;
         } catch (IOException e) {
             log.warn("Не удалось удалить осиротевший файл загрузок: {}", filePath, e);
