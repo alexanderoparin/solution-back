@@ -3,6 +3,7 @@ package ru.oparin.solution.config;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -119,7 +120,7 @@ public class SecurityConfig {
         auth
                 .requestMatchers(AUTH_ENDPOINTS, HEALTH_ENDPOINT).permitAll()
                 .requestMatchers(INVITE_ENDPOINTS).permitAll()
-                .requestMatchers(SUBSCRIPTION_PLANS, SUBSCRIPTION_STATUS).permitAll()
+                .requestMatchers(HttpMethod.GET, SUBSCRIPTION_PLANS, SUBSCRIPTION_STATUS).permitAll()
                 .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                 .requestMatchers(WEBHOOKS).permitAll()
                 .requestMatchers(ADMIN_ENDPOINTS).hasRole(ADMIN)
