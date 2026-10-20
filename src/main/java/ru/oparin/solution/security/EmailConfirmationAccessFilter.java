@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -53,17 +54,31 @@ public class EmailConfirmationAccessFilter extends OncePerRequestFilter {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /**
+     * Фильтр только для реальной JWT-сессии. AnonymousAuthenticationToken.isAuthenticated() == true —
+     * его нельзя считать входом, иначе публичные URL получают 401 «Пользователь не найден».
+     */
+    private static boolean isRealUserAuthentication(Authentication auth) {
+        if (auth == null || !auth.isAuthenticated() || auth.getPrincipal() == null) {
+            return false;
+        }
+        if (auth instanceof AnonymousAuthenticationToken) {
+            return false;
+        }
+        Object principal = auth.getPrincipal();
+        return !(principal instanceof String stringPrincipal && "anonymousUser".equals(stringPrincipal));
+    }
+
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        return auth == null || !auth.isAuthenticated() || auth.getPrincipal() == null;
+        return !isRealUserAuthentication(SecurityContextHolder.getContext().getAuthentication());
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || auth.getPrincipal() == null) {
+        if (!isRealUserAuthentication(auth)) {
             filterChain.doFilter(request, response);
             return;
         }
