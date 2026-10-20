@@ -28,6 +28,8 @@ public class CreatePlanRequest {
     @NotNull
     private Integer periodDays;
 
+    private Integer minCabinets;
+
     private Integer maxCabinets;
 
     @Builder.Default

@@ -37,7 +37,6 @@ public class AdminSubscriptionService {
     private final SubscriptionRepository subscriptionRepository;
     private final PaymentRepository paymentRepository;
     private final CabinetRepository cabinetRepository;
-    private final WbCabinetAbTestQuotaRepository quotaRepository;
     private final SubscriptionPaymentService subscriptionPaymentService;
     private final WbAbTestQuotaService abTestQuotaService;
     private final CabinetEntitlementService cabinetEntitlementService;
@@ -174,13 +173,10 @@ public class AdminSubscriptionService {
             }
         }
 
-        Map<Long, WbCabinetAbTestQuota> quotaByCabinet = quotaRepository.findByCabinetIdIn(ids).stream()
-                .collect(Collectors.toMap(WbCabinetAbTestQuota::getCabinetId, q -> q, (a, b) -> a));
-
         List<CabinetBillingOverviewDto> rows = new ArrayList<>(cabinets.size());
         for (Cabinet cabinet : cabinets) {
             rows.add(toOverviewDto(cabinet, mainByCabinet.get(cabinet.getId()),
-                    campaignByCabinet.get(cabinet.getId()), quotaByCabinet.get(cabinet.getId())));
+                    campaignByCabinet.get(cabinet.getId())));
         }
         return rows;
     }
@@ -188,8 +184,7 @@ public class AdminSubscriptionService {
     private CabinetBillingOverviewDto toOverviewDto(
             Cabinet cabinet,
             Subscription main,
-            Subscription campaign,
-            WbCabinetAbTestQuota quota
+            Subscription campaign
     ) {
         User owner = cabinet.getUser();
         boolean agency = owner != null && Boolean.TRUE.equals(owner.getAgencyManaged());
@@ -206,7 +201,7 @@ public class AdminSubscriptionService {
                     .unlimitedAccess(true)
                     .build();
         } else if (unlimited && (main == null || main.getPlan() == null
-                || !PlanCodes.PRO_MONTH.equals(main.getPlan().getCode()))) {
+                || !PlanCodes.isProCode(main.getPlan().getCode()))) {
             mainTariff = MainTariffOverviewDto.builder()
                     .code(PlanCodes.PRO_MONTH)
                     .name("PRO (клиент агентства)")
@@ -256,12 +251,12 @@ public class AdminSubscriptionService {
                     .build();
         }
 
-        boolean activated = quota != null && Boolean.TRUE.equals(quota.getActivated());
-        Integer remaining = quota != null ? quota.getRemaining() : null;
+        var userQuota = abTestQuotaService.getQuotaDto(cabinet);
+        boolean activated = Boolean.TRUE.equals(userQuota.getActivated());
         WbAbTestsOverviewDto abDto = WbAbTestsOverviewDto.builder()
                 .connected(unlimited || activated)
                 .activated(activated)
-                .remaining(unlimited ? null : remaining)
+                .remaining(unlimited ? null : userQuota.getRemaining())
                 .unlimited(unlimited)
                 .build();
 
@@ -297,16 +292,11 @@ public class AdminSubscriptionService {
         }
 
         if (plan.getKind() == PlanKind.AB_PACK) {
-            if (PlanCodes.AB_PACK_FREE.equals(plan.getCode()) && abCredits == null) {
-                abTestQuotaService.activateFreeQuota(cabinet);
-                log.info("Админ активировал бесплатный пакет А/Б cabinetId={}", cabinetId);
-            } else {
-                int credits = abCredits != null && abCredits > 0
-                        ? abCredits
-                        : (plan.getCreditAmount() != null ? plan.getCreditAmount() : 0);
-                abTestQuotaService.addCredits(cabinet, credits);
-                log.info("Админ начислил {} А/Б кредитов cabinetId={}", credits, cabinetId);
-            }
+            int credits = abCredits != null && abCredits > 0
+                    ? abCredits
+                    : (plan.getCreditAmount() != null ? plan.getCreditAmount() : 0);
+            abTestQuotaService.addCreditsToUser(owner.getId(), credits);
+            log.info("Админ начислил {} А/Б кредитов userId={} (cabinetId={})", credits, owner.getId(), cabinetId);
             Subscription saved = subscriptionPaymentService.createOrExtendKindSubscription(owner, cabinet, plan);
             return toSubscriptionDto(saved);
         }

@@ -198,8 +198,6 @@ public class WbCampaignManageAccessService {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        boolean canActivateFree = !subscriptionRepository.existsByCabinet_IdAndPlan_Code(
-                cabinet.getId(), PlanCodes.CAMPAIGN_FREE);
 
         return cabinetEntitlementService.findActiveCampaignSubscription(cabinet)
                 .map(sub -> CampaignManageAccessDto.builder()
@@ -208,7 +206,7 @@ public class WbCampaignManageAccessService {
                         .status("ACTIVE")
                         .expiresAt(sub.getExpiresAt())
                         .daysRemaining(daysBetweenCeil(now, sub.getExpiresAt()))
-                        .canActivateFree(canActivateFree)
+                        .canActivateFree(false)
                         .build())
                 .orElseGet(() -> {
                     Subscription expired = cabinetEntitlementService.findLastExpiredCampaign(cabinet).orElse(null);
@@ -220,14 +218,14 @@ public class WbCampaignManageAccessService {
                                 .status("EXPIRED")
                                 .expiresAt(expired.getExpiresAt())
                                 .daysExpiredAgo(daysAgo)
-                                .canActivateFree(canActivateFree)
+                                .canActivateFree(false)
                                 .build();
                     }
                     return CampaignManageAccessDto.builder()
                             .enabled(true)
                             .hasAccess(false)
                             .status("NONE")
-                            .canActivateFree(canActivateFree)
+                            .canActivateFree(false)
                             .build();
                 });
     }

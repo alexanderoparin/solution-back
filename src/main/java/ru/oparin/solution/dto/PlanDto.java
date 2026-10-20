@@ -16,6 +16,8 @@ public class PlanDto {
     private String description;
     private BigDecimal priceRub;
     private Integer periodDays;
+    /** Минимум кабинетов в пакете. */
+    private Integer minCabinets;
     private Integer maxCabinets;
     /** Порядок сортировки (для админки). */
     private Integer sortOrder;

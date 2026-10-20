@@ -40,7 +40,7 @@ public class CabinetEntitlementService {
             return true;
         }
         return findActiveMainSubscription(cabinet)
-                .map(s -> s.getPlan() != null && PlanCodes.PRO_MONTH.equals(s.getPlan().getCode()))
+                .map(s -> s.getPlan() != null && PlanCodes.isProCode(s.getPlan().getCode()))
                 .orElse(false);
     }
 

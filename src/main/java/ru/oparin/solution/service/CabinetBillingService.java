@@ -7,7 +7,6 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.CabinetBillingStatusDto;
 import ru.oparin.solution.dto.CabinetBillingStatusDto.MainTariffDto;
 import ru.oparin.solution.dto.CabinetBillingStatusDto.ServiceStatusDto;
-import ru.oparin.solution.dto.WbAbTestQuotaDto;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetRepository;
@@ -36,7 +35,6 @@ public class CabinetBillingService {
     private final SubscriptionRepository subscriptionRepository;
     private final CabinetEntitlementService entitlementService;
     private final WbAbTestQuotaService abTestQuotaService;
-    private final SubscriptionPaymentService subscriptionPaymentService;
 
     /**
      * FREE-подписка + квота А/Б для нового кабинета.
@@ -128,7 +126,7 @@ public class CabinetBillingService {
                     .build();
         }
 
-        if (main != null && main.getPlan() != null && PlanCodes.PRO_MONTH.equals(main.getPlan().getCode())) {
+        if (main != null && main.getPlan() != null && PlanCodes.isProCode(main.getPlan().getCode())) {
             return MainTariffDto.builder()
                     .code(main.getPlan().getCode())
                     .name(main.getPlan().getName())
@@ -201,27 +199,4 @@ public class CabinetBillingService {
                 .build();
     }
 
-    /**
-     * Явно активирует бесплатный пакет А/Б тестов кабинета (владелец).
-     * Количество кредитов — из плана ab_pack_free (правится в админке).
-     * Также создаёт/обновляет запись услуги в {@code subscriptions} (kind AB_PACK).
-     */
-    @Transactional
-    public WbAbTestQuotaDto activateAbFreeQuota(User actor, Long cabinetId) {
-        Cabinet cabinet = cabinetRepository.findById(cabinetId)
-                .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
-        boolean canManage = actor != null
-                && cabinet.getUser() != null
-                && (actor.getRole() == Role.ADMIN || cabinet.getUser().getId().equals(actor.getId()));
-        if (!canManage) {
-            throw new UserException("Только владелец кабинета может подключить услугу", HttpStatus.FORBIDDEN);
-        }
-        WbAbTestQuotaDto quota = abTestQuotaService.activateFreeQuota(cabinet);
-        Plan freePack = planRepository.findByCode(PlanCodes.AB_PACK_FREE)
-                .orElseThrow(() -> new UserException(
-                        "План ab_pack_free не найден — примените миграцию 084",
-                        HttpStatus.INTERNAL_SERVER_ERROR));
-        subscriptionPaymentService.createOrExtendKindSubscription(cabinet.getUser(), cabinet, freePack);
-        return quota;
-    }
 }

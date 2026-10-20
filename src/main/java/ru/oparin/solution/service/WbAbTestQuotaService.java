@@ -6,13 +6,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.WbAbTestQuotaDto;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.*;
-import ru.oparin.solution.repository.CabinetRepository;
-import ru.oparin.solution.repository.PlanRepository;
-import ru.oparin.solution.repository.WbCabinetAbTestQuotaRepository;
+import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.UserAbTestQuota;
+import ru.oparin.solution.repository.UserAbTestQuotaRepository;
+import ru.oparin.solution.repository.UserRepository;
 
 /**
- * Квота запусков А/Б тестов на кабинет.
+ * Квота запусков А/Б тестов на пользователя.
+ * Безлимит на кабинете при PRO / agency / промо.
  */
 @Service
 @RequiredArgsConstructor
@@ -20,28 +22,35 @@ public class WbAbTestQuotaService {
 
     public static final String AB_TEST_QUOTA_REQUIRED = "AB_TEST_QUOTA_REQUIRED";
 
-    private final WbCabinetAbTestQuotaRepository quotaRepository;
-    private final CabinetRepository cabinetRepository;
+    private final UserAbTestQuotaRepository quotaRepository;
+    private final UserRepository userRepository;
     private final CabinetEntitlementService cabinetEntitlementService;
-    private final PlanRepository planRepository;
 
     /**
-     * Создаёт стартовую квоту (ещё не активирована) для нового кабинета.
-     * Число бесплатных тестов берётся из плана {@link PlanCodes#AB_PACK_FREE}.
+     * Гарантирует строку квоты владельца кабинета (при создании кабинета).
      */
     @Transactional
     public void ensureQuota(Cabinet cabinet) {
-        if (quotaRepository.findByCabinetId(cabinet.getId()).isPresent()) {
+        if (cabinet == null || cabinet.getUser() == null || cabinet.getUser().getId() == null) {
             return;
         }
-        int freeCredits = resolveFreeCredits();
-        quotaRepository.save(WbCabinetAbTestQuota.builder()
-                .cabinet(cabinet)
-                .remaining(freeCredits)
-                .usedStarts(0)
-                .includedFree(freeCredits)
-                .activated(false)
-                .build());
+        ensureUserQuota(cabinet.getUser().getId());
+    }
+
+    /**
+     * Гарантирует строку квоты пользователя.
+     */
+    @Transactional
+    public UserAbTestQuota ensureUserQuota(Long userId) {
+        return quotaRepository.findById(userId).orElseGet(() -> {
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new UserException("Пользователь не найден", HttpStatus.NOT_FOUND));
+            return quotaRepository.save(UserAbTestQuota.builder()
+                    .user(user)
+                    .remaining(0)
+                    .usedStarts(0)
+                    .build());
+        });
     }
 
     @Transactional(readOnly = true)
@@ -49,30 +58,70 @@ public class WbAbTestQuotaService {
         return getQuotaDto(cabinet, null);
     }
 
+    /**
+     * Квота для UI кабинета: безлимит при PRO, иначе remaining владельца.
+     */
     @Transactional(readOnly = true)
     public WbAbTestQuotaDto getQuotaDto(Cabinet cabinet, User actor) {
         if (hasUnlimited(cabinet, actor)) {
+            Long ownerId = resolveOwnerId(cabinet);
             return WbAbTestQuotaDto.builder()
                     .remaining(null)
-                    .usedStarts(resolveUsed(cabinet.getId()))
-                    .includedFree(resolveFreeCredits())
+                    .usedStarts(ownerId != null ? resolveUsed(ownerId) : 0)
+                    .includedFree(0)
                     .unlimited(true)
                     .activated(true)
                     .build();
         }
-        WbCabinetAbTestQuota quota = getOrCreate(cabinet);
+        Long ownerId = resolveOwnerId(cabinet);
+        if (ownerId == null) {
+            return WbAbTestQuotaDto.builder()
+                    .remaining(0)
+                    .usedStarts(0)
+                    .includedFree(0)
+                    .unlimited(false)
+                    .activated(false)
+                    .build();
+        }
+        UserAbTestQuota quota = quotaRepository.findById(ownerId).orElse(null);
+        int remaining = quota != null && quota.getRemaining() != null ? quota.getRemaining() : 0;
+        int used = quota != null && quota.getUsedStarts() != null ? quota.getUsedStarts() : 0;
+        boolean activated = remaining > 0 || used > 0;
         return WbAbTestQuotaDto.builder()
-                .remaining(quota.getRemaining())
-                .usedStarts(quota.getUsedStarts())
-                .includedFree(quota.getIncludedFree())
+                .remaining(remaining)
+                .usedStarts(used)
+                .includedFree(0)
                 .unlimited(false)
-                .activated(Boolean.TRUE.equals(quota.getActivated()))
+                .activated(activated)
                 .build();
     }
 
     /**
-     * Можно ли создавать/стартовать А/Б: PRO/agency или активированная квота с remaining &gt; 0.
+     * Квота пользователя (для страницы подписок, без привязки к кабинету).
      */
+    @Transactional(readOnly = true)
+    public WbAbTestQuotaDto getUserQuotaDto(Long userId) {
+        if (userId == null) {
+            return WbAbTestQuotaDto.builder()
+                    .remaining(0)
+                    .usedStarts(0)
+                    .includedFree(0)
+                    .unlimited(false)
+                    .activated(false)
+                    .build();
+        }
+        UserAbTestQuota quota = quotaRepository.findById(userId).orElse(null);
+        int remaining = quota != null && quota.getRemaining() != null ? quota.getRemaining() : 0;
+        int used = quota != null && quota.getUsedStarts() != null ? quota.getUsedStarts() : 0;
+        return WbAbTestQuotaDto.builder()
+                .remaining(remaining)
+                .usedStarts(used)
+                .includedFree(0)
+                .unlimited(false)
+                .activated(remaining > 0 || used > 0)
+                .build();
+    }
+
     @Transactional(readOnly = true)
     public boolean canStartWbAbTest(Cabinet cabinet) {
         return canStartWbAbTest(cabinet, null);
@@ -83,42 +132,17 @@ public class WbAbTestQuotaService {
         if (hasUnlimited(cabinet, actor)) {
             return true;
         }
-        WbCabinetAbTestQuota quota = getOrCreate(cabinet);
-        return Boolean.TRUE.equals(quota.getActivated())
-                && quota.getRemaining() != null
-                && quota.getRemaining() > 0;
+        Long ownerId = resolveOwnerId(cabinet);
+        if (ownerId == null) {
+            return false;
+        }
+        return quotaRepository.findById(ownerId)
+                .map(q -> q.getRemaining() != null && q.getRemaining() > 0)
+                .orElse(false);
     }
 
     /**
-     * Явно подключает бесплатный пакет А/Б (план {@link PlanCodes#AB_PACK_FREE}), если ещё не активировано.
-     * Количество кредитов — актуальное {@code credit_amount} плана на момент активации.
-     */
-    @Transactional
-    public WbAbTestQuotaDto activateFreeQuota(Cabinet cabinet) {
-        if (cabinetEntitlementService.hasUnlimitedAccess(cabinet)) {
-            return getQuotaDto(cabinet);
-        }
-        WbCabinetAbTestQuota quota = getOrCreate(cabinet);
-        if (!Boolean.TRUE.equals(quota.getActivated())) {
-            int freeCredits = resolveFreeCredits();
-            quota.setActivated(true);
-            int used = quota.getUsedStarts() != null ? quota.getUsedStarts() : 0;
-            if (used == 0) {
-                int rem = quota.getRemaining() != null ? quota.getRemaining() : 0;
-                int included = quota.getIncludedFree() != null ? quota.getIncludedFree() : 0;
-                // Только стартовая квота (ещё не покупали пакеты) — синхронизируем с планом из админки
-                if (rem <= included) {
-                    quota.setRemaining(freeCredits);
-                }
-            }
-            quota.setIncludedFree(freeCredits);
-            quotaRepository.save(quota);
-        }
-        return getQuotaDto(cabinet);
-    }
-
-    /**
-     * Списывает 1 запуск (после создания / успешного старта).
+     * Списывает 1 запуск с квоты владельца кабинета (или только used при безлимите).
      */
     @Transactional
     public void consumeStart(Cabinet cabinet) {
@@ -127,72 +151,62 @@ public class WbAbTestQuotaService {
 
     @Transactional
     public void consumeStart(Cabinet cabinet, User actor) {
+        Long ownerId = resolveOwnerId(cabinet);
+        if (ownerId == null) {
+            throw new UserException("Недостаточно квоты А/Б тестов", HttpStatus.PAYMENT_REQUIRED);
+        }
+        UserAbTestQuota quota = ensureUserQuota(ownerId);
         if (hasUnlimited(cabinet, actor)) {
-            WbCabinetAbTestQuota quota = getOrCreate(cabinet);
-            quota.setUsedStarts(quota.getUsedStarts() + 1);
-            quota.setActivated(true);
+            quota.setUsedStarts((quota.getUsedStarts() != null ? quota.getUsedStarts() : 0) + 1);
             quotaRepository.save(quota);
             return;
         }
-        WbCabinetAbTestQuota quota = getOrCreate(cabinet);
-        if (!Boolean.TRUE.equals(quota.getActivated())
-                || quota.getRemaining() == null
-                || quota.getRemaining() <= 0) {
+        if (quota.getRemaining() == null || quota.getRemaining() <= 0) {
             throw new UserException(
                     "Недостаточно квоты А/Б тестов",
                     HttpStatus.PAYMENT_REQUIRED
             );
         }
         quota.setRemaining(quota.getRemaining() - 1);
-        quota.setUsedStarts(quota.getUsedStarts() + 1);
+        quota.setUsedStarts((quota.getUsedStarts() != null ? quota.getUsedStarts() : 0) + 1);
         quotaRepository.save(quota);
     }
 
     /**
-     * Начисляет кредиты после покупки пакета (или админского действия) и активирует услугу.
+     * Начисляет кредиты пользователю после покупки пакета.
      */
     @Transactional
-    public void addCredits(Cabinet cabinet, int credits) {
-        if (credits <= 0) {
+    public void addCreditsToUser(Long userId, int credits) {
+        if (credits <= 0 || userId == null) {
             return;
         }
-        WbCabinetAbTestQuota quota = getOrCreate(cabinet);
-        quota.setRemaining(quota.getRemaining() + credits);
-        quota.setActivated(true);
+        UserAbTestQuota quota = ensureUserQuota(userId);
+        quota.setRemaining((quota.getRemaining() != null ? quota.getRemaining() : 0) + credits);
         quotaRepository.save(quota);
     }
 
     /**
-     * Актуальный размер бесплатного пакета из {@code plans.ab_pack_free.credit_amount}.
+     * @deprecated квота больше не на кабинете; используйте {@link #addCreditsToUser}.
      */
-    @Transactional(readOnly = true)
-    public int resolveFreeCredits() {
-        return planRepository.findByCode(PlanCodes.AB_PACK_FREE)
-                .filter(plan -> Boolean.TRUE.equals(plan.getIsActive()))
-                .map(Plan::getCreditAmount)
-                .filter(credits -> credits != null && credits > 0)
-                .orElse(PlanCodes.AB_TEST_FREE_QUOTA);
+    @Deprecated
+    @Transactional
+    public void addCredits(Cabinet cabinet, int credits) {
+        if (cabinet == null || cabinet.getUser() == null) {
+            return;
+        }
+        addCreditsToUser(cabinet.getUser().getId(), credits);
     }
 
-    private WbCabinetAbTestQuota getOrCreate(Cabinet cabinet) {
-        return quotaRepository.findByCabinetId(cabinet.getId())
-                .orElseGet(() -> {
-                    Cabinet managed = cabinetRepository.findById(cabinet.getId())
-                            .orElseThrow(() -> new UserException("Кабинет не найден", HttpStatus.NOT_FOUND));
-                    int freeCredits = resolveFreeCredits();
-                    return quotaRepository.save(WbCabinetAbTestQuota.builder()
-                            .cabinet(managed)
-                            .remaining(freeCredits)
-                            .usedStarts(0)
-                            .includedFree(freeCredits)
-                            .activated(false)
-                            .build());
-                });
+    private Long resolveOwnerId(Cabinet cabinet) {
+        if (cabinet == null || cabinet.getUser() == null) {
+            return null;
+        }
+        return cabinet.getUser().getId();
     }
 
-    private int resolveUsed(Long cabinetId) {
-        return quotaRepository.findByCabinetId(cabinetId)
-                .map(WbCabinetAbTestQuota::getUsedStarts)
+    private int resolveUsed(Long userId) {
+        return quotaRepository.findById(userId)
+                .map(UserAbTestQuota::getUsedStarts)
                 .orElse(0);
     }
 

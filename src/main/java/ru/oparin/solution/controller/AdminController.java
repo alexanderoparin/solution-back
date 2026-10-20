@@ -277,6 +277,7 @@ public class AdminController {
                 .description(request.getDescription())
                 .priceRub(request.getPriceRub())
                 .periodDays(request.getPeriodDays())
+                .minCabinets(request.getMinCabinets())
                 .maxCabinets(request.getMaxCabinets())
                 .sortOrder(request.getSortOrder() != null ? request.getSortOrder() : 0)
                 .isActive(request.getIsActive() != null ? request.getIsActive() : true)
@@ -297,6 +298,7 @@ public class AdminController {
         if (request.getDescription() != null) plan.setDescription(request.getDescription());
         if (request.getPriceRub() != null) plan.setPriceRub(request.getPriceRub());
         if (request.getPeriodDays() != null) plan.setPeriodDays(request.getPeriodDays());
+        if (request.getMinCabinets() != null) plan.setMinCabinets(request.getMinCabinets());
         if (request.getMaxCabinets() != null) plan.setMaxCabinets(request.getMaxCabinets());
         if (request.getSortOrder() != null) plan.setSortOrder(request.getSortOrder());
         if (request.getIsActive() != null) plan.setIsActive(request.getIsActive());

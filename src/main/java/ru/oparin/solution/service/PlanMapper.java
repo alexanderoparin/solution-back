@@ -18,6 +18,7 @@ public final class PlanMapper {
                 .description(plan.getDescription())
                 .priceRub(plan.getPriceRub())
                 .periodDays(plan.getPeriodDays())
+                .minCabinets(plan.getMinCabinets())
                 .maxCabinets(plan.getMaxCabinets())
                 .sortOrder(plan.getSortOrder())
                 .isActive(plan.getIsActive())

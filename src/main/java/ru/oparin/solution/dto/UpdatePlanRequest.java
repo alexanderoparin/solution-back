@@ -19,6 +19,7 @@ public class UpdatePlanRequest {
     @DecimalMin("0")
     private BigDecimal priceRub;
     private Integer periodDays;
+    private Integer minCabinets;
     private Integer maxCabinets;
     private Integer sortOrder;
     private Boolean isActive;

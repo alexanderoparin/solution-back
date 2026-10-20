@@ -80,7 +80,13 @@ public class Plan {
     private PlanPeriodType periodType = PlanPeriodType.DAYS;
 
     /**
-     * Максимальное число кабинетов.
+     * Минимум кабинетов в пакете (тир 1 / 2–5 / 6–10).
+     */
+    @Column(name = "min_cabinets")
+    private Integer minCabinets;
+
+    /**
+     * Максимум кабинетов в пакете.
      */
     @Column(name = "max_cabinets")
     private Integer maxCabinets;

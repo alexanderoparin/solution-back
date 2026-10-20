@@ -50,6 +50,13 @@ public class Subscription {
     private Plan plan;
 
     /**
+     * Платёж, из которого создана или продлена подписка.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "payment_id")
+    private Payment payment;
+
+    /**
      * Статус подписки.
      */
     @Column(name = "status", nullable = false, length = 20)

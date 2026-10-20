@@ -10,16 +10,14 @@ import ru.oparin.solution.dto.*;
 import ru.oparin.solution.model.PlanKind;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.PlanRepository;
-import ru.oparin.solution.service.CabinetBillingService;
-import ru.oparin.solution.service.PlanMapper;
-import ru.oparin.solution.service.SubscriptionPaymentService;
-import ru.oparin.solution.service.UserService;
+import ru.oparin.solution.service.*;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * API подписок, тарифов и услуг кабинета.
+ * API подписок, тарифов и услуг.
  */
 @RestController
 @RequestMapping("/subscription")
@@ -31,9 +29,11 @@ public class SubscriptionController {
     private final UserService userService;
     private final SubscriptionProperties subscriptionProperties;
     private final CabinetBillingService cabinetBillingService;
+    private final UserBillingOverviewService userBillingOverviewService;
 
     /**
-     * Каталог планов. Опционально фильтр по kind: MAIN | CAMPAIGN | AB_PACK.
+     * Каталог планов для покупки. Опционально фильтр по kind: MAIN | CAMPAIGN | AB_PACK.
+     * Бесплатные / trial планы не отдаются.
      */
     @GetMapping("/plans")
     public ResponseEntity<List<PlanDto>> getPlans(
@@ -46,23 +46,36 @@ public class SubscriptionController {
                 return ResponseEntity.ok(List.of());
             }
             list = planRepository.findByIsActiveTrueAndKindOrderBySortOrderAsc(planKind).stream()
+                    .filter(this::isPurchasable)
                     .map(PlanMapper::toDto)
                     .toList();
         } else {
             list = new ArrayList<>();
             list.addAll(planRepository.findByIsActiveTrueAndKindOrderBySortOrderAsc(PlanKind.MAIN).stream()
+                    .filter(this::isPurchasable)
                     .map(PlanMapper::toDto)
                     .toList());
             if (subscriptionProperties.isCampaignManagementEnabled()) {
                 list.addAll(planRepository.findByIsActiveTrueAndKindOrderBySortOrderAsc(PlanKind.CAMPAIGN).stream()
+                        .filter(this::isPurchasable)
                         .map(PlanMapper::toDto)
                         .toList());
             }
             list.addAll(planRepository.findByIsActiveTrueAndKindOrderBySortOrderAsc(PlanKind.AB_PACK).stream()
+                    .filter(this::isPurchasable)
                     .map(PlanMapper::toDto)
                     .toList());
         }
         return ResponseEntity.ok(list);
+    }
+
+    /**
+     * Сводка подписок пользователя: кабинеты, активные пакеты, квота А/Б.
+     */
+    @GetMapping("/overview")
+    public ResponseEntity<UserBillingOverviewDto> getOverview(Authentication authentication) {
+        User user = userService.findByEmail(authentication.getName());
+        return ResponseEntity.ok(userBillingOverviewService.buildOverview(user));
     }
 
     /**
@@ -91,19 +104,6 @@ public class SubscriptionController {
     }
 
     /**
-     * Активация бесплатного плана услуги кабинета.
-     */
-    @PostMapping("/activate")
-    public ResponseEntity<ActivatePlanResponse> activatePlan(
-            @Valid @RequestBody ActivatePlanRequest request,
-            Authentication authentication
-    ) {
-        User user = userService.findByEmail(authentication.getName());
-        return ResponseEntity.ok(subscriptionPaymentService.activateFreePlan(
-                user, request.getPlanId(), request.getCabinetId()));
-    }
-
-    /**
      * Инициация оплаты платного плана / услуги / пакета А/Б.
      */
     @PostMapping("/initiate-payment")
@@ -112,8 +112,12 @@ public class SubscriptionController {
             Authentication authentication
     ) {
         User user = userService.findByEmail(authentication.getName());
+        List<Long> cabinetIds = request.getCabinetIds();
+        if ((cabinetIds == null || cabinetIds.isEmpty()) && request.getCabinetId() != null) {
+            cabinetIds = List.of(request.getCabinetId());
+        }
         return ResponseEntity.ok(subscriptionPaymentService.initiatePaidPlan(
-                user, request.getPlanId(), request.getCabinetId()));
+                user, request.getPlanId(), cabinetIds));
     }
 
     /**
@@ -128,15 +132,7 @@ public class SubscriptionController {
         return ResponseEntity.ok(subscriptionPaymentService.getPaymentStatus(user, paymentId));
     }
 
-    /**
-     * Явно подключает бесплатный пакет А/Б тестов для кабинета (план ab_pack_free).
-     */
-    @PostMapping("/cabinet/{cabinetId}/ab-tests/activate-free")
-    public ResponseEntity<WbAbTestQuotaDto> activateAbFreeQuota(
-            @PathVariable Long cabinetId,
-            Authentication authentication
-    ) {
-        User user = userService.findByEmail(authentication.getName());
-        return ResponseEntity.ok(cabinetBillingService.activateAbFreeQuota(user, cabinetId));
+    private boolean isPurchasable(ru.oparin.solution.model.Plan plan) {
+        return plan.getPriceRub() != null && plan.getPriceRub().compareTo(BigDecimal.ZERO) > 0;
     }
 }
