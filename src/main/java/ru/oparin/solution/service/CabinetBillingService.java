@@ -117,10 +117,11 @@ public class CabinetBillingService {
         boolean agency = owner != null && Boolean.TRUE.equals(owner.getAgencyManaged());
         if (promo.isPresent() && !agency) {
             PromoCode promoCode = promo.get().getPromoCode();
+            boolean trial = PlanCodes.isRegistrationTrialCode(promoCode.getCode());
             return MainTariffDto.builder()
                     .code(PlanCodes.PRO_MONTH)
-                    .name("PRO (промокод " + promoCode.getCode() + ")")
-                    .status("PROMO")
+                    .name(trial ? "PRO (пробный период)" : "PRO (промокод " + promoCode.getCode() + ")")
+                    .status(trial ? "TRIAL" : "PROMO")
                     .expiresAt(promo.get().getExpiresAt())
                     .unlimitedAccess(true)
                     .build();

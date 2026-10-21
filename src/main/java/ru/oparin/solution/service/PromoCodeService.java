@@ -5,10 +5,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.exception.UserException;
-import ru.oparin.solution.model.PromoCode;
-import ru.oparin.solution.model.PromoCodeRedemption;
-import ru.oparin.solution.model.PromoRedemptionSource;
-import ru.oparin.solution.model.User;
+import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.PromoCodeRedemptionRepository;
 import ru.oparin.solution.repository.PromoCodeRepository;
 import ru.oparin.solution.repository.UserRepository;
@@ -38,6 +35,9 @@ public class PromoCodeService {
     @Transactional
     public PromoCodeRedemption redeem(String code, Long userId, PromoRedemptionSource source) {
         String normalizedCode = normalizeCode(code);
+        if (PlanCodes.isRegistrationTrialCode(normalizedCode)) {
+            throw new UserException("Промокод не найден или недействителен", HttpStatus.BAD_REQUEST);
+        }
         PromoCode promo = promoCodeRepository.findByCodeIgnoreCase(normalizedCode)
                 .orElseThrow(() -> new UserException("Промокод не найден или недействителен", HttpStatus.BAD_REQUEST));
 
@@ -56,6 +56,41 @@ public class PromoCodeService {
                 .source(source)
                 .build();
         return redemptionRepository.save(redemption);
+    }
+
+    /**
+     * Выдаёт пробный полный доступ при регистрации без промокода.
+     *
+     * @param userId    новый пользователь
+     * @param trialDays длительность из {@code subscription.trial-days}
+     * @return активация или empty, если триал уже был / есть активный промо
+     */
+    @Transactional
+    public Optional<PromoCodeRedemption> grantRegistrationTrial(Long userId, int trialDays) {
+        if (userId == null || trialDays <= 0) {
+            return Optional.empty();
+        }
+        if (hasActivePromo(userId)) {
+            return findActiveRedemption(userId);
+        }
+        PromoCode trialPromo = promoCodeRepository.findByCodeIgnoreCase(PlanCodes.REGISTRATION_TRIAL)
+                .orElseThrow(() -> new UserException(
+                        "Системный триал REGISTRATION_TRIAL не найден — примените миграцию 128",
+                        HttpStatus.INTERNAL_SERVER_ERROR));
+        if (redemptionRepository.existsByUser_IdAndPromoCode_Id(userId, trialPromo.getId())) {
+            return Optional.empty();
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserException("Пользователь не найден", HttpStatus.NOT_FOUND));
+        LocalDateTime now = LocalDateTime.now();
+        PromoCodeRedemption redemption = PromoCodeRedemption.builder()
+                .promoCode(trialPromo)
+                .user(user)
+                .redeemedAt(now)
+                .expiresAt(now.plusDays(trialDays))
+                .source(PromoRedemptionSource.REGISTRATION)
+                .build();
+        return Optional.of(redemptionRepository.save(redemption));
     }
 
     /**

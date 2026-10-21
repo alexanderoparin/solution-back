@@ -81,6 +81,8 @@ public class UserService {
         }
         if (request.getPromoCode() != null && !request.getPromoCode().isBlank()) {
             promoCodeService.redeem(request.getPromoCode(), user.getId(), PromoRedemptionSource.REGISTRATION);
+        } else {
+            promoCodeService.grantRegistrationTrial(user.getId(), subscriptionProperties.getTrialDays());
         }
         return user;
     }

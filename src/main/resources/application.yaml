@@ -124,7 +124,7 @@ app:
 subscription:
   billing-enabled: false  # true — глобальная оплата сайта; false — сайт бесплатен
   campaign-management-enabled: true  # подписка на раздел «Управление РК»
-  trial-days: 14
+  trial-days: 7
 
 tochka:
   enabled: ${TOCHKA_ENABLED:false}

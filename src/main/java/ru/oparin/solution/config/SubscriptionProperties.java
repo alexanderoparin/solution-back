@@ -22,8 +22,8 @@ public class SubscriptionProperties {
     private boolean campaignManagementEnabled = false;
 
     /**
-     * Длительность триала в днях для самостоятельных селлеров (legacy, при глобальной оплате).
+     * Длительность пробного полного доступа (PRO) при регистрации без промокода, в днях.
      */
-    private int trialDays = 14;
+    private int trialDays = 7;
 }
 

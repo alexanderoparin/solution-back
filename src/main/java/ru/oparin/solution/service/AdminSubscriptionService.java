@@ -193,10 +193,12 @@ public class AdminSubscriptionService {
 
         MainTariffOverviewDto mainTariff;
         if (unlimited && promo.isPresent() && !agency) {
+            String promoCode = promo.get().getPromoCode().getCode();
+            boolean trial = PlanCodes.isRegistrationTrialCode(promoCode);
             mainTariff = MainTariffOverviewDto.builder()
                     .code(PlanCodes.PRO_MONTH)
-                    .name("PRO (промокод " + promo.get().getPromoCode().getCode() + ")")
-                    .status("PROMO")
+                    .name(trial ? "PRO (пробный период)" : "PRO (промокод " + promoCode + ")")
+                    .status(trial ? "TRIAL" : "PROMO")
                     .expiresAt(promo.get().getExpiresAt())
                     .unlimitedAccess(true)
                     .build();

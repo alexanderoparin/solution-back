@@ -15,6 +15,12 @@ public final class PlanCodes {
     public static final String AB_PACK_5 = "ab_pack_5";
     public static final String AB_PACK_10 = "ab_pack_10";
 
+    /**
+     * Системный промокод автоматического триала при регистрации без промо.
+     * Не предназначен для ручного ввода пользователем.
+     */
+    public static final String REGISTRATION_TRIAL = "REGISTRATION_TRIAL";
+
     /** Префикс тарифов полного доступа PRO. */
     public static final String PRO_PLAN_PREFIX = "pro_";
     /** Префикс тарифов услуги «Управление РК». */
@@ -28,6 +34,13 @@ public final class PlanCodes {
     public static final int AB_TEST_FREE_QUOTA = 3;
 
     private PlanCodes() {
+    }
+
+    /**
+     * Системный триал регистрации (не показывать как обычный промокод в UI).
+     */
+    public static boolean isRegistrationTrialCode(String code) {
+        return REGISTRATION_TRIAL.equalsIgnoreCase(code);
     }
 
     /**

@@ -24,10 +24,13 @@ public class ProfileSubscriptionService {
     private static final String PROMO_HINT =
             "Полный доступ по промокоду: все разделы сервиса, Управление РК и А/Б тесты без ограничений.";
 
+    private static final String TRIAL_HINT =
+            "Пробный полный доступ: все разделы сервиса, Управление РК и А/Б тесты без ограничений.";
+
     private final PromoCodeService promoCodeService;
 
     /**
-     * Краткая сводка для профиля: активный промокод, иначе тарифы смотрите у кабинета.
+     * Краткая сводка для профиля: активный промокод / триал, иначе тарифы смотрите у кабинета.
      * Бесплатный доступ создаётся вместе с кабинетом, не на пользователе.
      */
     @Transactional(readOnly = true)
@@ -37,16 +40,17 @@ public class ProfileSubscriptionService {
                 : Optional.empty();
         if (promo.isPresent()) {
             String code = promo.get().getPromoCode().getCode();
+            boolean trial = PlanCodes.isRegistrationTrialCode(code);
             return ProfileSubscriptionSummaryDto.builder()
-                    .planName("PRO (промокод " + code + ")")
+                    .planName(trial ? "PRO (пробный период)" : "PRO (промокод " + code + ")")
                     .planCode(PlanCodes.PRO_MONTH)
-                    .statusLabel("Промокод активен")
+                    .statusLabel(trial ? "Пробный период" : "Промокод активен")
                     .active(true)
                     .expiresAt(promo.get().getExpiresAt())
                     .nextBillingAt(null)
                     .autoRenew(false)
-                    .freePlanHint(PROMO_HINT)
-                    .promoCode(code)
+                    .freePlanHint(trial ? TRIAL_HINT : PROMO_HINT)
+                    .promoCode(trial ? null : code)
                     .build();
         }
         return ProfileSubscriptionSummaryDto.builder()
