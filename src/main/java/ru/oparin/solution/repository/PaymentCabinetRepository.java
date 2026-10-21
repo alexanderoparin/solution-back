@@ -3,6 +3,7 @@ package ru.oparin.solution.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import ru.oparin.solution.model.PaymentCabinet;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -14,4 +15,9 @@ public interface PaymentCabinetRepository extends JpaRepository<PaymentCabinet, 
      * Кабинеты платежа.
      */
     List<PaymentCabinet> findByPaymentId(Long paymentId);
+
+    /**
+     * Кабинеты нескольких платежей (для админ-списка).
+     */
+    List<PaymentCabinet> findByPaymentIdIn(Collection<Long> paymentIds);
 }

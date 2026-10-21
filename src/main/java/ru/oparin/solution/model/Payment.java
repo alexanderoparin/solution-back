@@ -39,13 +39,6 @@ public class Payment {
     private User user;
 
     /**
-     * Кабинет, к которому относится платёж.
-     */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "cabinet_id")
-    private Cabinet cabinet;
-
-    /**
      * Подписка, за которую произведён платёж.
      */
     @ManyToOne(fetch = FetchType.LAZY)

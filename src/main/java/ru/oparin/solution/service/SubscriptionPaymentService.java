@@ -82,7 +82,6 @@ public class SubscriptionPaymentService {
 
         Payment payment = Payment.builder()
                 .user(user)
-                .cabinet(cabinets.isEmpty() ? null : cabinets.get(0))
                 .planCode(plan.getCode())
                 .planName(plan.getName())
                 .periodDays(plan.getPeriodDays())
@@ -361,9 +360,6 @@ public class SubscriptionPaymentService {
                 }
             }
             return result;
-        }
-        if (payment.getCabinet() != null) {
-            return List.of(payment.getCabinet());
         }
         return List.of();
     }

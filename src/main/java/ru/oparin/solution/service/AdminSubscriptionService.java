@@ -36,6 +36,7 @@ public class AdminSubscriptionService {
     private final PlanRepository planRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final PaymentRepository paymentRepository;
+    private final PaymentCabinetRepository paymentCabinetRepository;
     private final CabinetRepository cabinetRepository;
     private final SubscriptionPaymentService subscriptionPaymentService;
     private final WbAbTestQuotaService abTestQuotaService;
@@ -381,8 +382,11 @@ public class AdminSubscriptionService {
         String statusFilter = status != null && !status.isBlank() ? status.trim() : null;
         PageRequest pageable = PageRequest.of(safePage, safeSize, Sort.by(Order.desc("createdAt")));
         Page<Payment> paymentPage = paymentRepository.findAllForAdmin(emailFilter, statusFilter, pageable);
-        List<AdminPaymentDto> rows = paymentPage.getContent().stream()
-                .map(this::toAdminPaymentDto)
+        List<Payment> payments = paymentPage.getContent();
+        Map<Long, List<PaymentCabinet>> cabinetsByPayment = loadCabinetsByPaymentIds(
+                payments.stream().map(Payment::getId).collect(Collectors.toList()));
+        List<AdminPaymentDto> rows = payments.stream()
+                .map(p -> toAdminPaymentDto(p, cabinetsByPayment.getOrDefault(p.getId(), List.of())))
                 .collect(Collectors.toList());
         return PageResponse.<AdminPaymentDto>builder()
                 .content(rows)
@@ -391,6 +395,14 @@ public class AdminSubscriptionService {
                 .size(paymentPage.getSize())
                 .number(paymentPage.getNumber())
                 .build();
+    }
+
+    private Map<Long, List<PaymentCabinet>> loadCabinetsByPaymentIds(List<Long> paymentIds) {
+        if (paymentIds == null || paymentIds.isEmpty()) {
+            return Map.of();
+        }
+        return paymentCabinetRepository.findByPaymentIdIn(paymentIds).stream()
+                .collect(Collectors.groupingBy(PaymentCabinet::getPaymentId));
     }
 
     private SubscriptionDto toSubscriptionDto(Subscription s) {
@@ -424,15 +436,34 @@ public class AdminSubscriptionService {
                 .build();
     }
 
-    private AdminPaymentDto toAdminPaymentDto(Payment p) {
+    /**
+     * DTO платежа для админки: кабинет(ы) из payment_cabinets.
+     */
+    private AdminPaymentDto toAdminPaymentDto(Payment p, List<PaymentCabinet> links) {
         User user = p.getUser();
-        Cabinet cabinet = p.getCabinet();
+        Long cabinetId = null;
+        String cabinetName = null;
+        if (links != null && !links.isEmpty()) {
+            List<String> names = new ArrayList<>();
+            for (PaymentCabinet link : links) {
+                if (cabinetId == null) {
+                    cabinetId = link.getCabinetId();
+                }
+                Cabinet cabinet = link.getCabinet();
+                if (cabinet != null && cabinet.getName() != null && !cabinet.getName().isBlank()) {
+                    names.add(cabinet.getName());
+                }
+            }
+            if (!names.isEmpty()) {
+                cabinetName = String.join(", ", names);
+            }
+        }
         return AdminPaymentDto.builder()
                 .id(p.getId())
                 .createdAt(p.getCreatedAt())
                 .userEmail(user != null ? user.getEmail() : null)
-                .cabinetId(cabinet != null ? cabinet.getId() : null)
-                .cabinetName(cabinet != null ? cabinet.getName() : null)
+                .cabinetId(cabinetId)
+                .cabinetName(cabinetName)
                 .planName(p.getPlanName())
                 .amount(p.getAmount())
                 .currency(p.getCurrency())

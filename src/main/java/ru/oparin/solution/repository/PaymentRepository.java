@@ -35,13 +35,12 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
      * @param email  подстрока email (без учёта регистра); пусто — без фильтра
      * @param status точный статус в БД; пусто — без фильтра
      * @param pageable пагинация и сортировка
-     * @return страница платежей с user/cabinet
+     * @return страница платежей с user (кабинеты — через payment_cabinets)
      */
     @Query(
             value = """
                     SELECT p FROM Payment p
                     JOIN FETCH p.user u
-                    LEFT JOIN FETCH p.cabinet c
                     WHERE (:email IS NULL OR :email = '' OR LOWER(u.email) LIKE LOWER(CONCAT('%', :email, '%')))
                       AND (:status IS NULL OR :status = '' OR p.status = :status)
                     """,

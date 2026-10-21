@@ -206,7 +206,6 @@ public class PackageManagementService {
         Plan target = planRepository.findById(request.getTargetPlanId())
                 .orElseThrow(() -> new UserException("План не найден", HttpStatus.NOT_FOUND));
         List<Subscription> group = activeGroupByPayment(request.getPaymentId());
-        Cabinet firstCabinet = group.get(0).getCabinet();
         LocalDateTime expiresAt = group.stream()
                 .map(Subscription::getExpiresAt)
                 .filter(e -> e != null)
@@ -217,7 +216,6 @@ public class PackageManagementService {
 
         Payment payment = Payment.builder()
                 .user(user)
-                .cabinet(firstCabinet)
                 .planCode(target.getCode())
                 .planName(target.getName())
                 .periodDays(target.getPeriodDays())
@@ -396,7 +394,6 @@ public class PackageManagementService {
                     });
         }
 
-        Cabinet firstCabinet = group.get(0).getCabinet();
         LocalDateTime expiresAt = group.stream()
                 .map(Subscription::getExpiresAt)
                 .filter(e -> e != null)
@@ -405,7 +402,6 @@ public class PackageManagementService {
 
         Payment payment = Payment.builder()
                 .user(user)
-                .cabinet(firstCabinet)
                 .planCode(target.getCode())
                 .planName(target.getName())
                 .periodDays(target.getPeriodDays())
