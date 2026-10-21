@@ -27,6 +27,7 @@ public class SubscriptionController {
     private final SubscriptionPaymentService subscriptionPaymentService;
     private final PlanRepository planRepository;
     private final UserService userService;
+    private final EmailService emailService;
     private final SubscriptionProperties subscriptionProperties;
     private final CabinetBillingService cabinetBillingService;
     private final UserBillingOverviewService userBillingOverviewService;
@@ -130,6 +131,27 @@ public class SubscriptionController {
     ) {
         User user = userService.findByEmail(authentication.getName());
         return ResponseEntity.ok(subscriptionPaymentService.getPaymentStatus(user, paymentId));
+    }
+
+    /**
+     * Заявка на индивидуальный тариф (свыше 10 кабинетов) — письмо на корпоративную почту.
+     */
+    @PostMapping("/custom-tariff-request")
+    public ResponseEntity<MessageResponse> submitCustomTariffRequest(
+            @Valid @RequestBody CustomTariffRequestDto request,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        emailService.sendCustomTariffRequestEmail(
+                user,
+                request.getCabinetsCount(),
+                request.getTelegram(),
+                request.getPhone(),
+                request.getMessage()
+        );
+        return ResponseEntity.ok(MessageResponse.builder()
+                .message("Заявка отправлена. Мы свяжемся с вами.")
+                .build());
     }
 
     private boolean isPurchasable(ru.oparin.solution.model.Plan plan) {

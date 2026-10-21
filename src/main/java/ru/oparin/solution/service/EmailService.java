@@ -179,6 +179,44 @@ public class EmailService {
     }
 
     /**
+     * Заявка на индивидуальный тариф (свыше 10 кабинетов) на корпоративную почту.
+     *
+     * @param user           автор заявки
+     * @param cabinetsCount  желаемое число кабинетов
+     * @param telegram       Telegram для связи (может быть пустым)
+     * @param phone          телефон для связи (может быть пустым)
+     * @param message        текст заявки
+     */
+    public void sendCustomTariffRequestEmail(
+            User user,
+            Integer cabinetsCount,
+            String telegram,
+            String phone,
+            String message
+    ) {
+        String userLabel = user.getName() != null && !user.getName().isBlank()
+                ? user.getName() + " (" + user.getEmail() + ")"
+                : user.getEmail();
+        String subject = "Заявка на тариф свыше 10 кабинетов — " + brandName;
+        StringBuilder text = new StringBuilder();
+        text.append("Новая заявка на индивидуальный тариф (свыше 10 кабинетов).\n\n");
+        text.append("Пользователь: ").append(userLabel).append('\n');
+        text.append("ID пользователя: ").append(user.getId()).append('\n');
+        if (cabinetsCount != null) {
+            text.append("Количество кабинетов: ").append(cabinetsCount).append('\n');
+        }
+        if (telegram != null && !telegram.isBlank()) {
+            text.append("Telegram: ").append(telegram.trim()).append('\n');
+        }
+        if (phone != null && !phone.isBlank()) {
+            text.append("Телефон: ").append(phone.trim()).append('\n');
+        }
+        text.append("\nСообщение:\n").append(message.trim()).append('\n');
+        text.append("\n— ").append(brandName);
+        sendLandingInboxEmail(subject, text.toString(), "индивидуальный тариф");
+    }
+
+    /**
      * Отправляет на корпоративную почту сообщение о баге, замечании или предложении.
      *
      * @param user    автор сообщения
