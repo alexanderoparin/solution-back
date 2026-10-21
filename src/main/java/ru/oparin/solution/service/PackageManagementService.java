@@ -246,7 +246,8 @@ public class PackageManagementService {
                 target.getId(),
                 expiresAt,
                 quote.getAmountRub(),
-                addCabinetIds
+                addCabinetIds,
+                false
         ));
         payment = paymentRepository.save(payment);
 
@@ -271,7 +272,196 @@ public class PackageManagementService {
     }
 
     /**
+     * Есть ли парный PRO для CAMPAIGN-плана (тот же max и срок).
+     */
+    @Transactional(readOnly = true)
+    public boolean canUpgradeToPro(Plan campaignPlan) {
+        return resolveProCounterpart(campaignPlan).isPresent();
+    }
+
+    /**
+     * Парный PRO: тот же maxCabinets и periodType (/ periodDays для DAYS).
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<Plan> resolveProCounterpart(Plan campaignPlan) {
+        if (campaignPlan == null || campaignPlan.getKind() != PlanKind.CAMPAIGN) {
+            return java.util.Optional.empty();
+        }
+        int max = campaignPlan.getMaxCabinets() != null ? campaignPlan.getMaxCabinets() : 1;
+        return planRepository.findByIsActiveTrueAndKindOrderBySortOrderAsc(PlanKind.MAIN).stream()
+                .filter(p -> PlanCodes.isProCode(p.getCode()))
+                .filter(p -> p.getPeriodType() == campaignPlan.getPeriodType())
+                .filter(p -> {
+                    if (campaignPlan.getPeriodType() == PlanPeriodType.DAYS) {
+                        return java.util.Objects.equals(p.getPeriodDays(), campaignPlan.getPeriodDays());
+                    }
+                    return true;
+                })
+                .filter(p -> (p.getMaxCabinets() != null ? p.getMaxCabinets() : 1) == max)
+                .findFirst();
+    }
+
+    /**
+     * Расчёт доплаты CAMPAIGN → PRO (срок не меняется).
+     */
+    @Transactional(readOnly = true)
+    public UpgradePackageQuoteDto quoteUpgradeToPro(User user, Long paymentId) {
+        validateSeller(user);
+        Payment payment = requireOwnedPayment(user, paymentId);
+        List<Subscription> group = activeGroupByPayment(payment.getId());
+        if (group.isEmpty()) {
+            throw new UserException("Активный пакет не найден", HttpStatus.NOT_FOUND);
+        }
+        Plan current = group.get(0).getPlan();
+        if (current == null || current.getKind() != PlanKind.CAMPAIGN) {
+            throw new UserException("Улучшить до PRO можно только пакет «Управление РК»", HttpStatus.BAD_REQUEST);
+        }
+        Plan target = resolveProCounterpart(current)
+                .orElseThrow(() -> new UserException("Нет подходящего тарифа PRO", HttpStatus.BAD_REQUEST));
+
+        LocalDateTime expiresAt = group.stream()
+                .map(Subscription::getExpiresAt)
+                .filter(e -> e != null)
+                .min(Comparator.naturalOrder())
+                .orElse(null);
+        if (expiresAt == null) {
+            throw new UserException("У пакета нет срока окончания — апгрейд недоступен", HttpStatus.BAD_REQUEST);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        long remainingDays = Math.max(0, ChronoUnit.DAYS.between(now.toLocalDate(), expiresAt.toLocalDate()));
+        long periodDays = resolvePeriodDays(current, group.get(0).getStartedAt(), expiresAt);
+        BigDecimal currentPrice = current.getPriceRub() != null ? current.getPriceRub() : BigDecimal.ZERO;
+        BigDecimal targetPrice = target.getPriceRub() != null ? target.getPriceRub() : BigDecimal.ZERO;
+        BigDecimal diff = targetPrice.subtract(currentPrice);
+        if (diff.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new UserException("Тариф PRO не дороже текущего", HttpStatus.BAD_REQUEST);
+        }
+        BigDecimal amount = diff
+                .multiply(BigDecimal.valueOf(remainingDays))
+                .divide(BigDecimal.valueOf(Math.max(periodDays, 1)), 0, RoundingMode.HALF_UP);
+        if (remainingDays > 0 && amount.compareTo(BigDecimal.ZERO) == 0) {
+            amount = BigDecimal.ONE;
+        }
+
+        return UpgradePackageQuoteDto.builder()
+                .paymentId(paymentId)
+                .currentPlanId(current.getId())
+                .currentPlanCode(current.getCode())
+                .targetPlanId(target.getId())
+                .targetPlanCode(target.getCode())
+                .targetPlanName(target.getName())
+                .currentPriceRub(currentPrice)
+                .targetPriceRub(targetPrice)
+                .priceDiffRub(diff)
+                .remainingDays(remainingDays)
+                .periodDays(periodDays)
+                .amountRub(amount)
+                .currentMaxCabinets(current.getMaxCabinets())
+                .targetMaxCabinets(target.getMaxCabinets())
+                .build();
+    }
+
+    /**
+     * Инициация оплаты апгрейда CAMPAIGN → PRO.
+     */
+    @Transactional
+    public InitiatePaymentResponse initiateUpgradeToPro(User user, UpgradeToProRequest request) {
+        validateSeller(user);
+        if (!tochkaProperties.isConfiguredForPayments()) {
+            throw new UserException("Оплата временно недоступна", HttpStatus.SERVICE_UNAVAILABLE);
+        }
+        UpgradePackageQuoteDto quote = quoteUpgradeToPro(user, request.getPaymentId());
+        if (quote.getAmountRub() == null || quote.getAmountRub().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new UserException("Доплата равна нулю", HttpStatus.BAD_REQUEST);
+        }
+
+        Plan target = planRepository.findById(quote.getTargetPlanId())
+                .orElseThrow(() -> new UserException("План не найден", HttpStatus.NOT_FOUND));
+        List<Subscription> group = activeGroupByPayment(request.getPaymentId());
+        LocalDateTime now = LocalDateTime.now();
+        for (Subscription s : group) {
+            if (s.getCabinet() == null) {
+                continue;
+            }
+            subscriptionRepository
+                    .findFirstActiveByCabinetIdAndKind(s.getCabinet().getId(), PlanKind.MAIN, ACTIVE_STATUSES, now)
+                    .ifPresent(main -> {
+                        if (main.getPlan() != null && PlanCodes.isProCode(main.getPlan().getCode())) {
+                            throw new UserException(
+                                    "У кабинета «" + s.getCabinet().getName()
+                                            + "» уже есть полный доступ — улучшение до PRO недоступно",
+                                    HttpStatus.BAD_REQUEST);
+                        }
+                    });
+        }
+
+        Cabinet firstCabinet = group.get(0).getCabinet();
+        LocalDateTime expiresAt = group.stream()
+                .map(Subscription::getExpiresAt)
+                .filter(e -> e != null)
+                .min(Comparator.naturalOrder())
+                .orElseThrow();
+
+        Payment payment = Payment.builder()
+                .user(user)
+                .cabinet(firstCabinet)
+                .planCode(target.getCode())
+                .planName(target.getName())
+                .periodDays(target.getPeriodDays())
+                .periodType(target.getPeriodType())
+                .amount(quote.getAmountRub())
+                .currency("RUB")
+                .status(PaymentStatus.PENDING.getDbValue())
+                .description("Улучшение до PRO: " + target.getName())
+                .build();
+        payment = paymentRepository.save(payment);
+
+        for (Subscription s : group) {
+            if (s.getCabinet() == null) {
+                continue;
+            }
+            paymentCabinetRepository.save(PaymentCabinet.builder()
+                    .paymentId(payment.getId())
+                    .cabinetId(s.getCabinet().getId())
+                    .payment(payment)
+                    .cabinet(s.getCabinet())
+                    .build());
+        }
+
+        payment.setMetadata(buildUpgradeMetadata(
+                request.getPaymentId(),
+                target.getId(),
+                expiresAt,
+                quote.getAmountRub(),
+                List.of(),
+                true
+        ));
+        payment = paymentRepository.save(payment);
+
+        var tochkaResult = tochkaAcquiringService.createSubscriptionPayment(
+                user, target, payment.getId(), brandName, quote.getAmountRub());
+        payment.setExternalId(tochkaResult.getOperationId());
+        payment.setMetadata(mergeTochkaIntoMetadata(
+                payment.getMetadata(),
+                tochkaResult.getOperationId(),
+                tochkaResult.getPaymentLink(),
+                tochkaResult.getStatus()
+        ));
+        paymentRepository.save(payment);
+
+        log.info("Создан платёж апгрейда до PRO id={} sourcePaymentId={} amount={}",
+                payment.getId(), request.getPaymentId(), quote.getAmountRub());
+
+        return InitiatePaymentResponse.builder()
+                .paymentId(payment.getId())
+                .paymentUrl(tochkaResult.getPaymentLink())
+                .build();
+    }
+
+    /**
      * Применяет успешный платёж-апгрейд: меняет plan у подписок пакета, срок сохраняет.
+     * Для upgradeToPro — CAMPAIGN → MAIN PRO, бесплатный MAIN на кабинетах гасится.
      *
      * @return true если платёж был апгрейдом и обработан
      */
@@ -287,15 +477,33 @@ public class PackageManagementService {
             log.error("Upgrade payment id={}: target plan {} missing", payment.getId(), targetPlanId);
             return true;
         }
+        boolean upgradeToPro = readBooleanMeta(payment.getMetadata(), "upgradeToPro");
+        PlanKind expectedSourceKind = upgradeToPro ? PlanKind.CAMPAIGN : target.getKind();
+
         List<Subscription> group = subscriptionRepository.findByPayment_Id(sourcePaymentId);
         LocalDateTime keepExpires = readDateTimeMeta(payment.getMetadata(), "keepExpiresAt");
+        LocalDateTime now = LocalDateTime.now();
         Subscription first = null;
         for (Subscription s : group) {
-            if (s.getPlan() != null && s.getPlan().getKind() != target.getKind()) {
+            if (s.getPlan() == null || s.getPlan().getKind() != expectedSourceKind) {
                 continue;
             }
             if (!ACTIVE_STATUSES.contains(s.getStatus())) {
                 continue;
+            }
+            if (upgradeToPro && s.getCabinet() != null) {
+                expireFreeMainOnCabinet(s.getCabinet(), now);
+                boolean hasPaidPro = subscriptionRepository
+                        .findFirstActiveByCabinetIdAndKind(s.getCabinet().getId(), PlanKind.MAIN, ACTIVE_STATUSES, now)
+                        .filter(m -> m.getPlan() != null && PlanCodes.isProCode(m.getPlan().getCode()))
+                        .isPresent();
+                if (hasPaidPro) {
+                    log.warn("Upgrade-to-PRO paymentId={}: кабинет {} уже с PRO, CAMPAIGN-подписка {} пропущена",
+                            payment.getId(), s.getCabinet().getId(), s.getId());
+                    s.setStatus("expired");
+                    subscriptionRepository.save(s);
+                    continue;
+                }
             }
             s.setPlan(target);
             s.setPayment(payment);
@@ -317,9 +525,24 @@ public class PackageManagementService {
             addCabinetsAfterUpgrade(payment, target, keepExpires, addCabinetIds);
         }
 
-        log.info("Апгрейд применён: paymentId={} sourcePaymentId={} → plan {}",
-                payment.getId(), sourcePaymentId, target.getCode());
+        log.info("Апгрейд применён: paymentId={} sourcePaymentId={} → plan {} upgradeToPro={}",
+                payment.getId(), sourcePaymentId, target.getCode(), upgradeToPro);
         return true;
+    }
+
+    /** Гасит бесплатный MAIN (analytics_free) на кабинете перед переходом на PRO. */
+    private void expireFreeMainOnCabinet(Cabinet cabinet, LocalDateTime now) {
+        subscriptionRepository
+                .findFirstActiveByCabinetIdAndKind(cabinet.getId(), PlanKind.MAIN, ACTIVE_STATUSES, now)
+                .ifPresent(main -> {
+                    if (main.getPlan() != null && PlanCodes.ANALYTICS_FREE.equals(main.getPlan().getCode())) {
+                        main.setStatus("expired");
+                        if (main.getExpiresAt() == null || main.getExpiresAt().isAfter(now)) {
+                            main.setExpiresAt(now);
+                        }
+                        subscriptionRepository.save(main);
+                    }
+                });
     }
 
     /**
@@ -543,7 +766,8 @@ public class PackageManagementService {
             Long targetPlanId,
             LocalDateTime keepExpiresAt,
             BigDecimal amount,
-            List<Long> addCabinetIds
+            List<Long> addCabinetIds,
+            boolean upgradeToPro
     ) {
         try {
             ObjectNode node = objectMapper.createObjectNode();
@@ -552,6 +776,9 @@ public class PackageManagementService {
             node.put("upgradeTargetPlanId", targetPlanId);
             node.put("keepExpiresAt", keepExpiresAt.toString());
             node.put("upgradeAmountRub", amount);
+            if (upgradeToPro) {
+                node.put("upgradeToPro", true);
+            }
             if (addCabinetIds != null && !addCabinetIds.isEmpty()) {
                 var arr = node.putArray("upgradeAddCabinetIds");
                 for (Long id : addCabinetIds) {
@@ -561,6 +788,18 @@ public class PackageManagementService {
             return objectMapper.writeValueAsString(node);
         } catch (Exception e) {
             throw new UserException("Не удалось подготовить платёж", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    private boolean readBooleanMeta(String metadata, String field) {
+        try {
+            if (metadata == null || metadata.isBlank()) {
+                return false;
+            }
+            JsonNode node = objectMapper.readTree(metadata).get(field);
+            return node != null && node.isBoolean() && node.booleanValue();
+        } catch (Exception e) {
+            return false;
         }
     }
 

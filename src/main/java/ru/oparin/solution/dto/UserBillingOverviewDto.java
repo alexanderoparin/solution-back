@@ -58,6 +58,8 @@ public class UserBillingOverviewDto {
         private boolean canAddCabinets;
         /** Есть более высокий тир с тем же сроком. */
         private boolean canUpgrade;
+        /** CAMPAIGN → парный PRO (тот же max/срок). */
+        private boolean canUpgradeToPro;
     }
 
     /**

@@ -207,6 +207,30 @@ public class SubscriptionController {
                 .toList());
     }
 
+    /**
+     * Расчёт доплаты за улучшение «Управление РК» → PRO (срок не меняется).
+     */
+    @GetMapping("/package/upgrade-to-pro-quote")
+    public ResponseEntity<UpgradePackageQuoteDto> upgradeToProQuote(
+            @RequestParam Long paymentId,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        return ResponseEntity.ok(packageManagementService.quoteUpgradeToPro(user, paymentId));
+    }
+
+    /**
+     * Оплата улучшения «Управление РК» → PRO.
+     */
+    @PostMapping("/package/upgrade-to-pro")
+    public ResponseEntity<InitiatePaymentResponse> upgradeToPro(
+            @Valid @RequestBody UpgradeToProRequest request,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        return ResponseEntity.ok(packageManagementService.initiateUpgradeToPro(user, request));
+    }
+
     private boolean isPurchasable(ru.oparin.solution.model.Plan plan) {
         return plan.getPriceRub() != null && plan.getPriceRub().compareTo(BigDecimal.ZERO) > 0;
     }

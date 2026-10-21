@@ -176,6 +176,9 @@ public class UserBillingOverviewService {
         boolean canUpgrade = paymentId != null
                 && plan != null
                 && !packageManagementService.listUpgradeTargets(plan).isEmpty();
+        boolean canUpgradeToPro = paymentId != null
+                && plan != null
+                && packageManagementService.canUpgradeToPro(plan);
         return ActivePackageDto.builder()
                 .kind(kind)
                 .title(title)
@@ -190,6 +193,7 @@ public class UserBillingOverviewService {
                 .cabinetIds(cabinetIds)
                 .canAddCabinets(canAdd)
                 .canUpgrade(canUpgrade)
+                .canUpgradeToPro(canUpgradeToPro)
                 .build();
     }
 }
