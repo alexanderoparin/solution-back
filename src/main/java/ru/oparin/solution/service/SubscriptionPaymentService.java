@@ -47,6 +47,7 @@ public class SubscriptionPaymentService {
     private final TochkaProperties tochkaProperties;
     private final TochkaAcquiringService tochkaAcquiringService;
     private final WbAbTestQuotaService abTestQuotaService;
+    private final PackageManagementService packageManagementService;
     private final ObjectMapper objectMapper;
 
     @Value("${app.brand-name:Clicki}")
@@ -138,6 +139,8 @@ public class SubscriptionPaymentService {
                 .paymentId(payment.getId())
                 .status(payment.getStatus())
                 .expiresAt(resolveSubscriptionExpiresAt(payment))
+                .planName(payment.getPlanName())
+                .planCode(payment.getPlanCode())
                 .build();
     }
 
@@ -264,6 +267,10 @@ public class SubscriptionPaymentService {
     }
 
     private void applySuccessfulPayment(Payment payment) {
+        if (packageManagementService.applyUpgradeIfNeeded(payment)) {
+            return;
+        }
+
         Plan catalogPlan = payment.getPlanCode() != null
                 ? planRepository.findByCode(payment.getPlanCode()).orElse(null)
                 : null;

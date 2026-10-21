@@ -7,6 +7,8 @@ import ru.oparin.solution.config.TochkaProperties;
 import ru.oparin.solution.model.Plan;
 import ru.oparin.solution.model.User;
 
+import java.math.BigDecimal;
+
 /**
  * Оформление платёжных ссылок Точка Банк для подписок.
  */
@@ -18,13 +20,26 @@ public class TochkaAcquiringService {
     private final TochkaProperties tochkaProperties;
 
     /**
-     * Создаёт платёжную ссылку с чеком для тарифного плана.
+     * Создаёт платёжную ссылку с чеком для тарифного плана (сумма = цена плана).
      */
     public TochkaPaymentOperationResult createSubscriptionPayment(
             User user,
             Plan plan,
             Long paymentId,
             String brandName
+    ) {
+        return createSubscriptionPayment(user, plan, paymentId, brandName, plan.getPriceRub());
+    }
+
+    /**
+     * Создаёт платёжную ссылку с произвольной суммой (например prorate-апгрейд).
+     */
+    public TochkaPaymentOperationResult createSubscriptionPayment(
+            User user,
+            Plan plan,
+            Long paymentId,
+            String brandName,
+            BigDecimal amount
     ) {
         String paymentLinkId = "cm-" + paymentId;
         String successUrl = buildRedirectUrl(tochkaProperties.getRedirectSuccessUrl(), paymentId);
@@ -33,7 +48,7 @@ public class TochkaAcquiringService {
 
         return tochkaApiClient.createPaymentWithReceipt(
                 TochkaCreatePaymentParams.builder()
-                        .amount(plan.getPriceRub())
+                        .amount(amount)
                         .purpose(purpose)
                         .paymentLinkId(paymentLinkId)
                         .redirectUrl(successUrl)

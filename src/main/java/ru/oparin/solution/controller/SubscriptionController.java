@@ -25,6 +25,7 @@ import java.util.List;
 public class SubscriptionController {
 
     private final SubscriptionPaymentService subscriptionPaymentService;
+    private final PackageManagementService packageManagementService;
     private final PlanRepository planRepository;
     private final UserService userService;
     private final EmailService emailService;
@@ -152,6 +153,58 @@ public class SubscriptionController {
         return ResponseEntity.ok(MessageResponse.builder()
                 .message("Заявка отправлена. Мы свяжемся с вами.")
                 .build());
+    }
+
+    /**
+     * Добор кабинетов в оплаченный пакет (до max тира, без оплаты).
+     */
+    @PostMapping("/package/add-cabinets")
+    public ResponseEntity<MessageResponse> addPackageCabinets(
+            @Valid @RequestBody AddPackageCabinetsRequest request,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        return ResponseEntity.ok(packageManagementService.addCabinets(user, request));
+    }
+
+    /**
+     * Расчёт доплаты за апгрейд тира пакета (срок не меняется).
+     */
+    @GetMapping("/package/upgrade-quote")
+    public ResponseEntity<UpgradePackageQuoteDto> upgradePackageQuote(
+            @RequestParam Long paymentId,
+            @RequestParam Long targetPlanId,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        return ResponseEntity.ok(packageManagementService.quoteUpgrade(user, paymentId, targetPlanId));
+    }
+
+    /**
+     * Оплата апгрейда тира пакета.
+     */
+    @PostMapping("/package/upgrade")
+    public ResponseEntity<InitiatePaymentResponse> upgradePackage(
+            @Valid @RequestBody UpgradePackageRequest request,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        return ResponseEntity.ok(packageManagementService.initiateUpgrade(user, request));
+    }
+
+    /**
+     * Доступные планы апгрейда для пакета (тот же срок, больший max).
+     */
+    @GetMapping("/package/upgrade-targets")
+    public ResponseEntity<List<PlanDto>> upgradeTargets(
+            @RequestParam Long paymentId,
+            Authentication authentication
+    ) {
+        User user = userService.findByEmail(authentication.getName());
+        return ResponseEntity.ok(packageManagementService.listUpgradeTargetsForPayment(user, paymentId)
+                .stream()
+                .map(PlanMapper::toDto)
+                .toList());
     }
 
     private boolean isPurchasable(ru.oparin.solution.model.Plan plan) {

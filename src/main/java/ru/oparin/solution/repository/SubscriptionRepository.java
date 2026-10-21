@@ -104,6 +104,19 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     boolean existsByUser_IdAndPlan_Code(Long userId, String planCode);
 
     /**
+     * Подписки, созданные/продлённые одним платежом (пакет multi-cabinet).
+     */
+    @Query("""
+            select s from Subscription s
+            left join fetch s.plan
+            left join fetch s.cabinet
+            left join fetch s.payment
+            where s.payment.id = :paymentId
+            order by s.id
+            """)
+    List<Subscription> findByPayment_Id(@Param("paymentId") Long paymentId);
+
+    /**
      * @deprecated используйте cabinet-scoped методы; оставлено для совместимости миграции.
      */
     @Deprecated

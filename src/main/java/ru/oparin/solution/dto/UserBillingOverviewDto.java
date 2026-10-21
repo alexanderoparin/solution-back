@@ -44,6 +44,20 @@ public class UserBillingOverviewDto {
         /** Для А/Б: осталось / использовано. */
         private Integer remaining;
         private Integer usedStarts;
+
+        /** Платёж, объединяющий кабинеты пакета (null у «сирот»). */
+        private Long paymentId;
+        /** Id плана текущего пакета. */
+        private Long planId;
+        private String planCode;
+        private Integer minCabinets;
+        private Integer maxCabinets;
+        /** Кабинеты в пакете. */
+        private List<Long> cabinetIds;
+        /** Можно добрать кабинеты до max без оплаты. */
+        private boolean canAddCabinets;
+        /** Есть более высокий тир с тем же сроком. */
+        private boolean canUpgrade;
     }
 
     /**

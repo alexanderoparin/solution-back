@@ -27,6 +27,7 @@ public class UserBillingOverviewService {
     private final SubscriptionRepository subscriptionRepository;
     private final CabinetEntitlementService entitlementService;
     private final WbAbTestQuotaService abTestQuotaService;
+    private final PackageManagementService packageManagementService;
 
     @Transactional(readOnly = true)
     public UserBillingOverviewDto buildOverview(User user) {
@@ -139,32 +140,56 @@ public class UserBillingOverviewService {
             String title
     ) {
         List<ActivePackageDto> result = new ArrayList<>();
-        for (List<Subscription> group : byPayment.values()) {
+        for (Map.Entry<Long, List<Subscription>> entry : byPayment.entrySet()) {
+            List<Subscription> group = entry.getValue();
             if (group.isEmpty()) {
                 continue;
             }
-            LocalDateTime expires = group.stream()
-                    .map(Subscription::getExpiresAt)
-                    .filter(e -> e != null)
-                    .min(Comparator.naturalOrder())
-                    .orElse(null);
-            result.add(ActivePackageDto.builder()
-                    .kind(kind)
-                    .title(title)
-                    .cabinetCount(group.size())
-                    .expiresAt(expires)
-                    .status("ACTIVE")
-                    .build());
+            result.add(toPackageDto(kind, title, group, entry.getKey()));
         }
         for (Subscription sub : orphans) {
-            result.add(ActivePackageDto.builder()
-                    .kind(kind)
-                    .title(title)
-                    .cabinetCount(1)
-                    .expiresAt(sub.getExpiresAt())
-                    .status("ACTIVE")
-                    .build());
+            result.add(toPackageDto(kind, title, List.of(sub), null));
         }
         return result;
+    }
+
+    private ActivePackageDto toPackageDto(
+            String kind,
+            String title,
+            List<Subscription> group,
+            Long paymentId
+    ) {
+        LocalDateTime expires = group.stream()
+                .map(Subscription::getExpiresAt)
+                .filter(e -> e != null)
+                .min(Comparator.naturalOrder())
+                .orElse(null);
+        Plan plan = group.get(0).getPlan();
+        int max = plan != null && plan.getMaxCabinets() != null ? plan.getMaxCabinets() : 1;
+        int min = plan != null && plan.getMinCabinets() != null ? plan.getMinCabinets() : 1;
+        List<Long> cabinetIds = group.stream()
+                .map(Subscription::getCabinet)
+                .filter(Objects::nonNull)
+                .map(Cabinet::getId)
+                .toList();
+        boolean canAdd = paymentId != null && cabinetIds.size() < max;
+        boolean canUpgrade = paymentId != null
+                && plan != null
+                && !packageManagementService.listUpgradeTargets(plan).isEmpty();
+        return ActivePackageDto.builder()
+                .kind(kind)
+                .title(title)
+                .cabinetCount(cabinetIds.size())
+                .expiresAt(expires)
+                .status("ACTIVE")
+                .paymentId(paymentId)
+                .planId(plan != null ? plan.getId() : null)
+                .planCode(plan != null ? plan.getCode() : null)
+                .minCabinets(min)
+                .maxCabinets(max)
+                .cabinetIds(cabinetIds)
+                .canAddCabinets(canAdd)
+                .canUpgrade(canUpgrade)
+                .build();
     }
 }

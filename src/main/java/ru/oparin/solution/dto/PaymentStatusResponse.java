@@ -15,4 +15,8 @@ public class PaymentStatusResponse {
     private Long paymentId;
     private String status;
     private LocalDateTime expiresAt;
+    /** Название тарифа/услуги на момент оплаты (snapshot). */
+    private String planName;
+    /** Код плана (snapshot), для текста успеха. */
+    private String planCode;
 }
