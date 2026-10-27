@@ -28,7 +28,8 @@ import java.util.*;
 /**
  * Синхронизация рейтинга карточек из отчёта WB Analytics item-rating v2
  * ({@code POST /api/analytics/v2/item-rating}, массив {@code data.items}).
- * Берём поле {@code rating} (рейтинг карточки на витрине), не {@code feedbackRating}.
+ * Берём {@code feedbackRating.current} — рейтинг по отзывам (звёзды 1–5 на странице артикула).
+ * Поле {@code rating} в том же ответе — отдельная «оценка карточки» продавца, другая шкала.
  * Категория токена: Аналитика.
  */
 @Service
@@ -163,9 +164,19 @@ public class WbItemRatingSyncService {
                 continue;
             }
             seenNmIds.add(card.getNmId());
-            Double cardRating = card.getRating();
-            if (cardRating != null) {
-                ratingFromWbByNmId.put(card.getNmId(), toRating(cardRating));
+            Double feedbackCurrent = card.getFeedbackRating() != null
+                    ? card.getFeedbackRating().getCurrent()
+                    : null;
+            BigDecimal normalized = toStarRating(feedbackCurrent);
+            if (normalized != null) {
+                ratingFromWbByNmId.put(card.getNmId(), normalized);
+            } else if (feedbackCurrent != null) {
+                log.warn(
+                        "Пропуск рейтинга item-rating вне шкалы 1–5: cabinetId={}, nmId={}, feedbackRating={}",
+                        cabinetId,
+                        card.getNmId(),
+                        feedbackCurrent
+                );
             }
         }
         if (seenNmIds.isEmpty()) {
@@ -204,7 +215,19 @@ public class WbItemRatingSyncService {
                 cabinetId, cards.size(), cleared);
     }
 
-    private static BigDecimal toRating(double value) {
+    /**
+     * Нормализует рейтинг по отзывам в шкалу для колонки {@code NUMERIC(3,2)} (строго меньше 10).
+     *
+     * @param value сырое значение из {@code feedbackRating.current}
+     * @return округлённый рейтинг 0.01–5.00 либо {@code null}, если значение непригодно
+     */
+    private static BigDecimal toStarRating(Double value) {
+        if (value == null || value.isNaN() || value.isInfinite()) {
+            return null;
+        }
+        if (value <= 0 || value > 5.0d) {
+            return null;
+        }
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
     }
 }
