@@ -3,7 +3,7 @@ package ru.oparin.solution.util;
 import java.math.BigDecimal;
 
 /**
- * Нормализация рейтинга по отзывам WB (шкала 1–5, {@code feedbackRating} из item-rating).
+ * Нормализация рейтинга по отзывам WB (шкала 1–5, {@code reviewRating} с витрины).
  */
 public final class ArticleRatingUtils {
 

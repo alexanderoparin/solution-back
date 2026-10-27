@@ -13,7 +13,6 @@ import ru.oparin.solution.dto.wb.WbCardsListResponse;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.Cabinet;
-import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.User;
 import ru.oparin.solution.model.WbProductCard;
 import ru.oparin.solution.service.events.WbApiEventService;
@@ -294,17 +293,11 @@ public class WbProductCardAnalyticsService {
     }
 
     private void syncItemRatingWithGuard(Cabinet managed, long cabinetId) {
-        if (!CabinetTokenType.effective(managed.getTokenType()).supportsItemRating()) {
-            log.info("Синхронизация item-rating пропущена для кабинета {}: базовый токен WB", cabinetId);
-            return;
-        }
         try {
             itemRatingSyncService.syncForCabinetInNewTransaction(managed, managed.getApiKey());
-        } catch (WbApiUnauthorizedScopeException e) {
-            cabinetScopeStatusService.recordFailure(cabinetId, e.getCategory(), e.getMessage());
-            logScopeAccessDenied(cabinetId, e);
         } catch (Exception e) {
-            log.warn("Синхронизация рейтинга item-rating для кабинета {} завершилась с ошибкой: {}", cabinetId, e.getMessage());
+            log.warn("Синхронизация рейтинга (public catalog) для кабинета {} завершилась с ошибкой: {}",
+                    cabinetId, e.getMessage());
         }
     }
 
