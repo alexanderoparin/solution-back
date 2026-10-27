@@ -168,14 +168,19 @@ public class WbItemRatingSyncService {
                     ? card.getFeedbackRating().getCurrent()
                     : null;
             BigDecimal normalized = toStarRating(feedbackCurrent);
+            if (normalized == null) {
+                // Иногда за короткий период feedbackRating=0, а звёзды 1–5 приходят в rating.
+                normalized = toStarRating(card.getRating());
+            }
             if (normalized != null) {
                 ratingFromWbByNmId.put(card.getNmId(), normalized);
-            } else if (feedbackCurrent != null) {
+            } else {
                 log.warn(
-                        "Пропуск рейтинга item-rating вне шкалы 1–5: cabinetId={}, nmId={}, feedbackRating={}",
+                        "Пропуск рейтинга item-rating вне шкалы 1–5: cabinetId={}, nmId={}, feedbackRating={}, rating={}",
                         cabinetId,
                         card.getNmId(),
-                        feedbackCurrent
+                        feedbackCurrent,
+                        card.getRating()
                 );
             }
         }

@@ -44,7 +44,7 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
 
     /**
      * Отчёт «Оценка товара» — одна страница (POST /api/analytics/v2/item-rating).
-     * Период: вчера — вчера (снимок текущего рейтинга по правилам API).
+     * Период: последние 30 дней до вчера — иначе за один день WB часто отдаёт {@code feedbackRating=0}.
      *
      * @param apiKey API-ключ (категория «Аналитика»)
      * @param offset смещение пагинации
@@ -55,9 +55,13 @@ public class WbAnalyticsApiClient extends AbstractWbApiClient {
         logWbApiCall(fullUrl, "оценка товара item-rating", null);
 
         LocalDate yesterday = LocalDate.now().minusDays(1);
-        String date = yesterday.format(DateTimeFormatter.ISO_LOCAL_DATE);
+        LocalDate periodStart = yesterday.minusDays(29);
+        DateTimeFormatter isoDate = DateTimeFormatter.ISO_LOCAL_DATE;
         WbItemRatingRequest request = WbItemRatingRequest.builder()
-                .currentPeriod(WbItemRatingRequest.Period.builder().start(date).end(date).build())
+                .currentPeriod(WbItemRatingRequest.Period.builder()
+                        .start(periodStart.format(isoDate))
+                        .end(yesterday.format(isoDate))
+                        .build())
                 .orderBy(WbItemRatingRequest.OrderBy.builder().field("feedbackRating").mode("desc").build())
                 .limit(ITEM_RATING_PAGE_LIMIT)
                 .offset(offset)
