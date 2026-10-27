@@ -17,13 +17,14 @@ public class WbItemRatingCard {
     private Long nmId;
 
     /**
-     * Рейтинг карточки товара (то же значение, что на витрине / странице артикула WB), шкала 1–5.
+     * «Оценка карточки» продавца в отчёте item-rating (другая шкала, не звёзды витрины).
+     * Для отображения звёзд на странице артикула не используем.
      */
     @JsonProperty("rating")
     private Double rating;
 
     /**
-     * Рейтинг по отзывам из отчёта «Оценка товара» (может отличаться от {@link #rating}).
+     * Рейтинг по отзывам (звёзды 1–5 на странице артикула WB).
      */
     @JsonProperty("feedbackRating")
     private FeedbackRating feedbackRating;

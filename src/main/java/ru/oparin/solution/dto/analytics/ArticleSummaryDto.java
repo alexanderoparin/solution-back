@@ -69,7 +69,7 @@ public class ArticleSummaryDto {
     private String vendorCode;
 
     /**
-     * Рейтинг карточки WB (1–5), как на странице артикула.
+     * Рейтинг по отзывам WB (1–5), звёзды на странице артикула.
      */
     private BigDecimal rating;
 
