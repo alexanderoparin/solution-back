@@ -16,6 +16,15 @@ public class WbItemRatingCard {
     @JsonProperty("nmId")
     private Long nmId;
 
+    /**
+     * Рейтинг карточки товара (то же значение, что на витрине / странице артикула WB), шкала 1–5.
+     */
+    @JsonProperty("rating")
+    private Double rating;
+
+    /**
+     * Рейтинг по отзывам из отчёта «Оценка товара» (может отличаться от {@link #rating}).
+     */
     @JsonProperty("feedbackRating")
     private FeedbackRating feedbackRating;
 

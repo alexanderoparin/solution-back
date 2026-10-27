@@ -28,6 +28,7 @@ import java.util.*;
 /**
  * Синхронизация рейтинга карточек из отчёта WB Analytics item-rating v2
  * ({@code POST /api/analytics/v2/item-rating}, массив {@code data.items}).
+ * Берём поле {@code rating} (рейтинг карточки на витрине), не {@code feedbackRating}.
  * Категория токена: Аналитика.
  */
 @Service
@@ -162,8 +163,9 @@ public class WbItemRatingSyncService {
                 continue;
             }
             seenNmIds.add(card.getNmId());
-            if (card.getFeedbackRating() != null && card.getFeedbackRating().getCurrent() != null) {
-                ratingFromWbByNmId.put(card.getNmId(), toRating(card.getFeedbackRating().getCurrent()));
+            Double cardRating = card.getRating();
+            if (cardRating != null) {
+                ratingFromWbByNmId.put(card.getNmId(), toRating(cardRating));
             }
         }
         if (seenNmIds.isEmpty()) {

@@ -114,7 +114,7 @@ public class WbProductCard {
     }
 
     /**
-     * Рейтинг по отзывам WB (feedbackRating), 1–5.
+     * Рейтинг карточки WB (поле rating из item-rating, как на странице артикула), 1–5.
      * Заполняется синхронизацией через Analytics API item-rating.
      */
     @Column(name = "rating", precision = 3, scale = 2)
