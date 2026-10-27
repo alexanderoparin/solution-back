@@ -29,6 +29,11 @@ services:
       - TOCHKA_CLIENT_ID=${TOCHKA_CLIENT_ID}
       # Почта (SMTP)
       - MAIL_PASSWORD=${MAIL_PASSWORD}
+      # Telegram: дублирование заявок (лендинг / тариф >10)
+      - TELEGRAM_LEADS_ENABLED=${TELEGRAM_LEADS_ENABLED:-false}
+      - TELEGRAM_LEADS_BOT_TOKEN=${TELEGRAM_LEADS_BOT_TOKEN:-}
+      - TELEGRAM_LEADS_CHAT_ID=${TELEGRAM_LEADS_CHAT_ID:-}
+      - TELEGRAM_LEADS_PROXY=${TELEGRAM_LEADS_PROXY:-}
       # Логирование
       - LOGGING_LEVEL_ROOT=${LOGGING_LEVEL_ROOT:-INFO}
       - LOGGING_LEVEL_APP=${LOGGING_LEVEL_APP:-INFO}
@@ -47,6 +52,8 @@ services:
       start_period: 40s
     networks:
       - solution-network
+      # SOCKS xray (wb-drr-xray) для api.telegram.org
+      - tg-clickiwbot_default
 
   # Фронтенд (React + Nginx)
   frontend:
@@ -74,4 +81,7 @@ services:
 networks:
   solution-network:
     driver: bridge
+  tg-clickiwbot_default:
+    external: true
+    name: tg-clickiwbot_default
 

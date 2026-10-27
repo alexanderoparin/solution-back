@@ -26,6 +26,7 @@ import java.util.List;
 public class EmailService {
 
     private final JavaMailSender mailSender;
+    private final TelegramLeadsNotifyService telegramLeadsNotifyService;
 
     @Value("${app.mail.from}")
     private String fromEmail;
@@ -121,6 +122,7 @@ public class EmailService {
         String text = "Новая заявка на аудит рекламного кабинета с лендинга.\n\n"
                 + buildLandingLeadEmailBody(name, telegram, additionalInfo, source);
         sendLandingInboxEmail(subject, text, "аудит кабинета");
+        telegramLeadsNotifyService.notifyLead(subject + "\n\n" + text);
     }
 
     /**
@@ -141,6 +143,7 @@ public class EmailService {
         String text = "Новая заявка на консультацию по ведению рекламных кабинетов с лендинга.\n\n"
                 + buildLandingLeadEmailBody(name, telegram, additionalInfo, source);
         sendLandingInboxEmail(subject, text, "консультацию по ведению кабинетов");
+        telegramLeadsNotifyService.notifyLead(subject + "\n\n" + text);
     }
 
     private String buildLandingLeadEmailBody(
@@ -213,7 +216,9 @@ public class EmailService {
         }
         text.append("\nСообщение:\n").append(message.trim()).append('\n');
         text.append("\n— ").append(brandName);
-        sendLandingInboxEmail(subject, text.toString(), "индивидуальный тариф");
+        String body = text.toString();
+        sendLandingInboxEmail(subject, body, "индивидуальный тариф");
+        telegramLeadsNotifyService.notifyLead(subject + "\n\n" + body);
     }
 
     /**

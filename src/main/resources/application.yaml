@@ -93,6 +93,12 @@ app:
   mail:
     from: corp@click-i.ru
     audit-to: corp@click-i.ru
+  # Дублирование заявок (лендинг, тариф >10) в Telegram. Тест: chat-id Александра.
+  telegram-leads:
+    enabled: ${TELEGRAM_LEADS_ENABLED:false}
+    bot-token: ${TELEGRAM_LEADS_BOT_TOKEN:}
+    chat-id: ${TELEGRAM_LEADS_CHAT_ID:}
+    proxy: ${TELEGRAM_LEADS_PROXY:}
   executors:
     core-pool-size: 4
     max-pool-size: 6
