@@ -114,7 +114,7 @@ public class WbProductCard {
     }
 
     /**
-     * Рейтинг по отзывам на витрине WB ({@code reviewRating} из публичного catalog API), шкала 1–5.
+     * Рейтинг по отзывам на витрине WB ({@code feedbackRating} из item-rating), шкала 1–5.
      */
     @Column(name = "rating", precision = 3, scale = 2)
     private BigDecimal rating;

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.model.WbApiEventType;
 import ru.oparin.solution.service.CabinetIntegrationMirrorService;
@@ -31,7 +32,7 @@ public class WbSidecarEventEnqueue {
     private final CabinetIntegrationMirrorService cabinetIntegrationMirrorService;
 
     /**
-     * Первый шаг sync рейтинга (публичный catalog {@code reviewRating}; токен WB не нужен).
+     * Первый шаг item-rating sync (BASIC-токен пропускается).
      */
     @Transactional
     public void enqueueItemRatingSyncCabinetEvent(Long cabinetId, WbMainStepPayload payload, String triggerSource) {
@@ -41,6 +42,11 @@ public class WbSidecarEventEnqueue {
             return;
         }
         Cabinet cabinet = requireCabinetWithTokenOverlay(cabinetId);
+        if (!CabinetTokenType.effective(cabinet.getTokenType()).supportsItemRating()) {
+            log.debug("Пропуск item-rating sync: cabinetId={}, tokenType={}",
+                    cabinetId, CabinetTokenType.effective(cabinet.getTokenType()));
+            return;
+        }
         WbItemRatingSyncStepPayload stepPayload = WbItemRatingSyncStepPayload.builder()
                 .offset(0)
                 .syncStartedAt(LocalDateTime.now())
@@ -53,7 +59,7 @@ public class WbSidecarEventEnqueue {
     }
 
     /**
-     * Следующий батч рейтинга с короткой паузой под публичный catalog API.
+     * Следующий шаг item-rating с задержкой под лимит API.
      */
     @Transactional
     public void enqueueNextItemRatingStepEvent(
@@ -62,9 +68,15 @@ public class WbSidecarEventEnqueue {
             String triggerSource
     ) {
         Cabinet cabinet = requireCabinetWithTokenOverlay(cabinetId);
-        long delayMs = 500L;
+        if (!CabinetTokenType.effective(cabinet.getTokenType()).supportsItemRating()) {
+            log.debug("Пропуск следующего шага item-rating: cabinetId={}, tokenType={}",
+                    cabinetId, CabinetTokenType.effective(cabinet.getTokenType()));
+            return;
+        }
+        CabinetTokenType tokenType = CabinetTokenType.effective(cabinet.getTokenType());
+        long delayMs = WbApiEventType.ANALYTICS_ITEM_RATING_CABINET.getRequestDelayMs(tokenType);
         LocalDateTime nextAttemptAt = LocalDateTime.now().plusNanos(delayMs * 1_000_000L);
-        log.info("Запланирован следующий шаг рейтинга (public catalog): cabinetId={}, offset={}, delayMs={}, nextAttemptAt={}",
+        log.info("Запланирован следующий шаг item-rating: cabinetId={}, offset={}, delayMs={}, nextAttemptAt={}",
                 cabinetId, payload.offset(), delayMs, nextAttemptAt);
         String stepDedupKey = "ITEM_RATING_SYNC_STEP:"
                 + cabinet.getId() + ":"

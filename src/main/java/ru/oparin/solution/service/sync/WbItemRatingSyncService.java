@@ -7,37 +7,39 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import ru.oparin.solution.dto.wb.WbItemRatingCard;
+import ru.oparin.solution.dto.wb.WbItemRatingResponse;
 import ru.oparin.solution.model.Cabinet;
+import ru.oparin.solution.model.CabinetTokenType;
 import ru.oparin.solution.model.WbProductCard;
 import ru.oparin.solution.repository.WbProductCardRepository;
 import ru.oparin.solution.service.CabinetScopeStatusService;
 import ru.oparin.solution.service.events.WbApiEventService;
 import ru.oparin.solution.service.events.payload.WbItemRatingSyncStepPayload;
+import ru.oparin.solution.service.wb.WbAnalyticsApiClient;
 import ru.oparin.solution.service.wb.WbApiCategory;
-import ru.oparin.solution.service.wb.WbPublicCatalogClient;
 import ru.oparin.solution.util.ArticleRatingUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 /**
- * Синхронизация рейтинга карточек из публичного catalog API WB ({@code reviewRating} —
- * те же звёзды, что на странице артикула). Запускается теми же событиями, что и обновление кабинета.
+ * Синхронизация рейтинга карточек из отчёта WB Analytics item-rating v2
+ * ({@code POST /api/analytics/v2/item-rating}, массив {@code data.items}).
+ * Берём {@code feedbackRating.current} — рейтинг по отзывам (звёзды 1–5 на странице артикула).
+ * Поле {@code rating} в том же ответе — отдельная «оценка карточки» продавца, другая шкала.
+ * Категория токена: Аналитика.
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class WbItemRatingSyncService {
 
-    /** Размер батча nmId на один шаг события. */
-    private static final int BATCH_SIZE = 100;
+    private static final int PAGE_LIMIT = 1000;
 
-    private final WbPublicCatalogClient publicCatalogClient;
+    private final WbAnalyticsApiClient analyticsApiClient;
     private final WbProductCardRepository productCardRepository;
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final WbApiEventService wbApiEventService;
@@ -52,8 +54,8 @@ public class WbItemRatingSyncService {
     public record ItemRatingStepProcessingResult(boolean completedRun) {}
 
     /**
-     * Один шаг: батч nmId кабинета → публичный {@code reviewRating} → сохранение.
-     * HTTP вне транзакции.
+     * Обрабатывает один шаг (одну страницу) синхронизации рейтинга.
+     * HTTP к WB выполняется вне транзакции, чтобы не держать соединение с БД во время ожидания ответа.
      */
     public ItemRatingStepProcessingResult processStepInNewTransaction(
             Cabinet cabinet,
@@ -61,43 +63,34 @@ public class WbItemRatingSyncService {
             WbItemRatingSyncStepPayload step,
             String triggerSource
     ) {
-        long cabinetId = cabinet.getId();
-        log.info("Старт шага синхронизации рейтинга (public catalog): cabinetId={}, offset={}, syncStartedAt={}, triggerSource={}",
-                cabinetId, step.offset(), step.syncStartedAt(), triggerSource);
+        log.info("Старт шага синхронизации item-rating: cabinetId={}, offset={}, syncStartedAt={}, triggerSource={}",
+                cabinet.getId(), step.offset(), step.syncStartedAt(), triggerSource);
 
-        List<WbProductCard> allCards = productCardRepository.findByCabinet_Id(cabinetId);
-        if (allCards.isEmpty()) {
-            log.info("Нет карточек для рейтинга: cabinetId={}", cabinetId);
-            self.finalizeLegacyRun(cabinetId, step.syncStartedAt());
-            return new ItemRatingStepProcessingResult(true);
-        }
+        WbItemRatingResponse response = analyticsApiClient.postItemRating(apiKey, step.offset());
+        List<WbItemRatingCard> page = response.resolveItems();
+        log.info("Страница item-rating получена: cabinetId={}, offset={}, pageSize={}",
+                cabinet.getId(), step.offset(), page.size());
 
-        List<Long> orderedNmIds = allCards.stream()
-                .map(WbProductCard::getNmId)
-                .filter(Objects::nonNull)
-                .sorted()
-                .toList();
+        return self.persistStepPage(cabinet, step, triggerSource, page);
+    }
 
-        int from = Math.max(0, step.offset());
-        if (from >= orderedNmIds.size()) {
-            self.finalizeLegacyRun(cabinetId, step.syncStartedAt());
-            log.info("Синхронизация рейтинга (public catalog) завершена: cabinetId={}", cabinetId);
-            return new ItemRatingStepProcessingResult(true);
-        }
+    /**
+     * Сохраняет страницу item-rating и ставит следующий шаг в очередь при необходимости.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ItemRatingStepProcessingResult persistStepPage(
+            Cabinet cabinet,
+            WbItemRatingSyncStepPayload step,
+            String triggerSource,
+            List<WbItemRatingCard> page
+    ) {
+        applyPageToProductCards(cabinet.getId(), page, step.syncStartedAt());
 
-        int to = Math.min(from + BATCH_SIZE, orderedNmIds.size());
-        List<Long> batchNmIds = orderedNmIds.subList(from, to);
-        Map<Long, Double> ratings = publicCatalogClient.fetchReviewRatings(batchNmIds);
-        log.info("Батч reviewRating получен: cabinetId={}, offset={}, batchSize={}, ratingsFound={}",
-                cabinetId, from, batchNmIds.size(), ratings.size());
-
-        self.persistPublicBatch(cabinetId, batchNmIds, ratings, step.syncStartedAt());
-
-        if (to < orderedNmIds.size()) {
+        if (page.size() >= PAGE_LIMIT) {
             wbApiEventService.enqueueNextItemRatingStepEvent(
-                    cabinetId,
+                    cabinet.getId(),
                     WbItemRatingSyncStepPayload.builder()
-                            .offset(to)
+                            .offset(step.offset() + page.size())
                             .syncStartedAt(step.syncStartedAt())
                             .dateFrom(step.dateFrom())
                             .dateTo(step.dateTo())
@@ -108,78 +101,49 @@ public class WbItemRatingSyncService {
             return new ItemRatingStepProcessingResult(false);
         }
 
-        self.finalizeLegacyRun(cabinetId, step.syncStartedAt());
-        log.info("Синхронизация рейтинга (public catalog) завершена: cabinetId={}", cabinetId);
+        finalizeRatings(cabinet.getId(), step.syncStartedAt());
+        cabinetScopeStatusService.recordSuccess(cabinet.getId(), WbApiCategory.ANALYTICS);
+        log.info("Синхронизация item-rating завершена: cabinetId={}", cabinet.getId());
         return new ItemRatingStepProcessingResult(true);
     }
 
     /**
-     * Legacy: полный прогон в одном потоке (все батчи подряд).
+     * Legacy-синхронизация в одном потоке (все страницы подряд с паузой).
      */
     public void syncForCabinetInNewTransaction(Cabinet cabinet, String apiKey) {
         syncForCabinet(cabinet, apiKey);
     }
 
     public void syncForCabinet(Cabinet cabinet, String apiKey) {
-        long cabinetId = cabinet.getId();
-        List<WbProductCard> allCards = productCardRepository.findByCabinet_Id(cabinetId);
-        if (allCards.isEmpty()) {
+        if (!CabinetTokenType.effective(cabinet.getTokenType()).supportsItemRating()) {
+            log.info("Legacy-синхронизация item-rating пропущена для кабинета {}: базовый токен WB", cabinet.getId());
             return;
         }
-
+        long cabinetId = cabinet.getId();
         LocalDateTime syncStartedAt = LocalDateTime.now();
-        List<Long> orderedNmIds = allCards.stream()
-                .map(WbProductCard::getNmId)
-                .filter(Objects::nonNull)
-                .sorted()
-                .toList();
+        int offset = 0;
+        boolean hasMore = true;
 
-        for (int from = 0; from < orderedNmIds.size(); from += BATCH_SIZE) {
-            int to = Math.min(from + BATCH_SIZE, orderedNmIds.size());
-            List<Long> batch = orderedNmIds.subList(from, to);
-            Map<Long, Double> ratings = publicCatalogClient.fetchReviewRatings(batch);
-            self.persistPublicBatch(cabinetId, batch, ratings, syncStartedAt);
-            if (to < orderedNmIds.size()) {
-                sleepQuietly(500L);
+        while (hasMore) {
+            WbItemRatingResponse response = analyticsApiClient.postItemRating(apiKey, offset);
+            List<WbItemRatingCard> page = response.resolveItems();
+            self.persistLegacyPage(cabinetId, page, syncStartedAt);
+
+            if (page.size() < PAGE_LIMIT) {
+                hasMore = false;
+            } else {
+                offset += page.size();
+                analyticsApiClient.delayBetweenWbItemRatingRequests(apiKey);
             }
         }
+
         self.finalizeLegacyRun(cabinetId, syncStartedAt);
-        log.info("Legacy-синхронизация рейтинга (public catalog) завершена: cabinetId={}", cabinetId);
+        log.info("Legacy-синхронизация item-rating завершена: cabinetId={}", cabinetId);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void persistPublicBatch(
-            Long cabinetId,
-            List<Long> batchNmIds,
-            Map<Long, Double> ratingsByNmId,
-            LocalDateTime syncStartedAt
-    ) {
-        if (batchNmIds == null || batchNmIds.isEmpty()) {
-            return;
-        }
-        Map<Long, Double> safeRatings = ratingsByNmId != null ? ratingsByNmId : Map.of();
-        List<WbProductCard> existing = productCardRepository.findByCabinet_Id(cabinetId).stream()
-                .filter(c -> c.getNmId() != null && batchNmIds.contains(c.getNmId()))
-                .toList();
-
-        Map<Long, BigDecimal> normalized = new HashMap<>();
-        for (Long nmId : batchNmIds) {
-            BigDecimal star = toStarRating(safeRatings.get(nmId));
-            if (star != null) {
-                normalized.put(nmId, star);
-            }
-        }
-
-        for (WbProductCard productCard : existing) {
-            productCard.setRatingSyncedAt(syncStartedAt);
-            BigDecimal fromWb = normalized.get(productCard.getNmId());
-            productCard.setRating(ArticleRatingUtils.resolveRatingAfterSync(productCard.getRating(), fromWb));
-        }
-        if (!existing.isEmpty()) {
-            productCardRepository.saveAll(existing);
-            log.info("Обновлён рейтинг (public catalog): cabinetId={}, cardsUpdated={}, withRating={}",
-                    cabinetId, existing.size(), normalized.size());
-        }
+    public void persistLegacyPage(Long cabinetId, List<WbItemRatingCard> page, LocalDateTime syncStartedAt) {
+        applyPageToProductCards(cabinetId, page, syncStartedAt);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -188,13 +152,80 @@ public class WbItemRatingSyncService {
         cabinetScopeStatusService.recordSuccess(cabinetId, WbApiCategory.ANALYTICS);
     }
 
-    private void finalizeRatings(Long cabinetId, LocalDateTime syncStartedAt) {
-        // Не обнуляем рейтинг у карточек вне батча: публичный API мог временно не вернуть товар.
-        int cardsTotal = productCardRepository.findByCabinet_Id(cabinetId).size();
-        log.info("Финализация рейтинга (public catalog): cabinetId={}, cardsTotal={}, syncStartedAt={}",
-                cabinetId, cardsTotal, syncStartedAt);
+    private void applyPageToProductCards(Long cabinetId, List<WbItemRatingCard> page, LocalDateTime syncStartedAt) {
+        if (page.isEmpty()) {
+            return;
+        }
+
+        Set<Long> seenNmIds = new HashSet<>();
+        Map<Long, BigDecimal> ratingFromWbByNmId = new HashMap<>();
+        for (WbItemRatingCard card : page) {
+            if (card.getNmId() == null) {
+                continue;
+            }
+            seenNmIds.add(card.getNmId());
+            Double feedbackCurrent = card.getFeedbackRating() != null
+                    ? card.getFeedbackRating().getCurrent()
+                    : null;
+            BigDecimal normalized = toStarRating(feedbackCurrent);
+            if (normalized == null) {
+                // Иногда за короткий период feedbackRating=0, а звёзды 1–5 приходят в rating.
+                normalized = toStarRating(card.getRating());
+            }
+            if (normalized != null) {
+                ratingFromWbByNmId.put(card.getNmId(), normalized);
+            } else {
+                log.warn(
+                        "Пропуск рейтинга item-rating вне шкалы 1–5: cabinetId={}, nmId={}, feedbackRating={}, rating={}",
+                        cabinetId,
+                        card.getNmId(),
+                        feedbackCurrent,
+                        card.getRating()
+                );
+            }
+        }
+        if (seenNmIds.isEmpty()) {
+            return;
+        }
+
+        List<WbProductCard> existing = productCardRepository.findByCabinet_Id(cabinetId).stream()
+                .filter(c -> seenNmIds.contains(c.getNmId()))
+                .toList();
+        for (WbProductCard productCard : existing) {
+            productCard.setRatingSyncedAt(syncStartedAt);
+            BigDecimal fromWb = ratingFromWbByNmId.get(productCard.getNmId());
+            productCard.setRating(ArticleRatingUtils.resolveRatingAfterSync(productCard.getRating(), fromWb));
+        }
+        if (!existing.isEmpty()) {
+            productCardRepository.saveAll(existing);
+            log.info("Обновлён рейтинг item-rating: cabinetId={}, cardsUpdated={}", cabinetId, existing.size());
+        }
     }
 
+    private void finalizeRatings(Long cabinetId, LocalDateTime syncStartedAt) {
+        List<WbProductCard> cards = productCardRepository.findByCabinet_Id(cabinetId);
+        int cleared = 0;
+        for (WbProductCard card : cards) {
+            LocalDateTime syncedAt = card.getRatingSyncedAt();
+            if (syncedAt == null || syncedAt.isBefore(syncStartedAt)) {
+                card.setRating(null);
+                card.setRatingSyncedAt(null);
+                cleared++;
+            }
+        }
+        if (cleared > 0) {
+            productCardRepository.saveAll(cards);
+        }
+        log.info("Финализация item-rating: cabinetId={}, cardsTotal={}, clearedWithoutRating={}",
+                cabinetId, cards.size(), cleared);
+    }
+
+    /**
+     * Нормализует рейтинг по отзывам в шкалу для колонки {@code NUMERIC(3,2)} (строго меньше 10).
+     *
+     * @param value сырое значение из {@code feedbackRating.current}
+     * @return округлённый рейтинг 0.01–5.00 либо {@code null}, если значение непригодно
+     */
     private static BigDecimal toStarRating(Double value) {
         if (value == null || value.isNaN() || value.isInfinite()) {
             return null;
@@ -203,14 +234,5 @@ public class WbItemRatingSyncService {
             return null;
         }
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private static void sleepQuietly(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Прервана пауза между батчами публичного catalog API", e);
-        }
     }
 }

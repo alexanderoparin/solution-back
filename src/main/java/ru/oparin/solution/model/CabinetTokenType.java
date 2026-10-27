@@ -15,10 +15,10 @@ public enum CabinetTokenType {
     private final String displayName;
 
     /**
-     * Рейтинг на витрине (reviewRating) синкаем из публичного catalog API — доступен для любого токена.
+     * Отчёт item-rating доступен только для персонального/сервисного токена WB, не для базового.
      */
     public boolean supportsItemRating() {
-        return true;
+        return this != BASIC;
     }
 
     /**
