@@ -569,12 +569,44 @@ public class WbCampaignManageService {
                 pauseIfActive(advertId, cabinetId, state, "РК остановлена: время слота сокращено до текущего момента");
             }
         }
-        if (request.getBudgetRub() != null && oldBudget != null && request.getBudgetRub() < oldBudget) {
-            checkBudgetDecreasePause(advertId, cabinetId, state, slot.getBudgetRub());
+        if (request.getBudgetRub() != null && oldBudget != null
+                && !Objects.equals(request.getBudgetRub(), oldBudget)) {
+            // И повышение, и понижение лимита применяем сразу в текущем слоте:
+            // при повышении снимаем «исчерпан», при понижении — сразу пауза, если расход уже выше нового лимита.
+            applyActiveSlotBudgetLimitChange(advertId, cabinetId, state, slot, oldBudget, request.getBudgetRub());
         }
     }
 
-    private void checkBudgetDecreasePause(Long advertId, Long cabinetId, WbCampaignManagementState state, int newBudgetRub) {
+    /**
+     * Пересчёт лимита бюджета активного слота сразу после правки (не со следующего дня).
+     * Повышение: сбрасываем флаг исчерпания, чтобы планировщик снова вёл РК по новому лимиту.
+     * Понижение / любой новый лимит: если расход уже ≥ лимита — пауза.
+     */
+    private void applyActiveSlotBudgetLimitChange(
+            Long advertId,
+            Long cabinetId,
+            WbCampaignManagementState state,
+            WbCampaignScheduleSlot slot,
+            int oldBudgetRub,
+            int newBudgetRub
+    ) {
+        if (newBudgetRub > oldBudgetRub
+                && SlotBudgetSpendUtils.isSlotBudgetExhausted(state, slot.getId())) {
+            state.setSlotBudgetExhaustedSlotId(null);
+            stateRepository.save(state);
+        }
+        reevaluateActiveSlotBudgetCap(advertId, cabinetId, state, newBudgetRub);
+    }
+
+    /**
+     * Сверяет текущий расход слота с новым лимитом и при необходимости останавливает РК.
+     */
+    private void reevaluateActiveSlotBudgetCap(
+            Long advertId,
+            Long cabinetId,
+            WbCampaignManagementState state,
+            int newBudgetRub
+    ) {
         if (state.getBudgetAtSlotStart() == null) {
             return;
         }
