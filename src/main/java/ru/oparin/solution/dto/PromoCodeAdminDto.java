@@ -24,4 +24,9 @@ public class PromoCodeAdminDto {
     private LocalDateTime validFrom;
     private LocalDateTime validTo;
     private LocalDateTime createdAt;
+
+    /**
+     * Можно ли редактировать промокод сейчас (окно 30 минут после создания).
+     */
+    private boolean editable;
 }

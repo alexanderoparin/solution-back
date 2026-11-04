@@ -7,10 +7,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.oparin.solution.dto.CreatePromoCodeRequest;
-import ru.oparin.solution.dto.PageResponse;
-import ru.oparin.solution.dto.PromoCodeAdminDto;
-import ru.oparin.solution.dto.PromoCodeRedemptionAdminDto;
+import ru.oparin.solution.dto.*;
 import ru.oparin.solution.exception.UserException;
 import ru.oparin.solution.model.PromoCode;
 import ru.oparin.solution.model.PromoCodeRedemption;
@@ -19,6 +16,7 @@ import ru.oparin.solution.model.User;
 import ru.oparin.solution.repository.PromoCodeRedemptionRepository;
 import ru.oparin.solution.repository.PromoCodeRepository;
 
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 
@@ -29,6 +27,9 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class AdminPromoCodeService {
+
+    /** Окно редактирования промокода после создания. */
+    public static final int EDIT_WINDOW_MINUTES = 30;
 
     private final PromoCodeRepository promoCodeRepository;
     private final PromoCodeRedemptionRepository redemptionRepository;
@@ -88,6 +89,61 @@ public class AdminPromoCodeService {
     }
 
     /**
+     * Редактирование промокода в течение {@link #EDIT_WINDOW_MINUTES} минут после создания.
+     * Можно менять любое поле: код, описание, срок, даты действия, активность.
+     *
+     * @param admin   администратор
+     * @param promoId идентификатор промокода
+     * @param request новые значения полей
+     * @return обновлённый промокод
+     */
+    @Transactional
+    public PromoCodeAdminDto updatePromoCode(User admin, Long promoId, UpdatePromoCodeRequest request) {
+        requireAdmin(admin);
+        PromoCode promo = promoCodeRepository.findById(promoId)
+                .orElseThrow(() -> new UserException("Промокод не найден", HttpStatus.NOT_FOUND));
+        if (!isEditable(promo)) {
+            throw new UserException(
+                    "Редактирование доступно только в течение " + EDIT_WINDOW_MINUTES + " минут после создания",
+                    HttpStatus.BAD_REQUEST);
+        }
+        if (request.getValidFrom() != null
+                && request.getValidTo() != null
+                && request.getValidTo().isBefore(request.getValidFrom())) {
+            throw new UserException("Окончание действия не может быть раньше начала", HttpStatus.BAD_REQUEST);
+        }
+
+        String normalizedCode = normalizeCode(request.getCode());
+        if (!normalizedCode.equalsIgnoreCase(promo.getCode())) {
+            promoCodeRepository.findByCodeIgnoreCase(normalizedCode).ifPresent(existing -> {
+                if (!existing.getId().equals(promo.getId())) {
+                    throw new UserException("Промокод с таким кодом уже существует", HttpStatus.CONFLICT);
+                }
+            });
+        }
+
+        promo.setCode(normalizedCode);
+        promo.setDescription(blankToNull(request.getDescription()));
+        promo.setDurationDays(request.getDurationDays());
+        promo.setActive(Boolean.TRUE.equals(request.getActive()));
+        promo.setValidFrom(request.getValidFrom());
+        promo.setValidTo(request.getValidTo());
+
+        PromoCode saved = promoCodeRepository.save(promo);
+        log.info(
+                "Админ id={} email={} отредактировал промокод id={} code={} active={} durationDays={} validFrom={} validTo={}",
+                admin.getId(),
+                admin.getEmail(),
+                saved.getId(),
+                saved.getCode(),
+                saved.isActive(),
+                saved.getDurationDays(),
+                saved.getValidFrom(),
+                saved.getValidTo());
+        return toPromoDto(saved);
+    }
+
+    /**
      * Включение или выключение промокода.
      *
      * @param admin   администратор
@@ -110,6 +166,17 @@ public class AdminPromoCodeService {
                 saved.getId(),
                 saved.getCode());
         return toPromoDto(saved);
+    }
+
+    /**
+     * Промокод ещё можно править, если с момента создания прошло меньше {@link #EDIT_WINDOW_MINUTES} минут.
+     */
+    private static boolean isEditable(PromoCode promo) {
+        LocalDateTime createdAt = promo.getCreatedAt();
+        if (createdAt == null) {
+            return false;
+        }
+        return LocalDateTime.now().isBefore(createdAt.plusMinutes(EDIT_WINDOW_MINUTES));
     }
 
     private static String normalizeCode(String code) {
@@ -165,6 +232,7 @@ public class AdminPromoCodeService {
                 .validFrom(promo.getValidFrom())
                 .validTo(promo.getValidTo())
                 .createdAt(promo.getCreatedAt())
+                .editable(isEditable(promo))
                 .build();
     }
 

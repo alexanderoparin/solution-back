@@ -46,6 +46,18 @@ public class AdminPromoCodeController {
     }
 
     /**
+     * Редактирование промокода (только в течение 30 минут после создания).
+     */
+    @PutMapping("/{promoId}")
+    public ResponseEntity<PromoCodeAdminDto> updatePromoCode(
+            @PathVariable Long promoId,
+            @Valid @RequestBody UpdatePromoCodeRequest request
+    ) {
+        User admin = currentAdmin();
+        return ResponseEntity.ok(adminPromoCodeService.updatePromoCode(admin, promoId, request));
+    }
+
+    /**
      * Включение или выключение промокода.
      */
     @PatchMapping("/{promoId}/active")
