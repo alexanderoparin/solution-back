@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.CabinetIntegrationRepository;
 import ru.oparin.solution.repository.CabinetSyncStateRepository;
+import ru.oparin.solution.util.WbApiKeyJwtSid;
 
 import java.util.*;
 import java.util.function.Function;
@@ -151,6 +152,10 @@ public class CabinetIntegrationMirrorService {
                         .build());
         if (notBlank(cabinet.getApiKey())) {
             row.setCredentialPrimary(cabinet.getApiKey());
+            row.setMarketplaceAccountId(WbApiKeyJwtSid.extract(cabinet.getApiKey()).orElse(null));
+        } else if (cabinet.getApiKey() != null && cabinet.getApiKey().isBlank()) {
+            row.setCredentialPrimary(null);
+            row.setMarketplaceAccountId(null);
         }
         if (cabinet.getTokenType() != null) {
             row.setMetaJson(tokenTypeMeta(cabinet.getTokenType()));

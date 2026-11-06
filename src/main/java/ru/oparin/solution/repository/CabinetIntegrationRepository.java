@@ -33,4 +33,16 @@ public interface CabinetIntegrationRepository extends JpaRepository<CabinetInteg
             Collection<CabinetIntegrationType> types,
             Long cabinetId
     );
+
+    /**
+     * Интеграции с тем же аккаунтом МП (WB sid).
+     */
+    List<CabinetIntegration> findByIntegrationTypeAndMarketplaceAccountId(
+            CabinetIntegrationType integrationType,
+            String marketplaceAccountId
+    );
+
+    List<CabinetIntegration> findByIntegrationTypeAndMarketplaceAccountIdIsNullAndCredentialPrimaryIsNotNull(
+            CabinetIntegrationType integrationType
+    );
 }

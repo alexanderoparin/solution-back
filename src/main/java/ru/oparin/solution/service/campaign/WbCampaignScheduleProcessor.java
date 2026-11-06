@@ -58,13 +58,16 @@ public class WbCampaignScheduleProcessor {
         if (cabinet == null || cabinet.getApiKey() == null || cabinet.getApiKey().isBlank()) {
             return;
         }
-        if (!campaignManageAccessService.hasCampaignEntitlement(cabinet)) {
-            manageService.stopScheduleDueToLostEntitlement(state, cabinet, cabinet.getUser());
+
+        // Сначала проверяем, что РК ещё в этом кабинете: иначе orphaned state после смены кабинета
+        // гасится stopScheduleDueToLostEntitlement у старого кабинета без подписки.
+        WbPromotionCampaign campaign = campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).orElse(null);
+        if (campaign == null || campaign.getStatus() == WbCampaignStatus.FINISHED) {
             return;
         }
 
-        WbPromotionCampaign campaign = campaignRepository.findByAdvertIdAndCabinet_Id(advertId, cabinetId).orElse(null);
-        if (campaign == null || campaign.getStatus() == WbCampaignStatus.FINISHED) {
+        if (!campaignManageAccessService.hasCampaignEntitlement(cabinet)) {
+            manageService.stopScheduleDueToLostEntitlement(state, cabinet, cabinet.getUser());
             return;
         }
 

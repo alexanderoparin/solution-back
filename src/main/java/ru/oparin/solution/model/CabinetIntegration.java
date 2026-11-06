@@ -65,6 +65,13 @@ public class CabinetIntegration {
     private String metaJson;
 
     /**
+     * Внешний id аккаунта маркетплейса.
+     * Для WB_API — JWT claim {@code sid} (идентификатор продавца WB).
+     */
+    @Column(name = "marketplace_account_id", length = 64)
+    private String marketplaceAccountId;
+
+    /**
      * Результат последней валидации учётных данных.
      */
     @Column(name = "is_valid")

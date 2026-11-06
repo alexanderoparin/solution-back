@@ -647,6 +647,7 @@ public class WbCampaignManageService {
 
     private WbCampaignManagementState stateOrDefaults(Long advertId, Long cabinetId) {
         return stateRepository.findById(advertId)
+                .map(state -> rebindStateCabinetIfNeeded(state, cabinetId))
                 .orElseGet(() -> WbCampaignManagementState.builder()
                         .campaignId(advertId)
                         .cabinetId(cabinetId)
@@ -658,6 +659,7 @@ public class WbCampaignManageService {
 
     private WbCampaignAutoBudgetSettings autoBudgetOrDefaults(Long advertId, Long cabinetId) {
         return autoBudgetRepository.findById(advertId)
+                .map(settings -> rebindAutoBudgetCabinetIfNeeded(settings, cabinetId))
                 .orElseGet(() -> WbCampaignAutoBudgetSettings.builder()
                         .campaignId(advertId)
                         .cabinetId(cabinetId)
@@ -670,6 +672,7 @@ public class WbCampaignManageService {
     private WbCampaignManagementState getOrCreateState(Long advertId, Long cabinetId) {
         ensureCampaign(advertId, cabinetId);
         return stateRepository.findById(advertId)
+                .map(state -> rebindStateCabinetIfNeeded(state, cabinetId))
                 .orElseGet(() -> stateRepository.save(WbCampaignManagementState.builder()
                         .campaignId(advertId)
                         .cabinetId(cabinetId)
@@ -682,6 +685,7 @@ public class WbCampaignManageService {
     private WbCampaignAutoBudgetSettings getOrCreateAutoBudget(Long advertId, Long cabinetId) {
         ensureCampaign(advertId, cabinetId);
         return autoBudgetRepository.findById(advertId)
+                .map(settings -> rebindAutoBudgetCabinetIfNeeded(settings, cabinetId))
                 .orElseGet(() -> autoBudgetRepository.save(WbCampaignAutoBudgetSettings.builder()
                         .campaignId(advertId)
                         .cabinetId(cabinetId)
@@ -689,6 +693,30 @@ public class WbCampaignManageService {
                         .usePromoCashback(true)
                         .locked(false)
                         .build()));
+    }
+
+    /**
+     * PK state/auto-budget — advertId; при переносе РК в другой кабинет cabinet_id мог остаться старым.
+     * Без перепривязки список биддера не видит state ({@code findByCabinetId}), а планировщик
+     * старого кабинета гасит расписание из‑за отсутствия подписки.
+     */
+    private WbCampaignManagementState rebindStateCabinetIfNeeded(WbCampaignManagementState state, Long cabinetId) {
+        if (cabinetId != null && !cabinetId.equals(state.getCabinetId())) {
+            state.setCabinetId(cabinetId);
+            return stateRepository.save(state);
+        }
+        return state;
+    }
+
+    private WbCampaignAutoBudgetSettings rebindAutoBudgetCabinetIfNeeded(
+            WbCampaignAutoBudgetSettings settings,
+            Long cabinetId
+    ) {
+        if (cabinetId != null && !cabinetId.equals(settings.getCabinetId())) {
+            settings.setCabinetId(cabinetId);
+            return autoBudgetRepository.save(settings);
+        }
+        return settings;
     }
 
     private void ensureCampaign(Long advertId, Long cabinetId) {

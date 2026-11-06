@@ -31,6 +31,7 @@ import ru.oparin.solution.service.ozon.OzonPerformanceApiClient;
 import ru.oparin.solution.service.ozon.OzonSellerApiClient;
 import ru.oparin.solution.service.wb.Wb429RateLimitHeadersLogger;
 import ru.oparin.solution.service.wb.WbCommonApiClient;
+import ru.oparin.solution.util.WbApiKeyJwtSid;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -54,6 +55,9 @@ public class CabinetService {
     private static final String API_KEY_ALREADY_USED =
             "Этот API-ключ Wildberries уже привязан к другому кабинету в системе. "
                     + "Откройте существующий кабинет или укажите другой токен.";
+    private static final String WB_MARKETPLACE_ACCOUNT_ALREADY_USED =
+            "Этот магазин Wildberries уже подключён к другому кабинету. "
+                    + "Войдите в существующий аккаунт или укажите токен другого магазина.";
     private static final int MAX_CABINET_NAME_LENGTH = 255;
 
     private final CabinetRepository cabinetRepository;
@@ -336,6 +340,7 @@ public class CabinetService {
         }
 
         assertApiKeyNotUsedByAnotherCabinet(null, trimmedApiKey);
+        assertWbMarketplaceAccountNotUsedByAnotherCabinet(null, trimmedApiKey);
 
         Cabinet cabinet = Cabinet.builder()
                 .user(user)
@@ -537,6 +542,9 @@ public class CabinetService {
         String trimmed = apiKey != null ? apiKey.trim() : null;
         if (trimmed != null && !trimmed.isBlank()) {
             assertApiKeyNotUsedByAnotherCabinet(cabinet.getId(), trimmed);
+            if (cabinet.getMarketplaceType() == MarketplaceType.WB) {
+                assertWbMarketplaceAccountNotUsedByAnotherCabinet(cabinet.getId(), trimmed);
+            }
         }
         cabinet.setIsValid(null);
         cabinet.setValidationError(null);
@@ -559,6 +567,37 @@ public class CabinetService {
                         apiKey, sellerTypes, cabinetId);
         if (duplicate) {
             throw new UserException(API_KEY_ALREADY_USED, HttpStatus.CONFLICT);
+        }
+    }
+
+    /**
+     * Один магазин WB (JWT sid) — только в одном кабинете, даже если токен перевыпущен.
+     */
+    private void assertWbMarketplaceAccountNotUsedByAnotherCabinet(Long cabinetId, String apiKey) {
+        Optional<String> sidOpt = WbApiKeyJwtSid.extract(apiKey);
+        if (sidOpt.isEmpty()) {
+            return;
+        }
+        String sid = sidOpt.get();
+        List<CabinetIntegration> sameAccount = cabinetIntegrationRepository
+                .findByIntegrationTypeAndMarketplaceAccountId(CabinetIntegrationType.WB_API, sid);
+        for (CabinetIntegration row : sameAccount) {
+            if (cabinetId == null || !cabinetId.equals(row.getCabinetId())) {
+                throw new UserException(WB_MARKETPLACE_ACCOUNT_ALREADY_USED, HttpStatus.CONFLICT);
+            }
+        }
+        // Fallback: старые строки без marketplace_account_id — сравниваем sid из JWT
+        List<CabinetIntegration> withoutSid = cabinetIntegrationRepository
+                .findByIntegrationTypeAndMarketplaceAccountIdIsNullAndCredentialPrimaryIsNotNull(
+                        CabinetIntegrationType.WB_API);
+        for (CabinetIntegration row : withoutSid) {
+            if (cabinetId != null && cabinetId.equals(row.getCabinetId())) {
+                continue;
+            }
+            Optional<String> otherSid = WbApiKeyJwtSid.extract(row.getCredentialPrimary());
+            if (otherSid.isPresent() && sid.equals(otherSid.get())) {
+                throw new UserException(WB_MARKETPLACE_ACCOUNT_ALREADY_USED, HttpStatus.CONFLICT);
+            }
         }
     }
 
