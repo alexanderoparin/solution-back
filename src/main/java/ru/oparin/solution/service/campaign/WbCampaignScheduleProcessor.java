@@ -116,7 +116,7 @@ public class WbCampaignScheduleProcessor {
                 onSlotLeave(state);
             }
             if (campaign.getStatus() == WbCampaignStatus.ACTIVE) {
-                ensurePaused(cabinet, advertId, state, "РК остановлена по расписанию");
+                ensurePaused(cabinet, advertId, state, "РК остановлена: по расписанию");
             } else {
                 budgetTrailService.pollDuringTrailIfNeeded(cabinet, state);
             }
@@ -270,7 +270,7 @@ public class WbCampaignScheduleProcessor {
         WbPromotionCampaign fresh = refreshCampaignStatusFromWb(cabinet, advertId).orElse(campaign);
         if (fresh.getStatus() != WbCampaignStatus.ACTIVE) {
             // На WB уже не активна — только выравниваем журнал/график.
-            scheduleControlNotifier.onPauseSucceededOnWb(advertId, cabinet.getId());
+            scheduleControlNotifier.onPauseSucceededOnWb(advertId, cabinet.getId(), pauseReason);
         } else {
             ensurePaused(cabinet, advertId, state, pauseReason);
         }
@@ -334,7 +334,7 @@ public class WbCampaignScheduleProcessor {
     ) {
         switch (result.outcome()) {
             case DIRECT_SUCCESS -> {
-                scheduleControlNotifier.onPauseSucceededOnWb(advertId, cabinetId);
+                scheduleControlNotifier.onPauseSucceededOnWb(advertId, cabinetId, logMessage);
                 budgetTrailService.beginTrail(state);
             }
             case ENQUEUED -> {

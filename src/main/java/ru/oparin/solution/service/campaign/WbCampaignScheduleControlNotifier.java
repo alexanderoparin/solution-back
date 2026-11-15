@@ -25,6 +25,12 @@ public class WbCampaignScheduleControlNotifier {
     private final ConcurrentHashMap<String, String> lastHistoryCategory = new ConcurrentHashMap<>();
 
     /**
+     * Причина паузы, сохранённая при постановке в очередь / правке слота —
+     * чтобы после фактического pause на WB в журнале была не голая «РК остановлена».
+     */
+    private final ConcurrentHashMap<String, String> pendingPauseReason = new ConcurrentHashMap<>();
+
+    /**
      * Запуск поставлен в очередь.
      */
     public void onStartEnqueued(Long advertId, Long cabinetId) {
@@ -80,7 +86,18 @@ public class WbCampaignScheduleControlNotifier {
      * Пауза поставлена в очередь.
      */
     public void onPauseEnqueued(Long advertId, Long cabinetId, String reason) {
+        rememberPauseReason(advertId, cabinetId, reason);
         writeHistoryOnce(advertId, cabinetId, "pause_enqueued", reason + " — поставлено в очередь");
+    }
+
+    /**
+     * Запоминает причину паузы до фактического успеха на WB (очередь / правка слота).
+     */
+    public void rememberPauseReason(Long advertId, Long cabinetId, String reason) {
+        if (advertId == null || cabinetId == null || reason == null || reason.isBlank()) {
+            return;
+        }
+        pendingPauseReason.put(historyKey(cabinetId, advertId), reason.trim());
     }
 
     /**
@@ -92,12 +109,39 @@ public class WbCampaignScheduleControlNotifier {
 
     /**
      * Фактическая успешная пауза (после выполнения события в очереди или прямого вызова).
+     * Берёт причину из аргумента или из {@link #rememberPauseReason} / {@link #onPauseEnqueued}.
      */
     public void onPauseSucceededOnWb(Long advertId, Long cabinetId) {
-        lastHistoryCategory.remove(historyKey(cabinetId, advertId));
-        changeLogService.log(advertId, cabinetId, null, "РК остановлена");
+        onPauseSucceededOnWb(advertId, cabinetId, null);
+    }
+
+    /**
+     * Фактическая успешная пауза с явной причиной для журнала изменений.
+     *
+     * @param reason текст вида «РК остановлена: …» или краткая причина; {@code null} — из pending / «РК остановлена»
+     */
+    public void onPauseSucceededOnWb(Long advertId, Long cabinetId, String reason) {
+        String key = historyKey(cabinetId, advertId);
+        lastHistoryCategory.remove(key);
+        String pending = pendingPauseReason.remove(key);
+        String message = pauseSuccessMessage(reason != null && !reason.isBlank() ? reason : pending);
+        changeLogService.log(advertId, cabinetId, null, message);
         timelineService.recordStop(advertId, cabinetId);
-        log.info("РК advertId={} cabinetId={}: успешная остановка", advertId, cabinetId);
+        log.info("РК advertId={} cabinetId={}: {}", advertId, cabinetId, message);
+    }
+
+    /**
+     * Нормализует текст успешной паузы для журнала: всегда с префиксом «РК остановлена».
+     */
+    static String pauseSuccessMessage(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "РК остановлена";
+        }
+        String trimmed = reason.trim();
+        if (trimmed.startsWith("РК остановлена")) {
+            return trimmed;
+        }
+        return "РК остановлена: " + trimmed;
     }
 
     /**

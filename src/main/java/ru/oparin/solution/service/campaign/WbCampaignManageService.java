@@ -48,6 +48,7 @@ public class WbCampaignManageService {
     private final BidderStatusResolver bidderStatusResolver;
     private final WbCampaignBudgetTrailService budgetTrailService;
     private final WbCampaignStartBudgetGuard startBudgetGuard;
+    private final WbCampaignScheduleControlNotifier scheduleControlNotifier;
     private final EntityCabinetResolveSupport entityCabinetResolveSupport;
     private final OzonPromotionCampaignRepository ozonPromotionCampaignRepository;
 
@@ -630,7 +631,8 @@ public class WbCampaignManageService {
                 Cabinet cabinet = cabinetService.findById(cabinetId).orElse(null);
                 if (cabinet != null) {
                     controlService.enqueuePause(cabinet, advertId);
-                    changeLogService.log(advertId, cabinetId, null, logMessage);
+                    // Причину пишет onPauseSucceededOnWb после фактической паузы на WB.
+                    scheduleControlNotifier.rememberPauseReason(advertId, cabinetId, logMessage);
                     if (state != null) {
                         budgetTrailService.beginTrail(state);
                     }
