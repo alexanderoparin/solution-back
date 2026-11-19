@@ -26,4 +26,6 @@ public class WorkContextCabinetDto {
     private LocalDateTime lastDataUpdateRequestedAt;
     /** Тип токена WB API кабинета (для UI: рейтинг item-rating только при PERSONAL). */
     private CabinetTokenType tokenType;
+    /** Валидность API-ключа (для блокировки действий, требующих WB API). */
+    private Boolean apiKeyValid;
 }

@@ -75,6 +75,12 @@ public class WbAbTestService {
                     + "Создайте новый токен с правом изменения контента и обновите ключ в кабинете.";
 
     /**
+     * Сообщение для UI: API-ключ кабинета помечен как невалидный — очередь WB событий не ставится.
+     */
+    public static final String TOKEN_CABINET_INVALID =
+            "API-ключ кабинета невалиден. Обновите ключ в настройках кабинета и перезапустите тест.";
+
+    /**
      * {@code true}, если ошибка похожа на 401 / отказ токена WB.
      */
     public static boolean isWbUnauthorizedTokenError(Throwable error) {
@@ -223,6 +229,7 @@ public class WbAbTestService {
         }
 
         Cabinet cabinet = requireCabinetWithCredentials(cabinetId);
+        requireValidApiKey(cabinet);
         if (!abTestQuotaService.canStartWbAbTest(cabinet, actor)) {
             throw new ru.oparin.solution.exception.UserException(
                     "Недостаточно квоты А/Б тестов. Купите пакет, чтобы создать тест.",
@@ -310,8 +317,8 @@ public class WbAbTestService {
                 .reason("CREATE")
                 .build());
 
-        wbApiEventService.enqueueWbAbTestStart(cabinetId, test.getId(), "AB_TEST_CREATE");
-        return toDto(test);
+        enqueueAbTestStartOrFail(cabinet, test.getId(), "AB_TEST_CREATE");
+        return toDto(requireTest(cabinetId, test.getId()));
     }
 
     /**
@@ -409,6 +416,7 @@ public class WbAbTestService {
             throw new IllegalArgumentException("Для этого артикула уже есть активный или запускающийся А/Б-тест");
         }
         Cabinet cabinet = requireCabinetWithCredentials(cabinetId);
+        requireValidApiKey(cabinet);
         if (!abTestQuotaService.canStartWbAbTest(cabinet, actor)) {
             throw new ru.oparin.solution.exception.UserException(
                     "Недостаточно квоты А/Б тестов. Купите пакет, чтобы перезапустить тест.",
@@ -430,8 +438,8 @@ public class WbAbTestService {
         }
         abTestRepository.save(test);
 
-        wbApiEventService.enqueueWbAbTestStart(cabinetId, test.getId(), "AB_TEST_RESTART");
-        return toDto(test);
+        enqueueAbTestStartOrFail(cabinet, test.getId(), "AB_TEST_RESTART");
+        return toDto(requireTest(cabinetId, test.getId()));
     }
 
     /**
@@ -1405,6 +1413,37 @@ public class WbAbTestService {
             throw new IllegalArgumentException("У кабинета отсутствует API-ключ");
         }
         return cabinet;
+    }
+
+    /**
+     * Кабинет с {@code isValid=false} не ставит WB-события в очередь — нельзя создавать/перезапускать А/Б.
+     */
+    private void requireValidApiKey(Cabinet cabinet) {
+        if (Boolean.FALSE.equals(cabinet.getIsValid())) {
+            throw new IllegalArgumentException(TOKEN_CABINET_INVALID);
+        }
+    }
+
+    /**
+     * Ставит {@code AB_TEST_START} в очередь. Если writer отказал из‑за невалидного ключа — сразу {@link #failStart}.
+     */
+    private void enqueueAbTestStartOrFail(Cabinet cabinet, Long abTestId, String triggerSource) {
+        Long eventId = wbApiEventService.enqueueWbAbTestStart(cabinet.getId(), abTestId, triggerSource);
+        if (eventId != null) {
+            return;
+        }
+        // Повторно читаем флаг: между проверкой и enqueue ключ могли инвалидировать.
+        Cabinet fresh = requireCabinetWithCredentials(cabinet.getId());
+        if (Boolean.FALSE.equals(fresh.getIsValid())) {
+            failStart(abTestId, TOKEN_CABINET_INVALID);
+            return;
+        }
+        log.warn(
+                "AB_TEST_START не создан (dedup или отказ writer): cabinetId={}, abTestId={}, trigger={}",
+                cabinet.getId(),
+                abTestId,
+                triggerSource
+        );
     }
 
     private WbAbTestDto toDto(WbAbTest test) {

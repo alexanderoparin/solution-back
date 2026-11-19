@@ -230,6 +230,7 @@ public class CabinetService {
                         .lastDataUpdateAt(c.getLastDataUpdateAt())
                         .lastDataUpdateRequestedAt(c.getLastDataUpdateRequestedAt())
                         .tokenType(CabinetTokenType.effective(c.getTokenType()))
+                        .apiKeyValid(c.getIsValid())
                         .build())
                 .toList();
     }
