@@ -8,7 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.oparin.solution.dto.wb.WbPromotionFullStatsRequest;
-import ru.oparin.solution.dto.wb.WbPromotionFullStatsResponse;
+import ru.oparin.solution.dto.wb.WbPromotionFullStatsV4Response;
 import ru.oparin.solution.model.*;
 import ru.oparin.solution.repository.WbAbTestCampaignRepository;
 import ru.oparin.solution.repository.WbAbTestRepository;
@@ -77,7 +77,7 @@ public class WbAbTestStatsService {
                 .dateTo(prep.dateTo().format(DAY))
                 .build();
 
-        WbPromotionFullStatsResponse response = promotionApiClient.getPromotionFullStats(prep.apiKey(), request);
+        WbPromotionFullStatsV4Response response = promotionApiClient.getPromotionFullStats(prep.apiKey(), request);
         Map<Long, MetricAgg> byAdvert = aggregateByAdvertAndNm(response, prep.nmId());
         self.persistPollResult(prep.abTestId(), prep.activeVariantId(), prep.nmId(), prep.advertIds(), byAdvert);
     }
@@ -191,40 +191,38 @@ public class WbAbTestStatsService {
         abTestService.refreshInsight(test);
     }
 
-    private Map<Long, MetricAgg> aggregateByAdvertAndNm(WbPromotionFullStatsResponse response, Long nmId) {
+    /**
+     * Суммирует метрики по advertId для нужного nmId по всем срезам v4.
+     * Показы/клики в API ненулевые в основном у {@code direct}; заказы/корзины — по всем типам конверсии.
+     */
+    private Map<Long, MetricAgg> aggregateByAdvertAndNm(WbPromotionFullStatsV4Response response, Long nmId) {
         Map<Long, MetricAgg> result = new HashMap<>();
-        if (response == null || response.getAdverts() == null) {
+        if (response == null || response.getRows() == null) {
             return result;
         }
-        for (WbPromotionFullStatsResponse.CampaignStats campaign : response.getAdverts()) {
-            if (campaign.getAdvertId() == null || campaign.getDays() == null) {
+        for (WbPromotionFullStatsV4Response.Row row : response.getRows()) {
+            if (row.getAdvertId() == null || !nmId.equals(row.getNmId())) {
                 continue;
             }
-            int views = 0;
-            int clicks = 0;
-            int atbs = 0;
-            int orders = 0;
-            for (WbPromotionFullStatsResponse.CampaignStats.DayStats day : campaign.getDays()) {
-                if (day.getApps() == null) {
-                    continue;
-                }
-                for (var app : day.getApps()) {
-                    if (app.getNms() == null) {
-                        continue;
-                    }
-                    for (var nm : app.getNms()) {
-                        if (nmId.equals(nm.getNmId())) {
-                            views += nz(nm.getViews());
-                            clicks += nz(nm.getClicks());
-                            atbs += nz(nm.getAtbs());
-                            orders += nz(nm.getOrders());
-                        }
-                    }
-                }
-            }
-            result.put(campaign.getAdvertId(), new MetricAgg(views, clicks, atbs, orders));
+            MetricAgg prev = result.getOrDefault(row.getAdvertId(), MetricAgg.ZERO);
+            result.put(row.getAdvertId(), new MetricAgg(
+                    prev.views() + toInt(row.getViews()),
+                    prev.clicks() + toInt(row.getClicks()),
+                    prev.atbs() + nz(row.getAtbs()),
+                    prev.orders() + nz(row.getOrders())
+            ));
         }
         return result;
+    }
+
+    private static int toInt(Long value) {
+        if (value == null) {
+            return 0;
+        }
+        if (value > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        return value.intValue();
     }
 
     private static int nz(Integer v) {

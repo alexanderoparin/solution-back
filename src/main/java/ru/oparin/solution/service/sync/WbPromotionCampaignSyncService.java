@@ -103,12 +103,9 @@ public class WbPromotionCampaignSyncService {
                 .dateFrom(dateFromStr)
                 .dateTo(dateToStr)
                 .build();
-        WbPromotionFullStatsResponse batchResponse = promotionApiClient.getPromotionFullStats(apiKey, request);
-        if (batchResponse != null && batchResponse.getAdverts() != null && !batchResponse.getAdverts().isEmpty()) {
-            campaignStatisticsService.saveOrUpdateStatistics(
-                    WbPromotionFullStatsResponse.builder().adverts(batchResponse.getAdverts()).build(),
-                    seller
-            );
+        WbPromotionFullStatsV4Response batchResponse = promotionApiClient.getPromotionFullStats(apiKey, request);
+        if (batchResponse != null && batchResponse.getRows() != null && !batchResponse.getRows().isEmpty()) {
+            campaignStatisticsService.saveOrUpdateStatistics(batchResponse, seller);
         }
     }
 
@@ -378,18 +375,18 @@ public class WbPromotionCampaignSyncService {
 
             log.info("Загрузка статистики для {} кампаний (перезапись существующих записей)", toFetch.size());
 
-            List<WbPromotionFullStatsResponse.CampaignStats> allStats = fetchStatisticsInBatches(
+            List<WbPromotionFullStatsV4Response.Row> allRows = fetchStatisticsInBatches(
                     apiKey, toFetch, dateFrom, dateTo);
 
-            if (allStats.isEmpty()) {
+            if (allRows.isEmpty()) {
                 log.info("Не удалось получить статистику кампаний для продавца (ID: {})", seller.getId());
                 return;
             }
 
-            WbPromotionFullStatsResponse statsResponse = WbPromotionFullStatsResponse.builder()
-                    .adverts(allStats)
-                    .build();
-            campaignStatisticsService.saveOrUpdateStatistics(statsResponse, seller);
+            campaignStatisticsService.saveOrUpdateStatistics(
+                    WbPromotionFullStatsV4Response.builder().rows(allRows).build(),
+                    seller
+            );
 
             log.info("Завершено обновление статистики кампаний для продавца (ID: {})", seller.getId());
 
@@ -465,19 +462,19 @@ public class WbPromotionCampaignSyncService {
         return allCampaigns;
     }
 
-    private List<WbPromotionFullStatsResponse.CampaignStats> fetchStatisticsInBatches(
+    private List<WbPromotionFullStatsV4Response.Row> fetchStatisticsInBatches(
             String apiKey,
             List<Long> campaignIds,
             LocalDate dateFrom,
             LocalDate dateTo
     ) {
-        List<WbPromotionFullStatsResponse.CampaignStats> allStats = new ArrayList<>();
+        List<WbPromotionFullStatsV4Response.Row> allRows = new ArrayList<>();
         int statisticsBatchSize = statisticsBatchSizeBasic;
         int totalBatches = (campaignIds.size() + statisticsBatchSize - 1) / statisticsBatchSize;
         String dateFromStr = dateFrom.format(DATE_FORMATTER);
         String dateToStr = dateTo.format(DATE_FORMATTER);
 
-        log.info("Загрузка статистики для {} кампаний батчами по {} (всего батчей: {})",
+        log.info("Загрузка статистики v4 для {} кампаний батчами по {} (всего батчей: {})",
                 campaignIds.size(), statisticsBatchSize, totalBatches);
 
         for (int i = 0; i < campaignIds.size(); i += statisticsBatchSize) {
@@ -492,9 +489,9 @@ public class WbPromotionCampaignSyncService {
                         .dateFrom(dateFromStr)
                         .dateTo(dateToStr)
                         .build();
-                WbPromotionFullStatsResponse batchResponse = promotionApiClient.getPromotionFullStats(apiKey, request);
-                if (batchResponse != null && batchResponse.getAdverts() != null) {
-                    allStats.addAll(batchResponse.getAdverts());
+                WbPromotionFullStatsV4Response batchResponse = promotionApiClient.getPromotionFullStats(apiKey, request);
+                if (batchResponse != null && batchResponse.getRows() != null) {
+                    allRows.addAll(batchResponse.getRows());
                     List<Long> missing = findMissingCampaignIds(batchResponse, batch);
                     if (!missing.isEmpty()) {
                         log.info("Для {} кампаний из батча {}/{} нет статистики за период {} - {}: {}",
@@ -510,16 +507,14 @@ public class WbPromotionCampaignSyncService {
             }
         }
 
-        int totalDays = allStats.stream()
-                .mapToInt(c -> c.getDays() != null ? c.getDays().size() : 0)
-                .sum();
-        log.info("Загружено всего {} кампаний ({} дней статистики) из {} запрошенных", allStats.size(), totalDays, campaignIds.size());
-        return allStats;
+        log.info("Загружено всего {} строк fullstats v4 из {} запрошенных кампаний", allRows.size(), campaignIds.size());
+        return allRows;
     }
 
-    private List<Long> findMissingCampaignIds(WbPromotionFullStatsResponse response, List<Long> requestedIds) {
-        Set<Long> receivedIds = response.getAdverts().stream()
-                .map(WbPromotionFullStatsResponse.CampaignStats::getAdvertId)
+    private List<Long> findMissingCampaignIds(WbPromotionFullStatsV4Response response, List<Long> requestedIds) {
+        Set<Long> receivedIds = response.getRows().stream()
+                .map(WbPromotionFullStatsV4Response.Row::getAdvertId)
+                .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
         return requestedIds.stream()
                 .filter(id -> !receivedIds.contains(id))

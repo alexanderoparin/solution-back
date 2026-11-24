@@ -1,6 +1,5 @@
 package ru.oparin.solution.service.wb;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -305,14 +304,14 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
     /**
      * Получение статистики по кампаниям.
-     * GET /adv/v3/fullstats — параметры передаются в строке запроса.
+     * GET /api/advert/v4/fullstats — плоский формат с placement и conversionType.
      * При таймауте, ошибке соединения или DNS (в т.ч. UnknownHostException) выполняются ретраи.
      *
      * @param apiKey API ключ продавца
      * @param request запрос статистики
-     * @return статистика по кампаниям
+     * @return статистика по кампаниям (rows)
      */
-    public WbPromotionFullStatsResponse getPromotionFullStats(String apiKey, WbPromotionFullStatsRequest request) {
+    public WbPromotionFullStatsV4Response getPromotionFullStats(String apiKey, WbPromotionFullStatsRequest request) {
         CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
         return executeWith429Retry(
                 "статистика кампаний за период",
@@ -338,25 +337,17 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
 
                 validateResponse(response);
 
-                List<WbPromotionFullStatsResponse.CampaignStats> statsList = objectMapper.readValue(
+                WbPromotionFullStatsV4Response statsResponse = objectMapper.readValue(
                         response.getBody(),
-                        new TypeReference<List<WbPromotionFullStatsResponse.CampaignStats>>() {}
+                        WbPromotionFullStatsV4Response.class
                 );
 
-                WbPromotionFullStatsResponse statsResponse = WbPromotionFullStatsResponse.builder()
-                        .adverts(statsList)
-                        .build();
-
-                int totalDays = statsList != null
-                        ? statsList.stream()
-                                .mapToInt(campaign -> campaign.getDays() != null ? campaign.getDays().size() : 0)
-                                .sum()
+                int rowCount = statsResponse != null && statsResponse.getRows() != null
+                        ? statsResponse.getRows().size()
                         : 0;
+                log.info("Получено строк fullstats v4: {}", rowCount);
 
-                log.info("Получено кампаний: {}, всего дней статистики: {}",
-                        statsList != null ? statsList.size() : 0, totalDays);
-
-                return statsResponse;
+                return statsResponse != null ? statsResponse : WbPromotionFullStatsV4Response.builder().rows(List.of()).build();
 
             } catch (HttpClientErrorException e) {
                 throwIf401ScopeNotAllowed(e);
@@ -741,7 +732,7 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
             String idsParam = request.getAdvertId().stream()
                     .map(String::valueOf)
                     .collect(Collectors.joining(","));
-            uriBuilder.queryParam("ids", idsParam);
+            uriBuilder.queryParam("advertIds", idsParam);
         }
         uriBuilder.queryParam("beginDate", request.getDateFrom());
         uriBuilder.queryParam("endDate", request.getDateTo());

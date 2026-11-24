@@ -42,7 +42,7 @@ public enum WbApiEventType {
             1L),
     AB_TEST_STATS_POLL(
             WbApiBaseUrl.PROMOTION,
-            "/adv/v3/fullstats",
+            "/api/advert/v4/fullstats",
             3_600L,
             20L),
     ANALYTICS_SALES_FUNNEL_NMID(
@@ -67,7 +67,7 @@ public enum WbApiEventType {
             1L),
     PROMOTION_STATS_BATCH(
             WbApiBaseUrl.PROMOTION,
-            "/adv/v3/fullstats",
+            "/api/advert/v4/fullstats",
             3_600L,
             20L),
     PROMOTION_NORMQUERY_STATS_BATCH(

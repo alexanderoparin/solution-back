@@ -28,17 +28,33 @@ public interface WbPromotionCampaignStatisticsRepository extends JpaRepository<W
     Optional<WbPromotionCampaignStatistics> findByCampaignAdvertIdAndDate(Long campaignId, LocalDate date);
 
     /**
-     * Поиск статистики по кампании, артикулу и дате.
+     * Поиск среза статистики по кампании, артикулу, дате, зоне и типу конверсии.
      *
      * @param campaignId ID кампании
      * @param nmId артикул товара
      * @param date дата статистики
+     * @param placement зона показов
+     * @param conversionType тип конверсии
      * @return статистика или пусто
      */
-    Optional<WbPromotionCampaignStatistics> findByCampaignAdvertIdAndNmIdAndDate(
+    Optional<WbPromotionCampaignStatistics> findByCampaignAdvertIdAndNmIdAndDateAndPlacementAndConversionType(
             Long campaignId,
             Long nmId,
-            LocalDate date
+            LocalDate date,
+            String placement,
+            String conversionType
+    );
+
+    /**
+     * Удаляет исторические агрегаты {@code all}/{@code all} за дату по кампании и артикулу
+     * (чтобы не дублировать итог после записи срезов v4).
+     */
+    void deleteByCampaign_AdvertIdAndNmIdAndDateAndPlacementAndConversionType(
+            Long campaignId,
+            Long nmId,
+            LocalDate date,
+            String placement,
+            String conversionType
     );
 
     /**

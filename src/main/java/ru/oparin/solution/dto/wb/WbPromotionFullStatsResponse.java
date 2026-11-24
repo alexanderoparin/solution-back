@@ -8,9 +8,12 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * DTO для ответа статистики кампаний.
- * Эндпоинт: GET /adv/v3/fullstats
+ * Legacy DTO ответа GET /adv/v3/fullstats (иерархия days/apps/nms).
+ * Актуальный формат — {@link WbPromotionFullStatsV4Response}.
+ *
+ * @deprecated используйте {@link WbPromotionFullStatsV4Response}
  */
+@Deprecated
 @Getter
 @Setter
 @Builder

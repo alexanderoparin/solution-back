@@ -10,8 +10,7 @@ import java.util.List;
 
 /**
  * DTO для запроса статистики кампаний.
- * Эндпоинт: GET /adv/v3/fullstats (v2 устарел)
- * Документация: https://dev.wildberries.ru/openapi/promotion#tag/Statistika/paths/~1adv~1v3~1fullstats/get
+ * Эндпоинт: GET /api/advert/v4/fullstats (query: advertIds, beginDate, endDate).
  */
 @Getter
 @Setter

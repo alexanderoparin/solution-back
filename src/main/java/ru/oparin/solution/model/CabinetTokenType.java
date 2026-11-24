@@ -23,7 +23,7 @@ public enum CabinetTokenType {
 
     /**
      * Частый опрос fullstats (чаще 1 раза в час) доступен не для базового токена.
-     * У базового лимит {@code GET /adv/v3/fullstats} — 1 запрос в час.
+     * У базового лимит {@code GET /api/advert/v4/fullstats} — 1 запрос в час.
      */
     public boolean supportsFrequentFullstats() {
         return this != BASIC;

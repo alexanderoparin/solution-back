@@ -11,12 +11,14 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * Сущность статистики артикула внутри рекламной кампании из WB API.
- * Хранит статистику по каждому артикулу (nmId) в каждой кампании по датам.
+ * Статистика артикула внутри РК WB по дате с разрезами зоны показа и типа конверсии.
+ * Источник: GET /api/advert/v4/fullstats; история v3 — строки с placement/conversion_type = {@code all}.
  */
 @Entity
-@Table(name = "wb_promotion_campaign_statistics", schema = "solution",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"campaign_id", "nm_id", "date"}))
+@Table(name = "wb_promotion_campaign_statistics_slices", schema = "solution",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uq_wb_promo_stats_slices",
+                columnNames = {"campaign_id", "nm_id", "date", "placement", "conversion_type"}))
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
@@ -51,6 +53,18 @@ public class WbPromotionCampaignStatistics {
      */
     @Column(name = "date", nullable = false)
     private LocalDate date;
+
+    /**
+     * Зона показов: {@code search}, {@code recommendation} или {@code all}.
+     */
+    @Column(name = "placement", nullable = false, length = 32)
+    private String placement;
+
+    /**
+     * Тип конверсии: {@code direct}, {@code multicard}, {@code associated} или {@code all}.
+     */
+    @Column(name = "conversion_type", nullable = false, length = 32)
+    private String conversionType;
 
     /**
      * Показы.
@@ -113,7 +127,7 @@ public class WbPromotionCampaignStatistics {
     private Integer canceled;
 
     /**
-     * ШК (штрих-коды).
+     * ШК (штрих-коды) / заказано товаров.
      */
     @Column(name = "shks")
     private Integer shks;
@@ -125,10 +139,16 @@ public class WbPromotionCampaignStatistics {
     private BigDecimal ordersSum;
 
     /**
-     * Сумма заказов (в рублях) - альтернативное поле из API (sum_price).
+     * Сумма заказов (sumPrice из API).
      */
     @Column(name = "sum_price", precision = 10, scale = 2)
     private BigDecimal sumPrice;
+
+    /**
+     * Средняя позиция в поиске (только search + direct).
+     */
+    @Column(name = "avg_pos", precision = 10, scale = 2)
+    private BigDecimal avgPos;
 
     /**
      * Дата создания записи в БД.
@@ -144,4 +164,3 @@ public class WbPromotionCampaignStatistics {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 }
-
