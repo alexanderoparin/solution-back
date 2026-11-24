@@ -19,6 +19,8 @@ public class CabinetDto {
 
     private Long id;
     private String name;
+    /** Валюта профиля продавца (ISO 4217), например RUB, BYN. */
+    private String currency;
     /** Маркетплейс кабинета (WB | OZON). */
     private MarketplaceType marketplaceType;
     private LocalDateTime createdAt;

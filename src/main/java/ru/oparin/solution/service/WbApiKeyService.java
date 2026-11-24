@@ -34,6 +34,7 @@ public class WbApiKeyService {
     private final CabinetService cabinetService;
     private final CabinetScopeStatusService cabinetScopeStatusService;
     private final WbEndpointRateLimitCoordinator wbEndpointRateLimitCoordinator;
+    private final WbCabinetCurrencyService cabinetCurrencyService;
 
     /**
      * Клиент только для проверок /ping по разным доменам WB API.
@@ -161,6 +162,12 @@ public class WbApiKeyService {
             if (response.getStatusCode().is2xxSuccessful()) {
                 updateValidationStatus(cabinet, true, null);
                 log.info("WB API ключ для кабинета {} признан валидным (common-api /ping)", cabinetId);
+                try {
+                    cabinetCurrencyService.syncCurrencyBestEffort(cabinet);
+                } catch (Exception currencyEx) {
+                    log.debug("Валюта кабинета {} не обновлена после ping: {}",
+                            cabinetId, currencyEx.getMessage());
+                }
                 return;
             }
             String msg = "Код ответа: " + response.getStatusCode().value();

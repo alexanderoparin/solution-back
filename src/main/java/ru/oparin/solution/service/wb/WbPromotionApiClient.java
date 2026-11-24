@@ -490,7 +490,50 @@ public class WbPromotionApiClient extends AbstractWbApiClient {
         if (WbApiEventType.PROMOTION_BALANCE.getUri().equals(endpoint)) {
             return WbApiEventType.PROMOTION_BALANCE;
         }
+        if (WbApiEventType.PROMOTION_CONFIG.getUri().equals(endpoint)) {
+            return WbApiEventType.PROMOTION_CONFIG;
+        }
         return WbApiEventType.PROMOTION_COUNT;
+    }
+
+    /**
+     * Конфигурация продвижения: валюта профиля и шаги ставок.
+     * GET /api/advert/v1/config (personal/service).
+     *
+     * @param apiKey API ключ продавца
+     * @return конфигурация профиля
+     */
+    public WbPromotionConfigResponse getPromotionConfig(String apiKey) {
+        CabinetTokenType tokenType = tokenTypeResolver.resolveByApiKey(apiKey);
+        return executeWith429Retry(
+                "конфиг продвижения",
+                WbApiEventType.PROMOTION_CONFIG.getUri(),
+                "конфиг продвижения",
+                tokenType,
+                () -> executeWithConnectionRetry("конфиг продвижения", () -> getPromotionConfigOnce(apiKey)));
+    }
+
+    private WbPromotionConfigResponse getPromotionConfigOnce(String apiKey) {
+        HttpHeaders headers = createAuthHeaders(apiKey);
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+        String url = WbApiEventType.PROMOTION_CONFIG.getDefaultUrl();
+        logWbApiCall(url, "конфиг продвижения");
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            validateResponse(response);
+            WbPromotionConfigResponse parsed = objectMapper.readValue(response.getBody(), WbPromotionConfigResponse.class);
+            log.info("Конфиг продвижения: currency={}", parsed != null ? parsed.getCurrency() : null);
+            return parsed != null ? parsed : WbPromotionConfigResponse.builder().build();
+        } catch (HttpClientErrorException e) {
+            throwIf401ScopeNotAllowed(e);
+            logWbApiError("конфиг продвижения WB", e);
+            throw e;
+        } catch (RestClientException e) {
+            throw e;
+        } catch (Exception e) {
+            logIoErrorOrFull("конфиге продвижения", e);
+            throw new RestClientException("Ошибка при получении конфига продвижения: " + e.getMessage(), e);
+        }
     }
 
     /**

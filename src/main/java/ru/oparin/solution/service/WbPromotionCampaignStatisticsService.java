@@ -17,6 +17,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -34,6 +35,7 @@ public class WbPromotionCampaignStatisticsService {
 
     private final WbPromotionCampaignStatisticsRepository statisticsRepository;
     private final WbPromotionCampaignRepository campaignRepository;
+    private final WbCabinetCurrencyService cabinetCurrencyService;
 
     /**
      * Сохраняет или обновляет срезы статистики из ответа v4 fullstats.
@@ -54,6 +56,7 @@ public class WbPromotionCampaignStatisticsService {
         int updatedCount = 0;
         int skippedCount = 0;
         Set<String> clearedLegacyKeys = new HashSet<>();
+        applyCurrencyFromRows(response.getRows());
 
         for (WbPromotionFullStatsV4Response.Row row : response.getRows()) {
             try {
@@ -77,6 +80,27 @@ public class WbPromotionCampaignStatisticsService {
 
         log.info("Обработано срезов статистики v4: создано {}, обновлено {}, пропущено {}",
                 savedCount, updatedCount, skippedCount);
+    }
+
+    /**
+     * Если в ответе v4 есть currency — обновляет валюту кабинета по первой найденной кампании.
+     */
+    private void applyCurrencyFromRows(List<WbPromotionFullStatsV4Response.Row> rows) {
+        for (WbPromotionFullStatsV4Response.Row row : rows) {
+            if (row == null || row.getAdvertId() == null) {
+                continue;
+            }
+            String currency = WbCabinetCurrencyService.normalizeCurrency(row.getCurrency());
+            if (currency == null) {
+                continue;
+            }
+            Optional<WbPromotionCampaign> campaign = campaignRepository.findById(row.getAdvertId());
+            if (campaign.isEmpty() || campaign.get().getCabinet() == null) {
+                continue;
+            }
+            cabinetCurrencyService.applyCurrency(campaign.get().getCabinet().getId(), currency);
+            return;
+        }
     }
 
     private Optional<SaveResult> processRow(

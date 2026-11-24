@@ -53,6 +53,14 @@ public class Cabinet {
     private String name;
 
     /**
+     * Валюта профиля продавца на маркетплейсе (ISO 4217), например RUB, BYN, KGS, CNY.
+     * Для WB денежные метрики продвижения приходят в этой валюте.
+     */
+    @Builder.Default
+    @Column(name = "currency", nullable = false, length = 3)
+    private String currency = "RUB";
+
+    /**
      * Момент постановки кабинета в очередь на удаление.
      * Пока заполнено, кабинет скрыт из списков и не участвует в синхронизации.
      */

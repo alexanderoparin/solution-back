@@ -20,6 +20,8 @@ public class WbPromotionBalanceResponse {
     private Integer balance;
     private Integer net;
     private Integer bonus;
+    /** Валюта профиля продавца, ISO 4217. */
+    private String currency;
     private List<Cashback> cashbacks;
 
     /**

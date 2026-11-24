@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 import ru.oparin.solution.exception.WbApiUnauthorizedScopeException;
 import ru.oparin.solution.model.WbApiEvent;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.WbCabinetCurrencyService;
 import ru.oparin.solution.service.events.payload.WbMainStepPayload;
 import ru.oparin.solution.service.sync.WbPromotionCampaignSyncService;
 
@@ -17,6 +18,7 @@ public class WbPromotionCountEventExecutor implements WbApiEventExecutor {
     private final WbApiEventService eventService;
     private final CabinetService cabinetService;
     private final WbPromotionCampaignSyncService promotionCampaignSyncService;
+    private final WbCabinetCurrencyService cabinetCurrencyService;
 
     @Override
     public WbApiEventExecutionResult execute(WbApiEvent event) {
@@ -26,6 +28,7 @@ public class WbPromotionCountEventExecutor implements WbApiEventExecutor {
             return WbApiEventExecutionResult.finalError("У кабинета отсутствует API ключ");
         }
         try {
+            cabinetCurrencyService.syncCurrencyBestEffort(cabinet);
             var countResponse = promotionCampaignSyncService.fetchPromotionCount(cabinet.getApiKey());
             List<Long> ids = promotionCampaignSyncService.listCampaignIdsFromCount(countResponse);
             if (ids.isEmpty()) {

@@ -87,6 +87,15 @@ public enum WbApiEventType {
             "/adv/v0/pause",
             720L,
             1L),
+    /**
+     * Конфигурация продвижения: валюта профиля и шаги ставок (GET /api/advert/v1/config).
+     * Только personal/service-токен.
+     */
+    PROMOTION_CONFIG(
+            WbApiBaseUrl.PROMOTION,
+            "/api/advert/v1/config",
+            60L,
+            1L),
     /** Баланс кабинета продвижения (GET /adv/v1/balance). */
     PROMOTION_BALANCE(
             WbApiBaseUrl.PROMOTION,

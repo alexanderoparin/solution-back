@@ -15,6 +15,7 @@ import ru.oparin.solution.model.WbApiEventType;
 import ru.oparin.solution.model.WbCabinetPromotionBalanceCache;
 import ru.oparin.solution.repository.WbCabinetPromotionBalanceCacheRepository;
 import ru.oparin.solution.service.CabinetService;
+import ru.oparin.solution.service.WbCabinetCurrencyService;
 import ru.oparin.solution.service.events.WbEventRateLimitService;
 import ru.oparin.solution.service.wb.WbPromotionApiClient;
 
@@ -36,6 +37,7 @@ public class WbCabinetPromotionBalanceCacheService {
     private final CabinetService cabinetService;
     private final WbPromotionApiClient promotionApiClient;
     private final WbEventRateLimitService rateLimitService;
+    private final WbCabinetCurrencyService cabinetCurrencyService;
 
     /**
      * Без readOnly: при пустом кэше идёт запрос в WB и результат сохраняется в БД.
@@ -147,6 +149,9 @@ public class WbCabinetPromotionBalanceCacheService {
         try {
             WbPromotionBalanceResponse balance = promotionApiClient.getBalance(cabinet.getApiKey());
             WbCabinetPromotionBalanceCache saved = saveCache(cabinetId, balance, null);
+            if (balance != null && balance.getCurrency() != null) {
+                cabinetCurrencyService.applyCurrency(cabinetId, balance.getCurrency());
+            }
             return toRefreshResponse(saved, true, false, null, null);
         } catch (WbRateLimitDeferException e) {
             long sec = Math.max(1, Duration.between(LocalDateTime.now(), e.getDeferUntil()).getSeconds());

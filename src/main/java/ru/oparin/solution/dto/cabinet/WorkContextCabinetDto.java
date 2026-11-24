@@ -20,6 +20,8 @@ public class WorkContextCabinetDto {
     private Long sellerId;
     private String cabinetName;
     private String sellerEmail;
+    /** Валюта профиля продавца (ISO 4217). */
+    private String currency;
     /** Маркетплейс кабинета (WB | OZON). */
     private MarketplaceType marketplaceType;
     private LocalDateTime lastDataUpdateAt;

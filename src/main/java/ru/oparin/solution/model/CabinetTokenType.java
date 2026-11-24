@@ -30,6 +30,13 @@ public enum CabinetTokenType {
     }
 
     /**
+     * GET /api/advert/v1/config доступен по персональному/сервисному токену, не по базовому.
+     */
+    public boolean supportsPromotionConfig() {
+        return this != BASIC;
+    }
+
+    /**
      * Эффективный тип токена кабинета (null трактуется как BASIC).
      */
     public static CabinetTokenType effective(CabinetTokenType tokenType) {
