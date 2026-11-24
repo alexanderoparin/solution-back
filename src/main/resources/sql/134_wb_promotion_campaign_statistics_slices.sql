@@ -121,6 +121,3 @@ SELECT
     s.updated_at
 FROM solution.wb_promotion_campaign_statistics s
 ON CONFLICT (campaign_id, nm_id, date, placement, conversion_type) DO NOTHING;
-
-COMMENT ON TABLE solution.wb_promotion_campaign_statistics IS
-    'LEGACY: агрегат v3 fullstats. Актуальные данные — wb_promotion_campaign_statistics_slices. Таблицу не удалять до проверки миграции.';

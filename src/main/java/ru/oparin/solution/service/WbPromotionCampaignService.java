@@ -143,7 +143,7 @@ public class WbPromotionCampaignService {
      */
     private void saveWbCampaignArticles(WbPromotionAdvertsResponse.Campaign campaignDto, Long campaignId, Long cabinetId) {
         if (campaignDto.getNmIds() == null || campaignDto.getNmIds().isEmpty()) {
-            log.warn("У кампании advertId {} в ответе WB нет артикулов (nmIds пустой или null), восстанавливаем связи из promotion_campaign_statistics", campaignId);
+            log.warn("У кампании advertId {} в ответе WB нет артикулов (nmIds пустой или null), восстанавливаем связи из статистики РК", campaignId);
             syncWbCampaignArticlesFromStatistics(campaignId, cabinetId);
             return;
         }
@@ -178,12 +178,12 @@ public class WbPromotionCampaignService {
     }
 
     /**
-     * Восстанавливает связи campaign_articles из promotion_campaign_statistics по кабинету.
+     * Восстанавливает связи campaign_articles из статистики РК (slices) по кабинету.
      */
     private void syncWbCampaignArticlesFromStatistics(Long campaignId, Long cabinetId) {
         List<Long> nmIdsFromStats = campaignStatisticsRepository.findDistinctNmIdsByCampaignAdvertId(campaignId);
         if (nmIdsFromStats == null || nmIdsFromStats.isEmpty()) {
-            log.debug("У кампании advertId {} нет записей в promotion_campaign_statistics, связи не созданы", campaignId);
+            log.debug("У кампании advertId {} нет записей статистики РК, связи не созданы", campaignId);
             return;
         }
         campaignArticleRepository.deleteByCampaignId(campaignId);
@@ -207,7 +207,7 @@ public class WbPromotionCampaignService {
                         campaignId, nmId, e.getMessage(), e);
             }
         }
-        log.info("Кампания advertId {}: восстановлено {} связей campaign_articles из promotion_campaign_statistics", campaignId, savedCount);
+        log.info("Кампания advertId {}: восстановлено {} связей campaign_articles из статистики РК", campaignId, savedCount);
     }
     
     /**
