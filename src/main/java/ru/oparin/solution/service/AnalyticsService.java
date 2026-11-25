@@ -25,6 +25,7 @@ import java.util.Optional;
 public class AnalyticsService {
 
     private final AnalyticsSummaryQuery analyticsSummaryQuery;
+    private final AnalyticsDashboardQuery analyticsDashboardQuery;
     private final ArticleCatalogQuery articleCatalogQuery;
     private final ArticleAnalyticsQuery articleAnalyticsQuery;
     private final CampaignAnalyticsQuery campaignAnalyticsQuery;
@@ -68,6 +69,42 @@ public class AnalyticsService {
     @Transactional(readOnly = true)
     public SummaryResponseDto getSummary(User seller, Long cabinetId, AnalyticsSummaryRequest request) {
         return analyticsSummaryQuery.getSummary(seller, cabinetId, request);
+    }
+
+    /**
+     * Дневная динамика метрики для дашборда.
+     */
+    @Transactional(readOnly = true)
+    public DashboardDailyResponseDto getDashboardDaily(
+            User seller,
+            Long cabinetId,
+            DashboardDailyRequestDto request
+    ) {
+        return analyticsDashboardQuery.getDaily(seller, cabinetId, request);
+    }
+
+    /**
+     * Срез остатков FBO/FBS для дашборда.
+     */
+    @Transactional(readOnly = true)
+    public DashboardStocksResponseDto getDashboardStocks(
+            User seller,
+            Long cabinetId,
+            DashboardStocksRequestDto request
+    ) {
+        return analyticsDashboardQuery.getStocks(seller, cabinetId, request);
+    }
+
+    /**
+     * Товарные рейтинги для дашборда.
+     */
+    @Transactional(readOnly = true)
+    public DashboardRankingsResponseDto getDashboardRankings(
+            User seller,
+            Long cabinetId,
+            DashboardRankingsRequestDto request
+    ) {
+        return analyticsDashboardQuery.getRankings(seller, cabinetId, request);
     }
 
     /**

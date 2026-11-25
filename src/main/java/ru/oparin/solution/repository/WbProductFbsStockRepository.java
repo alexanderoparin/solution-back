@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.WbProductFbsStock;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,6 +21,11 @@ public interface WbProductFbsStockRepository extends JpaRepository<WbProductFbsS
      * Остатки FBS артикула в кабинете.
      */
     List<WbProductFbsStock> findByNmIdAndCabinet_Id(Long nmId, Long cabinetId);
+
+    /**
+     * Остатки FBS по списку артикулов кабинета.
+     */
+    List<WbProductFbsStock> findByCabinet_IdAndNmIdIn(Long cabinetId, Collection<Long> nmIds);
 
     /**
      * Остатки FBS артикула на одном складе продавца.

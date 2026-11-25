@@ -101,6 +101,69 @@ public class AnalyticsController {
     }
 
     /**
+     * Дневная динамика метрики для страницы «Дашборды» (WB).
+     */
+    @PostMapping("/dashboard/daily")
+    public ResponseEntity<DashboardDailyResponseDto> getDashboardDaily(
+            @Valid @RequestBody DashboardDailyRequestDto request,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                request.getSellerId(),
+                request.getCabinetId(),
+                CabinetAccessSection.SUMMARY
+        );
+        return ResponseEntity.ok(analyticsService.getDashboardDaily(
+                context.user(),
+                context.cabinetId(),
+                request
+        ));
+    }
+
+    /**
+     * Актуальный срез остатков FBO/FBS для дашборда (WB).
+     */
+    @PostMapping("/dashboard/stocks")
+    public ResponseEntity<DashboardStocksResponseDto> getDashboardStocks(
+            @RequestBody DashboardStocksRequestDto request,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                request.getSellerId(),
+                request.getCabinetId(),
+                CabinetAccessSection.SUMMARY
+        );
+        return ResponseEntity.ok(analyticsService.getDashboardStocks(
+                context.user(),
+                context.cabinetId(),
+                request
+        ));
+    }
+
+    /**
+     * Товарные рейтинги (топ-5) для дашборда (WB).
+     */
+    @PostMapping("/dashboard/rankings")
+    public ResponseEntity<DashboardRankingsResponseDto> getDashboardRankings(
+            @Valid @RequestBody DashboardRankingsRequestDto request,
+            Authentication authentication
+    ) {
+        SellerContextService.SellerContext context = sellerContextService.createContext(
+                authentication,
+                request.getSellerId(),
+                request.getCabinetId(),
+                CabinetAccessSection.SUMMARY
+        );
+        return ResponseEntity.ok(analyticsService.getDashboardRankings(
+                context.user(),
+                context.cabinetId(),
+                request
+        ));
+    }
+
+    /**
      * Получает детальные метрики по группе для всех артикулов.
      *
      * @param metricName название метрики

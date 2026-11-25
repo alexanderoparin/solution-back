@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.WbProductStock;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,6 +32,11 @@ public interface WbProductStockRepository extends JpaRepository<WbProductStock, 
     List<WbProductStock> findByCabinet_Id(Long cabinetId);
 
     List<WbProductStock> findByNmIdAndCabinet_Id(Long nmId, Long cabinetId);
+
+    /**
+     * Остатки FBO по списку артикулов кабинета.
+     */
+    List<WbProductStock> findByCabinet_IdAndNmIdIn(Long cabinetId, Collection<Long> nmIds);
 
     void deleteByCabinet_IdAndNmId(Long cabinetId, Long nmId);
 

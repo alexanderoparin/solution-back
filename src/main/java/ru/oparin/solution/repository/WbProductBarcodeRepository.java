@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import ru.oparin.solution.model.WbProductBarcode;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -38,6 +39,11 @@ public interface WbProductBarcodeRepository extends JpaRepository<WbProductBarco
      * Находит все баркоды для списка товаров.
      */
     List<WbProductBarcode> findByNmIdIn(List<Long> nmIds);
+
+    /**
+     * Баркоды по списку артикулов кабинета.
+     */
+    List<WbProductBarcode> findByCabinet_IdAndNmIdIn(Long cabinetId, Collection<Long> nmIds);
 
     /**
      * Удаляет все баркоды для товара.
