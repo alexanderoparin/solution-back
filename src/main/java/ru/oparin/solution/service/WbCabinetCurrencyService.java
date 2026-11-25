@@ -115,4 +115,45 @@ public class WbCabinetCurrencyService {
         }
         return value;
     }
+
+    /**
+     * Эффективный код валюты кабинета; пустое → {@link #DEFAULT_CURRENCY}.
+     *
+     * @param currency код из кабинета
+     * @return ISO 4217
+     */
+    public static String effectiveCurrency(String currency) {
+        String normalized = normalizeCurrency(currency);
+        return normalized != null ? normalized : DEFAULT_CURRENCY;
+    }
+
+    /**
+     * Символ валюты для пользовательских сообщений.
+     *
+     * @param currency ISO 4217
+     * @return символ или код
+     */
+    public static String currencySymbol(String currency) {
+        return switch (effectiveCurrency(currency)) {
+            case "RUB" -> "₽";
+            case "CNY" -> "¥";
+            case "BYN" -> "Br";
+            case "KGS" -> "сом";
+            case "UZS" -> "сум";
+            case "KZT" -> "₸";
+            case "USD" -> "$";
+            case "EUR" -> "€";
+            default -> effectiveCurrency(currency);
+        };
+    }
+
+    /**
+     * Минимальная сумма пополнения бюджета РК WB в валюте кабинета.
+     *
+     * @param currency ISO 4217
+     * @return минимум (CNY — 10, иначе 1000)
+     */
+    public static int minTopUpAmount(String currency) {
+        return "CNY".equals(effectiveCurrency(currency)) ? 10 : 1000;
+    }
 }

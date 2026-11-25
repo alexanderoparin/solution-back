@@ -26,8 +26,6 @@ import java.util.*;
 public class WbCampaignManageService {
 
     private static final ZoneId SCHEDULE_ZONE = ZoneId.of("Europe/Moscow");
-    /** Минимальная сумма пополнения бюджета РК на Wildberries, ₽. */
-    private static final int MIN_TOP_UP_AMOUNT_RUB = 1000;
     private static final String SCHEDULE_STOPPED_READ_ONLY =
             "Расписание отключено: " + WbPromotionCampaignControlWriteService.READ_ONLY_USER_MESSAGE;
     private final AnalyticsService analyticsService;
@@ -117,10 +115,12 @@ public class WbCampaignManageService {
             Long advertId, Long cabinetId, User user, CampaignAutoBudgetRequestDto request
     ) {
         ensureCampaign(advertId, cabinetId);
-        controlWriteService.ensureControlAllowed(cabinetService.findById(cabinetId)
-                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден")));
+        Cabinet cabinet = cabinetService.findById(cabinetId)
+                .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
+        controlWriteService.ensureControlAllowed(cabinet);
+        String currency = WbCabinetCurrencyService.effectiveCurrency(cabinet.getCurrency());
         WbCampaignAutoBudgetSettings settings = getOrCreateAutoBudget(advertId, cabinetId);
-        validateAutoBudgetTopUpAmount(request.getTopUpAmount());
+        validateAutoBudgetTopUpAmount(request.getTopUpAmount(), currency);
         validateBackupSourceType(request.getSourceType(), request.getBackupSourceType());
 
         boolean enabledBefore = settings.isEnabled();
@@ -149,7 +149,8 @@ public class WbCampaignManageService {
                 usePromoCashbackBefore,
                 thresholdRubBefore,
                 maxTopUpsPerDayBefore,
-                request
+                request,
+                currency
         );
         if (changeMessage != null) {
             changeLogService.log(advertId, cabinetId, user, changeMessage);
@@ -198,7 +199,9 @@ public class WbCampaignManageService {
         Cabinet cabinet = cabinetService.findById(cabinetId)
                 .orElseThrow(() -> new IllegalArgumentException("Кабинет не найден"));
         controlWriteService.ensureControlAllowed(cabinet);
-        validateAutoBudgetTopUpAmount(request.getTopUpAmount());
+        String currency = WbCabinetCurrencyService.effectiveCurrency(cabinet.getCurrency());
+        String currencySymbol = WbCabinetCurrencyService.currencySymbol(currency);
+        validateAutoBudgetTopUpAmount(request.getTopUpAmount(), currency);
         if (request.getSourceType() == null) {
             throw new IllegalArgumentException("Укажите источник пополнения");
         }
@@ -230,22 +233,23 @@ public class WbCampaignManageService {
         stateRepository.save(state);
 
         String cashbackNote = depositRequest.getCashbackSum() != null && depositRequest.getCashbackSum() > 0
-                ? (", из них промо " + depositRequest.getCashbackSum() + " ₽ до "
+                ? (", из них промо " + depositRequest.getCashbackSum() + " " + currencySymbol + " до "
                 + depositRequest.getCashbackPercent() + "%")
                 : "";
         changeLogService.log(
                 advertId,
                 cabinetId,
                 user,
-                "Бюджет пополнен вручную на " + topUpAmount + " ₽ ("
-                        + budgetBeforeTopUp + " ₽ -> " + budgetAfterTopUp + " ₽)" + cashbackNote
+                "Бюджет пополнен вручную на " + topUpAmount + " " + currencySymbol + " ("
+                        + budgetBeforeTopUp + " " + currencySymbol + " -> "
+                        + budgetAfterTopUp + " " + currencySymbol + ")" + cashbackNote
         );
         timelineService.recordTopUp(advertId, cabinetId, topUpAmount, budgetAfterTopUp);
 
         return CampaignManualTopUpResponseDto.builder()
                 .topUpAmount(topUpAmount)
                 .budgetAfterTopUp(budgetAfterTopUp)
-                .message("Бюджет пополнен на " + topUpAmount + " ₽")
+                .message("Бюджет пополнен на " + topUpAmount + " " + currencySymbol)
                 .build();
     }
 
@@ -739,10 +743,18 @@ public class WbCampaignManageService {
         }
     }
 
-    private void validateAutoBudgetTopUpAmount(Integer topUpAmount) {
-        if (topUpAmount != null && topUpAmount < MIN_TOP_UP_AMOUNT_RUB) {
+    /**
+     * Проверяет минимальную сумму пополнения в валюте кабинета (CNY — 10, иначе 1000).
+     *
+     * @param topUpAmount сумма пополнения
+     * @param currency    ISO 4217
+     */
+    private void validateAutoBudgetTopUpAmount(Integer topUpAmount, String currency) {
+        int minAmount = WbCabinetCurrencyService.minTopUpAmount(currency);
+        if (topUpAmount != null && topUpAmount < minAmount) {
             throw new IllegalArgumentException(
-                    "Минимальная сумма пополнения — " + MIN_TOP_UP_AMOUNT_RUB + " ₽");
+                    "Минимальная сумма пополнения — " + minAmount + " "
+                            + WbCabinetCurrencyService.currencySymbol(currency));
         }
     }
 
@@ -864,7 +876,8 @@ public class WbCampaignManageService {
             boolean usePromoCashbackBefore,
             Integer thresholdRubBefore,
             Integer maxTopUpsPerDayBefore,
-            CampaignAutoBudgetRequestDto request
+            CampaignAutoBudgetRequestDto request,
+            String currency
     ) {
         List<String> parts = new ArrayList<>();
         if (enabledBefore != request.isEnabled()) {
@@ -873,7 +886,8 @@ public class WbCampaignManageService {
         }
         if (!Objects.equals(topUpAmountBefore, request.getTopUpAmount())) {
             parts.add("сумма пополнения: "
-                    + formatAutoBudgetRub(topUpAmountBefore) + " -> " + formatAutoBudgetRub(request.getTopUpAmount()));
+                    + formatAutoBudgetMoney(topUpAmountBefore, currency) + " -> "
+                    + formatAutoBudgetMoney(request.getTopUpAmount(), currency));
         }
         if (!Objects.equals(sourceTypeBefore, request.getSourceType())) {
             parts.add("источник: "
@@ -892,8 +906,8 @@ public class WbCampaignManageService {
         }
         if (!Objects.equals(thresholdRubBefore, request.getThresholdRub())) {
             parts.add("порог пополнения: "
-                    + formatAutoBudgetRub(thresholdRubBefore) + " -> "
-                    + formatAutoBudgetRub(request.getThresholdRub()));
+                    + formatAutoBudgetMoney(thresholdRubBefore, currency) + " -> "
+                    + formatAutoBudgetMoney(request.getThresholdRub(), currency));
         }
         if (!Objects.equals(maxTopUpsPerDayBefore, request.getMaxTopUpsPerDay())) {
             parts.add("макс. пополнений в день: "
@@ -910,8 +924,10 @@ public class WbCampaignManageService {
         return enabled ? "вкл" : "выкл";
     }
 
-    private static String formatAutoBudgetRub(Integer rub) {
-        return rub != null ? rub + " ₽" : "—";
+    private static String formatAutoBudgetMoney(Integer amount, String currency) {
+        return amount != null
+                ? amount + " " + WbCabinetCurrencyService.currencySymbol(currency)
+                : "—";
     }
 
     private static String formatAutoBudgetCount(Integer count) {

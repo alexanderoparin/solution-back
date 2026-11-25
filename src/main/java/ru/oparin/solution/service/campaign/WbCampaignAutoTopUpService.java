@@ -11,6 +11,7 @@ import ru.oparin.solution.model.WbCampaignAutoBudgetSettings;
 import ru.oparin.solution.model.WbCampaignManagementState;
 import ru.oparin.solution.repository.WbCampaignAutoBudgetSettingsRepository;
 import ru.oparin.solution.repository.WbCampaignManagementStateRepository;
+import ru.oparin.solution.service.WbCabinetCurrencyService;
 import ru.oparin.solution.service.WbPromotionCampaignControlWriteService;
 
 import java.time.LocalDate;
@@ -114,22 +115,24 @@ public class WbCampaignAutoTopUpService {
             SlotBudgetSpendUtils.addSlotTopUp(state, topUpAmount);
             stateRepository.save(state);
 
+            String currencySymbol = WbCabinetCurrencyService.currencySymbol(cabinet.getCurrency());
             String cashbackNote = attempt.request().getCashbackSum() != null && attempt.request().getCashbackSum() > 0
-                    ? (", из них промо " + attempt.request().getCashbackSum() + " ₽ до "
+                    ? (", из них промо " + attempt.request().getCashbackSum() + " " + currencySymbol + " до "
                     + attempt.request().getCashbackPercent() + "%")
                     : "";
             String sourceNote = attempt.usedBackup()
                     ? ", источник: запасной (" + formatSourceLabel(attempt.sourceType()) + ")"
                     : ", источник: " + formatSourceLabel(attempt.sourceType());
             changeLogService.log(advertId, cabinetId, null,
-                    "Бюджет пополнен автоматически на " + topUpAmount + " ₽ ("
-                            + budgetBeforeTopUp + " ₽ -> " + budgetAfterTopUp + " ₽)"
+                    "Бюджет пополнен автоматически на " + topUpAmount + " " + currencySymbol + " ("
+                            + budgetBeforeTopUp + " " + currencySymbol + " -> "
+                            + budgetAfterTopUp + " " + currencySymbol + ")"
                             + cashbackNote + sourceNote);
             timelineService.recordTopUp(advertId, cabinetId, topUpAmount, budgetAfterTopUp);
             stateRepository.save(state);
 
-            log.info("Автопополнение advertId={}: зачислено {} ₽{}{}, остаток бюджета РК {}",
-                    advertId, topUpAmount, cashbackNote, sourceNote, budgetAfterTopUp);
+            log.info("Автопополнение advertId={}: зачислено {} {}{}{}, остаток бюджета РК {}",
+                    advertId, topUpAmount, currencySymbol, cashbackNote, sourceNote, budgetAfterTopUp);
             return Optional.of(topUpAmount);
         } catch (Exception e) {
             log.warn("Автопополнение advertId={}: {}", advertId, e.getMessage());
